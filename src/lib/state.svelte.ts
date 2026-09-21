@@ -41,11 +41,6 @@ export const UI = $state({
 	busy: false
 });
 
-export const isIOS = () =>
-	typeof navigator !== 'undefined' &&
-	/iphone|ipad|ipod/i.test(navigator.userAgent) &&
-	!/crios|fxios/i.test(navigator.userAgent);
-
 // ── 토스트 ────────────────────────────────────────────────────────────
 // 의존성 없는 별도 모듈로 분리 (브라우저 모드로 직접 테스트하기 위해). 기존 import 경로는 그대로 쓴다.
 export { toast, toasts } from './toast.svelte';
