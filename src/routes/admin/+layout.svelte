@@ -27,13 +27,13 @@
 </script>
 
 <svelte:head>
-	<title>십분 운영</title>
+	<title>CNSATINDER 운영</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 {#if data.staff}
 	<header class="bar">
-		<a class="brand" href="/admin">십분 <span>운영</span></a>
+		<a class="brand" href="/admin">CNSATINDER <span>운영</span></a>
 		<nav>
 			{#each NAV as n (n.href)}
 				<a href={n.href} class:on={active(n.href)}>{n.label}</a>

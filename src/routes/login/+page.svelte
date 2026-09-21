@@ -64,7 +64,8 @@
 </script>
 
 <div class="page login">
-	<div class="mark">십분</div>
+	<img class="appicon" src="/icon-192.png" alt="" width="56" height="56" />
+	<div class="mark wordmark">CNSATINDER</div>
 
 	{#if step === 'email'}
 		<p class="lead muted">학교 이메일로 본인 확인만 하면 끝이에요.<br />이름은 어디에도 남지 않아요.</p>
@@ -90,7 +91,7 @@
 		</button>
 	{:else}
 		<p class="lead muted"><strong>{email}</strong> 으로<br />인증 코드를 보냈어요.</p>
-		<p class="spam muted">메일이 안 보이면 <strong>스팸함</strong>을 확인해 주세요. 보낸 사람은 <strong>십분</strong>이에요.</p>
+		<p class="spam muted">메일이 안 보이면 <strong>스팸함</strong>을 확인해 주세요. 보낸 사람은 <strong>CNSATINDER</strong>예요.</p>
 
 		<input
 			class="field code num"
@@ -134,6 +135,9 @@
 		justify-content: center;
 		gap: 14px;
 		padding-bottom: 48px;
+	}
+	.appicon {
+		margin-bottom: 2px;
 	}
 	.mark {
 		font-size: 30px;

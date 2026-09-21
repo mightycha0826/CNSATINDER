@@ -1,5 +1,5 @@
 /*
- * 십분 — 수동 서비스워커 (gyeol-app 패턴)
+ * CNSATINDER — 수동 서비스워커 (gyeol-app 패턴)
  *
  * 목적은 오프라인 캐시가 아니라 "설치 가능한 PWA 요건 충족"이다.
  * 실시간 대화 앱이므로 응답을 캐시해서 오래된 데이터를 보여주면 안 된다.
@@ -7,7 +7,7 @@
  *   · Supabase API / 웹소켓 요청에는 절대 손대지 않는다
  */
 
-const VERSION = 'simbun-v1';
+const VERSION = 'cnsatinder-v2'; // 아이콘·이름 교체로 캐시를 새로 받게 한다
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {

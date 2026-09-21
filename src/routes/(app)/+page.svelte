@@ -46,7 +46,7 @@
 </script>
 
 <div class="topbar">
-	<span class="title">십분</span>
+	<span class="title wordmark">CNSATINDER</span>
 	<button class="gear" onclick={() => goto('/me')} aria-label="설정" disabled={seeker.seeking}>
 		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
 			<circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" />
@@ -153,6 +153,12 @@
 		font-weight: 800;
 		letter-spacing: -0.05em;
 		line-height: 1;
+		/* 이 앱의 정체성인 숫자에 그라디언트 */
+		background: var(--brand);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+		padding: 0 2px;
 	}
 	h1 {
 		margin: 6px 0 0;
@@ -180,13 +186,16 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 50%;
-		background: var(--accent);
+		background: var(--g-violet);
 		animation: pulse 1.2s infinite;
 	}
+	/* 아이콘 그라디언트를 점 셋에 나눠 싣는다 */
 	.dots i:nth-child(2) {
+		background: var(--g-magenta);
 		animation-delay: 0.2s;
 	}
 	.dots i:nth-child(3) {
+		background: var(--g-orange);
 		animation-delay: 0.4s;
 	}
 	@keyframes pulse {

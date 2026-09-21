@@ -1,7 +1,9 @@
 /* ────────────────────────────────────────────────────────────
-   십분 — 디자인 토큰
-   레퍼런스: 인스타그램 DM (구조·밀도·회색 스케일만. 브랜드 자산은 쓰지 않음)
-   원칙: 순수 흑백 대비로 위계 · 서체 하나 · 액센트 하나 · 그림자 없음
+   CNSATINDER — 디자인 토큰
+   레퍼런스: 인스타그램 DM (구조·밀도·회색 스케일만)
+   원칙: 바탕은 순수 흑백 · 서체 하나 · 그림자 없음
+   색: 앱 아이콘의 그라디언트(파랑→보라→자홍→분홍→주황→노랑)를 "포인트"에만 쓴다.
+       채운 버튼·내 말풍선·로고·찾는 중 점 정도. 면·글자·선은 흑백 그대로.
    ──────────────────────────────────────────────────────────── */
 
 :root {
@@ -11,8 +13,21 @@
 	--line: #dbdbdb;
 	--text: #000000;
 	--text-2: #8e8e8e;
-	--accent: #0095f6;
-	--accent-press: #1877f2;
+	/* 아이콘에서 뽑은 색 */
+	--g-blue: #4f6bf6;
+	--g-violet: #8b3bf0;
+	--g-magenta: #d02dc8;
+	--g-pink: #f2336f;
+	--g-orange: #ff7a35;
+	--g-yellow: #ffc93f;
+	/* 로고·장식용 전체 그라디언트 (아이콘처럼 왼쪽 아래 노랑 → 오른쪽 위 보라) */
+	--brand: linear-gradient(45deg, var(--g-yellow), var(--g-orange) 22%, var(--g-pink) 48%, var(--g-magenta) 72%, var(--g-violet));
+	/* 흰 글씨가 올라가는 면 — 밝은 노랑·주황은 빼서 글씨가 읽히게 */
+	--accent-fill: linear-gradient(110deg, #6a4cf5, #b52ed6 50%, #e8296a);
+	/* 글자·링크·아이콘용 단색 */
+	--accent: #b82ad0;
+	/* 내 말풍선 — 화면 위(보라)에서 아래(분홍)로. 인스타 DM 처럼 말풍선 위치에 따라 색이 변한다 */
+	--bubble-fill: linear-gradient(180deg, #7446f3, #b12fd8 55%, #e8296a);
 	--on-accent: #ffffff;
 	--danger: #ed4956;
 
@@ -34,7 +49,7 @@
 		--line: #262626;
 		--text: #f5f5f5;
 		--text-2: #a8a8a8;
-		--accent-press: #3ea6ff;
+		--accent: #df5cf2;
 	}
 }
 
@@ -45,7 +60,7 @@
 	--line: #262626;
 	--text: #f5f5f5;
 	--text-2: #a8a8a8;
-	--accent-press: #3ea6ff;
+	--accent: #df5cf2;
 }
 
 * {
@@ -132,17 +147,21 @@ a {
 	width: 100%;
 	height: 44px;
 	border-radius: var(--r-sm);
-	background: var(--accent);
+	background: var(--accent-fill);
 	color: var(--on-accent);
 	font-weight: 600;
 	font-size: 15px;
-	transition: opacity 0.12s;
+	transition:
+		opacity 0.12s,
+		filter 0.12s;
 }
 .btn:active {
-	background: var(--accent-press);
+	filter: brightness(0.9);
 }
+/* 비활성은 그라디언트를 빼고 흑백으로 — 누를 수 있는 것만 색을 갖는다 */
 .btn:disabled {
-	opacity: 0.35;
+	background: var(--field);
+	color: var(--text-2);
 	cursor: default;
 }
 
@@ -209,6 +228,23 @@ a {
 	letter-spacing: -0.02em;
 }
 
+/* 로고 글자 — 그라디언트를 글자에만 입힌다 */
+.wordmark {
+	width: fit-content; /* 그라디언트가 글자 폭에 맞게 펼쳐지도록 */
+	font-weight: 800;
+	letter-spacing: -0.03em;
+	background: linear-gradient(90deg, var(--g-violet), var(--g-magenta) 40%, var(--g-pink) 70%, var(--g-orange));
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+/* 앱 아이콘 (로그인·설치·스플래시) */
+.appicon {
+	display: block;
+	border-radius: 22%;
+}
+
 /* 본문 블록 */
 .page {
 	flex: 1;
@@ -247,8 +283,9 @@ a {
 .splash {
 	flex: 1;
 	display: flex;
+	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	color: var(--text-2);
-	font-size: 14px;
+	gap: 14px;
+	font-size: 18px;
 }

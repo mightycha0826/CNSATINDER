@@ -78,7 +78,10 @@
 		</p>
 	</div>
 {:else if !S.booted}
-	<div class="splash">십분</div>
+	<div class="splash">
+		<img class="appicon" src="/icon-192.png" alt="" width="72" height="72" />
+		<span class="wordmark">CNSATINDER</span>
+	</div>
 {:else}
 	{@render children()}
 {/if}

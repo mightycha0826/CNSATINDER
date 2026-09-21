@@ -13,10 +13,11 @@
 </script>
 
 <div class="page gate">
-	<div class="mark">십분</div>
+	<img class="appicon" src="/icon-192.png" alt="" width="56" height="56" />
+	<div class="mark wordmark">CNSATINDER</div>
 	<h1>앱을 설치해야 시작할 수 있어요</h1>
 	<p class="muted lead">
-		십분은 홈 화면에 설치한 뒤 아이콘으로 들어와야 동작합니다.<br />브라우저 탭에서는 대화가 열리지
+		CNSATINDER는 홈 화면에 설치한 뒤 아이콘으로 들어와야 동작합니다.<br />브라우저 탭에서는 대화가 열리지
 		않아요.
 	</p>
 
@@ -42,7 +43,7 @@
 				을 누르세요
 			</li>
 			<li><strong>홈 화면에 추가</strong>를 선택하세요</li>
-			<li>홈 화면에 생긴 <strong>십분</strong> 아이콘으로 들어오세요</li>
+			<li>홈 화면에 생긴 <strong>CNSATINDER</strong> 아이콘으로 들어오세요</li>
 		</ol>
 	{:else if UI.installEvt}
 		<button class="btn" onclick={onInstall} disabled={installing}>
@@ -53,7 +54,7 @@
 		<ol class="steps">
 			<li>브라우저 메뉴 <strong>⋮</strong> 를 누르세요</li>
 			<li><strong>앱 설치</strong> 또는 <strong>홈 화면에 추가</strong>를 선택하세요</li>
-			<li>홈 화면에 생긴 <strong>십분</strong> 아이콘으로 들어오세요</li>
+			<li>홈 화면에 생긴 <strong>CNSATINDER</strong> 아이콘으로 들어오세요</li>
 		</ol>
 	{/if}
 </div>
@@ -63,6 +64,9 @@
 		justify-content: center;
 		gap: 14px;
 		padding-bottom: 48px;
+	}
+	.appicon {
+		margin-bottom: 2px;
 	}
 	.mark {
 		font-size: 28px;

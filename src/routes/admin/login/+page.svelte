@@ -68,7 +68,7 @@
 </script>
 
 <div class="box">
-	<h1>십분 <span>운영</span></h1>
+	<h1>CNSATINDER <span>운영</span></h1>
 	<p class="muted">운영진으로 등록된 학교 계정만 들어올 수 있어요.<br />모든 신원 열람과 조치는 기록됩니다.</p>
 
 	{#if msg}<p class="err">{msg}</p>{/if}

@@ -580,7 +580,7 @@
 		height: 32px;
 		padding: 0 12px;
 		border-radius: var(--r-sm);
-		background: var(--accent);
+		background: var(--accent-fill);
 		color: var(--on-accent);
 		font-size: 14px;
 		font-weight: 600;
@@ -756,7 +756,9 @@
 	}
 	/* 나(오른쪽) 묶음: 오른쪽 인접 모서리를 줄인다 */
 	.mine .bubble {
-		background: var(--accent);
+		/* fixed: 그라디언트를 화면에 고정 → 위쪽 말풍선은 보라, 아래쪽은 분홍.
+		   iOS Safari 는 fixed 를 무시하고 말풍선마다 그라디언트를 그린다 (그래도 자연스럽다) */
+		background: var(--bubble-fill) fixed;
 		color: var(--on-accent);
 	}
 	.mine .bubble:not(.first) {

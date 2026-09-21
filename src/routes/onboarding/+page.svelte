@@ -92,10 +92,11 @@
 		font-weight: 500;
 		background: var(--bg);
 	}
+	/* 선택은 흑백 반전 — 그라디언트는 주 버튼에만 */
 	.opt.on {
-		border-color: var(--accent);
-		background: var(--accent);
-		color: var(--on-accent);
+		border-color: var(--text);
+		background: var(--text);
+		color: var(--bg);
 		font-weight: 600;
 	}
 	.hint {

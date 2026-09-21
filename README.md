@@ -1,4 +1,4 @@
-# 십분 (simbun)
+# CNSATINDER
 
 충남삼성고 교내 익명 대화 앱. 모르는 사람과 10분, 둘 다 원할 때만 연장.
 
@@ -120,7 +120,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `npm run test:match` | 실서버 매칭 동시성 스트레스 (기본 20명 동시 폴링 → 중복 배정·선호 위반 검사 → 삭제) |
 | `npm run test:toast` | 알림 — Svelte 브라우저 모드로 컴파일해 $state proxy 관련 버그까지 검증 |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
-| `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 (헤드리스 Chrome 사용) |
+| `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.webp` (헤드리스 Chrome 사용) |
 
 > `npm run test:schema` 는 PGlite 단일 커넥션이라 **동시 트랜잭션을 재현하지 못한다.**
 > 매칭 advisory lock 과 연장 투표 경쟁은 `supabase start`(로컬 Docker Postgres)에서

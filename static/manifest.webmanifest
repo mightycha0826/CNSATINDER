@@ -1,7 +1,7 @@
 {
-	"name": "십분",
-	"short_name": "십분",
-	"description": "모르는 사람과 십분. 이름도 학번도 묻지 않는 교내 익명 대화.",
+	"name": "CNSATINDER",
+	"short_name": "CNSATINDER",
+	"description": "모르는 사람과 10분. 이름도 학번도 묻지 않는 교내 익명 대화.",
 	"lang": "ko",
 	"start_url": "/",
 	"scope": "/",
