@@ -154,9 +154,39 @@
 	}
 	function onScroll() {
 		if (!listEl) return;
+		paintSoon();
 		atBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 48;
 		if (atBottom) room?.markRead();
 	}
+	// ── 내 말풍선 그라디언트 ─────────────────────────────────────
+	// 인스타 DM 처럼 화면 위쪽 말풍선은 보라, 아래쪽은 분홍. 그라디언트 하나를 목록 화면에 깔고
+	// 말풍선마다 자기 위치만큼 밀어서 보여준다. (background-attachment: fixed 는 iOS 가 무시해서 직접 계산)
+	let painting = false;
+	function paintSoon() {
+		if (painting) return;
+		painting = true;
+		requestAnimationFrame(() => {
+			painting = false;
+			if (!listEl) return;
+			const top = listEl.getBoundingClientRect().top;
+			const els = listEl.querySelectorAll<HTMLElement>('.mine .bubble');
+			// 읽기를 먼저 모두 끝내고 쓴다 (레이아웃 재계산 반복 방지)
+			const ys = Array.from(els, (el) => el.getBoundingClientRect().top - top);
+			listEl.style.setProperty('--lh', listEl.clientHeight + 'px');
+			els.forEach((el, i) => el.style.setProperty('--by', -ys[i] + 'px'));
+		});
+	}
+	$effect(() => {
+		void room?.msgs.length;
+		void tick().then(paintSoon);
+	});
+	$effect(() => {
+		if (!listEl) return;
+		const ro = new ResizeObserver(paintSoon); // 키보드가 올라오거나 화면이 돌아갈 때
+		ro.observe(listEl);
+		return () => ro.disconnect();
+	});
+
 	// 새 메시지가 오면, 맨 아래를 보고 있을 때만 따라 내려간다
 	$effect(() => {
 		void room?.msgs.length;
@@ -756,9 +786,12 @@
 	}
 	/* 나(오른쪽) 묶음: 오른쪽 인접 모서리를 줄인다 */
 	.mine .bubble {
-		/* fixed: 그라디언트를 화면에 고정 → 위쪽 말풍선은 보라, 아래쪽은 분홍.
-		   iOS Safari 는 fixed 를 무시하고 말풍선마다 그라디언트를 그린다 (그래도 자연스럽다) */
-		background: var(--bubble-fill) fixed;
+		/* 목록 높이만큼의 그라디언트를 말풍선 위치(--by)만큼 올려서 보여준다 — 위 paintSoon() */
+		background-color: #9a36e4;
+		background-image: var(--bubble-fill);
+		background-size: 100% var(--lh, 100%);
+		background-position: 0 var(--by, 0);
+		background-repeat: no-repeat;
 		color: var(--on-accent);
 	}
 	.mine .bubble:not(.first) {
