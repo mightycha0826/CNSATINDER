@@ -90,6 +90,7 @@
 		</button>
 	{:else}
 		<p class="lead muted"><strong>{email}</strong> 으로<br />인증 코드를 보냈어요.</p>
+		<p class="spam muted">메일이 안 보이면 <strong>스팸함</strong>을 확인해 주세요. 보낸 사람은 <strong>십분</strong>이에요.</p>
 
 		<input
 			class="field code num"
@@ -146,6 +147,19 @@
 		font-size: 14px;
 	}
 	.lead strong {
+		color: var(--text);
+		font-weight: 600;
+	}
+
+	.spam {
+		margin: -4px 0 4px;
+		padding: 10px 12px;
+		border-radius: var(--r-sm);
+		background: var(--surface);
+		font-size: 13px;
+		line-height: 1.6;
+	}
+	.spam strong {
 		color: var(--text);
 		font-weight: 600;
 	}
