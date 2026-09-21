@@ -1,7 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import type { ChatTransport, TransportHandlers } from './transport';
-import type { MsgRow, ReportReason, RoomRow, RoomSnap, SendResult, VoteResult, VoteRow } from './types';
+import type { MsgRow, PartnerProfile, ReportReason, RoomRow, RoomSnap, SendResult, VoteResult, VoteRow } from './types';
 
 // ★ select('*') 금지 — 항상 명시 컬럼
 const MSG_COLS = 'id, room_id, sender_seat, body, client_msg_id, created_at';
@@ -175,6 +175,12 @@ export class SupabaseTransport implements ChatTransport {
 
 	async markRead(roomId: string, lastId: number) {
 		await supabase.rpc('mark_read', { p_room: roomId, p_last_id: lastId });
+	}
+
+	async partnerProfile(roomId: string) {
+		const { data, error } = await supabase.rpc('partner_profile', { p_room: roomId });
+		if (error) throw error;
+		return data as PartnerProfile;
 	}
 
 	typing(seat: 1 | 2) {

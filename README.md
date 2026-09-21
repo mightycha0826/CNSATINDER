@@ -16,6 +16,9 @@
 4. **실명·학번을 수집하지 않는다.** 이메일은 `auth.users` 에만 존재한다.
 5. **`select('*')` 를 쓰지 않는다.** 항상 명시 컬럼.
 6. **Realtime presence 에 `seat` 외의 값을 track 하지 않는다.**
+7. **상대 정보는 room_id 로만 묻는다.** 상대 프로필(`partner_profile`)·대화 목록(`my_rooms`)은
+   같은 방 멤버에게만, uuid 없이 돌려준다. 익명 이름은 계정에 고정이므로(재회 시 알아볼 수 있음)
+   소개·관심사에 학번·전화번호·@아이디는 서버가 거절한다.
 
 ## 처음 설정하기
 
@@ -90,6 +93,9 @@ npm run dev
       (실측: 동시 60명 중 50명 성공, 0.35초 간격 60명은 전원 성공). 막히면 "몇 초 뒤 다시"로 안내된다.
 - [x] **인증 코드 8자리 + 10분 만료** — 코드 확인 한도를 올린 만큼 찍어 맞히기 방어를 보완 (2026-09-21 완료).
 - [x] **계정 선점 방지** — 이메일 확인 전 계정의 비밀번호를 DB 트리거가 지운다 (실서버에서 공격 재현 → 차단 확인).
+- [ ] **Phase 8 적용** — `schema.sql` 을 SQL Editor 에서 다시 실행 (익명 이름·프로필·여러 대화). 안 하면 새 화면이 프로필을 못 읽는다.
+- [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
+      Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
 - [ ] **외부 SMTP 연결** — 기본 메일 서버는 시간당 몇 통뿐. SMTP 를 연결해야 발송 한도를 올릴 수 있다.
 - [ ] **메일 템플릿** — Magic Link · Confirm signup 둘 다 `{{ .Token }}` 만 (링크 없이).
 - [ ] **pg_cron** — `select jobname from cron.job;` 에 simbun-sweep / simbun-purge / simbun-purge-evidence 3개.
@@ -147,4 +153,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 - [x] **Phase 5 — 안전장치** — 신고(대화 사본 보존 + 자동 차단), 차단, 30일 내 서로 다른 신고자 3명 → 자동 정지,
       메시지 도배 제한(토큰 버킷), 넘기기 연타 제한, 신고 증거 180일 보존
 - [x] **Phase 6 — 운영자 대시보드** (`/admin`) — 신고 큐·상세·조치, 신원 열람(기록 필수), 운영 설정·킬 스위치, 활동 기록
+- [x] **Phase 8 — 계정·프로필·여러 대화** — 첫 가입은 인증 코드, 이후 학교 이메일 + 비밀번호 로그인,
+      계정마다 고유 익명 이름(바꿀 수 없음), 소개·관심사·MBTI 프로필, 온라인 표시(heartbeat),
+      대화 동시 최대 5개(운영 설정) + 대화 목록 화면, 대화방에서 상대 프로필 보기
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

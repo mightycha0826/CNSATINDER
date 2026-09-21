@@ -1,6 +1,6 @@
 import type { ChatTransport } from './transport';
 import { SupabaseTransport } from './supabase-transport';
-import type { Msg, MsgRow, ReportReason, RoomRow, RoomSnap, VoteResult, VoteRow } from './types';
+import type { Msg, MsgRow, PartnerProfile, ReportReason, RoomRow, RoomSnap, VoteResult, VoteRow } from './types';
 
 const TYPING_SHOW_MS = 3000;
 const TYPING_SEND_EVERY_MS = 1500;
@@ -337,6 +337,15 @@ export class ChatRoom {
 	}
 
 	// ── 부가 ─────────────────────────────────────────────────────
+	/** 상대 기본 정보 — 프로필 시트를 열 때 한 번 불러온다 */
+	async partnerProfile(): Promise<PartnerProfile | null> {
+		try {
+			return await this.#t.partnerProfile(this.roomId);
+		} catch {
+			return null;
+		}
+	}
+
 	onInput() {
 		const now = Date.now();
 		if (now - this.#lastTypingSent < TYPING_SEND_EVERY_MS) return;

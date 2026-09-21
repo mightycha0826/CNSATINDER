@@ -3,7 +3,7 @@
 	 * 개발 전용 — 대화방 화면 미리보기. Supabase 없이 가짜 전송 계층으로 상태를 재현한다.
 	 * 연장 배너처럼 실계정으로는 8분 넘게 기다려야 보이는 화면을 바로 확인하기 위한 것.
 	 *
-	 *   /dev/chat?s=chat | vote | waiting | pending | ended   (&sheet=menu|report|block 로 메뉴 시트 열기)
+	 *   /dev/chat?s=chat | vote | waiting | pending | ended   (&sheet=menu|report|block|profile 로 시트 열기)
 	 *
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
@@ -33,6 +33,7 @@
 		my_vote: null,
 		partner_vote: null,
 		partner_joined: true,
+		partner_online: true,
 		their_read_id: 7,
 		close_reason: null,
 		server_now: new Date().toISOString()
@@ -125,6 +126,15 @@
 			return this.#s();
 		}
 		async markRead() {}
+		async partnerProfile() {
+			return {
+				nickname: this.snap.partner_alias,
+				bio: '밴드 음악 좋아해요. 공연 같이 얘기해요',
+				interests: ['밴드', '기타', '영화'],
+				mbti: 'INFP',
+				online: true
+			};
+		}
 		typing() {}
 	}
 

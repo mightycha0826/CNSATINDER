@@ -255,8 +255,9 @@ create table if not exists public.room_members (
   primary key (room_id, user_id)
 );
 create unique index if not exists rm_room_seat on public.room_members (room_id, seat);
--- ★ DB 레벨 최종 안전망: 한 사람은 동시에 한 방에만.
-create unique index if not exists rm_one_open_room on public.room_members (user_id) where open;
+-- (예전 "한 사람 한 방" 유니크 인덱스는 Phase 8 에서 여러 대화 동시 진행으로 바뀌며 없앴다)
+drop index if exists public.rm_one_open_room;
+create index if not exists rm_user_open on public.room_members (user_id) where open;
 
 create table if not exists public.messages (
   id            bigint generated always as identity primary key,
@@ -383,7 +384,9 @@ returns jsonb language plpgsql security definer set search_path = public stable 
 declare v_room uuid;
 begin
   if auth.uid() is null then raise exception 'unauthenticated'; end if;
-  select room_id into v_room from public.room_members where user_id = auth.uid() and open;
+  -- 여러 방이 열려 있을 수 있다(Phase 8) — 가장 최근 방. 목록은 my_rooms() 를 쓴다.
+  select rm.room_id into v_room from public.room_members rm join public.rooms r on r.id = rm.room_id
+   where rm.user_id = auth.uid() and rm.open order by r.created_at desc limit 1;
   if v_room is null then
     return jsonb_build_object('room', null, 'server_now', now());
   end if;
@@ -430,8 +433,10 @@ begin
    where id in (select room_id from public.room_members where user_id in (u1, u2) and open);
   update public.room_members set open = false where user_id in (u1, u2) and open;
 
-  a1 := public.random_alias();
-  loop a2 := public.random_alias(); exit when a2 <> a1; end loop;
+  -- 방 안 이름 = 계정의 고유 익명 이름 (Phase 8). 없으면 임시 이름.
+  select coalesce(nickname, public.random_alias()) into a1 from public.profiles where id = u1;
+  select coalesce(nickname, public.random_alias()) into a2 from public.profiles where id = u2;
+  while a2 = a1 loop a2 := public.random_alias(); end loop;
 
   insert into public.rooms (status, armed_at, expires_at, alias1, alias2)
   values ('active', now(), now() + make_interval(mins => p_minutes), a1, a2)
@@ -517,7 +522,7 @@ declare
   r   public.rooms%rowtype;
   cfg public.app_settings%rowtype;
   s   smallint;
-  v_my boolean; v_their boolean; v_joined boolean;
+  v_my boolean; v_their boolean; v_joined boolean; v_online boolean;
 begin
   s := public.my_seat(p_room);
   if s is null then raise exception 'not_member'; end if;
@@ -528,6 +533,10 @@ begin
   select agree into v_their from public.extension_votes where room_id = p_room and round = r.round and seat <> s;
   select joined_at is not null into v_joined
     from public.room_members where room_id = p_room and seat <> s;
+  -- 상대가 앱을 켜 두었는지 (Phase 8 heartbeat). 켜짐/꺼짐 한 비트만 — 언제 접속했는지는 알려주지 않는다.
+  select coalesce(up.online_until > now(), false) into v_online
+    from public.room_members rm join public.user_presence up on up.user_id = rm.user_id
+   where rm.room_id = p_room and rm.seat <> s;
 
   return jsonb_build_object(
     'room_id',         r.id,
@@ -543,6 +552,7 @@ begin
     'my_vote',         v_my,
     'partner_vote',    v_their,
     'partner_joined',  coalesce(v_joined, false),
+    'partner_online',  coalesce(v_online, false),
     'their_read_id',   case when s = 1 then r.read2 else r.read1 end,
     'close_reason',    r.close_reason,
     'server_now',      now());
@@ -692,7 +702,7 @@ grant execute on function public.ack_room(uuid), public.vote_extension(uuid, boo
 
 
 -- ── 18. 스위퍼 — 양쪽 다 앱을 꺼버린 방 정리 ───────────────────────
--- 이걸 안 하면 rm_one_open_room 때문에 그 사람은 영원히 새 매칭을 못 받는다(좀비 방).
+-- 이걸 안 하면 만료된 방이 계속 "열린 대화"로 남아 동시 대화 상한을 차지한다(좀비 방).
 -- 메시지 쓰기 차단은 여기가 아니라 room_is_writable 정책이 이미 하고 있다.
 create or replace function public.sweep_rooms()
 returns int language plpgsql security definer set search_path = public as $fn$
@@ -794,6 +804,7 @@ declare
   v_pool    int;
   v_exp     record;
   v_bucket  jsonb;
+  v_open    int;
   a1 text; a2 text;
 begin
   if me is null then raise exception 'unauthenticated'; end if;
@@ -814,7 +825,8 @@ begin
   values (me, v_now + make_interval(secs => cfg.seek_ttl_sec),
               v_now + make_interval(secs => cfg.seek_ttl_sec), v_now)
   on conflict (user_id) do update
-     set online_until  = excluded.online_until,
+     -- heartbeat 가 더 길게 잡아 둔 온라인 시각을 줄이지 않는다
+     set online_until  = greatest(public.user_presence.online_until, excluded.online_until),
          seeking_until = excluded.seeking_until,
          seeking_since = coalesce(public.user_presence.seeking_since, excluded.seeking_since);
 
@@ -832,11 +844,22 @@ begin
     perform public.close_room(v_exp.id, case when v_exp.status = 'pending' then 'no_show' else 'expired' end);
   end loop;
 
-  -- ③ 누가 이미 나를 잡아갔으면 그 방으로
-  select room_id into v_room from public.room_members where user_id = me and open;
+  -- ③ 누가 이미 나를 잡아갔으면 그 방으로.
+  --   여러 대화가 동시에 열려 있을 수 있으므로(Phase 8) "아직 내가 들어가 보지 않은 새 방"만 본다.
+  select rm.room_id into v_room
+    from public.room_members rm join public.rooms r on r.id = rm.room_id
+   where rm.user_id = me and rm.open and rm.joined_at is null and r.status = 'pending'
+   order by r.created_at desc limit 1;
   if v_room is not null then
     update public.user_presence set seeking_until = null, seeking_since = null where user_id = me;
     return jsonb_build_object('status', 'matched', 'room_id', v_room, 'server_now', v_now);
+  end if;
+
+  -- ③-2 동시 대화 상한 — 꽉 찼으면 찾기를 멈춘다
+  select count(*) into v_open from public.room_members where user_id = me and open;
+  if v_open >= cfg.max_open_rooms then
+    update public.user_presence set seeking_until = null, seeking_since = null where user_id = me;
+    return jsonb_build_object('status', 'full', 'max', cfg.max_open_rooms, 'server_now', v_now);
   end if;
 
   -- ④ 후보 1명
@@ -845,8 +868,12 @@ begin
     join public.profiles p on p.id = c.user_id
    where c.user_id <> me
      and c.seeking_until > v_now                         -- ★ 지금 실제로 앱을 보며 찾는 사람만
-     and c.current_room_id is null
-     and not exists (select 1 from public.room_members rm where rm.user_id = c.user_id and rm.open)
+     -- 상대도 동시 대화 상한 아래여야 한다
+     and (select count(*) from public.room_members rm where rm.user_id = c.user_id and rm.open) < cfg.max_open_rooms
+     -- 이미 나와 열린 대화가 있는 사람은 또 잡지 않는다
+     and not exists (select 1 from public.room_members x
+                       join public.room_members y on y.room_id = x.room_id
+                      where x.user_id = me and x.open and y.user_id = c.user_id)
      and p.status = 'active' and p.verified and p.onboarded
      and (p.suspended_until is null or p.suspended_until <= v_now)
      -- 선호 성별: 양방향 모두 만족
@@ -869,7 +896,7 @@ begin
   if v_partner is null then
     select count(*) into v_pool
       from public.user_presence
-     where user_id <> me and seeking_until > v_now and current_room_id is null;
+     where user_id <> me and seeking_until > v_now;
     return jsonb_build_object(
       'status', 'waiting',
       'reason', case when v_pool = 0 then 'empty' else 'filtered' end,
@@ -885,8 +912,10 @@ begin
   end if;
 
   -- ⑦ 방 생성 — pending. 10분 타이머는 둘 다 화면을 열어야(ack_room) 시작된다.
-  a1 := public.random_alias();
-  loop a2 := public.random_alias(); exit when a2 <> a1; end loop;
+  --   방 안 이름은 각자의 고유 익명 이름(Phase 8). 없으면 임시 이름.
+  a1 := coalesce(m.nickname, public.random_alias());
+  select coalesce(nickname, public.random_alias()) into a2 from public.profiles where id = v_partner;
+  while a2 = a1 loop a2 := public.random_alias(); end loop;
 
   insert into public.rooms (status, expires_at, alias1, alias2)
   values ('pending', v_now + make_interval(secs => cfg.join_grace_sec), a1, a2)
@@ -896,14 +925,14 @@ begin
   values (v_room, me, 1), (v_room, v_partner, 2);
 
   update public.user_presence
-     set current_room_id = v_room, seeking_until = null, seeking_since = null
+     set seeking_until = null, seeking_since = null
    where user_id in (me, v_partner);
 
   -- ★ 반환값에 상대의 uuid 는 없다. room_id 뿐.
   return jsonb_build_object('status', 'matched', 'room_id', v_room, 'server_now', v_now);
 
 exception
-  when unique_violation then   -- rm_one_open_room 안전망이 발동 — 락 로직이 틀렸어도 여기서 막힌다
+  when unique_violation then   -- 유니크 인덱스 충돌(좌석 중복 등) — 조용히 재시도
     return jsonb_build_object('status', 'retry', 'retry_after_ms', 300, 'server_now', now());
 end
 $fn$;
@@ -1265,7 +1294,8 @@ begin
     vote_window_sec       = coalesce((p_patch->>'vote_window_sec')::int, vote_window_sec),
     max_rounds            = coalesce((p_patch->>'max_rounds')::smallint, max_rounds),
     rematch_cooldown_days = coalesce((p_patch->>'rematch_cooldown_days')::int, rematch_cooldown_days),
-    auto_suspend_reports  = coalesce((p_patch->>'auto_suspend_reports')::int, auto_suspend_reports)
+    auto_suspend_reports  = coalesce((p_patch->>'auto_suspend_reports')::int, auto_suspend_reports),
+    max_open_rooms        = coalesce((p_patch->>'max_open_rooms')::int, max_open_rooms)
   where id;
   insert into private.audit_log (staff_id, action, detail) values (p_staff, 'update_settings', p_patch);
   return public.admin_get_settings();
@@ -1286,5 +1316,243 @@ begin
   end loop;
 end
 $do$;
--- Phase 4: heartbeat / request_match / pair_history
--- Phase 5: blocks / private.reports / private.report_evidence / 레이트리밋 트리거
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 8 — 고유 익명 이름 · 프로필 · 온라인 표시 · 여러 대화 동시 진행
+--
+--  익명성 경계는 그대로다:
+--    · 클라이언트는 여전히 상대의 uuid 를 어떤 경로로도 받지 않는다
+--    · 상대 프로필은 "같은 방에 있을 때" room_id 로만 조회된다 (partner_profile)
+--  달라진 점(운영 결정): 이름이 방마다 새로 뽑히지 않고 계정에 고정된다.
+--    → 같은 사람을 다른 방에서 다시 만나면 알아볼 수 있다.
+--      그래서 소개글·관심사에 연락처·학번처럼 보이는 내용은 서버가 거절한다.
+-- ════════════════════════════════════════════════════════════════════
+
+alter table public.app_settings add column if not exists max_open_rooms int not null default 5;
+alter table public.app_settings add column if not exists online_ttl_sec int not null default 70;
+alter table public.app_settings drop constraint if exists app_settings_max_open_rooms;
+alter table public.app_settings add  constraint app_settings_max_open_rooms check (max_open_rooms between 1 and 20);
+
+-- ── 27. 프로필 — 익명 이름 + 간단한 기본 정보 ───────────────────────
+alter table public.profiles add column if not exists nickname  text;
+alter table public.profiles add column if not exists bio       text   not null default '';
+alter table public.profiles add column if not exists interests text[] not null default '{}';
+alter table public.profiles add column if not exists mbti      text;
+create unique index if not exists profiles_nickname on public.profiles (nickname);
+
+alter table public.profiles drop constraint if exists profiles_bio_len;
+alter table public.profiles add  constraint profiles_bio_len check (char_length(bio) <= 60);
+alter table public.profiles drop constraint if exists profiles_interests_len;
+alter table public.profiles add  constraint profiles_interests_len check (cardinality(interests) <= 5);
+alter table public.profiles drop constraint if exists profiles_mbti;
+alter table public.profiles add  constraint profiles_mbti check (mbti is null or mbti ~ '^[EI][NS][TF][JP]$');
+
+-- 자기 행 읽기 (정책은 self read 그대로). ★ 소개글 등은 컬럼 update 권한을 주지 않는다 —
+-- 검사를 거치는 update_my_profile() 로만 바뀐다. 이름(nickname)은 아예 바꿀 수 없다.
+grant select on public.profiles to authenticated;
+
+-- 이름 후보 — 40 × 40 = 1600 조합
+create or replace function private.nickname_candidate()
+returns text language sql volatile as $fn$
+  select (array['말랑','포근','새벽','바삭','조용','느긋','반짝','시원','담백','뭉게',
+                '노란','파란','초록','보라','하얀','까만','붉은','은은','졸린','수줍은',
+                '용감한','엉뚱한','다정한','배고픈','씩씩한','얌전한','꼬마','몽글','촉촉','단단',
+                '동글','포슬','말간','깜찍','새침','든든','나른','산뜻','달콤','상큼'])[floor(random()*40)::int + 1]
+      || (array['복숭아','고양이','달팽이','구름','수달','펭귄','자몽','토끼','라떼','북극곰',
+                '해달','민트','오리','참새','여우','고래','두더지','감자','다람쥐','판다',
+                '코알라','햄스터','부엉이','거북이','문어','해파리','청귤','망고','호랑이','너구리',
+                '강아지','도토리','양파','치즈','마카롱','푸딩','젤리','별똥별','솜사탕','뭉치'])[floor(random()*40)::int + 1];
+$fn$;
+
+-- 계정에 고유 이름을 붙인다. 이미 있으면 그대로 돌려준다.
+-- ★ 동시에 가입한 두 사람이 같은 이름을 뽑아도 유니크 인덱스 충돌을 잡아 다시 뽑는다 — 가입이 실패하지 않는다.
+create or replace function private.assign_nickname(p_user uuid)
+returns text language plpgsql security definer set search_path = public, private as $fn$
+declare v text; i int := 0;
+begin
+  select nickname into v from public.profiles where id = p_user;
+  if v is not null then return v; end if;
+  loop
+    i := i + 1;
+    v := private.nickname_candidate();
+    -- 조합이 붐비면 숫자를 붙인다
+    if i > 5 then v := v || (floor(random() * 900) + 100)::int::text; end if;
+    begin
+      update public.profiles set nickname = v where id = p_user and nickname is null;
+      return v;
+    exception when unique_violation then
+      if i >= 40 then raise; end if;
+    end;
+  end loop;
+end
+$fn$;
+revoke all on function private.nickname_candidate(), private.assign_nickname(uuid) from public, anon, authenticated;
+
+-- 가입 트리거·폴백이 이름까지 붙이도록 교체
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  insert into public.profiles (id, verified)
+    values (new.id, new.email_confirmed_at is not null)
+    on conflict (id) do nothing;
+  insert into public.user_presence (user_id)
+    values (new.id)
+    on conflict (user_id) do nothing;
+  perform private.assign_nickname(new.id);
+  return new;
+end
+$fn$;
+
+create or replace function public.ensure_self()
+returns void language plpgsql security definer set search_path = public as $fn$
+declare
+  me uuid := auth.uid();
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  insert into public.profiles (id) values (me) on conflict (id) do nothing;
+  insert into public.user_presence (user_id) values (me) on conflict (user_id) do nothing;
+  update public.profiles p set verified = true
+    where p.id = me and not p.verified
+      and exists (select 1 from auth.users u
+                   where u.id = me and u.email_confirmed_at is not null);
+  perform private.assign_nickname(me);
+end
+$fn$;
+
+-- 이미 가입해 있던 계정들에도 이름을 붙인다
+do $do$
+declare v uuid;
+begin
+  for v in select id from public.profiles where nickname is null loop
+    perform private.assign_nickname(v);
+  end loop;
+end
+$do$;
+
+-- 내 기본 정보 수정 — 검사를 거쳐서만 바뀐다
+create or replace function public.update_my_profile(p_bio text, p_interests text[], p_mbti text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  me     uuid := auth.uid();
+  v_bio  text := btrim(regexp_replace(coalesce(p_bio, ''), '\s+', ' ', 'g'));
+  v_tags text[];
+  v_mbti text := nullif(upper(btrim(coalesce(p_mbti, ''))), '');
+  t      text;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+
+  -- 관심사: 앞뒤 공백 제거, 빈 값·중복 제거(순서 유지)
+  select coalesce(array_agg(x order by o), '{}') into v_tags
+    from (select distinct on (lower(x)) x, o
+            from (select btrim(e) x, o from unnest(coalesce(p_interests, '{}')) with ordinality u(e, o)) s
+           where x <> ''
+           order by lower(x), o) d;
+
+  if char_length(v_bio) > 60 then raise exception 'bio_too_long'; end if;
+  if cardinality(v_tags) > 5 then raise exception 'too_many_interests'; end if;
+  foreach t in array v_tags loop
+    if char_length(t) > 12 then raise exception 'interest_too_long'; end if;
+  end loop;
+  if v_mbti is not null and v_mbti !~ '^[EI][NS][TF][JP]$' then raise exception 'invalid_mbti'; end if;
+
+  -- ★ 신원이 드러나는 정보 차단 — 학번·전화번호처럼 긴 숫자, 이메일·SNS 아이디(@)
+  if v_bio ~ '[0-9]{4,}' or v_bio ~ '@' or array_to_string(v_tags, ' ') ~ '[0-9]{4,}|@' then
+    raise exception 'personal_info';
+  end if;
+
+  update public.profiles set bio = v_bio, interests = v_tags, mbti = v_mbti where id = me;
+  return jsonb_build_object('bio', v_bio, 'interests', to_jsonb(v_tags), 'mbti', v_mbti);
+end
+$fn$;
+
+-- 비밀번호가 설정됐는지 (auth.users 는 클라가 읽을 수 없으므로)
+create or replace function public.my_account()
+returns jsonb language sql security definer set search_path = public, auth stable as $fn$
+  select jsonb_build_object('has_password', coalesce(u.encrypted_password, '') <> '')
+    from auth.users u where u.id = auth.uid();
+$fn$;
+
+
+-- ── 28. 온라인 표시 ─────────────────────────────────────────────────
+-- 앱이 화면에 떠 있는 동안 30초마다 부른다. 백그라운드로 가면 p_online = false 로 한 번.
+-- ★ user_presence 는 여전히 정책 0개. 상대가 아는 것은 "같은 방 상대가 지금 켜져 있는가" 한 비트뿐.
+create or replace function public.heartbeat(p_online boolean default true)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare cfg public.app_settings%rowtype;
+begin
+  if auth.uid() is null then raise exception 'unauthenticated'; end if;
+  select * into cfg from public.app_settings where id;
+  if p_online then
+    update public.user_presence
+       set online_until = greatest(online_until, now() + make_interval(secs => cfg.online_ttl_sec))
+     where user_id = auth.uid();
+  else
+    -- 앱을 내려놓으면 오프라인 + 찾기 중단 (폰을 내려놓은 사람에게 매칭이 가지 않게)
+    update public.user_presence
+       set online_until = now(), seeking_until = null, seeking_since = null
+     where user_id = auth.uid();
+  end if;
+  return jsonb_build_object('server_now', now());
+end
+$fn$;
+
+
+-- ── 29. 대화 목록 · 상대 프로필 ─────────────────────────────────────
+-- 내 열린 대화 전부. ★ 방마다 room_id 외의 uuid 는 없다.
+create or replace function public.my_rooms()
+returns jsonb language sql security definer set search_path = public stable as $fn$
+  select jsonb_build_object(
+    'rooms', coalesce(jsonb_agg(to_jsonb(x) - 'sort_at' order by x.sort_at desc), '[]'::jsonb),
+    'server_now', now())
+  from (
+    select r.id as room_id, r.status, rm.seat as my_seat,
+           case when rm.seat = 1 then r.alias2 else r.alias1 end as partner_alias,
+           r.expires_at, r.round,
+           rm.joined_at is not null as joined,
+           coalesce(up.online_until > now(), false) as partner_online,
+           lm.body as last_body, lm.sender_seat as last_seat, lm.created_at as last_at,
+           (select count(*) from public.messages m
+             where m.room_id = r.id and m.sender_seat not in (0, rm.seat)
+               and m.id > coalesce(case when rm.seat = 1 then r.read1 else r.read2 end, 0))::int as unread,
+           coalesce(lm.created_at, r.created_at) as sort_at
+      from public.room_members rm
+      join public.rooms r on r.id = rm.room_id
+      join public.room_members o on o.room_id = r.id and o.seat <> rm.seat
+      left join public.user_presence up on up.user_id = o.user_id
+      left join lateral (select body, sender_seat, created_at from public.messages
+                          where room_id = r.id order by id desc limit 1) lm on true
+     where rm.user_id = auth.uid() and rm.open
+       and r.status <> 'closed' and now() < r.expires_at
+  ) x;
+$fn$;
+
+-- 대화 상대의 기본 정보. 같은 방에 있었던 사람만 볼 수 있다(대화가 끝난 뒤 신고 화면에서도).
+create or replace function public.partner_profile(p_room uuid)
+returns jsonb language plpgsql security definer set search_path = public stable as $fn$
+declare s smallint; v jsonb;
+begin
+  s := public.my_seat(p_room);
+  if s is null then raise exception 'not_member'; end if;
+  select jsonb_build_object(
+           'nickname',  case when s = 1 then r.alias2 else r.alias1 end,
+           'bio',       p.bio,
+           'interests', to_jsonb(p.interests),
+           'mbti',      p.mbti,
+           'online',    coalesce(up.online_until > now(), false))
+    into v
+    from public.rooms r
+    join public.room_members o on o.room_id = r.id and o.seat <> s
+    join public.profiles p on p.id = o.user_id
+    left join public.user_presence up on up.user_id = o.user_id
+   where r.id = p_room;
+  return v;
+end
+$fn$;
+
+revoke all on function public.update_my_profile(text, text[], text), public.my_account(),
+                       public.heartbeat(boolean), public.my_rooms(), public.partner_profile(uuid)
+  from public, anon;
+grant execute on function public.update_my_profile(text, text[], text), public.my_account(),
+                          public.heartbeat(boolean), public.my_rooms(), public.partner_profile(uuid)
+  to authenticated;

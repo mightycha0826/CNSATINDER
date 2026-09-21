@@ -1,4 +1,4 @@
-import type { MsgRow, ReportReason, RoomRow, RoomSnap, SendResult, VoteResult, VoteRow } from './types';
+import type { MsgRow, PartnerProfile, ReportReason, RoomRow, RoomSnap, SendResult, VoteResult, VoteRow } from './types';
 
 export type TransportHandlers = {
 	onMessage(row: MsgRow): void;
@@ -38,5 +38,7 @@ export interface ChatTransport {
 	report(roomId: string, reason: ReportReason, note: string): Promise<{ status: 'ok' | 'already'; snap: RoomSnap }>;
 	block(roomId: string): Promise<RoomSnap>;
 	markRead(roomId: string, lastId: number): Promise<void>;
+	/** 대화 상대의 기본 정보 (같은 방 멤버만) */
+	partnerProfile(roomId: string): Promise<PartnerProfile>;
 	typing(seat: 1 | 2): void;
 }

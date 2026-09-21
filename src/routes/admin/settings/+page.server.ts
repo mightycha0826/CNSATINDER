@@ -11,6 +11,7 @@ export type AppSettings = {
 	max_rounds: number;
 	rematch_cooldown_days: number;
 	auto_suspend_reports: number;
+	max_open_rooms: number;
 };
 
 export const load: PageServerLoad = async () => ({
@@ -23,7 +24,8 @@ const INT: [keyof AppSettings, number, number][] = [
 	['vote_window_sec', 15, 300],
 	['max_rounds', 0, 50],
 	['rematch_cooldown_days', 0, 365],
-	['auto_suspend_reports', 1, 50]
+	['auto_suspend_reports', 1, 50],
+	['max_open_rooms', 1, 20]
 ];
 
 export const actions: Actions = {

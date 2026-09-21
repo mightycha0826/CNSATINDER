@@ -44,6 +44,8 @@ export type RoomSnap = {
 	partner_vote: boolean | null;
 	/** pending 방에서 상대가 화면을 열었는지 */
 	partner_joined: boolean;
+	/** 상대가 앱을 켜 두었는지 (방 화면이 아니어도) */
+	partner_online: boolean;
 	their_read_id: number | null;
 	close_reason: string | null;
 	server_now: string;
@@ -53,6 +55,15 @@ export type RoomSnap = {
 export type VoteRow = { room_id: string; round: number; seat: 1 | 2; agree: boolean };
 
 export type VoteResult = 'waiting' | 'extended' | 'declined' | 'expired' | 'closed' | 'too_early' | 'max_rounds';
+
+/** 대화 상대의 기본 정보 — partner_profile(room) 응답. ★ uuid·성별·선호는 없다. */
+export type PartnerProfile = {
+	nickname: string;
+	bio: string;
+	interests: string[];
+	mbti: string | null;
+	online: boolean;
+};
 
 export type ReportReason =
 	| 'harassment'

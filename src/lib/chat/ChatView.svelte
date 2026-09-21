@@ -7,8 +7,8 @@
 	import { tick, untrack } from 'svelte';
 	import { S, toast } from '$lib/state.svelte';
 	import type { ChatRoom } from './room.svelte';
-	import type { Msg, ReportReason } from './types';
-	import { avatarColor, avatarInitial } from '$lib/avatar';
+	import type { Msg, PartnerProfile, ReportReason } from './types';
+	import Avatar from '$lib/Avatar.svelte';
 
 	let {
 		room,
@@ -18,7 +18,7 @@
 		room: ChatRoom | null;
 		loading: boolean;
 		/** 개발용 미리보기에서만 사용 */
-		initialSheet?: null | 'menu' | 'report' | 'block' | 'leave';
+		initialSheet?: null | 'menu' | 'report' | 'block' | 'leave' | 'profile';
 	} = $props();
 
 	let draft = $state('');
@@ -92,7 +92,7 @@
 
 	// ── 메뉴 · 신고 · 차단 ───────────────────────────────────────
 	// 시트는 한 번에 한 화면: menu → (leave | block | report) 확인
-	let sheet = $state<null | 'menu' | 'leave' | 'block' | 'report'>(untrack(() => initialSheet));
+	let sheet = $state<null | 'menu' | 'leave' | 'block' | 'report' | 'profile'>(untrack(() => initialSheet));
 	let reportReason = $state<ReportReason | null>(null);
 	let reportNote = $state('');
 	let acting = $state(false);
@@ -111,7 +111,25 @@
 		sheet = s;
 		reportReason = null;
 		reportNote = '';
+		if (s === 'profile') void loadProfile();
 	}
+
+	// ── 상대 프로필 ──────────────────────────────────────────────
+	// 헤더의 아바타·이름을 누르면 상대의 기본 정보. 같은 방 멤버만 서버가 돌려준다.
+	let profile = $state<PartnerProfile | null>(null);
+	let profileLoading = $state(false);
+	async function loadProfile() {
+		if (!room || profileLoading) return;
+		profileLoading = true;
+		profile = (await room.partnerProfile()) ?? profile;
+		profileLoading = false;
+	}
+	$effect(() => {
+		// 개발용 미리보기에서 &sheet=profile 로 바로 열었을 때
+		if (room && sheet === 'profile' && !profile) untrack(() => void loadProfile());
+	});
+	// 방 화면을 보고 있음(presence) > 앱이 켜져 있음(heartbeat) > 꺼짐
+	const partnerOnline = $derived(!!room && (room.partnerHere || !!room.snap?.partner_online));
 
 	async function leave() {
 		sheet = null;
@@ -283,18 +301,15 @@
 
 		{#if room?.snap}
 			{@const alias = room.snap.partner_alias}
-			<div class="who">
-				<div class="av" style:background={avatarColor(alias)}>
-					{avatarInitial(alias)}
-					{#if room.partnerHere && !closed}<span class="dot"></span>{/if}
-				</div>
-				<div class="names">
+			<button class="who" onclick={() => openSheet('profile')} aria-label="상대 프로필 보기">
+				<Avatar name={alias} size={32} online={partnerOnline && !closed} />
+				<span class="names">
 					<span class="alias">{alias}</span>
 					<span class="sub">
-						{#if closed}대화 종료{:else if pending}{room.snap.partner_joined ? '곧 시작해요' : '상대를 기다리는 중'}{:else if room.partnerHere}지금 보고 있음{:else}익명{/if}
+						{#if closed}대화 종료{:else if pending}{room.snap.partner_joined ? '곧 시작해요' : '상대를 기다리는 중'}{:else if room.partnerHere}지금 보고 있음{:else if room.snap.partner_online}접속 중{:else}오프라인{/if}
 					</span>
-				</div>
-			</div>
+				</span>
+			</button>
 			{#if !closed}
 				<span class="timer num" class:urgent class:dim={pending}>{mmss}</span>
 				<button class="more" onclick={() => openSheet('menu')} aria-label="메뉴">
@@ -400,6 +415,7 @@
 					<p>{endedText}</p>
 					<p class="muted small">이 대화는 이 화면을 떠나면 다시 볼 수 없어요.</p>
 					<button class="btn" onclick={() => goto('/?seek', { replaceState: true })}>새 대화 찾기</button>
+					<button class="btn-ghost" onclick={() => goto('/', { replaceState: true })}>대화 목록</button>
 					{#if !room.reported}
 						<!-- 대화가 끝난 뒤에야 신고를 결심하는 경우가 많다 — 서버는 닫힌 방도 받는다 -->
 						<button class="btn-text report-after" onclick={() => openSheet('report')}>이 대화 신고하기</button>
@@ -433,7 +449,35 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 	<div class="scrim" onclick={() => (sheet = null)}>
 		<div class="sheet" onclick={(e) => e.stopPropagation()}>
-			{#if sheet === 'menu'}
+			{#if sheet === 'profile'}
+				<div class="profile">
+					{#if room?.snap}
+						<Avatar name={room.snap.partner_alias} size={72} online={!!profile?.online} />
+						<h3>{room.snap.partner_alias}</h3>
+						<p class="status muted">
+							{#if profile}{profile.online ? '접속 중' : '오프라인'}{:else}&nbsp;{/if}
+						</p>
+					{/if}
+					{#if profile}
+						{#if profile.bio}<p class="bio">{profile.bio}</p>{/if}
+						{#if profile.mbti || profile.interests.length}
+							<div class="tags">
+								{#if profile.mbti}<span class="tag mbti">{profile.mbti}</span>{/if}
+								{#each profile.interests as t (t)}<span class="tag">{t}</span>{/each}
+							</div>
+						{/if}
+						{#if !profile.bio && !profile.mbti && !profile.interests.length}
+							<p class="muted small">아직 소개를 적지 않았어요</p>
+						{/if}
+					{:else if profileLoading}
+						<p class="muted small">불러오는 중…</p>
+					{:else}
+						<p class="muted small">프로필을 불러오지 못했어요</p>
+					{/if}
+				</div>
+				<button class="item" onclick={() => (sheet = null)}>닫기</button>
+			{:else if sheet === 'menu'}
+				<button class="item" onclick={() => openSheet('profile')}>프로필 보기</button>
 				<button class="item danger" onclick={() => openSheet('report')}>신고하기</button>
 				<button class="item danger" onclick={() => openSheet('block')}>차단하기</button>
 				<button class="item" onclick={() => openSheet('leave')}>대화 나가기</button>
@@ -504,28 +548,7 @@
 		align-items: center;
 		gap: 10px;
 		min-width: 0;
-	}
-	.av {
-		position: relative;
-		flex: none;
-		display: grid;
-		place-items: center;
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		color: #fff;
-		font-weight: 600;
-		font-size: 14px;
-	}
-	.dot {
-		position: absolute;
-		right: -1px;
-		bottom: -1px;
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		background: #3ec70b;
-		border: 2px solid var(--bg);
+		text-align: left;
 	}
 	.names {
 		display: flex;
@@ -872,6 +895,54 @@
 		font-size: 12px;
 		font-weight: 400;
 		margin-bottom: 8px;
+	}
+
+	/* ── 상대 프로필 시트 ── */
+	.profile {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+		padding: 16px var(--pad) 18px;
+		text-align: center;
+	}
+	.profile h3 {
+		margin: 6px 0 0;
+		font-size: 18px;
+		font-weight: 700;
+	}
+	.profile .status {
+		margin: 0;
+		font-size: 12px;
+	}
+	.profile .bio {
+		margin: 8px 0 0;
+		font-size: 14px;
+		line-height: 1.55;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	.profile .small {
+		margin: 8px 0 0;
+		font-size: 13px;
+	}
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 6px;
+		margin-top: 8px;
+	}
+	.tag {
+		padding: 4px 10px;
+		border-radius: 999px;
+		background: var(--field);
+		font-size: 13px;
+	}
+	.tag.mbti {
+		background: var(--text);
+		color: var(--bg);
+		font-weight: 600;
 	}
 
 	/* ── 입력창 ── */

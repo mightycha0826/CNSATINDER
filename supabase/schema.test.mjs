@@ -453,27 +453,28 @@ check(
 	(await one('select count(*)::int n from public.messages where room_id = $1', [room])).n > 0
 );
 
-console.log('\n[13] 한 사람 한 방');
-await expectError(
-	'★ 이미 열린 방이 있는 사람을 두 번째 방에 넣을 수 없다 (DB 안전망)',
-	async () => {
-		const r2 = (await one(`insert into public.rooms (status, expires_at, alias1, alias2)
-			values ('active', now() + interval '10 min', 'x', 'y') returning id`)).id;
-		const r3 = (await one(`insert into public.rooms (status, expires_at, alias1, alias2)
-			values ('active', now() + interval '10 min', 'x', 'y') returning id`)).id;
-		await db.query(`insert into public.room_members (room_id, user_id, seat) values ($1, $2, 1)`, [r2, C]);
-		await db.query(`insert into public.room_members (room_id, user_id, seat) values ($1, $2, 1)`, [r3, C]);
-	},
-	'duplicate'
-);
+console.log('\n[13] 여러 대화 동시 (Phase 8)');
+{
+	const r2 = (await one(`insert into public.rooms (status, expires_at, alias1, alias2)
+		values ('active', now() + interval '10 min', 'x', 'y') returning id`)).id;
+	const r3 = (await one(`insert into public.rooms (status, expires_at, alias1, alias2)
+		values ('active', now() + interval '10 min', 'x', 'y') returning id`)).id;
+	await db.query(`insert into public.room_members (room_id, user_id, seat) values ($1, $2, 1)`, [r2, C]);
+	await db.query(`insert into public.room_members (room_id, user_id, seat) values ($1, $2, 1)`, [r3, C]);
+	check(
+		'한 사람이 열린 방 여러 개에 동시에 있을 수 있다',
+		(await one('select count(*)::int n from public.room_members where user_id = $1 and open', [C])).n === 2
+	);
+	await db.query(`update public.room_members set open = false where user_id = $1`, [C]);
+}
 const room2 = (await one(`select private.dev_open_room('alpha@cnsa.hs.kr','bravo@cnsa.hs.kr',60) as id`)).id;
 check(
-	'새 방을 열면 두 사람 모두 열린 방이 정확히 1개',
-	(await one('select count(*)::int n from public.room_members where user_id in ($1,$2) and open', [A, B])).n === 2 &&
-		(await rowsAs(A, 'select public.my_room() r'))[0].r.room.room_id === room2
+	'개발용 방 열기: 두 사람의 새 방이 가장 최근 방이 된다',
+	(await rowsAs(A, 'select public.my_room() r'))[0].r.room.room_id === room2
 );
-const aliasesDiffer = (await one('select alias1, alias2 from public.rooms where id = $1', [room2]));
-check('새 방에서는 alias 가 새로 뽑힌다 (방끼리 연결 불가)', aliasesDiffer.alias1 !== aliasesDiffer.alias2);
+const aliases2 = await one('select alias1, alias2 from public.rooms where id = $1', [room2]);
+const nickA = (await one('select nickname from public.profiles where id = $1', [A])).nickname;
+check('방 안 이름 = 계정의 고유 익명 이름', aliases2.alias1 === nickA && aliases2.alias1 !== aliases2.alias2);
 
 // ════════════════════════════════════════════════════════════════════
 //  Phase 3 — 타임박스
@@ -1038,6 +1039,184 @@ console.log('\n[36] 운영자 기능');
 	await svc('admin_update_settings', JSON.stringify({ notice: '', is_open: true }), staff);
 	await expectError('범위를 벗어난 값은 DB 가 거부', () => svc('admin_update_settings', JSON.stringify({ room_minutes: 999 }), staff), 'check');
 	check('알 수 없는 키는 무시된다', !('evil' in (await svc('admin_update_settings', JSON.stringify({ evil: 1 }), staff))));
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  Phase 8 — 고유 익명 이름 · 프로필 · 온라인 · 여러 대화
+// ════════════════════════════════════════════════════════════════════
+console.log('\n[37] 고유 익명 이름');
+{
+	const u = await signUp('nick-test@cnsa.hs.kr', true);
+	const n = (await one('select nickname from public.profiles where id = $1', [u])).nickname;
+	check('가입하면 익명 이름이 자동으로 붙는다', typeof n === 'string' && n.length >= 3);
+	check(
+		'모든 계정에 이름이 있다 (기존 계정 채우기 포함)',
+		(await cnt('select count(*)::int n from public.profiles where nickname is null')) === 0
+	);
+	check(
+		'이름은 겹치지 않는다',
+		(await cnt('select count(*)::int n from (select nickname from public.profiles group by nickname having count(*) > 1) d')) === 0
+	);
+	// 이름 공간이 붐빌 때: 같은 후보만 나오게 만들어도 숫자를 붙여 가입이 성공한다
+	await db.exec(`create or replace function private.nickname_candidate() returns text language sql volatile as $x$ select '고정이름' $x$`);
+	const k1 = await signUp('crowd-1@cnsa.hs.kr', true);
+	const k2 = await signUp('crowd-2@cnsa.hs.kr', true);
+	const [n1, n2] = [
+		(await one('select nickname from public.profiles where id = $1', [k1])).nickname,
+		(await one('select nickname from public.profiles where id = $1', [k2])).nickname
+	];
+	check('★ 후보가 겹쳐도 가입이 실패하지 않고 서로 다른 이름을 받는다', n1 !== n2 && n1.startsWith('고정이름') && n2.startsWith('고정이름'), `${n1} / ${n2}`);
+	await db.exec(readFileSync(SCHEMA, 'utf8')); // 원래 후보 함수로 되돌린다
+
+	check('★ 사용자는 이름(nickname)을 직접 바꿀 수 없다', !(await hasColPriv('nickname')));
+	check('★ 소개글도 직접 update 로는 바꿀 수 없다 (검사 함수 경유만)', !(await hasColPriv('bio')));
+}
+
+console.log('\n[38] 프로필 수정');
+{
+	const u = await person('m', 'f');
+	const up = (bio, tags, mbti) => rpcAs(u, 'update_my_profile', bio, tags, mbti);
+	const r = await up('  밴드   음악 좋아해요 ', ['  기타 ', '독서', '기타', ''], 'enfp');
+	check('소개글 공백 정리', r.bio === '밴드 음악 좋아해요');
+	check('관심사: 공백·빈 값·중복 제거, 순서 유지', JSON.stringify(r.interests) === '["기타","독서"]');
+	check('MBTI 는 대문자로 저장', r.mbti === 'ENFP');
+	check(
+		'자기 프로필에서 바로 읽힌다',
+		(await rowsAs(u, 'select bio, mbti from public.profiles where id = $1', [u]))[0]?.mbti === 'ENFP'
+	);
+	await expectError('소개글 60자 초과 거절', () => up('가'.repeat(61), [], null), 'bio_too_long');
+	await expectError('관심사 6개 거절', () => up('', ['a', 'b', 'c', 'd', 'e', 'f'], null), 'too_many_interests');
+	await expectError('관심사 12자 초과 거절', () => up('', ['가'.repeat(13)], null), 'interest_too_long');
+	await expectError('잘못된 MBTI 거절', () => up('', [], 'ABCD'), 'invalid_mbti');
+	await expectError('★ 학번·전화번호 같은 긴 숫자 거절', () => up('20231234 연락줘', [], null), 'personal_info');
+	await expectError('★ SNS 아이디(@) 거절', () => up('인스타 @hello', [], null), 'personal_info');
+	await expectError('★ 관심사에 숨겨도 거절', () => up('', ['010-1234'], null), 'personal_info');
+	const cleared = await up('', [], '');
+	check('비우기 가능 (MBTI 빈 값 → 없음)', cleared.bio === '' && cleared.mbti === null);
+	await expectError('비로그인은 수정 불가', () => rowsAs(null, `select public.update_my_profile('', '{}', null)`), 'permission denied');
+}
+
+console.log('\n[39] 비밀번호 설정 여부');
+{
+	const u = await person('m', 'f');
+	check('처음엔 비밀번호 없음', (await rpcAs(u, 'my_account')).has_password === false);
+	await db.query(`update auth.users set encrypted_password = 'hash' where id = $1`, [u]);
+	check('비밀번호를 설정하면 true', (await rpcAs(u, 'my_account')).has_password === true);
+	check('응답에 비밀번호 해시는 없다', !JSON.stringify(await rpcAs(u, 'my_account')).includes('hash'));
+}
+
+console.log('\n[40] 온라인 표시');
+{
+	await resetPool();
+	const x = await person('m', 'f');
+	const y = await person('f', 'm');
+	const r = await pairRoom(x, y);
+	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id in ($1,$2)`, [x, y]);
+	check('앱을 안 켠 상대는 오프라인', (await rpcAs(x, 'room_snapshot', r)).partner_online === false);
+	await rpcAs(y, 'heartbeat', true);
+	check('상대가 heartbeat 를 보내면 온라인', (await rpcAs(x, 'room_snapshot', r)).partner_online === true);
+	check('대화 목록에도 온라인이 보인다', (await rpcAs(x, 'my_rooms')).rooms[0].partner_online === true);
+	await rpcAs(y, 'heartbeat', false);
+	check('앱을 내려놓으면 곧바로 오프라인', (await rpcAs(x, 'room_snapshot', r)).partner_online === false);
+	await rpcAs(y, 'heartbeat', true);
+	await match(y); // 찾기 폴링(짧은 TTL)이 heartbeat 가 잡은 긴 온라인 시각을 줄이지 않는다
+	const until = (await one('select online_until > now() + interval \'30 seconds\' as ok from public.user_presence where user_id = $1', [y])).ok;
+	check('찾기 폴링이 온라인 시각을 줄이지 않는다', until === true);
+	await match(y);
+	await rpcAs(y, 'heartbeat', false);
+	check(
+		'앱을 내려놓으면 찾기도 멈춘다',
+		(await one('select seeking_until from public.user_presence where user_id = $1', [y])).seeking_until === null
+	);
+}
+
+console.log('\n[41] 상대 프로필');
+{
+	await resetPool();
+	const x = await person('m', 'f');
+	const y = await person('f', 'm');
+	const z = await person('f', 'm');
+	await rpcAs(y, 'update_my_profile', '고양이 키워요', ['고양이', '영화'], 'ISTJ');
+	const r = await pairRoom(x, y);
+	const p = await rpcAs(x, 'partner_profile', r);
+	check('같은 방 상대의 기본 정보를 본다', p.bio === '고양이 키워요' && p.mbti === 'ISTJ' && p.interests.length === 2);
+	check('상대 이름 = 상대의 고유 익명 이름', p.nickname === (await one('select nickname from public.profiles where id=$1', [y])).nickname);
+	check('★ 응답에 uuid 가 없다', !JSON.stringify(p).includes(y) && !JSON.stringify(p).includes(x));
+	check('★ 성별·선호·계정 상태는 보여주지 않는다', !('gender' in p) && !('want' in p) && !('status' in p));
+	await expectError('★ 제3자는 그 방의 프로필을 볼 수 없다', () => rpcAs(z, 'partner_profile', r), 'not_member');
+	await rpcAs(x, 'leave_room', r, false);
+	check('대화가 끝난 뒤에도 (신고하려고) 볼 수 있다', (await rpcAs(x, 'partner_profile', r)).bio === '고양이 키워요');
+	check(
+		'★ 다른 사람의 프로필 행은 직접 읽히지 않는다',
+		(await rowsAs(x, 'select bio from public.profiles where id = $1', [y])).length === 0
+	);
+}
+
+console.log('\n[42] ★ 여러 대화 동시 진행');
+{
+	await resetPool();
+	await db.query('update public.app_settings set max_open_rooms = 2');
+	const x = await person('m', 'f');
+	const y1 = await person('f', 'm');
+	const y2 = await person('f', 'm');
+	const y3 = await person('f', 'm');
+
+	await match(y1);
+	const a = await match(x);
+	check('첫 번째 대화 매칭', a.status === 'matched');
+	await rpcAs(x, 'ack_room', a.room_id);
+	await rpcAs(y1, 'ack_room', a.room_id);
+
+	await match(y2);
+	const b = await match(x);
+	check('★ 대화 중에도 새 상대를 찾아 두 번째 대화를 연다', b.status === 'matched' && b.room_id !== a.room_id);
+	await rpcAs(x, 'ack_room', b.room_id);
+
+	const list = await rpcAs(x, 'my_rooms');
+	check('대화 목록에 두 대화가 모두 있다', list.rooms.length === 2);
+	check('★ 대화 목록에 uuid 는 room_id 뿐', ![x, y1, y2].some((u) => JSON.stringify(list).includes(u)));
+
+	await match(y3);
+	const c = await match(x);
+	check('★ 동시 대화 상한(2)에 닿으면 full — 더 찾지 않는다', c.status === 'full' && c.max === 2);
+	check(
+		'full 이면 찾기 목록에서 빠진다',
+		(await one('select seeking_until from public.user_presence where user_id = $1', [x])).seeking_until === null
+	);
+
+	// 상대 쪽 상한도 지킨다
+	await db.query('update public.app_settings set max_open_rooms = 1');
+	await match(x); // x 는 이미 2개 — full
+	const d = await match(y3);
+	check('★ 상한이 찬 사람은 다른 사람에게도 잡히지 않는다', d.status === 'waiting');
+	await db.query('update public.app_settings set max_open_rooms = 5');
+
+	// 같은 사람과 두 대화는 열리지 않는다 — 재매칭 쿨다운 기록이 없어도
+	await resetPool();
+	const p = await person('m', 'f');
+	const q = await person('f', 'm');
+	await match(p);
+	const first = await match(q);
+	await rpcAs(p, 'ack_room', first.room_id);
+	await rpcAs(q, 'ack_room', first.room_id);
+	await db.query('delete from public.pair_history'); // 쿨다운이 아니라 '열린 대화' 조건만 본다
+	await match(p);
+	const second = await match(q);
+	check('★ 이미 대화가 열린 상대와는 또 매칭되지 않는다', first.status === 'matched' && second.status === 'waiting', second.status);
+
+	// 안 읽은 메시지 수 (q 가 보낸 것을 p 가 본다)
+	const qSeat = (await rpcAs(q, 'room_snapshot', first.room_id)).my_seat;
+	await sendIn(q, first.room_id, qSeat, '안녕');
+	await sendIn(q, first.room_id, qSeat, '뭐해');
+	const pl = (await rpcAs(p, 'my_rooms')).rooms.find((r) => r.room_id === first.room_id);
+	check('대화 목록: 안 읽은 메시지 수', pl.unread === 2, JSON.stringify(pl));
+	check('대화 목록: 마지막 메시지 미리보기', pl.last_body === '뭐해' && pl.last_seat === qSeat);
+	const last = (await one('select max(id)::int m from public.messages where room_id = $1', [first.room_id])).m;
+	await rpcAs(p, 'mark_read', first.room_id, last);
+	check('읽으면 0', (await rpcAs(p, 'my_rooms')).rooms.find((r) => r.room_id === first.room_id).unread === 0);
+
+	await db.query(`update public.rooms set expires_at = now() - interval '1 second' where id = $1`, [first.room_id]);
+	check('시간이 지난 대화는 목록에서 빠진다', !(await rpcAs(p, 'my_rooms')).rooms.some((r) => r.room_id === first.room_id));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -5,6 +5,7 @@ type MatchRes =
 	| { status: 'waiting'; reason: 'empty' | 'filtered'; poll_ms?: number }
 	| { status: 'busy' | 'retry' | 'cooldown'; retry_after_ms?: number }
 	| { status: 'not_eligible' }
+	| { status: 'full'; max: number }
 	| { status: 'service_closed'; notice?: string };
 
 /**
@@ -100,6 +101,11 @@ export class Seeker {
 				// 넘기기를 너무 빨리 반복했다 — 잠깐 쉬었다가. 그동안에도 서버 풀에는 남아 있어 잡힐 수는 있다.
 				this.reason = 'cooldown';
 				this.#schedule(Math.min(res.retry_after_ms ?? 5000, 4000) + Math.random() * 400);
+				return;
+			case 'full':
+				// 동시 대화 상한 — 하나를 끝내야 새로 찾을 수 있다
+				this.#halt();
+				this.onStopped(`대화는 동시에 ${res.max}개까지 할 수 있어요`);
 				return;
 			case 'not_eligible':
 				this.#halt();

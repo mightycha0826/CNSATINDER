@@ -1,9 +1,16 @@
 <script lang="ts">
-	import { errMsg, saveOnboarding, toast } from '$lib/state.svelte';
+	import Avatar from '$lib/Avatar.svelte';
+	import PasswordFields from '$lib/PasswordFields.svelte';
+	import { S, errMsg, saveOnboarding, setPassword, toast } from '$lib/state.svelte';
 
 	let gender: 'm' | 'f' | null = $state(null);
 	let want: 'm' | 'f' | 'any' | null = $state(null);
 	let busy = $state(false);
+
+	// 처음 인증 코드로 들어온 사람은 여기서 비밀번호를 정한다 → 다음부터 코드 없이 로그인
+	const needPassword = $derived(S.hasPassword === false);
+	let password = $state('');
+	let passwordOk = $state(false);
 
 	// 기본값은 이성. 성별을 고르면 선호를 미리 채워 준다(바꿀 수 있음).
 	function pickGender(g: 'm' | 'f') {
@@ -11,12 +18,13 @@
 		want ??= g === 'm' ? 'f' : 'm';
 	}
 
-	const ready = $derived(!!gender && !!want);
+	const ready = $derived(!!gender && !!want && (!needPassword || passwordOk));
 
 	async function submit() {
 		if (!ready || busy) return;
 		busy = true;
 		try {
+			if (needPassword) await setPassword(password);
 			await saveOnboarding(gender!, want!);
 		} catch (e) {
 			toast(errMsg(e));
@@ -29,6 +37,25 @@
 <div class="topbar"><span class="title">시작하기</span></div>
 
 <div class="page ob">
+	{#if S.profile?.nickname}
+		<section class="me">
+			<Avatar name={S.profile.nickname} size={56} />
+			<div>
+				<p class="muted small">내 익명 이름</p>
+				<p class="nick">{S.profile.nickname}</p>
+			</div>
+		</section>
+		<p class="hint muted nick-hint">대화 상대에게는 이 이름으로만 보여요. 바꿀 수 없어요.</p>
+	{/if}
+
+	{#if needPassword}
+		<section>
+			<h2>비밀번호 만들기</h2>
+			<PasswordFields bind:value={password} bind:valid={passwordOk} />
+			<p class="hint muted">다음부터는 학교 이메일과 이 비밀번호로 바로 들어와요.</p>
+		</section>
+	{/if}
+
 	<section>
 		<h2>나는</h2>
 		<div class="opts">
@@ -129,5 +156,25 @@
 
 	.foot {
 		margin-top: auto;
+	}
+
+	.me {
+		flex-direction: row;
+		align-items: center;
+		gap: 14px;
+	}
+	.me p {
+		margin: 0;
+	}
+	.small {
+		font-size: 12px;
+	}
+	.nick {
+		font-size: 20px;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+	}
+	.nick-hint {
+		margin-top: -16px;
 	}
 </style>
