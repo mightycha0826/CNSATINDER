@@ -13,7 +13,8 @@
 		"test:chat": "node scripts/chat-logic.test.mjs",
 		"test:e2e": "node scripts/realtime-e2e.mjs",
 		"test:match": "node scripts/match-stress.mjs",
-		"test:admin": "node scripts/admin-session.test.mjs"
+		"test:admin": "node scripts/admin-session.test.mjs",
+		"test:toast": "node --no-warnings --conditions=browser scripts/toast.test.mjs"
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "^0.3.14",

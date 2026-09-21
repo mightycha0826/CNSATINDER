@@ -25,14 +25,11 @@ export type Settings = {
 	msg_max_len: number;
 };
 
-type Toast = { id: number; text: string; out?: boolean };
-
 export const S = $state({
 	booted: false,
 	session: null as Session | null,
 	profile: null as Profile | null,
 	settings: null as Settings | null,
-	toasts: [] as Toast[],
 	/** 전역 1초 틱. 카운트다운·상대시간 표시가 여기에 붙는다. */
 	now: Date.now()
 });
@@ -50,18 +47,8 @@ export const isIOS = () =>
 	!/crios|fxios/i.test(navigator.userAgent);
 
 // ── 토스트 ────────────────────────────────────────────────────────────
-let toastSeq = 0;
-export function toast(text: string) {
-	const t: Toast = { id: ++toastSeq, text };
-	S.toasts.push(t);
-	setTimeout(() => {
-		t.out = true;
-		setTimeout(() => {
-			const i = S.toasts.indexOf(t);
-			if (i >= 0) S.toasts.splice(i, 1);
-		}, 260);
-	}, 2400);
-}
+// 의존성 없는 별도 모듈로 분리 (브라우저 모드로 직접 테스트하기 위해). 기존 import 경로는 그대로 쓴다.
+export { toast, toasts } from './toast.svelte';
 
 // ── 에러 한국어 매핑 ──────────────────────────────────────────────────
 export function errMsg(e: unknown): string {

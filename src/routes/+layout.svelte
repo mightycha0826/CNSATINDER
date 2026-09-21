@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { hasSupabase } from '$lib/supabase';
-	import { S, UI, init } from '$lib/state.svelte';
+	import { S, UI, init, toasts } from '$lib/state.svelte';
 
 	let { children } = $props();
 
@@ -84,7 +84,7 @@
 {/if}
 
 <div class="toasts">
-	{#each S.toasts as t (t.id)}
+	{#each toasts as t (t.id)}
 		<div class="toast" class:out={t.out}>{t.text}</div>
 	{/each}
 </div>
