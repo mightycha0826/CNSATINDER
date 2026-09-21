@@ -1,0 +1,254 @@
+/* ────────────────────────────────────────────────────────────
+   십분 — 디자인 토큰
+   레퍼런스: 인스타그램 DM (구조·밀도·회색 스케일만. 브랜드 자산은 쓰지 않음)
+   원칙: 순수 흑백 대비로 위계 · 서체 하나 · 액센트 하나 · 그림자 없음
+   ──────────────────────────────────────────────────────────── */
+
+:root {
+	--bg: #ffffff;
+	--surface: #fafafa;
+	--field: #efefef;
+	--line: #dbdbdb;
+	--text: #000000;
+	--text-2: #8e8e8e;
+	--accent: #0095f6;
+	--accent-press: #1877f2;
+	--on-accent: #ffffff;
+	--danger: #ed4956;
+
+	--r-sm: 8px;
+	--r-bubble: 22px;
+	--pad: 16px;
+	--header-h: 44px;
+
+	--sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Apple SD Gothic Neo',
+		'Noto Sans KR', 'Malgun Gothic', sans-serif;
+}
+
+/* 다크는 시스템 설정을 따른다 (인스타와 동일). JS 없이 동작. */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--bg: #000000;
+		--surface: #121212;
+		--field: #262626;
+		--line: #262626;
+		--text: #f5f5f5;
+		--text-2: #a8a8a8;
+		--accent-press: #3ea6ff;
+	}
+}
+
+:root[data-theme='dark'] {
+	--bg: #000000;
+	--surface: #121212;
+	--field: #262626;
+	--line: #262626;
+	--text: #f5f5f5;
+	--text-2: #a8a8a8;
+	--accent-press: #3ea6ff;
+}
+
+* {
+	box-sizing: border-box;
+	-webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--sans);
+	font-size: 15px;
+	line-height: 1.45;
+	-webkit-font-smoothing: antialiased;
+	overscroll-behavior-y: none;
+}
+
+body {
+	/* 앱은 모바일 폭 기준. 데스크톱에서는 가운데 정렬된 세로 캔버스. */
+	display: flex;
+	justify-content: center;
+}
+
+#app {
+	width: 100%;
+	max-width: 520px;
+	min-height: 100%;
+	display: flex;
+	flex-direction: column;
+	background: var(--bg);
+}
+
+@media (min-width: 560px) {
+	#app {
+		border-inline: 1px solid var(--line);
+	}
+}
+
+button {
+	font: inherit;
+	color: inherit;
+	background: none;
+	border: 0;
+	padding: 0;
+	cursor: pointer;
+}
+
+input,
+textarea,
+select {
+	font: inherit;
+	color: inherit;
+}
+
+a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+/* ── 공통 요소 ───────────────────────────────────────────── */
+
+.hair {
+	border-bottom: 1px solid var(--line);
+}
+
+.muted {
+	color: var(--text-2);
+}
+
+.num {
+	font-variant-numeric: tabular-nums;
+}
+
+/* 채운 액센트 버튼 — 인스타 기본 CTA */
+.btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	width: 100%;
+	height: 44px;
+	border-radius: var(--r-sm);
+	background: var(--accent);
+	color: var(--on-accent);
+	font-weight: 600;
+	font-size: 15px;
+	transition: opacity 0.12s;
+}
+.btn:active {
+	background: var(--accent-press);
+}
+.btn:disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+
+/* 보조 버튼 — 테두리만 */
+.btn-ghost {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 44px;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--line);
+	font-weight: 600;
+	font-size: 15px;
+}
+.btn-ghost:active {
+	background: var(--field);
+}
+
+/* 텍스트 버튼 */
+.btn-text {
+	color: var(--accent);
+	font-weight: 600;
+	font-size: 14px;
+}
+.btn-text:disabled {
+	color: var(--text-2);
+	cursor: default;
+}
+
+.field {
+	width: 100%;
+	height: 44px;
+	padding: 0 12px;
+	border-radius: var(--r-sm);
+	border: 1px solid var(--line);
+	background: var(--surface);
+	outline: none;
+}
+.field::placeholder {
+	color: var(--text-2);
+}
+.field:focus {
+	border-color: var(--text-2);
+}
+
+/* 화면 상단 헤더 — 44px + hairline */
+.topbar {
+	position: sticky;
+	top: 0;
+	z-index: 10;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	height: var(--header-h);
+	padding: 0 var(--pad);
+	background: var(--bg);
+	border-bottom: 1px solid var(--line);
+}
+
+.title {
+	font-weight: 700;
+	font-size: 17px;
+	letter-spacing: -0.02em;
+}
+
+/* 본문 블록 */
+.page {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	padding: 0 var(--pad);
+}
+
+/* 토스트 */
+.toasts {
+	position: fixed;
+	left: 50%;
+	bottom: calc(24px + env(safe-area-inset-bottom));
+	transform: translateX(-50%);
+	z-index: 100;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	pointer-events: none;
+}
+.toast {
+	padding: 10px 14px;
+	border-radius: var(--r-sm);
+	background: var(--text);
+	color: var(--bg);
+	font-size: 14px;
+	font-weight: 500;
+	opacity: 1;
+	transition: opacity 0.26s;
+}
+.toast.out {
+	opacity: 0;
+}
+
+/* 부팅 스플래시 — 리다이렉트 플리커 방지 */
+.splash {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-2);
+	font-size: 14px;
+}
