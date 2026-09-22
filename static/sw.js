@@ -7,7 +7,7 @@
  *   · Supabase API / 웹소켓 요청에는 절대 손대지 않는다
  */
 
-const VERSION = 'cnsatinder-v2'; // 아이콘·이름 교체로 캐시를 새로 받게 한다
+const VERSION = 'cnsatinder-v3'; // 아이콘을 바꾸면 올린다 — 설치된 앱이 캐시를 새로 받는다
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
