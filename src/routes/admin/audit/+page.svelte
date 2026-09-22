@@ -1,19 +1,10 @@
 <script lang="ts">
+	import { ACTION_LABEL as LABEL } from '$lib/adminTypes';
+
 	let { data } = $props();
 
-	const LABEL: Record<string, string> = {
-		view_identity: '신원 열람',
-		auto_suspend: '자동 정지',
-		sanction_warn: '경고',
-		sanction_suspend: '기간 정지',
-		sanction_ban: '영구 정지',
-		sanction_reinstate: '제한 해제',
-		report_open: '신고 다시 열기',
-		report_reviewing: '검토 시작',
-		report_actioned: '조치 완료',
-		report_dismissed: '신고 기각',
-		update_settings: '설정 변경'
-	};
+	/** 열람·검색 계열 — 표에서 눈에 띄게 */
+	const VIEW = new Set(['view_identity', 'search_email', 'view_room', 'view_letter_authors', 'view_user_letters']);
 	const fmt = (s: string) =>
 		new Date(s).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 	const short = (id: string | null) => (id ? id.slice(0, 6) : '—');
@@ -23,6 +14,8 @@
 		if (d.note) parts.push(String(d.note));
 		if (d.distinct_reporters) parts.push(`신고자 ${d.distinct_reporters}명`);
 		if (Array.isArray(d.users)) parts.push(`${d.users.length}명 이메일`);
+		if (d.query) parts.push(`"${d.query}"`);
+		if (d.room || d.letter) return parts.join(' · ');
 		if (!parts.length && Object.keys(d).length) parts.push(JSON.stringify(d));
 		return parts.join(' · ');
 	};
@@ -30,7 +23,7 @@
 
 <h1>활동 기록</h1>
 <p class="muted lead">
-	운영진의 모든 조치와 신원 열람이 여기에 남습니다. 지울 수 없어요.
+	운영진의 모든 조치와 열람(이메일·대화·편지 작성자)이 여기에 남습니다. 지울 수 없음.
 </p>
 
 <table>
@@ -39,12 +32,18 @@
 	</thead>
 	<tbody>
 		{#each data.log as a (a.id)}
-			<tr class:identity={a.action === 'view_identity'}>
+			<tr class:identity={VIEW.has(a.action)}>
 				<td class="num muted">{fmt(a.created_at)}</td>
-				<td class="mono">{a.staff_id ? short(a.staff_id) : '시스템'}</td>
+				<td class="mono">
+					{#if a.staff_id}<a href="/admin/users/{a.staff_id}">{short(a.staff_id)}</a>{:else}시스템{/if}
+				</td>
 				<td class="act">{LABEL[a.action] ?? a.action}</td>
 				<td class="mono">
-					{#if a.report_id}<a href="/admin/reports/{a.report_id}">신고 {short(a.report_id)}</a>{:else}{short(a.target_user)}{/if}
+					{#if a.detail?.room}<a href="/admin/rooms/{a.detail.room}">대화 {short(String(a.detail.room))}</a>
+					{:else if a.detail?.letter}<a href="/admin/posts/{a.detail.letter}">편지 #{a.detail.letter}</a>
+					{:else if a.target_user}<a href="/admin/users/{a.target_user}">{short(a.target_user)}</a>
+					{:else if a.report_id}<a href="/admin/{a.action.includes('letter') || a.action.startsWith('remove_') ? 'letters' : 'reports'}/{a.report_id}">신고 {short(a.report_id)}</a>
+					{:else}—{/if}
 				</td>
 				<td class="d">{detail(a.detail)}</td>
 			</tr>

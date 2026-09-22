@@ -1588,5 +1588,112 @@ console.log('\n[52] ★ 익명편지 — 알림 · 운영자');
 	check('대시보드에 편지 수치', typeof (await svc('admin_stats')).open_letter_reports === 'number');
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  Phase 11 — 관리자 권한 확장
+// ════════════════════════════════════════════════════════════════════
+const audits = async (action, staff) =>
+	cnt('select count(*)::int n from private.audit_log where action = $1 and staff_id = $2', [action, staff]);
+
+console.log('\n[53] ★ 역할 분리 — 운영진 vs 관리자');
+{
+	const adm = await person('m', 'f');
+	const mod = await person('f', 'm');
+	const outsider = await person('m', 'f');
+	await db.query(`insert into private.staff (user_id, role) values ($1, 'admin'), ($2, 'moderator')`, [adm, mod]);
+	const u = await person('m', 'f');
+
+	for (const fn of ['admin_find_users(null, null, null, 10)', `admin_user('${u}', '${u}')`,
+		`admin_rooms('all', '${u}', 10)`, `admin_room('${u}', '${u}')`, `admin_letter_post(1, '${u}')`,
+		`admin_user_letters('${u}', '${u}')`, `admin_user_rooms('${u}', '${u}')`]) {
+		await expectError(`★ 학생 계정으로 ${fn.split('(')[0]} 호출 불가`, () => rowsAs(u, `select public.${fn}`), 'permission denied');
+	}
+	await expectError('★ 운영진 명단에 없으면 service_role 이라도 거절', () => svc('admin_user', u, outsider), 'not_staff');
+	await expectError('★ 명단에 없는 사람 이름으로 제재 불가', () => svc('admin_sanction', u, 'warn', null, outsider, null, ''), 'not_staff');
+
+	check('운영진: 경고 가능', (await svc('admin_sanction', u, 'warn', null, mod, null, '')).strikes >= 1);
+	check('운영진: 7일 정지 가능', !!(await svc('admin_sanction', u, 'suspend', 7, mod, null, '')).suspended_until);
+	await expectError('★ 운영진: 8일 이상 정지 불가', () => svc('admin_sanction', u, 'suspend', 8, mod, null, ''), 'mod_days_limit');
+	await expectError('★ 운영진: 영구 정지 불가', () => svc('admin_sanction', u, 'ban', null, mod, null, ''), 'admin_only');
+	await svc('admin_sanction', u, 'ban', null, adm, null, '');
+	check('관리자: 영구 정지 가능', (await one('select status from public.profiles where id=$1', [u])).status === 'banned');
+	await expectError('★ 운영진: 영구정지 해제 불가', () => svc('admin_sanction', u, 'reinstate', null, mod, null, ''), 'admin_only');
+	await expectError('★ 운영진: 다른 운영진 제재 불가', () => svc('admin_sanction', adm, 'warn', null, mod, null, ''), 'admin_only');
+	await svc('admin_sanction', u, 'reinstate', null, adm, null, '');
+	check('관리자: 해제 가능', (await one('select status from public.profiles where id=$1', [u])).status === 'active');
+
+	await expectError('★ 운영진: 이메일 열람 불가', () => svc('admin_log_identity_view', mod, [u], null), 'admin_only');
+	await expectError('★ 운영진: 이메일 검색 불가', () => svc('admin_find_users', '@cnsa', 'all', mod, 10), 'admin_only');
+	for (const [fn, args] of [['admin_rooms', ['all', mod, 10]], ['admin_room', [u, mod]], ['admin_user_rooms', [u, mod]],
+		['admin_letter_post', [1, mod]], ['admin_user_letters', [u, mod]]]) {
+		await expectError(`★ 운영진: ${fn} 불가 (관리자 전용)`, () => svc(fn, ...args), 'admin_only');
+	}
+	check('운영진: 사용자 상세는 볼 수 있다', (await svc('admin_user', u, mod)).profile.id === u);
+}
+
+console.log('\n[54] 사용자 검색 · 상세');
+{
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const u = await person('f', 'm');
+	const nick = (await one('select nickname from public.profiles where id = $1', [u])).nickname;
+	const byNick = await svc('admin_find_users', nick, 'all', adm, 50);
+	check('익명 이름으로 검색', byNick.some((x) => x.id === u));
+	check('ID 앞자리로 검색', (await svc('admin_find_users', u.slice(0, 8), 'all', adm, 50)).some((x) => x.id === u));
+	check('★ 검색 결과에 이메일이 없다', !JSON.stringify(byNick).includes('@'));
+	const before = await audits('search_email', adm);
+	const email = await emailOf(u);
+	check('관리자: 이메일로 검색', (await svc('admin_find_users', email, 'all', adm, 50)).some((x) => x.id === u));
+	check('★ 이메일 검색은 기록된다', (await audits('search_email', adm)) === before + 1);
+	check('필터: 운영진', (await svc('admin_find_users', '', 'staff', adm, 200)).every((x) => x.staff_role));
+	await svc('admin_sanction', u, 'suspend', 2, adm, null, '테스트');
+	check('필터: 이용 제한', (await svc('admin_find_users', '', 'restricted', adm, 200)).some((x) => x.id === u));
+
+	const d = await svc('admin_user', u, adm);
+	check('상세: 프로필 · 활동 수 · 제재 이력', d.profile.nickname === nick && typeof d.counts.rooms === 'number' &&
+		d.history.some((h) => h.action === 'sanction_suspend'));
+	check('★ 상세에 이메일이 없다', !JSON.stringify(d).includes('@'));
+	check('없는 사용자는 null', (await svc('admin_user', '00000000-0000-0000-0000-000000000000', adm)) === null);
+}
+
+console.log('\n[55] ★ 관리자 열람 — 대화 · 편지 작성자 (전부 기록)');
+{
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const x = await person('m', 'f');
+	const y = await person('f', 'm');
+	const r = await pairRoom(x, y);
+	await sendIn(x, r, 1, '안녕');
+	await sendIn(y, r, 2, '반가워');
+
+	const list = await svc('admin_rooms', 'live', adm, 300);
+	const item = list.find((z) => z.id === r);
+	check('진행 중 대화 목록', !!item && item.live === true && item.message_count === 2);
+	check('목록에는 두 사람 계정이 나온다', item.members.map((m) => m.user_id).sort().join() === [x, y].sort().join());
+	const mine = await svc('admin_user_rooms', x, adm);
+	check('한 사람의 대화 목록 + 상대', mine.some((z) => z.id === r && z.partner_id === y));
+
+	const before = await audits('view_room', adm);
+	const room = await svc('admin_room', r, adm);
+	check('대화 내용 열람', room.messages.filter((m) => m.seat > 0).map((m) => m.body).join() === '안녕,반가워');
+	check('누가 어느 자리인지', room.members.find((m) => m.seat === 1).user_id === x);
+	check('★ 대화 열람은 열 때마다 기록된다', (await audits('view_room', adm)) === before + 1);
+
+	await resetLetters();
+	const a = await postLetter(x, '관리자 확인용 편지');
+	const c = await postComment(y, a.letter_id, null, '댓글');
+	await rpcAs(x, 'delete_my_comment', (await postComment(x, a.letter_id, null, '지울 댓글')).comment_id);
+	const post = await svc('admin_letter_post', a.letter_id, adm);
+	check('편지 작성자 확인', post.participants.find((p) => p.is_author).user_id === x);
+	const cy = post.comments.find((z) => z.id === c.comment_id);
+	check('댓글 작성자 확인 (author_no → 계정)', post.participants.find((p) => p.no === cy.author_no).user_id === y);
+	check('지운 댓글도 운영자에게는 보인다', post.comments.some((z) => z.status === 'removed'));
+	check('★ 편지 작성자 확인은 기록된다', (await audits('view_letter_authors', adm)) >= 1);
+	const ul = await svc('admin_user_letters', y, adm);
+	check('한 사람이 쓴 편지·댓글', ul.some((z) => z.letter_id === a.letter_id && !z.is_author && z.my_comments === 1));
+	check('★ 활동 열람도 기록된다', (await audits('view_user_letters', adm)) >= 1);
+
+	// 학생 쪽 경계는 그대로
+	const yd = JSON.stringify(await detail(y, a.letter_id));
+	check('★ 학생 화면에는 여전히 uuid 가 없다', !yd.includes(x) && !yd.includes(y));
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

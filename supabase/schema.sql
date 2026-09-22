@@ -2543,3 +2543,313 @@ begin
   end if;
 end
 $do$;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 11 — 관리자 권한 확장
+--
+--  역할:
+--    moderator(운영진) — 신고 처리, 경고, 7일 이하 정지, 사용자 검색(익명 이름·ID)·상세
+--    admin(관리자)     — 위 전부 + 영구 정지·영구정지 해제, 이메일 열람·이메일 검색,
+--                        모든 대화 열람, 모든 편지·댓글 작성자 확인, 설정 변경
+--
+--  ★ 학생 앱의 구조적 익명성(학생끼리)은 그대로다. 넓어진 것은 운영자 → 학생 방향의 열람뿐이고,
+--    모든 열람·검색은 private.audit_log 에 남는다. 역할 검사는 서버 라우트와 이 함수들 양쪽에서 한다.
+-- ════════════════════════════════════════════════════════════════════
+
+create or replace function private.require_staff(p_staff uuid, p_admin boolean default false)
+returns text language plpgsql security definer set search_path = public, private stable as $fn$
+declare v text;
+begin
+  select role into v from private.staff where user_id = p_staff;
+  if v is null then raise exception 'not_staff'; end if;
+  if p_admin and v <> 'admin' then raise exception 'admin_only'; end if;
+  return v;
+end
+$fn$;
+revoke all on function private.require_staff(uuid, boolean) from public, anon, authenticated;
+
+-- 운영진이 정지할 수 있는 최대 일수
+create or replace function private.mod_max_suspend_days() returns int
+language sql immutable as $fn$ select 7 $fn$;
+
+-- 역할 검사가 들어간 제재 (기존 시그니처 유지)
+create or replace function public.admin_sanction(
+  p_user uuid, p_action text, p_days int, p_staff uuid, p_report uuid, p_note text)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare v_role text := private.require_staff(p_staff);
+begin
+  if v_role <> 'admin' then
+    if p_action = 'ban' then raise exception 'admin_only'; end if;
+    if p_action = 'suspend' and coalesce(p_days, 0) > private.mod_max_suspend_days() then
+      raise exception 'mod_days_limit';
+    end if;
+    if p_action = 'reinstate' and exists (select 1 from public.profiles where id = p_user and status = 'banned') then
+      raise exception 'admin_only';
+    end if;
+    if exists (select 1 from private.staff where user_id = p_user) then raise exception 'admin_only'; end if;
+  end if;
+
+  if p_action = 'warn' then
+    update public.profiles set strikes = strikes + 1 where id = p_user;
+  elsif p_action = 'suspend' then
+    if coalesce(p_days, 0) < 1 then raise exception 'days_required'; end if;
+    update public.profiles
+       set status = 'active', suspended_until = now() + make_interval(days => p_days), strikes = strikes + 1
+     where id = p_user;
+  elsif p_action = 'ban' then
+    update public.profiles set status = 'banned', strikes = strikes + 1 where id = p_user;
+  elsif p_action = 'reinstate' then
+    update public.profiles set status = 'active', suspended_until = null where id = p_user;
+  else
+    raise exception 'invalid_action';
+  end if;
+
+  if p_action in ('suspend', 'ban') then
+    perform public.close_room(rm.room_id, 'admin')
+       from public.room_members rm where rm.user_id = p_user and rm.open;
+    update public.user_presence set seeking_until = null, seeking_since = null where user_id = p_user;
+  end if;
+
+  insert into private.audit_log (staff_id, action, target_user, report_id, detail)
+  values (p_staff, 'sanction_' || p_action, p_user, p_report,
+          jsonb_build_object('days', p_days, 'note', p_note));
+  return (select jsonb_build_object('status', status, 'strikes', strikes, 'suspended_until', suspended_until)
+            from public.profiles where id = p_user);
+end
+$fn$;
+
+-- 이메일 열람은 관리자만 (기존 시그니처 유지)
+create or replace function public.admin_log_identity_view(p_staff uuid, p_users uuid[], p_report uuid)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+begin
+  perform private.require_staff(p_staff, true);
+  insert into private.audit_log (staff_id, action, target_user, report_id, detail)
+  values (p_staff, 'view_identity', case when cardinality(p_users) = 1 then p_users[1] end, p_report,
+          jsonb_build_object('users', p_users));
+end
+$fn$;
+
+-- 한 사람이 받은 신고 수 (기각 제외, 채팅 + 편지)
+create or replace function private.reports_received(p_user uuid) returns int
+language sql security definer set search_path = public, private stable as $fn$
+  select ((select count(*) from private.reports where reported_id = p_user and status <> 'dismissed')
+        + (select count(*) from private.letter_reports where reported_id = p_user and status <> 'dismissed'))::int;
+$fn$;
+revoke all on function private.reports_received(uuid) from public, anon, authenticated;
+
+-- 사용자 검색.  p_filter: all | restricted | staff
+--   '@' 가 들어간 검색어 = 이메일 검색 → 관리자만, 기록 남김
+--   그 외 = 익명 이름 부분 일치 또는 ID 앞자리
+create or replace function public.admin_find_users(p_query text, p_filter text, p_staff uuid, p_limit int default 50)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  q text := btrim(coalesce(p_query, ''));
+  by_email boolean := position('@' in btrim(coalesce(p_query, ''))) > 0;
+begin
+  perform private.require_staff(p_staff, by_email);
+  if by_email then
+    insert into private.audit_log (staff_id, action, detail)
+    values (p_staff, 'search_email', jsonb_build_object('query', q));
+  end if;
+
+  return (select coalesce(jsonb_agg(x order by x.created_at desc), '[]'::jsonb) from (
+    select p.id, p.nickname, p.status, p.suspended_until, p.strikes, p.verified, p.onboarded, p.created_at,
+           coalesce(pr.online_until > now(), false) as online, pr.online_until as last_seen,
+           s.role as staff_role,
+           private.reports_received(p.id) as reports_received
+      from public.profiles p
+      left join public.user_presence pr on pr.user_id = p.id
+      left join private.staff s on s.user_id = p.id
+     where (q = ''
+            or (by_email and exists (select 1 from auth.users u where u.id = p.id and u.email ilike '%' || q || '%'))
+            or (not by_email and (p.nickname ilike '%' || q || '%' or p.id::text like lower(q) || '%')))
+       and (coalesce(p_filter, 'all') = 'all'
+            or (p_filter = 'restricted' and (p.status <> 'active' or p.suspended_until > now()))
+            or (p_filter = 'staff' and s.role is not null))
+     order by p.created_at desc
+     limit least(greatest(coalesce(p_limit, 50), 1), 200)
+  ) x);
+end
+$fn$;
+
+-- 사용자 상세 (이메일 없음 — 이메일은 admin_log_identity_view 후 서버가 따로 조회)
+create or replace function public.admin_user(p_user uuid, p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  perform private.require_staff(p_staff);
+  if not exists (select 1 from public.profiles where id = p_user) then return null; end if;
+  return jsonb_build_object(
+    'profile', (select jsonb_build_object(
+                  'id', p.id, 'nickname', p.nickname, 'bio', p.bio, 'interests', p.interests, 'mbti', p.mbti,
+                  'gender', p.gender, 'want', p.want, 'status', p.status, 'suspended_until', p.suspended_until,
+                  'strikes', p.strikes, 'verified', p.verified, 'onboarded', p.onboarded, 'created_at', p.created_at)
+                  from public.profiles p where p.id = p_user),
+    'online', coalesce((select online_until > now() from public.user_presence where user_id = p_user), false),
+    'last_seen', (select online_until from public.user_presence where user_id = p_user),
+    'staff_role', (select role from private.staff where user_id = p_user),
+    'counts', jsonb_build_object(
+      'rooms', (select count(*) from public.room_members where user_id = p_user),
+      'open_rooms', (select count(*) from public.room_members where user_id = p_user and open),
+      'letters', (select count(*) from public.letter_participants where user_id = p_user and is_author),
+      'comments', (select count(*) from public.letter_comments c
+                     join public.letter_participants lp
+                       on lp.letter_id = c.letter_id and lp.participant_no = c.author_no
+                    where lp.user_id = p_user),
+      'reports_filed', (select count(*) from private.reports where reporter_id = p_user)
+                     + (select count(*) from private.letter_reports where reporter_id = p_user),
+      'reports_dismissed', (select count(*) from private.reports where reporter_id = p_user and status = 'dismissed')
+                         + (select count(*) from private.letter_reports where reporter_id = p_user and status = 'dismissed')),
+    'chat_reports', (select coalesce(jsonb_agg(jsonb_build_object(
+                        'id', r.id, 'created_at', r.created_at, 'reason', r.reason, 'status', r.status)
+                        order by r.created_at desc), '[]'::jsonb)
+                       from (select * from private.reports where reported_id = p_user
+                              order by created_at desc limit 50) r),
+    'letter_reports', (select coalesce(jsonb_agg(jsonb_build_object(
+                          'id', r.id, 'created_at', r.created_at, 'reason', r.reason, 'status', r.status,
+                          'target_type', r.target_type)
+                          order by r.created_at desc), '[]'::jsonb)
+                         from (select * from private.letter_reports where reported_id = p_user
+                                order by created_at desc limit 50) r),
+    'history', (select coalesce(jsonb_agg(jsonb_build_object(
+                   'action', a.action, 'staff_id', a.staff_id, 'detail', a.detail, 'created_at', a.created_at)
+                   order by a.created_at desc), '[]'::jsonb)
+                  from (select * from private.audit_log
+                         where target_user = p_user and (action like 'sanction_%' or action like '%auto_suspend%')
+                         order by created_at desc limit 50) a));
+end
+$fn$;
+
+-- 한 사람의 대화 목록 (관리자) — 내용은 admin_room 으로
+create or replace function public.admin_user_rooms(p_user uuid, p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+begin
+  perform private.require_staff(p_staff, true);
+  return (select coalesce(jsonb_agg(x order by x.created_at desc), '[]'::jsonb) from (
+    select r.id, r.status, r.created_at, r.closed_at, r.close_reason,
+           (r.status <> 'closed' and now() < r.expires_at) as live,
+           case when me.seat = 1 then r.alias1 else r.alias2 end as alias,
+           other.user_id as partner_id,
+           (select nickname from public.profiles where id = other.user_id) as partner_nickname,
+           (select count(*) from public.messages m where m.room_id = r.id and m.sender_seat > 0) as message_count
+      from public.room_members me
+      join public.rooms r on r.id = me.room_id
+      left join public.room_members other on other.room_id = r.id and other.user_id <> me.user_id
+     where me.user_id = p_user
+     order by r.created_at desc
+     limit 200
+  ) x);
+end
+$fn$;
+
+-- 전체 대화 목록 (관리자).  p_filter: live | all
+create or replace function public.admin_rooms(p_filter text, p_staff uuid, p_limit int default 100)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+begin
+  perform private.require_staff(p_staff, true);
+  return (select coalesce(jsonb_agg(x order by x.created_at desc), '[]'::jsonb) from (
+    select r.id, r.status, r.created_at, r.closed_at, r.close_reason, r.round,
+           (r.status <> 'closed' and now() < r.expires_at) as live,
+           (select jsonb_agg(jsonb_build_object('seat', rm.seat, 'user_id', rm.user_id,
+                     'nickname', (select nickname from public.profiles where id = rm.user_id)) order by rm.seat)
+              from public.room_members rm where rm.room_id = r.id) as members,
+           (select count(*) from public.messages m where m.room_id = r.id and m.sender_seat > 0) as message_count
+      from public.rooms r
+     where coalesce(p_filter, 'all') = 'all'
+        or (p_filter = 'live' and r.status <> 'closed' and now() < r.expires_at)
+     order by r.created_at desc
+     limit least(greatest(coalesce(p_limit, 100), 1), 300)
+  ) x);
+end
+$fn$;
+
+-- 대화 열람 (관리자) — 열 때마다 기록
+create or replace function public.admin_room(p_room uuid, p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare r public.rooms%rowtype;
+begin
+  perform private.require_staff(p_staff, true);
+  select * into r from public.rooms where id = p_room;
+  if not found then return null; end if;
+  insert into private.audit_log (staff_id, action, detail)
+  values (p_staff, 'view_room', jsonb_build_object('room', p_room));
+  return jsonb_build_object(
+    'room', jsonb_build_object('id', r.id, 'status', r.status, 'round', r.round, 'created_at', r.created_at,
+              'armed_at', r.armed_at, 'expires_at', r.expires_at, 'closed_at', r.closed_at,
+              'close_reason', r.close_reason, 'live', r.status <> 'closed' and now() < r.expires_at),
+    'members', (select coalesce(jsonb_agg(jsonb_build_object(
+                   'seat', rm.seat, 'user_id', rm.user_id, 'open', rm.open,
+                   'alias', case when rm.seat = 1 then r.alias1 else r.alias2 end,
+                   'nickname', p.nickname, 'status', p.status) order by rm.seat), '[]'::jsonb)
+                  from public.room_members rm join public.profiles p on p.id = rm.user_id
+                 where rm.room_id = p_room),
+    'messages', (select coalesce(jsonb_agg(jsonb_build_object(
+                    'id', m.id, 'seat', m.sender_seat, 'body', m.body, 'created_at', m.created_at) order by m.id), '[]'::jsonb)
+                   from public.messages m where m.room_id = p_room));
+end
+$fn$;
+
+-- 편지 한 통의 작성자·참여자 확인 (관리자) — 기록 남김. 내려간 글·댓글도 보인다.
+create or replace function public.admin_letter_post(p_letter bigint, p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare l public.letters%rowtype;
+begin
+  perform private.require_staff(p_staff, true);
+  select * into l from public.letters where id = p_letter;
+  if not found then return null; end if;
+  insert into private.audit_log (staff_id, action, detail)
+  values (p_staff, 'view_letter_authors', jsonb_build_object('letter', p_letter));
+  return jsonb_build_object(
+    'letter', jsonb_build_object('id', l.id, 'body', l.body, 'status', l.status,
+               'reply_status', l.reply_status, 'created_at', l.created_at),
+    'participants', (select coalesce(jsonb_agg(jsonb_build_object(
+                        'no', lp.participant_no, 'alias', lp.alias, 'is_author', lp.is_author,
+                        'user_id', lp.user_id, 'nickname', p.nickname, 'status', p.status) order by lp.participant_no), '[]'::jsonb)
+                       from public.letter_participants lp join public.profiles p on p.id = lp.user_id
+                      where lp.letter_id = p_letter),
+    'reader', (select jsonb_build_object('user_id', a.reader_id, 'expires_at', a.expires_at,
+                        'fulfilled_at', a.fulfilled_at,
+                        'nickname', (select nickname from public.profiles where id = a.reader_id))
+                 from public.letter_reply_assignments a where a.letter_id = p_letter),
+    'comments', (select coalesce(jsonb_agg(jsonb_build_object(
+                    'id', c.id, 'parent_id', c.parent_comment_id, 'author_no', c.author_no,
+                    'body', c.body, 'status', c.status, 'created_at', c.created_at) order by c.id), '[]'::jsonb)
+                   from public.letter_comments c where c.letter_id = p_letter));
+end
+$fn$;
+
+-- 한 사람이 쓴 편지·댓글 (관리자) — 기록 남김
+create or replace function public.admin_user_letters(p_user uuid, p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+begin
+  perform private.require_staff(p_staff, true);
+  insert into private.audit_log (staff_id, action, target_user, detail)
+  values (p_staff, 'view_user_letters', p_user, '{}'::jsonb);
+  return (select coalesce(jsonb_agg(x order by x.created_at desc), '[]'::jsonb) from (
+    select l.id as letter_id, lp.alias, lp.is_author, l.status, l.created_at,
+           left(l.body, 80) as preview,
+           (select count(*) from public.letter_comments c
+             where c.letter_id = l.id and c.author_no = lp.participant_no) as my_comments
+      from public.letter_participants lp
+      join public.letters l on l.id = lp.letter_id
+     where lp.user_id = p_user
+     order by l.created_at desc
+     limit 200
+  ) x);
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array[
+    'admin_sanction(uuid, text, int, uuid, uuid, text)', 'admin_log_identity_view(uuid, uuid[], uuid)',
+    'admin_find_users(text, text, uuid, int)', 'admin_user(uuid, uuid)', 'admin_user_rooms(uuid, uuid)',
+    'admin_rooms(text, uuid, int)', 'admin_room(uuid, uuid)', 'admin_letter_post(bigint, uuid)',
+    'admin_user_letters(uuid, uuid)']
+  loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+    execute format('grant execute on function public.%s to service_role', f);
+  end loop;
+end
+$do$;

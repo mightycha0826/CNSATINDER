@@ -1,5 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import { adminRpc, emailOf } from '$lib/server/supabaseAdmin';
+import { isAdmin, runSanction } from '$lib/server/adminAuth';
 import type { LetterReportDetail } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -17,6 +18,7 @@ export const load: PageServerLoad = async ({ params }) => ({ d: await detail(par
 
 export const actions: Actions = {
 	identity: async ({ params, locals }) => {
+		if (!isAdmin(locals)) return fail(403, { error: '이메일 확인은 관리자만 가능' });
 		const d = await detail(params.id);
 		const users = [d.report.reported_id, d.report.reporter_id];
 		await adminRpc('admin_log_identity_view', { p_staff: locals.staff!.id, p_users: users, p_report: d.report.id });
@@ -61,25 +63,14 @@ export const actions: Actions = {
 		const d = await detail(params.id);
 		const f = await request.formData();
 		const target = f.get('target') === 'reporter' ? d.report.reporter_id : d.report.reported_id;
-		const action = String(f.get('action'));
-		if (!['warn', 'suspend', 'ban', 'reinstate'].includes(action)) return fail(400, { error: '잘못된 조치' });
-		const days = action === 'suspend' ? Math.max(1, Math.min(365, Number(f.get('days')) || 0)) : null;
-		const note = String(f.get('note') ?? '').slice(0, 1000);
-
-		// admin_sanction 은 채널과 무관 — profiles 기준. 정지되면 그 사람 편지는 피드에서 자동으로 빠진다.
-		await adminRpc('admin_sanction', {
-			p_user: target,
-			p_action: action,
-			p_days: days,
-			p_staff: locals.staff!.id,
-			p_report: d.report.id,
-			p_note: note
-		});
-		if (target === d.report.reported_id && action !== 'reinstate' && d.report.status !== 'actioned') {
+		const res = await runSanction(locals, target, f, d.report.id);
+		if (typeof res !== 'string') return res;
+		// 피신고자에게 조치했으면 신고는 조치 완료로
+		if (target === d.report.reported_id && res !== 'reinstate' && d.report.status !== 'actioned') {
 			await adminRpc('admin_set_letter_report', {
 				p_id: d.report.id,
 				p_status: 'actioned',
-				p_note: note,
+				p_note: String(f.get('note') ?? '').slice(0, 1000),
 				p_staff: locals.staff!.id
 			});
 		}

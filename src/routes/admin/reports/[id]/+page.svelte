@@ -1,32 +1,17 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { REASON_LABEL, STATUS_LABEL } from '$lib/adminTypes';
+	import SanctionForm from '$lib/admin/SanctionForm.svelte';
 
 	let { data, form } = $props();
 	const d = $derived(data.d);
 	const r = $derived(d.report);
-
-	let target = $state<'reported' | 'reporter'>('reported');
-	let action = $state<'warn' | 'suspend' | 'ban' | 'reinstate'>('suspend');
-	let days = $state(3);
-	let note = $state('');
+	const admin = $derived(data.staff?.role === 'admin');
 
 	const fmt = (s: string) =>
 		new Date(s).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 	const time = (s: string) => new Date(s).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-	const ACTIONS = [
-		{ v: 'warn', label: '경고' },
-		{ v: 'suspend', label: '기간 정지' },
-		{ v: 'ban', label: '영구 정지' },
-		{ v: 'reinstate', label: '제한 해제' }
-	] as const;
-
-	function confirmSanction(e: SubmitEvent) {
-		const who = target === 'reported' ? '피신고자' : '신고자';
-		const what = ACTIONS.find((a) => a.v === action)!.label + (action === 'suspend' ? ` ${days}일` : '');
-		if (!confirm(`${who}에게 "${what}" 조치를 할까요? 이 조치는 기록됩니다.`)) e.preventDefault();
-	}
 	function confirmIdentity(e: SubmitEvent) {
 		if (!confirm('두 사람의 학교 이메일을 확인합니다. 열람 기록이 남습니다. 계속할까요?')) e.preventDefault();
 	}
@@ -119,24 +104,36 @@
 
 		<section class="card">
 			<h2>조치</h2>
-			<form method="POST" action="?/sanction" use:enhance onsubmit={confirmSanction}>
-				<div class="seg">
-					<label><input type="radio" name="target" value="reported" bind:group={target} /> 피신고자</label>
-					<label><input type="radio" name="target" value="reporter" bind:group={target} /> 신고자</label>
-				</div>
-				<select class="field" name="action" bind:value={action}>
-					{#each ACTIONS as a (a.v)}<option value={a.v}>{a.label}</option>{/each}
-				</select>
-				{#if action === 'suspend'}
-					<label class="days">
-						<input class="field num" type="number" name="days" min="1" max="365" bind:value={days} /> 일
-					</label>
-				{/if}
-				<textarea class="field ta" name="note" rows="2" placeholder="조치 사유 (기록용)" bind:value={note}></textarea>
-				<button class="btn" class:danger-btn={action === 'ban'}>조치하기</button>
-			</form>
+			<SanctionForm
+				isAdmin={admin}
+				banned={d.reported?.status === 'banned'}
+				targets={[
+					{ v: 'reported', label: '피신고자' },
+					{ v: 'reporter', label: '신고자' }
+				]}
+			/>
 		</section>
 
+		{#if admin}
+		<section class="card">
+			<h2>관리자 열람</h2>
+			<div class="links">
+				<a href="/admin/rooms/{r.room_id}">이 대화 전체 보기 →</a>
+				<a href="/admin/users/{r.reported_id}">피신고자 계정 →</a>
+				<a href="/admin/users/{r.reporter_id}">신고자 계정 →</a>
+			</div>
+			<p class="hint">대화 열람은 활동 기록에 남습니다. 대화는 끝나고 24시간 뒤 지워집니다.</p>
+		</section>
+		{:else}
+		<section class="card">
+			<div class="links">
+				<a href="/admin/users/{r.reported_id}">피신고자 계정 →</a>
+				<a href="/admin/users/{r.reporter_id}">신고자 계정 →</a>
+			</div>
+		</section>
+		{/if}
+
+		{#if admin}
 		<section class="card id">
 			<h2>신원 확인</h2>
 			{#if form?.identity}
@@ -156,6 +153,7 @@
 				</form>
 			{/if}
 		</section>
+		{/if}
 	</aside>
 </div>
 
@@ -333,33 +331,15 @@
 		line-height: 1.6;
 		color: var(--text-2);
 	}
-	.card form {
+	.links {
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		margin-top: 4px;
-	}
-	.seg {
-		display: flex;
-		gap: 14px;
 		font-size: 13px;
+		font-weight: 600;
 	}
-	.days {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		font-size: 13px;
-	}
-	.days .field {
-		width: 90px;
-	}
-	.ta {
-		height: auto;
-		padding: 8px 12px;
-		resize: vertical;
-	}
-	.danger-btn {
-		background: var(--danger);
+	.links a {
+		color: var(--accent);
 	}
 	.id .btn-ghost {
 		margin-top: 8px;

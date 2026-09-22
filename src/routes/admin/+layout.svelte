@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import '$lib/admin/admin.css';
 
 	let { data, children } = $props();
 
@@ -10,16 +11,22 @@
 		return () => document.body.classList.remove('admin');
 	});
 
-	const NAV = [
-		{ href: '/admin', label: '채팅 신고' },
-		{ href: '/admin/letters', label: '편지 신고' },
-		{ href: '/admin/settings', label: '운영 설정' },
-		{ href: '/admin/audit', label: '활동 기록' }
-	];
+	const NAV = $derived(
+		[
+			{ href: '/admin', label: '채팅 신고' },
+			{ href: '/admin/letters', label: '편지 신고' },
+			{ href: '/admin/users', label: '사용자' },
+			{ href: '/admin/rooms', label: '전체 대화', admin: true },
+			{ href: '/admin/settings', label: '운영 설정' },
+			{ href: '/admin/audit', label: '활동 기록' }
+		].filter((n) => !n.admin || data.staff?.role === 'admin')
+	);
 	const active = (href: string) =>
 		href === '/admin'
 			? page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/reports')
-			: page.url.pathname.startsWith(href);
+			: href === '/admin/letters'
+				? page.url.pathname.startsWith(href) || page.url.pathname.startsWith('/admin/posts')
+				: page.url.pathname.startsWith(href);
 
 	async function logout() {
 		await fetch('/admin/session', { method: 'DELETE' });

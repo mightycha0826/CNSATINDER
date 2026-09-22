@@ -26,6 +26,13 @@
 	<div class="stat"><b class="num">{data.stats.restricted_users}</b><span>이용 제한 계정</span></div>
 </section>
 
+{#if data.staff?.role === 'admin'}
+	<form class="find" method="GET" action="/admin/posts">
+		<input class="field" name="n" placeholder="편지 번호 또는 편지 주소 (/letters/123)" autocomplete="off" />
+		<button class="btn-ghost">작성자 확인</button>
+	</form>
+{/if}
+
 <nav class="tabs">
 	{#each TABS as t (t.v)}
 		<a href="?status={t.v}" class:on={data.status === t.v}>{t.label}</a>
@@ -69,6 +76,17 @@
 {/if}
 
 <style>
+	.find {
+		display: flex;
+		gap: 6px;
+		margin-bottom: 16px;
+		max-width: 480px;
+	}
+	.find .btn-ghost {
+		width: auto;
+		padding: 0 14px;
+		flex-shrink: 0;
+	}
 	.stats {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

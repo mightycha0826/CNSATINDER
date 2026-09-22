@@ -1,0 +1,252 @@
+/* 운영자 화면 공용 스타일 (Phase 11 새 화면들) — body.admin 아래에서만 적용 */
+
+body.admin .a-back {
+	display: inline-block;
+	margin-bottom: 12px;
+	font-size: 13px;
+	color: var(--text-2);
+}
+body.admin .a-head {
+	display: flex;
+	align-items: flex-end;
+	justify-content: space-between;
+	gap: 12px;
+	padding-bottom: 14px;
+	border-bottom: 1px solid var(--line);
+	margin-bottom: 16px;
+	flex-wrap: wrap;
+}
+body.admin .a-h1 {
+	margin: 0 0 4px;
+	font-size: 22px;
+	font-weight: 800;
+	letter-spacing: -0.03em;
+}
+body.admin .a-sub {
+	margin: 0;
+	font-size: 13px;
+	color: var(--text-2);
+}
+body.admin .a-h2 {
+	margin: 0 0 10px;
+	font-size: 14px;
+	font-weight: 700;
+}
+body.admin .a-h2 .muted {
+	font-weight: 500;
+}
+
+body.admin .a-ok,
+body.admin .a-err,
+body.admin .a-warn {
+	padding: 10px 12px;
+	border-radius: var(--r-sm);
+	font-size: 13px;
+	margin: 0 0 12px;
+	line-height: 1.6;
+}
+body.admin .a-ok {
+	background: color-mix(in srgb, var(--accent) 10%, transparent);
+	color: var(--accent);
+}
+body.admin .a-err {
+	background: color-mix(in srgb, var(--danger) 10%, transparent);
+	color: var(--danger);
+}
+body.admin .a-warn {
+	background: var(--surface);
+	color: var(--text-2);
+}
+
+body.admin .a-tabs {
+	display: flex;
+	gap: 2px;
+	border-bottom: 1px solid var(--line);
+	margin-bottom: 4px;
+}
+body.admin .a-tabs a {
+	padding: 10px 12px;
+	margin-bottom: -1px;
+	color: var(--text-2);
+	font-size: 14px;
+	font-weight: 600;
+	border-bottom: 2px solid transparent;
+}
+body.admin .a-tabs a.on {
+	color: var(--text);
+	border-bottom-color: var(--text);
+}
+
+body.admin .a-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 14px;
+}
+body.admin .a-table th {
+	padding: 10px 8px;
+	text-align: left;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-2);
+	border-bottom: 1px solid var(--line);
+	white-space: nowrap;
+}
+body.admin .a-table td {
+	padding: 11px 8px;
+	border-bottom: 1px solid var(--line);
+	vertical-align: middle;
+}
+body.admin .a-table tr:hover td {
+	background: var(--surface);
+}
+body.admin .a-table .r {
+	text-align: right;
+}
+body.admin .a-table .clip {
+	max-width: 360px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+body.admin .a-table a {
+	color: var(--text);
+}
+body.admin .a-table a:hover {
+	text-decoration: underline;
+}
+body.admin .a-empty {
+	padding: 40px 0;
+	text-align: center;
+	font-size: 14px;
+	color: var(--text-2);
+}
+
+body.admin .a-grid {
+	display: grid;
+	grid-template-columns: 1fr 320px;
+	gap: 20px;
+	align-items: start;
+}
+@media (max-width: 860px) {
+	body.admin .a-grid {
+		grid-template-columns: 1fr;
+	}
+}
+body.admin .a-col {
+	display: flex;
+	flex-direction: column;
+	gap: 20px;
+	min-width: 0;
+}
+body.admin .a-aside {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+body.admin .a-card {
+	padding: 14px;
+	border: 1px solid var(--line);
+	border-radius: var(--r-sm);
+}
+body.admin .a-dl {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 6px 12px;
+	margin: 0;
+	font-size: 13px;
+}
+body.admin .a-dl dt {
+	color: var(--text-2);
+}
+body.admin .a-dl dd {
+	margin: 0;
+	text-align: right;
+	overflow-wrap: anywhere;
+}
+body.admin .a-hint {
+	margin: 8px 0 0;
+	font-size: 12px;
+	line-height: 1.6;
+	color: var(--text-2);
+}
+body.admin .a-links {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-size: 13px;
+	font-weight: 600;
+}
+body.admin .a-links a {
+	color: var(--accent);
+}
+body.admin .a-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	font-size: 13px;
+}
+body.admin .a-list li {
+	display: flex;
+	justify-content: space-between;
+	gap: 8px;
+}
+body.admin .a-list a {
+	color: var(--text);
+}
+
+body.admin .mono {
+	font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+	font-size: 12px;
+	word-break: break-all;
+}
+body.admin .danger {
+	color: var(--danger);
+	font-weight: 700;
+}
+body.admin .pill {
+	display: inline-block;
+	padding: 1px 7px;
+	margin-left: 4px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	white-space: nowrap;
+	background: var(--surface);
+	color: var(--text-2);
+	vertical-align: 1px;
+}
+body.admin .pill.red {
+	background: color-mix(in srgb, var(--danger) 12%, transparent);
+	color: var(--danger);
+}
+body.admin .pill.acc {
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+	color: var(--accent);
+}
+body.admin .dot {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: #22c55e;
+	margin-right: 5px;
+	vertical-align: 1px;
+}
+body.admin .st {
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+body.admin .st-open {
+	color: var(--danger);
+}
+body.admin .st-reviewing {
+	color: var(--accent);
+}
+body.admin .st-actioned,
+body.admin .st-dismissed {
+	color: var(--text-2);
+}

@@ -1,36 +1,22 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { REASON_LABEL, STATUS_LABEL } from '$lib/adminTypes';
+	import SanctionForm from '$lib/admin/SanctionForm.svelte';
 
 	let { data, form } = $props();
 	const d = $derived(data.d);
 	const r = $derived(d.report);
-
-	let target = $state<'reported' | 'reporter'>('reported');
-	let action = $state<'warn' | 'suspend' | 'ban' | 'reinstate'>('suspend');
-	let days = $state(3);
-	let note = $state('');
+	const admin = $derived(data.staff?.role === 'admin');
 
 	const fmt = (s: string) =>
 		new Date(s).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 	const KIND: Record<string, string> = { letter: '편지 본문', parent: '답글이 달린 댓글', comment: '신고한 댓글' };
-	const ACTIONS = [
-		{ v: 'warn', label: '경고' },
-		{ v: 'suspend', label: '기간 정지' },
-		{ v: 'ban', label: '영구 정지' },
-		{ v: 'reinstate', label: '제한 해제' }
-	] as const;
 
 	const live = $derived(
 		r.comment_id ? d.target.comment_status === 'visible' && d.target.letter_status === 'open' : d.target.letter_status === 'open'
 	);
 
-	function confirmSanction(e: SubmitEvent) {
-		const who = target === 'reported' ? '작성자' : '신고자';
-		const what = ACTIONS.find((a) => a.v === action)!.label + (action === 'suspend' ? ` ${days}일` : '');
-		if (!confirm(`${who}에게 "${what}" 조치를 할까요? 이 조치는 기록됩니다.`)) e.preventDefault();
-	}
 	function confirmRemove(e: SubmitEvent) {
 		if (!confirm(`이 ${r.comment_id ? '댓글' : '편지'}를 내릴까요? 학생들에게 더 이상 보이지 않고, 기록이 남습니다.`)) e.preventDefault();
 	}
@@ -137,24 +123,25 @@
 
 		<section class="card">
 			<h2>조치</h2>
-			<form method="POST" action="?/sanction" use:enhance onsubmit={confirmSanction}>
-				<div class="seg">
-					<label><input type="radio" name="target" value="reported" bind:group={target} /> 작성자</label>
-					<label><input type="radio" name="target" value="reporter" bind:group={target} /> 신고자</label>
-				</div>
-				<select class="field" name="action" bind:value={action}>
-					{#each ACTIONS as a (a.v)}<option value={a.v}>{a.label}</option>{/each}
-				</select>
-				{#if action === 'suspend'}
-					<label class="days">
-						<input class="field num" type="number" name="days" min="1" max="365" bind:value={days} /> 일
-					</label>
-				{/if}
-				<textarea class="field ta" name="note" rows="2" placeholder="조치 사유 (기록용)" bind:value={note}></textarea>
-				<button class="btn" class:danger-btn={action === 'ban'}>조치하기</button>
-			</form>
+			<SanctionForm
+				isAdmin={admin}
+				banned={d.reported?.status === 'banned'}
+				targets={[
+					{ v: 'reported', label: '작성자' },
+					{ v: 'reporter', label: '신고자' }
+				]}
+			/>
 		</section>
 
+		<section class="card">
+			<div class="links">
+				{#if admin}<a href="/admin/posts/{r.letter_id}">편지 전체 · 참여자 보기 →</a>{/if}
+				<a href="/admin/users/{r.reported_id}">작성자 계정 →</a>
+				<a href="/admin/users/{r.reporter_id}">신고자 계정 →</a>
+			</div>
+		</section>
+
+		{#if admin}
 		<section class="card">
 			<h2>신원 확인</h2>
 			{#if form?.identity}
@@ -172,6 +159,7 @@
 				</form>
 			{/if}
 		</section>
+		{/if}
 	</aside>
 </div>
 
@@ -343,24 +331,15 @@
 		gap: 8px;
 		margin-top: 4px;
 	}
-	.seg {
+	.links {
 		display: flex;
-		gap: 14px;
-		font-size: 13px;
-	}
-	.days {
-		display: flex;
-		align-items: center;
+		flex-direction: column;
 		gap: 8px;
 		font-size: 13px;
+		font-weight: 600;
 	}
-	.days .field {
-		width: 90px;
-	}
-	.ta {
-		height: auto;
-		padding: 8px 12px;
-		resize: vertical;
+	.links a {
+		color: var(--accent);
 	}
 	.danger-btn {
 		background: var(--danger);

@@ -82,3 +82,144 @@ export type LetterReportDetail = {
 	reporter_filed: number;
 	reporter_dismissed: number;
 };
+
+// ── Phase 11 — 사용자 관리 · 관리자 열람 ────────────────────────────────
+export type StaffRole = 'admin' | 'moderator';
+
+export type UserRow = {
+	id: string;
+	nickname: string | null;
+	status: 'active' | 'suspended' | 'banned';
+	suspended_until: string | null;
+	strikes: number;
+	verified: boolean;
+	onboarded: boolean;
+	created_at: string;
+	online: boolean;
+	last_seen: string | null;
+	staff_role: StaffRole | null;
+	reports_received: number;
+};
+
+export type UserDetail = {
+	profile: {
+		id: string;
+		nickname: string | null;
+		bio: string;
+		interests: string[];
+		mbti: string | null;
+		gender: 'm' | 'f' | 'x';
+		want: 'm' | 'f' | 'any';
+		status: 'active' | 'suspended' | 'banned';
+		suspended_until: string | null;
+		strikes: number;
+		verified: boolean;
+		onboarded: boolean;
+		created_at: string;
+	};
+	online: boolean;
+	last_seen: string | null;
+	staff_role: StaffRole | null;
+	counts: { rooms: number; open_rooms: number; letters: number; comments: number; reports_filed: number; reports_dismissed: number };
+	chat_reports: { id: string; created_at: string; reason: string; status: ReportStatus }[];
+	letter_reports: { id: string; created_at: string; reason: string; status: ReportStatus; target_type: 'letter' | 'comment' }[];
+	history: { action: string; staff_id: string | null; detail: Record<string, unknown>; created_at: string }[];
+};
+
+export type UserRoomRow = {
+	id: string;
+	status: 'pending' | 'active' | 'closed';
+	created_at: string;
+	closed_at: string | null;
+	close_reason: string | null;
+	live: boolean;
+	alias: string;
+	partner_id: string | null;
+	partner_nickname: string | null;
+	message_count: number;
+};
+
+export type UserLetterRow = {
+	letter_id: number;
+	alias: string;
+	is_author: boolean;
+	status: 'open' | 'removed';
+	created_at: string;
+	preview: string;
+	my_comments: number;
+};
+
+export type RoomRow = {
+	id: string;
+	status: 'pending' | 'active' | 'closed';
+	created_at: string;
+	closed_at: string | null;
+	close_reason: string | null;
+	round: number;
+	live: boolean;
+	members: { seat: 1 | 2; user_id: string; nickname: string | null }[] | null;
+	message_count: number;
+};
+
+export type RoomView = {
+	room: {
+		id: string;
+		status: string;
+		round: number;
+		created_at: string;
+		armed_at: string | null;
+		expires_at: string;
+		closed_at: string | null;
+		close_reason: string | null;
+		live: boolean;
+	};
+	members: { seat: 1 | 2; user_id: string; open: boolean; alias: string; nickname: string | null; status: string }[];
+	messages: { id: number; seat: 0 | 1 | 2; body: string; created_at: string }[];
+};
+
+export type LetterPostView = {
+	letter: { id: number; body: string; status: 'open' | 'removed'; reply_status: string; created_at: string };
+	participants: { no: number; alias: string; is_author: boolean; user_id: string; nickname: string | null; status: string }[];
+	reader: { user_id: string; expires_at: string; fulfilled_at: string | null; nickname: string | null } | null;
+	comments: { id: number; parent_id: number | null; author_no: number; body: string; status: 'visible' | 'removed'; created_at: string }[];
+};
+
+export const CLOSE_LABEL: Record<string, string> = {
+	expired: '시간 만료',
+	declined: '연장 거절',
+	skipped: '넘김',
+	no_show: '미입장',
+	left: '나감',
+	reported: '신고',
+	blocked: '차단',
+	admin: '운영 조치'
+};
+
+export const fmtTime = (s: string) =>
+	new Date(s).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+/** 활동 기록(audit_log.action) 표시 이름 */
+export const ACTION_LABEL: Record<string, string> = {
+	view_identity: '이메일 열람',
+	search_email: '이메일 검색',
+	view_room: '대화 열람',
+	view_letter_authors: '편지 작성자 확인',
+	view_user_letters: '편지 활동 열람',
+	auto_suspend: '자동 정지 (채팅)',
+	auto_suspend_letters: '자동 정지 (편지)',
+	sanction_warn: '경고',
+	sanction_suspend: '기간 정지',
+	sanction_ban: '영구 정지',
+	sanction_reinstate: '제한 해제',
+	report_open: '신고 다시 열기',
+	report_reviewing: '검토 시작',
+	report_actioned: '조치 완료',
+	report_dismissed: '신고 기각',
+	letter_report_open: '편지 신고 다시 열기',
+	letter_report_reviewing: '편지 신고 검토',
+	letter_report_actioned: '편지 신고 조치',
+	letter_report_dismissed: '편지 신고 기각',
+	remove_letter: '편지 내림',
+	remove_comment: '댓글 내림',
+	update_settings: '설정 변경'
+};
