@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
+import { notifySent } from '../push';
 import type { ChatTransport, TransportHandlers } from './transport';
 import type { MsgRow, PartnerProfile, ReportReason, RoomRow, RoomSnap, SendResult, VoteResult, VoteRow } from './types';
 
@@ -88,7 +89,10 @@ export class SupabaseTransport implements ChatTransport {
 				.insert({ room_id: roomId, sender_seat: seat, body, client_msg_id: clientMsgId })
 				.select(MSG_COLS)
 				.single();
-			if (!error) return { ok: true, row: data as MsgRow };
+			if (!error) {
+				notifySent((data as MsgRow).id); // 상대가 앱을 안 보고 있으면 푸시 알림
+				return { ok: true, row: data as MsgRow };
+			}
 
 			const m = error.message ?? '';
 			if (error.code === '23505') return { ok: false, reason: 'duplicate' };

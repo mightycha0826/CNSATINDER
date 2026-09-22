@@ -1219,5 +1219,77 @@ console.log('\n[42] ★ 여러 대화 동시 진행');
 	check('시간이 지난 대화는 목록에서 빠진다', !(await rpcAs(p, 'my_rooms')).rooms.some((r) => r.room_id === first.room_id));
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  Phase 9 — 푸시 알림
+// ════════════════════════════════════════════════════════════════════
+console.log('\n[43] 푸시 구독');
+{
+	const u = await person('m', 'f');
+	const v = await person('f', 'm');
+	const P256 = 'B' + 'x'.repeat(86); // base64url 65바이트 = 87자
+	const AUTH = 'a'.repeat(22);
+	await rpcAs(u, 'save_push_subscription', 'https://push.example/u1', P256, AUTH);
+	check('내 기기를 알림 대상으로 저장', (await cnt('select count(*)::int n from public.push_subscriptions where user_id = $1', [u])) === 1);
+	await expectError('https 가 아닌 주소 거절', () => rpcAs(u, 'save_push_subscription', 'http://x', P256, AUTH), 'invalid_subscription');
+	await expectError('키 길이가 이상하면 거절', () => rpcAs(u, 'save_push_subscription', 'https://push.example/z', 'short', AUTH), 'invalid_subscription');
+	await expectError('★ 구독 목록은 누구도 직접 읽지 못한다 (기기 주소·키)', () => rowsAs(u, 'select * from public.push_subscriptions'), 'permission denied');
+
+	await rpcAs(v, 'save_push_subscription', 'https://push.example/u1', P256, AUTH);
+	check(
+		'같은 기기에서 다른 계정으로 로그인하면 주인이 바뀐다 (이전 계정 알림이 오지 않게)',
+		(await one('select user_id from public.push_subscriptions where endpoint = $1', ['https://push.example/u1'])).user_id === v
+	);
+	await rpcAs(u, 'delete_push_subscription', 'https://push.example/u1');
+	check('★ 남의 구독은 지울 수 없다', (await cnt('select count(*)::int n from public.push_subscriptions where endpoint = $1', ['https://push.example/u1'])) === 1);
+	await rpcAs(v, 'delete_push_subscription', 'https://push.example/u1');
+	check('내 구독은 지울 수 있다 (알림 끄기·로그아웃)', (await cnt('select count(*)::int n from public.push_subscriptions where endpoint = $1', ['https://push.example/u1'])) === 0);
+}
+
+console.log('\n[44] ★ 푸시 발송 판단');
+{
+	await resetPool();
+	const s = await person('m', 'f');
+	const t = await person('f', 'm');
+	const z = await person('f', 'm');
+	const P256 = 'B' + 'x'.repeat(86);
+	await rpcAs(t, 'save_push_subscription', 'https://push.example/t1', P256, 'a'.repeat(22));
+	const r = await pairRoom(s, t);
+	const sSeat = (await rpcAs(s, 'room_snapshot', r)).my_seat;
+	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id in ($1,$2)`, [s, t]);
+	await sendIn(s, r, sSeat, '자니?');
+	const mid = (await one('select max(id)::int m from public.messages where room_id = $1', [r])).m;
+
+	await expectError('★ 학생 계정은 발송 판단 함수를 부를 수 없다', () => rowsAs(s, 'select public.push_payload(1, $1)', [s]), 'permission denied');
+	check('★ 보낸 사람이 아니면 발송하지 않는다 (남의 메시지로 알림 위조 불가)', (await svc('push_payload', mid, z)).skip === 'not_sender');
+	check('받는 사람 쪽에서 요청해도 발송하지 않는다', (await svc('push_payload', mid, t)).skip === 'not_sender');
+
+	const p = await svc('push_payload', mid, s);
+	check('받는 사람 기기로 보낼 내용이 나온다', p.subs?.length === 1 && p.body === '자니?' && p.room_id === r);
+	check('제목 = 보낸 사람의 익명 이름', p.title === (await one('select nickname from public.profiles where id = $1', [s])).nickname);
+	check('★ 알림 내용에 사용자 uuid 가 없다', ![s, t].some((x) => JSON.stringify({ title: p.title, body: p.body, room_id: p.room_id }).includes(x)));
+	check('★ 같은 메시지로 두 번 보내지 않는다', (await svc('push_payload', mid, s)).skip === 'already');
+
+	await rpcAs(t, 'heartbeat', true);
+	await sendIn(s, r, sSeat, '아 보고 있구나');
+	const mid2 = (await one('select max(id)::int m from public.messages where room_id = $1', [r])).m;
+	check('받는 사람이 앱을 보고 있으면 보내지 않는다', (await svc('push_payload', mid2, s)).skip === 'online');
+
+	await rpcAs(t, 'heartbeat', false);
+	await sendIn(s, r, sSeat, '긴 메시지 '.repeat(40));
+	const mid3 = (await one('select max(id)::int m from public.messages where room_id = $1', [r])).m;
+	check('알림 본문은 120자로 자른다', (await svc('push_payload', mid3, s)).body.length === 120);
+
+	await db.query(`update public.messages set created_at = now() - interval '5 minutes' where id = $1`, [mid3]);
+	await db.query(`delete from private.push_log where message_id = $1`, [mid3]);
+	check('오래된 메시지로는 보내지 않는다', (await svc('push_payload', mid3, s)).skip === 'stale');
+
+	await svc('push_prune', ['https://push.example/t1']);
+	await sendIn(s, r, sSeat, '또');
+	const mid4 = (await one('select max(id)::int m from public.messages where room_id = $1', [r])).m;
+	check('사라진 기기를 지우면 보낼 곳이 없다', (await svc('push_payload', mid4, s)).skip === 'no_device');
+	await rpcAs(s, 'leave_room', r, false);
+	check('닫힌 대화로는 보내지 않는다', (await svc('push_payload', mid4, s)).skip === 'closed');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

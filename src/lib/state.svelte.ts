@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 import { hasSupabase, supabase } from './supabase';
+import { disablePush, syncPush } from './push';
 
 /** 내 프로필. 상대에게는 nickname·bio·interests·mbti 만 partner_profile() 을 거쳐 보인다 (성별·선호·상태는 안 보인다). */
 export type Profile = {
@@ -127,6 +128,8 @@ async function afterLogin() {
 	await supabase.rpc('ensure_self');
 	await Promise.all([loadProfile(), loadSettings(), loadAccount()]);
 	void beat(true);
+	// 이미 알림을 허락한 기기면 이 계정으로 구독을 다시 저장 (기기 주인이 바뀌었을 수도 있다)
+	void syncPush().catch(() => {});
 }
 
 export async function loadProfile() {
@@ -285,6 +288,7 @@ export async function setPassword(password: string) {
 }
 
 export async function signOut() {
+	await disablePush().catch(() => {}); // 이 기기로 이 계정 알림이 더 오지 않게
 	await beat(false);
 	await supabase.auth.signOut();
 	S.profile = null;

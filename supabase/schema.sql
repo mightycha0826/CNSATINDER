@@ -1556,3 +1556,123 @@ revoke all on function public.update_my_profile(text, text[], text), public.my_a
 grant execute on function public.update_my_profile(text, text[], text), public.my_account(),
                           public.heartbeat(boolean), public.my_rooms(), public.partner_profile(uuid)
   to authenticated;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 9 — 새 메시지 푸시 알림
+--
+--  흐름: 보낸 사람 앱이 메시지 저장에 성공하면 /api/push 에 message_id 만 알린다.
+--        서버(Worker)가 보낸 사람을 JWT 로 확인한 뒤 push_payload() 로
+--        "받는 사람이 앱을 안 보고 있으면" 그 사람의 기기 목록과 알림 문구를 받아 보낸다.
+--  ★ 구독 정보(기기 주소·키)는 정책 0개 — 클라는 자기 것을 저장·삭제만 할 수 있고 읽을 수 없다.
+--  ★ 같은 메시지로는 한 번만 보낸다 (private.push_log) — 조작된 앱이 알림을 반복시키지 못한다.
+-- ════════════════════════════════════════════════════════════════════
+
+create table if not exists public.push_subscriptions (
+  endpoint   text primary key,
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  p256dh     text not null,
+  auth       text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subs_user on public.push_subscriptions (user_id);
+alter table public.push_subscriptions enable row level security;
+revoke all on public.push_subscriptions from anon, authenticated;
+
+create table if not exists private.push_log (
+  message_id bigint primary key,
+  created_at timestamptz not null default now()
+);
+alter table private.push_log enable row level security;
+
+-- 이 기기로 알림 받기. 같은 기기에서 다른 계정으로 로그인하면 주인이 바뀐다.
+create or replace function public.save_push_subscription(p_endpoint text, p_p256dh text, p_auth text)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null then raise exception 'unauthenticated'; end if;
+  if p_endpoint !~ '^https://' or char_length(p_endpoint) > 1000
+     or char_length(coalesce(p_p256dh, '')) not between 80 and 100
+     or char_length(coalesce(p_auth, '')) not between 16 and 32 then
+    raise exception 'invalid_subscription';
+  end if;
+  insert into public.push_subscriptions (endpoint, user_id, p256dh, auth)
+  values (p_endpoint, auth.uid(), p_p256dh, p_auth)
+  on conflict (endpoint) do update
+     set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, created_at = now();
+end
+$fn$;
+
+-- 알림 끄기 · 로그아웃. 내 것만 지운다.
+create or replace function public.delete_push_subscription(p_endpoint text)
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  delete from public.push_subscriptions where endpoint = p_endpoint and user_id = auth.uid();
+end
+$fn$;
+
+revoke all on function public.save_push_subscription(text, text, text), public.delete_push_subscription(text)
+  from public, anon;
+grant execute on function public.save_push_subscription(text, text, text), public.delete_push_subscription(text)
+  to authenticated;
+
+-- ★ service_role 전용 — 알림을 보낼지, 누구에게, 무슨 문구로.
+--   p_sender 는 서버가 JWT 로 확인한 보낸 사람. 그 사람이 실제로 보낸 메시지일 때만 동작한다.
+create or replace function public.push_payload(p_message bigint, p_sender uuid)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  m        public.messages%rowtype;
+  r        public.rooms%rowtype;
+  v_seat   smallint;
+  v_to     uuid;
+  v_subs   jsonb;
+begin
+  select * into m from public.messages where id = p_message;
+  if not found or m.sender_seat = 0 then return jsonb_build_object('skip', 'no_message'); end if;
+  select seat into v_seat from public.room_members where room_id = m.room_id and user_id = p_sender;
+  if v_seat is null or v_seat <> m.sender_seat then return jsonb_build_object('skip', 'not_sender'); end if;
+  if m.created_at < now() - interval '2 minutes' then return jsonb_build_object('skip', 'stale'); end if;
+  select * into r from public.rooms where id = m.room_id;
+  if r.status = 'closed' then return jsonb_build_object('skip', 'closed'); end if;
+
+  -- 한 메시지에 한 번만
+  insert into private.push_log (message_id) values (p_message) on conflict do nothing;
+  if not found then return jsonb_build_object('skip', 'already'); end if;
+
+  select user_id into v_to from public.room_members where room_id = m.room_id and seat <> m.sender_seat;
+  -- 받는 사람이 지금 앱을 보고 있으면 보내지 않는다 (앱 안에서 이미 보인다)
+  if exists (select 1 from public.user_presence where user_id = v_to and online_until > now()) then
+    return jsonb_build_object('skip', 'online');
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth)), '[]'::jsonb)
+    into v_subs from public.push_subscriptions where user_id = v_to;
+  if jsonb_array_length(v_subs) = 0 then return jsonb_build_object('skip', 'no_device'); end if;
+
+  -- ★ 알림 문구에 uuid 는 없다. 제목 = 받는 사람이 보는 상대 이름(보낸 사람의 익명 이름).
+  return jsonb_build_object(
+    'title',   case when m.sender_seat = 1 then r.alias1 else r.alias2 end,
+    'body',    left(m.body, 120),
+    'room_id', m.room_id,
+    'subs',    v_subs);
+end
+$fn$;
+
+-- 푸시 서버가 "없는 기기"(404/410)라고 답한 구독을 지운다
+create or replace function public.push_prune(p_endpoints text[])
+returns void language sql security definer set search_path = public as $fn$
+  delete from public.push_subscriptions where endpoint = any(p_endpoints);
+$fn$;
+
+revoke all on function public.push_payload(bigint, uuid), public.push_prune(text[]) from public, anon, authenticated;
+grant execute on function public.push_payload(bigint, uuid), public.push_prune(text[]) to service_role;
+
+-- 발송 기록은 하루면 충분 (중복 방지용)
+do $do$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'simbun-purge-push';
+    perform cron.schedule('simbun-purge-push', '47 4 * * *',
+      $q$delete from private.push_log where created_at < now() - interval '1 day'$q$);
+  end if;
+end
+$do$;

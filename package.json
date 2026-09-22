@@ -15,7 +15,8 @@
 		"test:match": "node scripts/match-stress.mjs",
 		"test:admin": "node scripts/admin-session.test.mjs",
 		"test:toast": "node --no-warnings --conditions=browser scripts/toast.test.mjs",
-		"test:platform": "node --no-warnings scripts/platform.test.mjs"
+		"test:platform": "node --no-warnings scripts/platform.test.mjs",
+		"test:push": "node --no-warnings scripts/webpush.test.mjs"
 	},
 	"devDependencies": {
 		"@electric-sql/pglite": "^0.3.14",

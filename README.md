@@ -96,6 +96,8 @@ npm run dev
 - [ ] **Phase 8 적용** — `schema.sql` 을 SQL Editor 에서 다시 실행 (익명 이름·프로필·여러 대화). 안 하면 새 화면이 프로필을 못 읽는다.
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
       Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
+- [ ] **푸시 알림 키** — `.env` 의 `PUBLIC_VAPID_KEY`·`VAPID_PRIVATE_KEY`(Secret)·`VAPID_SUBJECT` 를 Cloudflare Variables and Secrets 에도.
+      없으면 알림만 조용히 꺼진다(대화는 정상). 키를 바꾸면 모든 기기의 알림 구독이 무효가 된다.
 - [ ] **외부 SMTP 연결** — 기본 메일 서버는 시간당 몇 통뿐. SMTP 를 연결해야 발송 한도를 올릴 수 있다.
 - [ ] **메일 템플릿** — Magic Link · Confirm signup 둘 다 `{{ .Token }}` 만 (링크 없이).
 - [ ] **pg_cron** — `select jobname from cron.job;` 에 simbun-sweep / simbun-purge / simbun-purge-evidence 3개.
@@ -126,6 +128,8 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `npm run test:match` | 실서버 매칭 동시성 스트레스 (기본 20명 동시 폴링 → 중복 배정·선호 위반 검사 → 삭제) |
 | `npm run test:toast` | 알림 — Svelte 브라우저 모드로 컴파일해 $state proxy 관련 버그까지 검증 |
 | `npm run test:platform` | 설치 안내 — 실제 UA 로 iOS/안드로이드·카카오톡 등 인앱 브라우저 판별 검증 |
+| `npm run test:push` | 푸시 알림 암호화(RFC 8291)·VAPID 서명(RFC 8292) — 받는 브라우저 입장에서 복호화·검증 |
+| `node scripts/vapid-keys.mjs` | 푸시 알림용 VAPID 키를 만들어 `.env` 에 추가 (이미 있으면 그대로) |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.webp` (헤드리스 Chrome 사용) |
 
@@ -156,4 +160,6 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 - [x] **Phase 8 — 계정·프로필·여러 대화** — 첫 가입은 인증 코드, 이후 학교 이메일 + 비밀번호 로그인,
       계정마다 고유 익명 이름(바꿀 수 없음), 소개·관심사·MBTI 프로필, 온라인 표시(heartbeat),
       대화 동시 최대 5개(운영 설정) + 대화 목록 화면, 대화방에서 상대 프로필 보기
+- [x] **Phase 9 — 푸시 알림** — 처음 한 번 권한 안내, 상대가 앱을 안 보고 있을 때만 발송(서버 판단),
+      본문 종단 암호화, 같은 메시지 한 번만, 로그아웃 시 기기 구독 삭제, 알림 누르면 그 대화로
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

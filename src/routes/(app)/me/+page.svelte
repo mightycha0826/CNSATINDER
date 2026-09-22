@@ -3,6 +3,7 @@
 	import Avatar from '$lib/Avatar.svelte';
 	import PasswordFields from '$lib/PasswordFields.svelte';
 	import { supabase } from '$lib/supabase';
+	import { disablePush, enablePush, pushEnabled, pushState, type PushState } from '$lib/push';
 	import {
 		S,
 		errMsg,
@@ -186,6 +187,33 @@
 		}
 	}
 
+	// ── 알림 ──
+	let pushPerm = $state<PushState>(pushState());
+	let pushOn = $state<boolean | null>(null);
+	let pushBusy = $state(false);
+	$effect(() => {
+		void pushEnabled().then((v) => (pushOn = v));
+	});
+	async function togglePush() {
+		if (pushBusy) return;
+		pushBusy = true;
+		try {
+			if (pushOn) {
+				await disablePush();
+				pushOn = false;
+				toast('알림을 껐어요');
+			} else {
+				pushPerm = await enablePush();
+				pushOn = await pushEnabled();
+				if (pushOn) toast('알림을 켰어요');
+			}
+		} catch (e) {
+			toast(errMsg(e));
+		} finally {
+			pushBusy = false;
+		}
+	}
+
 	async function out() {
 		await signOut();
 		void goto('/login', { replaceState: true });
@@ -273,6 +301,24 @@
 				</button>
 			{/each}
 		</div>
+	</section>
+
+	<section>
+		<div class="rowhead">
+			<h2>새 메시지 알림</h2>
+			<span class="muted small">
+				{pushOn === null ? '' : pushOn ? '켜짐' : pushPerm === 'denied' ? '차단됨' : '꺼짐'}
+			</span>
+		</div>
+		{#if pushPerm === 'unsupported'}
+			<p class="muted small">이 기기에서는 알림을 받을 수 없어요. (아이폰은 iOS 16.4 이상, 홈 화면에 설치한 앱에서만)</p>
+		{:else if pushPerm === 'denied'}
+			<p class="muted small">알림이 차단되어 있어요. 휴대폰 설정 → 알림 → CNSATINDER 에서 허용해 주세요.</p>
+		{:else}
+			<button class="btn-ghost" onclick={togglePush} disabled={pushBusy || pushOn === null}>
+				{pushOn ? '알림 끄기' : '알림 켜기'}
+			</button>
+		{/if}
 	</section>
 
 	<section id="password">

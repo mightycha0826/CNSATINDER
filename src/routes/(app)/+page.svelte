@@ -5,6 +5,7 @@
 	import { Inbox, type InboxRoom } from '$lib/inbox.svelte';
 	import { S, toast } from '$lib/state.svelte';
 	import { Seeker } from '$lib/seeker.svelte';
+	import { enablePush, pushState } from '$lib/push';
 
 	/**
 	 * 홈 = 대화 목록 (인스타 DM 받은편지함).
@@ -59,6 +60,36 @@
 		const ms = Math.max(0, Date.parse(r.expires_at) - (S.now + inbox.skew));
 		const s = Math.ceil(ms / 1000);
 		return { text: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, urgent: ms <= 60_000 };
+	}
+
+	// ── 알림 권한 — 처음 한 번 묻는다 ──
+	// 브라우저 권한 창은 사용자가 버튼을 눌렀을 때만 띄울 수 있다(iOS 는 그 외엔 아예 불가).
+	// 그래서 먼저 우리 화면으로 이유를 설명하고, "알림 받기"를 누르면 그때 권한을 묻는다.
+	const ASKED = 'push-asked-v1';
+	let askPush = $state(false);
+	$effect(() => {
+		let asked = false;
+		try {
+			asked = localStorage.getItem(ASKED) === '1';
+		} catch {
+			/* 저장소를 못 쓰는 환경 — 매번 묻지 않도록 그냥 넘어간다 */
+			asked = true;
+		}
+		if (!asked && pushState() === 'default') askPush = true;
+	});
+	function doneAsking() {
+		askPush = false;
+		try {
+			localStorage.setItem(ASKED, '1');
+		} catch {
+			/* 무시 */
+		}
+	}
+	async function allowPush() {
+		const r = await enablePush();
+		doneAsking();
+		if (r === 'granted') toast('알림을 켰어요');
+		else if (r === 'denied') toast('알림이 꺼져 있어요. 내 프로필에서 다시 켤 수 있어요');
 	}
 
 	function preview(r: InboxRoom) {
@@ -166,7 +197,83 @@
 	{/if}
 </div>
 
+{#if askPush}
+	<!-- 처음 한 번 — 알림 권한 안내 -->
+	<div class="scrim">
+		<div class="sheet" role="dialog" aria-labelledby="push-title">
+			<div class="bell" aria-hidden="true">
+				<svg viewBox="0 0 24 24" fill="none">
+					<path
+						d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16zM10 20a2 2 0 0 0 4 0"
+						stroke="currentColor"
+						stroke-width="1.8"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+					/>
+				</svg>
+			</div>
+			<h2 id="push-title">새 메시지가 오면 알려 드릴까요?</h2>
+			<p class="muted">
+				앱을 닫아 두어도 상대가 보낸 메시지를 놓치지 않아요.<br />
+				알림에는 상대의 익명 이름과 메시지만 보여요.
+			</p>
+			<button class="btn" onclick={allowPush}>알림 받기</button>
+			<button class="later" onclick={doneAsking}>나중에</button>
+		</div>
+	</div>
+{/if}
+
 <style>
+	/* 알림 권한 안내 시트 */
+	.scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 50;
+		display: flex;
+		align-items: flex-end;
+		justify-content: center;
+		background: rgb(0 0 0 / 0.45);
+	}
+	.sheet {
+		width: 100%;
+		max-width: 520px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 10px;
+		padding: 24px var(--pad) calc(16px + env(safe-area-inset-bottom));
+		border-radius: 16px 16px 0 0;
+		background: var(--bg);
+		text-align: center;
+	}
+	.sheet h2 {
+		font-size: 18px;
+	}
+	.sheet p {
+		margin: 0 0 8px;
+		font-size: 13px;
+		line-height: 1.6;
+	}
+	.bell {
+		display: grid;
+		place-items: center;
+		width: 56px;
+		height: 56px;
+		border-radius: 50%;
+		background: var(--accent-fill);
+		color: #fff;
+	}
+	.bell svg {
+		width: 28px;
+		height: 28px;
+	}
+	.later {
+		height: 40px;
+		font-size: 14px;
+		font-weight: 600;
+		color: var(--text-2);
+	}
+
 	.me {
 		margin-left: auto;
 		display: grid;

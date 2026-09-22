@@ -7,7 +7,7 @@
  *   · Supabase API / 웹소켓 요청에는 절대 손대지 않는다
  */
 
-const VERSION = 'cnsatinder-v3'; // 아이콘을 바꾸면 올린다 — 설치된 앱이 캐시를 새로 받는다
+const VERSION = 'cnsatinder-v4'; // 아이콘을 바꾸면 올린다 — 설치된 앱이 캐시를 새로 받는다
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
@@ -26,6 +26,42 @@ self.addEventListener('activate', (e) => {
 			.keys()
 			.then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k))))
 			.then(() => self.clients.claim())
+	);
+});
+
+// ── 푸시 알림 ─────────────────────────────────────────────────────────
+// 서버(/api/push)가 암호화해 보낸 { title, body, room } 을 보여준다.
+// tag = 방 id: 같은 대화의 알림은 쌓이지 않고 최신 것으로 바뀐다.
+self.addEventListener('push', (e) => {
+	let d = {};
+	try {
+		d = e.data ? e.data.json() : {};
+	} catch {
+		d = {};
+	}
+	const room = typeof d.room === 'string' ? d.room : '';
+	e.waitUntil(
+		self.registration.showNotification(d.title || 'CNSATINDER', {
+			body: d.body || '새 메시지가 왔어요',
+			tag: room || 'cnsatinder',
+			renotify: true,
+			icon: '/icon-192.png',
+			badge: '/icon-192.png',
+			data: { url: room ? `/chat/${room}` : '/' }
+		})
+	);
+});
+
+// 알림을 누르면 그 대화로. 앱이 이미 열려 있으면 새 창 대신 그 창을 앞으로.
+self.addEventListener('notificationclick', (e) => {
+	e.notification.close();
+	const url = (e.notification.data && e.notification.data.url) || '/';
+	e.waitUntil(
+		self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+			const win = list.find((c) => new URL(c.url).origin === self.location.origin);
+			if (win) return win.focus().then((w) => (w && 'navigate' in w ? w.navigate(url) : w));
+			return self.clients.openWindow(url);
+		})
 	);
 });
 
