@@ -32,6 +32,7 @@
 	--r-bubble: 22px;
 	--pad: 16px;
 	--header-h: 44px;
+	--tabbar-h: 54px;
 
 	--sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Apple SD Gothic Neo',
 		'Noto Sans KR', 'Malgun Gothic', sans-serif;
@@ -250,11 +251,51 @@ a {
 	padding: 0 var(--pad);
 }
 
+/* 하단 탭바 — 익명편지 · 채팅 (src/routes/(app)/+layout.svelte)
+   인스타그램처럼 흑백 아이콘, 선택된 탭만 채운 아이콘 + 진한 글자. 색 포인트는 쓰지 않는다. */
+.tabbar {
+	position: fixed;
+	left: 50%;
+	bottom: 0;
+	transform: translateX(-50%);
+	z-index: 20; /* 헤더(10) 위, 시트(50)·토스트(100) 아래 */
+	display: flex;
+	width: 100%;
+	max-width: 520px;
+	height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+	padding-bottom: env(safe-area-inset-bottom);
+	background: var(--bg);
+	border-top: 1px solid var(--line);
+}
+.tab {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 2px;
+	color: var(--text-2);
+	font-size: 11px;
+	font-weight: 500;
+}
+.tab svg {
+	width: 26px;
+	height: 26px;
+}
+.tab.on {
+	color: var(--text);
+	font-weight: 700;
+}
+.tabbar-space {
+	flex: none;
+	height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+}
+
 /* 토스트 */
 .toasts {
 	position: fixed;
 	left: 50%;
-	bottom: calc(24px + env(safe-area-inset-bottom));
+	bottom: calc(16px + var(--tabbar-h) + env(safe-area-inset-bottom)); /* 탭바·입력창 위로 */
 	transform: translateX(-50%);
 	z-index: 100;
 	display: flex;

@@ -96,6 +96,17 @@ export async function pushEnabled() {
  * 보낼지 말지(상대가 앱을 보고 있는지 등)는 서버가 정한다.
  */
 export function notifySent(messageId: number) {
+	requestPush({ message_id: messageId });
+}
+
+/**
+ * 편지에 댓글을 단 직후. 받을 사람(편지 작성자 / 부모 댓글 작성자)과 문구는 서버가 정한다.
+ */
+export function notifyLetterComment(commentId: number) {
+	requestPush({ letter_comment_id: commentId });
+}
+
+function requestPush(body: Record<string, number>) {
 	void (async () => {
 		const { data } = await supabase.auth.getSession();
 		const token = data.session?.access_token;
@@ -104,7 +115,7 @@ export function notifySent(messageId: number) {
 			method: 'POST',
 			keepalive: true, // 보내자마자 앱을 닫아도 요청은 나간다
 			headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-			body: JSON.stringify({ message_id: messageId })
+			body: JSON.stringify(body)
 		});
 	})().catch(() => {});
 }

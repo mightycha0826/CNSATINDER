@@ -9,6 +9,7 @@
 	import type { ChatRoom } from './room.svelte';
 	import type { Msg, PartnerProfile, ReportReason } from './types';
 	import Avatar from '$lib/Avatar.svelte';
+	import { REPORT_REASONS } from '$lib/reportReasons';
 
 	let {
 		room,
@@ -97,15 +98,7 @@
 	let reportNote = $state('');
 	let acting = $state(false);
 
-	const REASONS: { v: ReportReason; label: string }[] = [
-		{ v: 'personal_info', label: '이름·학번·SNS를 캐물어요' },
-		{ v: 'sexual', label: '성적인 말을 해요' },
-		{ v: 'harassment', label: '욕설·괴롭힘' },
-		{ v: 'hate', label: '혐오 표현' },
-		{ v: 'impersonation', label: '다른 사람인 척해요' },
-		{ v: 'spam', label: '도배·광고' },
-		{ v: 'other', label: '기타' }
-	];
+	const REASONS = REPORT_REASONS;
 
 	function openSheet(s: typeof sheet) {
 		sheet = s;

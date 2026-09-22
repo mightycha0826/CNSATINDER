@@ -7,7 +7,7 @@
  *   · Supabase API / 웹소켓 요청에는 절대 손대지 않는다
  */
 
-const VERSION = 'cnsatinder-v5'; // 아이콘을 바꾸면 올린다 — 설치된 앱이 캐시를 새로 받는다
+const VERSION = 'cnsatinder-v6'; // 아이콘을 바꾸면 올린다 — 설치된 앱이 캐시를 새로 받는다
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/manifest.webmanifest'];
 
 self.addEventListener('install', (e) => {
@@ -39,15 +39,18 @@ self.addEventListener('push', (e) => {
 	} catch {
 		d = {};
 	}
+	// 채팅: { room } → /chat/{room} / 편지: { url, tag } → /letters/{id}
 	const room = typeof d.room === 'string' ? d.room : '';
+	// 같은 출처의 앱 안 경로만 연다 (외부 주소로 튀지 않게)
+	const url = room ? `/chat/${room}` : typeof d.url === 'string' && d.url.startsWith('/') && !d.url.startsWith('//') ? d.url : '/';
 	e.waitUntil(
 		self.registration.showNotification(d.title || 'CNSATINDER', {
-			body: d.body || '새 메시지가 왔어요',
-			tag: room || 'cnsatinder',
+			body: d.body || '새 메시지',
+			tag: room || (typeof d.tag === 'string' ? d.tag : 'cnsatinder'),
 			renotify: true,
 			icon: '/icon-192.png',
 			badge: '/icon-192.png',
-			data: { url: room ? `/chat/${room}` : '/' }
+			data: { url }
 		})
 	);
 });

@@ -30,6 +30,8 @@ export type Settings = {
 	presence_ttl_sec: number;
 	msg_max_len: number;
 	max_open_rooms: number;
+	letter_max_len: number;
+	comment_max_len: number;
 };
 
 export const S = $state({
@@ -79,6 +81,10 @@ export function errMsg(e: unknown): string {
 	if (m.includes('too_many_interests')) return '관심사는 5개까지 담을 수 있어요';
 	if (m.includes('interest_too_long')) return '관심사 하나는 12자까지 담을 수 있어요';
 	if (m.includes('invalid_mbti')) return 'MBTI 를 다시 확인해 주세요';
+	// 익명편지
+	if (m.includes('too_long')) return '글자 수 초과';
+	if (m.includes('empty_body')) return '내용을 적어 주세요';
+	if (m.includes('not_owner')) return '내가 쓴 글만 지울 수 있어요';
 	if (m.includes('Token has expired') || m.includes('expired'))
 		return '인증 코드 유효 시간 만료. 다시 받아 주세요';
 	if (m.includes('Invalid token') || m.includes('invalid'))
@@ -146,7 +152,7 @@ async function loadSettings() {
 	const { data } = await supabase
 		.from('app_settings')
 		.select(
-			'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms'
+			'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms, letter_max_len, comment_max_len'
 		)
 		.maybeSingle();
 	S.settings = (data as Settings) ?? null;

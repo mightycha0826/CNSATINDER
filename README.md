@@ -19,6 +19,9 @@
 7. **상대 정보는 room_id 로만 묻는다.** 상대 프로필(`partner_profile`)·대화 목록(`my_rooms`)은
    같은 방 멤버에게만, uuid 없이 돌려준다. 익명 이름은 계정에 고정이므로(재회 시 알아볼 수 있음)
    소개·관심사에 학번·전화번호·@아이디는 서버가 거절한다.
+8. **익명편지 본문은 공개, 신원 연결 고리는 비공개.** `letters`/`letter_comments` 는 누구나 읽지만 식별 컬럼이 없고,
+   실제 계정은 `letter_participants`(자기 행만 읽힘)에만 있다. 편지 이름은 "편지 1개 × 계정 1개"마다 새로 뽑고
+   (공백이 들어간 "형용사 명사" — 채팅 닉네임 공간과 겹치지 않음), 계정 고정 닉네임은 쓰지 않는다.
 
 ## 처음 설정하기
 
@@ -94,6 +97,7 @@ npm run dev
 - [x] **인증 코드 8자리 + 10분 만료** — 코드 확인 한도를 올린 만큼 찍어 맞히기 방어를 보완 (2026-09-21 완료).
 - [x] **계정 선점 방지** — 이메일 확인 전 계정의 비밀번호를 DB 트리거가 지운다 (실서버에서 공격 재현 → 차단 확인).
 - [ ] **Phase 8 적용** — `schema.sql` 을 SQL Editor 에서 다시 실행 (익명 이름·프로필·여러 대화). 안 하면 새 화면이 프로필을 못 읽는다.
+- [ ] **Phase 10 적용** — `schema.sql` 을 다시 실행 (익명편지 테이블·RPC). 안 하면 익명편지 탭이 비어 보인다.
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
       Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
 - [ ] **푸시 알림 키** — `.env` 의 `PUBLIC_VAPID_KEY`·`VAPID_PRIVATE_KEY`(Secret)·`VAPID_SUBJECT` 를 Cloudflare Variables and Secrets 에도.
@@ -126,6 +130,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `npm run test:chat` | 채팅 클라이언트 로직 — 가짜 전송 계층으로 경쟁 상황 재현 |
 | `npm run test:e2e` | 실서버 Realtime E2E. 일회용 계정 3개 생성→검증→삭제. 서버 키가 앱과 **같은 프로젝트**여야 실행됨 |
 | `npm run test:match` | 실서버 매칭 동시성 스트레스 (기본 20명 동시 폴링 → 중복 배정·선호 위반 검사 → 삭제) |
+| `npm run test:letters` | 익명편지 피드·답장받기 상태 기계 — 가짜 서버로 새로고침·무한스크롤·백그라운드 정지 검증 |
 | `npm run test:toast` | 알림 — Svelte 브라우저 모드로 컴파일해 $state proxy 관련 버그까지 검증 |
 | `npm run test:platform` | 설치 안내 — 실제 UA 로 iOS/안드로이드·카카오톡 등 인앱 브라우저 판별 검증 |
 | `npm run test:push` | 푸시 알림 암호화(RFC 8291)·VAPID 서명(RFC 8292) — 받는 브라우저 입장에서 복호화·검증 |
@@ -140,6 +145,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 ## 개발용 훅
 
 - `/dev/chat?s=chat|vote|waiting|pending|ended` — 대화방 화면 미리보기 (Supabase 불필요, 개발 모드 전용)
+- `/dev/letters?v=feed|detail|task|new` — 익명편지 화면 미리보기 (가짜 서버, 개발 모드 전용)
 - `?gate` — 개발 모드에서 PWA 설치 게이트 화면을 강제로 띄운다
   (평소 DEV 에서는 게이트가 꺼져 있다)
 
@@ -162,4 +168,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       대화 동시 최대 5개(운영 설정) + 대화 목록 화면, 대화방에서 상대 프로필 보기
 - [x] **Phase 9 — 푸시 알림** — 처음 한 번 권한 안내, 상대가 앱을 안 보고 있을 때만 발송(서버 판단),
       본문 종단 암호화, 같은 메시지 한 번만, 로그아웃 시 기기 구독 삭제, 알림 누르면 그 대화로
+- [x] **Phase 10 — 익명편지** — 하단 탭(익명편지·채팅), 공개 피드 + 댓글·대댓글(2단계), "답장할 편지 받기"로
+      편지마다 지정 답장자 1명 배정(큐, for update skip locked, 48시간 마감), 편지마다 새 임시 이름,
+      도배 제한(편지 3통/일·댓글·배정), 신고·차단(차단은 채팅과 공유, 재배정 쿨다운은 따로), 댓글 알림, 운영자 편지 신고 큐
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

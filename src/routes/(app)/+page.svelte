@@ -285,7 +285,7 @@
 	.home {
 		gap: 14px;
 		padding-top: 12px;
-		padding-bottom: calc(24px + env(safe-area-inset-bottom));
+		padding-bottom: 24px; /* 아래 안전영역은 탭바가 맡는다 */
 	}
 
 	.nudge {

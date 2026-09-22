@@ -11,7 +11,8 @@
 	});
 
 	const NAV = [
-		{ href: '/admin', label: '신고' },
+		{ href: '/admin', label: '채팅 신고' },
+		{ href: '/admin/letters', label: '편지 신고' },
 		{ href: '/admin/settings', label: '운영 설정' },
 		{ href: '/admin/audit', label: '활동 기록' }
 	];
