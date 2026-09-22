@@ -159,15 +159,47 @@
 	});
 	const partnerTyping = $derived(!!room && S.now < room.partnerTypingUntil);
 
+	// ── 키보드 (모바일) ──────────────────────────────────────────
+	// iOS 는 키보드가 올라와도 100dvh 가 줄지 않고 페이지 전체를 위로 밀어 올린다 → 헤더와 최근 메시지가
+	// 화면 밖으로 사라진다. 실제로 보이는 영역(visualViewport)에 대화 화면을 딱 맞춘다.
+	let vvH = $state<number | null>(null);
+	let vvTop = $state(0);
+	let keyboard = $state(false);
+	$effect(() => {
+		const vv = window.visualViewport;
+		if (!vv) return;
+		const sync = () => {
+			vvH = vv.height;
+			vvTop = vv.offsetTop;
+			keyboard = window.innerHeight - vv.height > 120;
+		};
+		sync();
+		vv.addEventListener('resize', sync);
+		vv.addEventListener('scroll', sync);
+		return () => {
+			vv.removeEventListener('resize', sync);
+			vv.removeEventListener('scroll', sync);
+		};
+	});
+
 	// ── 스크롤 ───────────────────────────────────────────────────
+	/** 맨 아래에서 얼마나 떨어져 있는지 — 목록 높이가 바뀌어도(키보드) 보던 자리를 지킨다 */
+	let fromBottom = 0;
 	function scrollToBottom(smooth = true) {
 		listEl?.scrollTo({ top: listEl.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
 	}
 	function onScroll() {
 		if (!listEl) return;
 		paintSoon();
-		atBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 48;
+		fromBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight;
+		atBottom = fromBottom < 48;
 		if (atBottom) room?.markRead();
+	}
+	function onListResize() {
+		if (!listEl) return;
+		// 키보드가 올라와 목록이 줄어들면, 아래쪽(최근 메시지)이 그대로 보이게 위치를 맞춘다
+		listEl.scrollTop = listEl.scrollHeight - listEl.clientHeight - (atBottom ? 0 : fromBottom);
+		paintSoon();
 	}
 	// ── 내 말풍선 그라디언트 ─────────────────────────────────────
 	// 인스타 DM 처럼 화면 위쪽 말풍선은 보라, 아래쪽은 분홍. 그라디언트 하나를 목록 화면에 깔고
@@ -193,15 +225,19 @@
 	});
 	$effect(() => {
 		if (!listEl) return;
-		const ro = new ResizeObserver(paintSoon); // 키보드가 올라오거나 화면이 돌아갈 때
+		const ro = new ResizeObserver(onListResize); // 키보드가 올라오거나 화면이 돌아갈 때
 		ro.observe(listEl);
 		return () => ro.disconnect();
 	});
 
-	// 새 메시지가 오면, 맨 아래를 보고 있을 때만 따라 내려간다
+	// 새 메시지·"읽음"·입력 중 표시·안내 문구가 생기면, 맨 아래를 보고 있을 때만 따라 내려간다
 	$effect(() => {
 		void room?.msgs.length;
 		void partnerTyping;
+		void seenMine;
+		void pending;
+		void closed;
+		void timeUp;
 		if (!atBottom) return;
 		void tick().then(() => {
 			scrollToBottom();
@@ -284,7 +320,12 @@
 	});
 </script>
 
-<div class="chat">
+<div
+	class="chat"
+	class:keyboard
+	style:height={vvH ? `${vvH}px` : null}
+	style:--vv-top={`${vvTop}px`}
+>
 	<header class="topbar">
 		<button class="back" onclick={() => goto('/')} aria-label="뒤로">
 			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -522,6 +563,24 @@
 		display: flex;
 		flex-direction: column;
 		height: 100dvh;
+		/* 보이는 영역에 고정 — 키보드가 올라와도 페이지째 밀려 올라가지 않는다 */
+		position: fixed;
+		top: 0;
+		left: 50%;
+		width: 100%;
+		max-width: 520px;
+		transform: translate(-50%, var(--vv-top, 0px));
+		background: var(--bg);
+		overflow: hidden;
+	}
+	@media (min-width: 560px) {
+		.chat {
+			border-inline: 1px solid var(--line);
+		}
+	}
+	/* 키보드가 떠 있을 때는 홈 인디케이터 여백이 필요 없다 */
+	.chat.keyboard .composer {
+		padding-bottom: 8px;
 	}
 
 	/* ── 헤더 ── */

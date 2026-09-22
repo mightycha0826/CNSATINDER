@@ -87,6 +87,16 @@
 		async send(_r: string, seat: 1 | 2, body: string, cid: string) {
 			const row: MsgRow = { ...m(seat, body), client_msg_id: cid };
 			this.rows.push(row);
+			// &read : 보낸 메시지를 상대가 1초 뒤 읽음 ("읽음" 표시가 화면 안으로 따라오는지 확인용)
+			if (page.url.searchParams.has('read')) {
+				setTimeout(() => {
+					this.snap = { ...this.snap, their_read_id: row.id };
+					this.h?.onRoom({
+						id: ROOM, status: this.snap.status, round: this.snap.round, expires_at: this.snap.expires_at,
+						close_reason: null, alias1: this.snap.my_alias, alias2: this.snap.partner_alias, read1: null, read2: row.id
+					});
+				}, 1000);
+			}
 			return { ok: true as const, row };
 		}
 		async fetchAfter(_r: string, after: number) {
