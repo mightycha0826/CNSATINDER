@@ -35,7 +35,7 @@ export const actions: Actions = {
 			p_note: String(f.get('note') ?? '').slice(0, 1000),
 			p_staff: locals.staff!.id
 		});
-		return { done: '상태를 바꿨어요' };
+		return { done: '상태 변경 완료' };
 	},
 
 	sanction: async ({ params, request, locals }) => {
@@ -64,6 +64,6 @@ export const actions: Actions = {
 				p_staff: locals.staff!.id
 			});
 		}
-		return { done: '조치했어요' };
+		return { done: '조치 완료' };
 	}
 };

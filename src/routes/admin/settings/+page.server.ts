@@ -33,7 +33,7 @@ export const actions: Actions = {
 	toggle: async ({ request, locals }) => {
 		const open = (await request.formData()).get('open') === 'true';
 		await adminRpc('admin_update_settings', { p_patch: { is_open: open }, p_staff: locals.staff!.id });
-		return { done: open ? '서비스를 열었어요' : '서비스를 닫았어요. 진행 중인 대화는 유지됩니다' };
+		return { done: open ? '서비스 열림' : '서비스 닫힘. 진행 중인 대화는 유지됩니다' };
 	},
 
 	save: async ({ request, locals }) => {
@@ -47,6 +47,6 @@ export const actions: Actions = {
 			patch[k] = n;
 		}
 		await adminRpc('admin_update_settings', { p_patch: patch, p_staff: locals.staff!.id });
-		return { done: '저장했어요' };
+		return { done: '저장 완료' };
 	}
 };

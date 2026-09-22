@@ -2,7 +2,7 @@
    CNSATINDER — 디자인 토큰
    레퍼런스: 인스타그램 DM (구조·밀도·회색 스케일만)
    원칙: 바탕은 순수 흑백 · 서체 하나 · 그림자 없음
-   색: 앱 아이콘의 그라디언트(파랑→보라→자홍→분홍→주황→노랑)를 "포인트"에만 쓴다.
+   색: 앱 아이콘의 그라디언트(주황→코랄→핑크)를 "포인트"에만 쓴다.
        채운 버튼·내 말풍선·로고·찾는 중 점 정도. 면·글자·선은 흑백 그대로.
    ──────────────────────────────────────────────────────────── */
 
@@ -13,21 +13,18 @@
 	--line: #dbdbdb;
 	--text: #000000;
 	--text-2: #8e8e8e;
-	/* 아이콘에서 뽑은 색 */
-	--g-blue: #4f6bf6;
-	--g-violet: #8b3bf0;
-	--g-magenta: #d02dc8;
-	--g-pink: #f2336f;
-	--g-orange: #ff7a35;
-	--g-yellow: #ffc93f;
-	/* 로고·장식용 전체 그라디언트 (아이콘처럼 왼쪽 아래 노랑 → 오른쪽 위 보라) */
-	--brand: linear-gradient(45deg, var(--g-yellow), var(--g-orange) 22%, var(--g-pink) 48%, var(--g-magenta) 72%, var(--g-violet));
-	/* 흰 글씨가 올라가는 면 — 밝은 노랑·주황은 빼서 글씨가 읽히게 */
-	--accent-fill: linear-gradient(110deg, #6a4cf5, #b52ed6 50%, #e8296a);
+	/* 아이콘에서 뽑은 색 (왼쪽 위 주황 → 오른쪽 아래 핑크) */
+	--g-orange: #ff7a50;
+	--g-coral: #fb5c68;
+	--g-pink: #f0396e;
+	/* 로고·장식용 전체 그라디언트 — 아이콘과 같은 대각선 방향 */
+	--brand: linear-gradient(45deg, var(--g-orange), var(--g-coral) 50%, var(--g-pink));
+	/* 흰 글씨가 올라가는 면 — 가장 밝은 주황은 살짝 죽여서 글씨가 읽히게 */
+	--accent-fill: linear-gradient(110deg, #f2603f, #ee4360 55%, #d92868);
 	/* 글자·링크·아이콘용 단색 */
-	--accent: #b82ad0;
-	/* 내 말풍선 — 화면 위(보라)에서 아래(분홍)로. 인스타 DM 처럼 말풍선 위치에 따라 색이 변한다 */
-	--bubble-fill: linear-gradient(180deg, #7446f3, #b12fd8 55%, #e8296a);
+	--accent: #e23e68;
+	/* 내 말풍선 — 화면 위(주황)에서 아래(핑크)로. 인스타 DM 처럼 말풍선 위치에 따라 색이 변한다 */
+	--bubble-fill: linear-gradient(180deg, #f2603f, #ee4360 55%, #d92868);
 	--on-accent: #ffffff;
 	--danger: #ed4956;
 
@@ -49,7 +46,7 @@
 		--line: #262626;
 		--text: #f5f5f5;
 		--text-2: #a8a8a8;
-		--accent: #df5cf2;
+		--accent: #ff7a7f;
 	}
 }
 
@@ -60,7 +57,7 @@
 	--line: #262626;
 	--text: #f5f5f5;
 	--text-2: #a8a8a8;
-	--accent: #df5cf2;
+	--accent: #ff7a7f;
 }
 
 * {
@@ -233,7 +230,7 @@ a {
 	width: fit-content; /* 그라디언트가 글자 폭에 맞게 펼쳐지도록 */
 	font-weight: 800;
 	letter-spacing: -0.03em;
-	background: linear-gradient(90deg, var(--g-violet), var(--g-magenta) 40%, var(--g-pink) 70%, var(--g-orange));
+	background: linear-gradient(90deg, var(--g-orange), var(--g-coral) 50%, var(--g-pink));
 	-webkit-background-clip: text;
 	background-clip: text;
 	color: transparent;

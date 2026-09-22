@@ -446,7 +446,7 @@ begin
   values (v_room, u1, 1, now()), (v_room, u2, 2, now());
 
   insert into public.messages (room_id, sender_seat, body, client_msg_id)
-  values (v_room, 0, '대화가 시작되었어요. 이름·학번·SNS는 묻지도 말하지도 않기로 해요.',
+  values (v_room, 0, '대화 시작. 이름·학번·SNS는 묻지도 말하지도 않기로 해요.',
           gen_random_uuid());
   return v_room;
 end
@@ -660,7 +660,7 @@ begin
            round      = r.round + 1
      where id = p_room;
     insert into public.messages (room_id, sender_seat, body, client_msg_id)
-    values (p_room, 0, cfg.extend_minutes || '분 연장됐어요.', gen_random_uuid());
+    values (p_room, 0, cfg.extend_minutes || '분 연장됨.', gen_random_uuid());
     return jsonb_build_object('result', 'extended', 'snap', public.room_snapshot(p_room));
   end if;
   return jsonb_build_object('result', 'waiting', 'snap', public.room_snapshot(p_room));

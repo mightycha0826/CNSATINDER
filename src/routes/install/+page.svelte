@@ -18,13 +18,13 @@
 		installing = true;
 		const ok = await promptInstall();
 		installing = false;
-		if (!ok) toast('설치를 취소했어요');
+		if (!ok) toast('설치 취소됨');
 	}
 
 	async function copyLink() {
 		try {
 			await navigator.clipboard.writeText(appUrl);
-			toast(`링크를 복사했어요. ${browserName}에 붙여 넣어 주세요`);
+			toast(`링크 복사됨 · ${browserName}에 붙여 넣어 주세요`);
 		} catch {
 			// 인앱 브라우저는 클립보드를 막는 경우가 있다 — 직접 길게 눌러 복사하도록
 			toast('아래 주소를 길게 눌러 복사해 주세요');
@@ -109,7 +109,7 @@
 				<li>홈 화면에 생긴 <strong>CNSATINDER</strong> 아이콘으로 들어오세요</li>
 			</ol>
 			<p class="muted note">
-				메뉴에 <strong>홈 화면에 추가</strong>가 없으면 iOS가 오래된 버전이에요. 링크를 복사해
+				메뉴에 <strong>홈 화면에 추가</strong>가 없으면 iOS 버전이 오래돼서일 수 있어요. 링크를 복사해
 				<strong>Safari</strong>에서 열어 주세요.
 			</p>
 			<button class="btn-ghost" onclick={copyLink}>링크 복사하기</button>

@@ -37,7 +37,7 @@
 			email = await sendOtp(localPart);
 			step = 'code';
 			resendAt = Date.now() + 60_000;
-			toast('인증 코드를 보냈어요');
+			toast('인증 코드 발송');
 		} catch (e) {
 			toast(errMsg(e));
 		} finally {
@@ -89,8 +89,8 @@
 
 	{#if step === 'email'}
 		<section>
-			<h2>처음이에요</h2>
-			<p class="lead muted">학교 이메일로 본인 확인만 하면 끝이에요. 이름은 어디에도 남지 않아요.</p>
+			<h2>처음 이용</h2>
+			<p class="lead muted">학교 이메일로 본인 확인만 하면 끝. 이름은 어디에도 남지 않아요.</p>
 
 			<div class="emailfield">
 				<input
@@ -112,7 +112,7 @@
 			</button>
 		</section>
 
-		<div class="or"><span>이미 계정이 있어요</span></div>
+		<div class="or"><span>이미 계정이 있다면</span></div>
 
 		<section>
 			<div class="emailfield">
@@ -145,9 +145,9 @@
 			</p>
 		</section>
 	{:else}
-		<p class="lead muted"><strong>{email}</strong> 으로<br />인증 코드를 보냈어요.</p>
+		<p class="lead muted"><strong>{email}</strong> 으로<br />인증 코드 발송 완료.</p>
 		<p class="spam muted">
-			메일이 안 보이면 <strong>스팸함</strong>을 확인해 주세요. 보낸 사람은 <strong>CNSATINDER</strong>예요.
+			메일이 안 보이면 <strong>스팸함</strong>을 확인해 주세요. (발신자: <strong>CNSATINDER</strong>)
 		</p>
 
 		<input

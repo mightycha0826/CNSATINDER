@@ -64,11 +64,11 @@ export function errMsg(e: unknown): string {
 	if (m.includes('Request rate limit reached'))
 		return '지금 들어오는 사람이 많아요. 몇 초 뒤에 다시 눌러 주세요';
 	if (m.includes('Email rate limit') || m.includes('over_email_send_rate_limit'))
-		return '메일을 너무 자주 요청했어요. 1분 뒤에 다시 받아 주세요';
+		return '메일 요청이 너무 잦아요. 1분 뒤에 다시 받아 주세요';
 	if (m.includes('rate limit')) return '요청이 많아요. 잠시 후 다시 시도해 주세요';
 	// 비밀번호 로그인 — 계정이 없는지 비밀번호가 틀렸는지는 구분해 주지 않는다 (가입 여부 탐색 방지)
 	if (m.includes('Invalid login credentials')) return '이메일 또는 비밀번호가 맞지 않아요';
-	if (m.includes('Email not confirmed')) return '아직 인증을 마치지 않은 계정이에요. 인증 코드로 들어와 주세요';
+	if (m.includes('Email not confirmed')) return '아직 인증을 마치지 않은 계정입니다. 인증 코드로 들어와 주세요';
 	if (m.includes('Password should') || m.includes('weak_password'))
 		return '비밀번호는 8자 이상, 영문과 숫자를 섞어 주세요';
 	if (m.includes('same_password') || m.includes('should be different'))
@@ -76,17 +76,17 @@ export function errMsg(e: unknown): string {
 	// 프로필 검사 (update_my_profile)
 	if (m.includes('personal_info')) return '학번·전화번호·SNS 아이디처럼 나를 알 수 있는 정보는 적을 수 없어요';
 	if (m.includes('bio_too_long')) return '소개는 60자까지 쓸 수 있어요';
-	if (m.includes('too_many_interests')) return '관심사는 5개까지예요';
-	if (m.includes('interest_too_long')) return '관심사 하나는 12자까지예요';
+	if (m.includes('too_many_interests')) return '관심사는 5개까지 담을 수 있어요';
+	if (m.includes('interest_too_long')) return '관심사 하나는 12자까지 담을 수 있어요';
 	if (m.includes('invalid_mbti')) return 'MBTI 를 다시 확인해 주세요';
 	if (m.includes('Token has expired') || m.includes('expired'))
-		return '인증 코드가 만료됐어요. 다시 받아 주세요';
+		return '인증 코드 유효 시간 만료. 다시 받아 주세요';
 	if (m.includes('Invalid token') || m.includes('invalid'))
 		return '인증 코드가 올바르지 않아요';
 	if (m.includes('Failed to fetch') || m.includes('NetworkError'))
 		return '네트워크를 확인해 주세요';
 	if (m.includes('unauthenticated')) return '로그인이 필요해요';
-	return m || '알 수 없는 오류가 발생했어요';
+	return m || '알 수 없는 오류';
 }
 
 // ── 부팅 ──────────────────────────────────────────────────────────────

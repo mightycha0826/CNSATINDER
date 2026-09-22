@@ -113,7 +113,7 @@
 				<dd class="num" class:danger={d.reporter_dismissed >= 2}>{d.reporter_dismissed}건</dd>
 			</dl>
 			{#if d.reporter_dismissed >= 2}
-				<p class="hint">기각이 반복되는 신고자예요. 허위 신고 여부를 확인해 주세요.</p>
+				<p class="hint">기각이 반복되는 신고자입니다. 허위 신고 여부를 확인해 주세요.</p>
 			{/if}
 		</section>
 
@@ -146,7 +146,7 @@
 					<dt>신고자</dt>
 					<dd class="mono">{form.identity.reporter ?? '(탈퇴)'}</dd>
 				</dl>
-				<p class="hint">이 열람은 활동 기록에 남았어요. 학생에게 조치를 전달할 때만 사용하세요.</p>
+				<p class="hint">이 열람은 활동 기록에 남습니다. 학생에게 조치를 전달할 때만 사용하세요.</p>
 			{:else}
 				<p class="hint">
 					학교 이메일은 꼭 필요할 때만 확인하세요.<br />열람하면 누가 언제 봤는지 기록됩니다.

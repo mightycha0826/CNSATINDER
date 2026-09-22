@@ -109,7 +109,7 @@ export class Seeker {
 				return;
 			case 'not_eligible':
 				this.#halt();
-				this.onStopped('지금은 대화를 시작할 수 없는 계정이에요');
+				this.onStopped('지금은 대화를 시작할 수 없는 계정입니다');
 				return;
 			case 'service_closed':
 				this.#halt();

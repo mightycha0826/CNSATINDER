@@ -1,25 +1,35 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, copyFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
- * PWA 아이콘 생성 — branding/icon-source.webp 를 헤드리스 Chrome 으로 줄여 PNG 로 만든다.
+ * PWA 아이콘 생성 — branding/icon-source.* 를 헤드리스 Chrome 으로 줄여 PNG 로 만든다.
  * 외부 의존성(sharp 등) 없이 동작.
  *
  *   node scripts/generate-icons.mjs
  *
- * 원본은 가장자리까지 그라디언트가 꽉 찬 정사각형이어야 한다 (둥근 모서리·테두리 없이).
- * iOS·안드로이드가 각자 모양으로 모서리를 깎는다. 로고 도형은 가운데 약 60% 안에 있어
- * 안드로이드 마스커블 안전 영역(지름 80% 원) 안에 들어가므로 같은 그림을 마스커블로도 쓴다.
+ * 원본은 정사각형이 아니어도 된다 — object-fit: cover 로 가운데를 기준삼아 정사각형으로 자른다.
+ * 다만 가장자리까지 그림이 꽉 차 있어야 한다 (둥근 모서리·투명 배경 없이).
+ * iOS·안드로이드가 각자 모양으로 모서리를 깎으므로, 핵심 로고는 가운데 약 60% 안에 있는 게 안전하다
+ * (안드로이드 마스커블 안전 영역 = 지름 80% 원).
  *
  * ⚠️ Windows 헤드리스 Chrome 은 DPI 스케일 때문에 --window-size 보다 크게 그려져
  *    잘릴 수 있으므로 --force-device-scale-factor=1 을 반드시 준다.
  */
 const root = fileURLToPath(new URL('..', import.meta.url));
 const STATIC = join(root, 'static');
-const SOURCE = join(root, 'branding', 'icon-source.webp');
+const BRANDING = join(root, 'branding');
+
+const MIME = { '.webp': 'image/webp', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
+const sourceName = readdirSync(BRANDING).find((f) => f.startsWith('icon-source.') && MIME[extname(f).toLowerCase()]);
+if (!sourceName) {
+	console.error('branding/icon-source.(png|webp|jpg) 를 찾지 못했습니다.');
+	process.exit(1);
+}
+const SOURCE = join(BRANDING, sourceName);
+const mime = MIME[extname(sourceName).toLowerCase()];
 
 const CHROME = [
 	'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -33,13 +43,14 @@ if (!CHROME) {
 	process.exit(1);
 }
 
-const dataUrl = `data:image/webp;base64,${readFileSync(SOURCE).toString('base64')}`;
+const dataUrl = `data:${mime};base64,${readFileSync(SOURCE).toString('base64')}`;
 
 /** @param {number} size */
 const html = (size) => `<!doctype html><meta charset="utf-8"><style>
     html,body{margin:0;padding:0;background:#000;overflow:hidden}
-    img{display:block;width:${size}px;height:${size}px}
-  </style><img src="${dataUrl}">`;
+    .i{width:${size}px;height:${size}px;overflow:hidden}
+    img{display:block;width:100%;height:100%;object-fit:cover}
+  </style><div class="i"><img src="${dataUrl}"></div>`;
 
 const tmp = mkdtempSync(join(tmpdir(), 'cnsatinder-icons-'));
 

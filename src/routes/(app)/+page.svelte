@@ -88,7 +88,7 @@
 	async function allowPush() {
 		const r = await enablePush();
 		doneAsking();
-		if (r === 'granted') toast('알림을 켰어요');
+		if (r === 'granted') toast('알림 켜짐');
 		else if (r === 'denied') toast('알림이 꺼져 있어요. 내 프로필에서 다시 켤 수 있어요');
 	}
 
@@ -141,12 +141,12 @@
 			<button class="stop" onclick={() => seeker.cancel()}>그만</button>
 		</div>
 	{:else if profileMissing}
-		<button class="btn" disabled>계정 정보를 불러오지 못했어요 · 잠시 후 다시 열어 주세요</button>
+		<button class="btn" disabled>계정 정보를 불러오지 못함 · 잠시 후 다시 열어 주세요</button>
 	{:else if closed}
 		<button class="btn" disabled>지금은 열려 있지 않아요</button>
 	{:else if suspended}
 		<button class="btn" disabled>
-			{suspendedUntil ? `${suspendedUntil}까지 이용이 제한됐어요` : '이용이 제한된 계정이에요'}
+			{suspendedUntil ? `${suspendedUntil}까지 이용 제한` : '이용 제한된 계정'}
 		</button>
 	{:else if full}
 		<button class="btn" disabled>대화는 동시에 {maxRooms}개까지 할 수 있어요</button>
@@ -348,16 +348,16 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: var(--g-violet);
+		background: var(--g-orange);
 		animation: pulse 1.2s infinite;
 	}
 	/* 아이콘 그라디언트를 점 셋에 나눠 싣는다 */
 	.dots i:nth-child(2) {
-		background: var(--g-magenta);
+		background: var(--g-coral);
 		animation-delay: 0.2s;
 	}
 	.dots i:nth-child(3) {
-		background: var(--g-orange);
+		background: var(--g-pink);
 		animation-delay: 0.4s;
 	}
 	@keyframes pulse {

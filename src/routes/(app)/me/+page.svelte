@@ -55,8 +55,8 @@
 	function addTag() {
 		const t = tagDraft.trim().replace(/^#/, '');
 		if (!t) return;
-		if (t.length > 12) return toast('관심사 하나는 12자까지예요');
-		if (interests.length >= 5) return toast('관심사는 5개까지예요');
+		if (t.length > 12) return toast('관심사 하나는 12자까지 담을 수 있어요');
+		if (interests.length >= 5) return toast('관심사는 5개까지 담을 수 있어요');
 		if (!interests.some((x) => x.toLowerCase() === t.toLowerCase())) interests.push(t);
 		tagDraft = '';
 	}
@@ -72,7 +72,7 @@
 		busy = true;
 		try {
 			await saveProfile(bio, interests, mbti);
-			toast('저장했어요');
+			toast('저장 완료');
 		} catch (e) {
 			toast(errMsg(e));
 		} finally {
@@ -97,7 +97,7 @@
 				.eq('id', S.session?.user.id ?? '');
 			if (error) throw error;
 			await loadProfile();
-			toast('바꿨어요');
+			toast('변경 완료');
 		} catch (e) {
 			toast(errMsg(e));
 		} finally {
@@ -150,7 +150,7 @@
 			resendAt = Date.now() + 60_000;
 			code = '';
 			pwStep = 'code';
-			toast('인증 코드를 보냈어요');
+			toast('인증 코드 발송');
 		} catch (e) {
 			toast(errMsg(e));
 		} finally {
@@ -177,7 +177,7 @@
 		busy = true;
 		try {
 			await setPassword(password);
-			toast('비밀번호를 저장했어요');
+			toast('비밀번호 저장 완료');
 			pwStep = 'idle';
 			password = current = code = '';
 		} catch (e) {
@@ -201,11 +201,11 @@
 			if (pushOn) {
 				await disablePush();
 				pushOn = false;
-				toast('알림을 껐어요');
+				toast('알림 꺼짐');
 			} else {
 				pushPerm = await enablePush();
 				pushOn = await pushEnabled();
-				if (pushOn) toast('알림을 켰어요');
+				if (pushOn) toast('알림 켜짐');
 			}
 		} catch (e) {
 			toast(errMsg(e));
@@ -346,7 +346,7 @@
 			</button>
 			<div class="pwfoot">
 				<button class="btn-text" onclick={sendCode} disabled={busy}>
-					비밀번호를 잊었어요 · 인증 코드 받기
+					비밀번호를 잊었다면 · 인증 코드 받기
 				</button>
 				<button class="cancel" onclick={() => (pwStep = 'idle')}>취소</button>
 			</div>

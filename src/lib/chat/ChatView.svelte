@@ -69,7 +69,7 @@
 	async function vote(agree: boolean) {
 		if (!room) return;
 		const r = await room.vote(agree);
-		if (r === 'too_early') toast('아직 연장할 수 있는 시간이 아니에요');
+		if (r === 'too_early') toast('연장은 마감 직전부터 가능해요');
 		else if (r === 'max_rounds') toast('더 이상 연장할 수 없어요');
 		else if (r === null) toast('연결을 확인해 주세요');
 	}
@@ -142,7 +142,7 @@
 		const ok = await room.block();
 		acting = false;
 		sheet = null;
-		toast(ok ? '차단했어요. 다시는 만나지 않아요' : '연결을 확인해 주세요');
+		toast(ok ? '차단 완료 · 다시는 만나지 않아요' : '연결을 확인해 주세요');
 	}
 
 	async function report() {
@@ -151,7 +151,7 @@
 		const ok = await room.report(reportReason, reportNote.trim());
 		acting = false;
 		sheet = null;
-		toast(ok ? '신고했어요. 운영진이 확인할게요' : '연결을 확인해 주세요');
+		toast(ok ? '신고 접수 · 운영진이 확인할게요' : '연결을 확인해 주세요');
 	}
 
 	// 도배 제한에 걸리면 한 번만 알려준다
@@ -266,28 +266,28 @@
 		!!room?.snap?.their_read_id && lastMineId != null && room.snap.their_read_id >= lastMineId
 	);
 
-	// ★ 상대가 신고/차단해서 끝났을 때 사유를 알려주지 않는다 — "상대가 대화를 종료했어요"로 통일.
+	// ★ 상대가 신고/차단해서 끝났을 때 사유를 알려주지 않는다 — "상대가 대화를 종료함"으로 통일.
 	//   신고당한 걸 알면 보복하거나 신고를 피하는 법을 배운다.
 	const ENDED_BY_PARTNER: Record<string, string> = {
-		expired: '시간이 다 되어 대화가 끝났어요',
-		declined: '연장하지 않기로 해서 대화가 끝났어요',
-		skipped: '상대가 다음 대화로 넘어갔어요',
-		left: '상대가 대화를 종료했어요',
-		reported: '상대가 대화를 종료했어요',
-		blocked: '상대가 대화를 종료했어요',
-		no_show: '상대가 들어오지 않았어요',
-		admin: '운영진이 대화를 종료했어요'
+		expired: '시간이 다 되어 대화 종료',
+		declined: '연장하지 않기로 해서 대화 종료',
+		skipped: '상대가 다음 대화로 이동',
+		left: '상대가 대화방을 나감',
+		reported: '상대가 대화를 종료함',
+		blocked: '상대가 대화를 종료함',
+		no_show: '상대가 들어오지 않음',
+		admin: '운영진이 대화를 종료함'
 	};
 	const ENDED_BY_ME: Record<string, string> = {
-		left: '대화를 나갔어요',
-		skipped: '대화를 나갔어요',
-		declined: '연장하지 않기로 해서 대화가 끝났어요',
-		reported: '신고했어요. 운영진이 대화 내용을 확인할게요',
-		blocked: '차단했어요. 이 사람과는 다시 만나지 않아요'
+		left: '대화를 나감',
+		skipped: '대화를 나감',
+		declined: '연장하지 않기로 해서 대화 종료',
+		reported: '신고 접수 · 운영진이 대화 내용을 확인할게요',
+		blocked: '차단 완료 · 이 사람과는 다시 만나지 않아요'
 	};
 	const endedText = $derived.by(() => {
 		const r = room?.snap?.close_reason ?? '';
-		return (room?.endedByMe ? ENDED_BY_ME[r] : undefined) ?? ENDED_BY_PARTNER[r] ?? '대화가 끝났어요';
+		return (room?.endedByMe ? ENDED_BY_ME[r] : undefined) ?? ENDED_BY_PARTNER[r] ?? '대화 종료';
 	});
 </script>
 
@@ -405,7 +405,7 @@
 			{#if pending && !closed}
 				<div class="sys">
 					{room.snap?.partner_joined
-						? '상대가 들어왔어요. 곧 시작해요'
+						? '상대가 들어와 있어요. 곧 시작해요'
 						: '상대가 들어오기를 기다리고 있어요. 둘 다 들어오면 시간이 흐르기 시작해요'}
 				</div>
 			{/if}
@@ -422,7 +422,7 @@
 					{/if}
 				</div>
 			{:else if timeUp}
-				<div class="sys">시간이 다 됐어요</div>
+				<div class="sys">시간 종료</div>
 			{/if}
 		{/if}
 	</div>
@@ -467,12 +467,12 @@
 							</div>
 						{/if}
 						{#if !profile.bio && !profile.mbti && !profile.interests.length}
-							<p class="muted small">아직 소개를 적지 않았어요</p>
+							<p class="muted small">아직 소개를 적지 않음</p>
 						{/if}
 					{:else if profileLoading}
 						<p class="muted small">불러오는 중…</p>
 					{:else}
-						<p class="muted small">프로필을 불러오지 못했어요</p>
+						<p class="muted small">프로필을 불러오지 못함</p>
 					{/if}
 				</div>
 				<button class="item" onclick={() => (sheet = null)}>닫기</button>

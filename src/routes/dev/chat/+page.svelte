@@ -150,7 +150,7 @@
 		room = r;
 		void r.open().then(() => (loading = false));
 		// &toast : 알림이 2.4초 뒤 사라지는지 확인용
-		if (page.url.searchParams.has('toast')) toast('테스트 알림이에요'); // toast() 는 내부에서 untrack
+		if (page.url.searchParams.has('toast')) toast('테스트 알림'); // toast() 는 내부에서 untrack
 		return () => r.dispose();
 	});
 </script>
