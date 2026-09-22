@@ -9,8 +9,8 @@
 
 	/**
 	 * 익명편지 탭 = 공개 피드 (인스타그램 게시물 목록).
-	 * 위: "답장할 편지 받기" — 아직 아무도 답장을 맡지 않은 편지 한 통을 배정받는다.
-	 * 아래: 모두의 편지. 누르면 본문과 댓글.
+	 * 목록: 모두의 편지. 누르면 본문과 댓글.
+	 * 아래(탭바 위 고정): "답장할 편지 받기" — 아직 아무도 답장을 맡지 않은 편지 한 통을 배정받는다 · "편지 쓰기".
 	 */
 
 	const feed = new LettersFeed(fetchFeed);
@@ -58,35 +58,7 @@
 </div>
 
 <div class="page letters">
-	{#if myTask}
-		<button class="task" onclick={() => goto(`/letters/${myTask.id}`)}>
-			<strong>답장을 기다리는 편지 1통</strong>
-			<span>{myTask.author_alias} 님의 편지 · 눌러서 답장 쓰기 ›</span>
-		</button>
-	{:else if seeker.seeking}
-		<div class="seek">
-			<div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
-			<div class="seek-text">
-				<strong>답장할 편지를 고르는 중 <span class="num muted">{elapsed}</span></strong>
-				<span class="muted">
-					{#if seeker.reason === 'cooldown'}
-						너무 자주 받고 있어요. 잠깐 쉬었다가 다시 볼게요
-					{:else if seeker.reason === 'filtered'}
-						지금은 받을 수 있는 편지가 없어요. 새 편지가 오면 바로 드릴게요
-					{:else if seeker.reason === 'empty'}
-						아직 답장을 기다리는 편지가 없어요
-					{:else}
-						잠시만요…
-					{/if}
-				</span>
-			</div>
-			<button class="stop" onclick={() => seeker.cancel()}>그만</button>
-		</div>
-	{:else}
-		<div class="actions">
-			<button class="btn" onclick={() => seeker.start()}>답장할 편지 받기</button>
-			<button class="btn-ghost" onclick={() => goto('/letters/new')}>편지 쓰기</button>
-		</div>
+	{#if !myTask && !seeker.seeking}
 		<p class="hint muted">
 			편지는 모두에게 공개돼요. 편지마다 새 익명 이름이 붙어서, 여러 편지를 써도 같은 사람인지 알 수 없어요.
 		</p>
@@ -133,6 +105,40 @@
 	<div bind:this={sentinel} class="sentinel">
 		{#if feed.loadingMore}<span class="muted">불러오는 중…</span>{/if}
 	</div>
+
+	<!-- 답장할 편지 받기 · 편지 쓰기 — 엄지가 닿는 아래쪽에 고정 (탭바 바로 위) -->
+	<div class="cta">
+		{#if myTask}
+			<button class="task" onclick={() => goto(`/letters/${myTask.id}`)}>
+				<strong>답장을 기다리는 편지 1통</strong>
+				<span>{myTask.author_alias} 님의 편지 · 눌러서 답장 쓰기 ›</span>
+			</button>
+		{:else if seeker.seeking}
+			<div class="seek">
+				<div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+				<div class="seek-text">
+					<strong>답장할 편지를 고르는 중 <span class="num muted">{elapsed}</span></strong>
+					<span class="muted">
+						{#if seeker.reason === 'cooldown'}
+							너무 자주 받고 있어요. 잠깐 쉬었다가 다시 볼게요
+						{:else if seeker.reason === 'filtered'}
+							지금은 받을 수 있는 편지가 없어요. 새 편지가 오면 바로 드릴게요
+						{:else if seeker.reason === 'empty'}
+							아직 답장을 기다리는 편지가 없어요
+						{:else}
+							잠시만요…
+						{/if}
+					</span>
+				</div>
+				<button class="stop" onclick={() => seeker.cancel()}>그만</button>
+			</div>
+		{:else}
+			<div class="actions">
+				<button class="btn" onclick={() => seeker.start()}>답장할 편지 받기</button>
+				<button class="btn-ghost" onclick={() => goto('/letters/new')}>편지 쓰기</button>
+			</div>
+		{/if}
+	</div>
 </div>
 
 <style>
@@ -147,7 +153,16 @@
 	.letters {
 		gap: 12px;
 		padding-top: 12px;
-		padding-bottom: 12px;
+		padding-bottom: 0; /* 버튼 여백은 .cta 가 */
+	}
+
+	.cta {
+		position: sticky;
+		bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+		margin-top: auto;
+		padding: 12px 0;
+		background: var(--bg);
+		z-index: 5;
 	}
 
 	.actions {
@@ -161,7 +176,7 @@
 		flex: 1;
 	}
 	.hint {
-		margin: -2px 0 0;
+		margin: 0;
 		font-size: 12px;
 		line-height: 1.6;
 	}
