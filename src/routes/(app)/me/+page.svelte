@@ -3,7 +3,19 @@
 	import Avatar from '$lib/Avatar.svelte';
 	import PasswordFields from '$lib/PasswordFields.svelte';
 	import { supabase } from '$lib/supabase';
-	import { S, errMsg, loadProfile, saveProfile, setPassword, signOut, toast } from '$lib/state.svelte';
+	import {
+		S,
+		errMsg,
+		loadProfile,
+		recentlyVerified,
+		saveProfile,
+		sendOtpToMe,
+		setPassword,
+		signOut,
+		toast,
+		verifyCurrentPassword,
+		verifyOtpForMe
+	} from '$lib/state.svelte';
 
 	/**
 	 * 내 프로필 · 설정.
@@ -93,13 +105,71 @@
 	}
 
 	// ── 비밀번호 ──
-	let pwOpen = $state(false);
+	// 바꾸기: 기존 비밀번호 확인 → 새 비밀번호. 잊었으면 학교 메일 인증 코드로 확인 → 새 비밀번호.
+	// 처음 만들 때는 확인 없이 바로 (인증 코드로 가입한 직후이므로).
+	type PwStep = 'idle' | 'current' | 'code' | 'new';
+	let pwStep = $state<PwStep>('idle');
+	let current = $state('');
+	let code = $state('');
+	let codeSentTo = $state('');
+	let resendAt = $state(0);
 	let password = $state('');
 	let passwordOk = $state(false);
+
+	function startPw() {
+		current = code = password = '';
+		// 비밀번호가 아직 없거나, 방금 인증 코드로 들어왔으면 바로 새 비밀번호로
+		pwStep = !S.hasPassword || recentlyVerified() ? 'new' : 'current';
+	}
 	$effect(() => {
 		// 홈의 "비밀번호를 만들어 두세요" 에서 왔으면 펼쳐 둔다
-		if (location.hash === '#password') pwOpen = true;
+		if (location.hash === '#password') startPw();
 	});
+
+	async function checkCurrent() {
+		if (!current || busy) return;
+		busy = true;
+		try {
+			await verifyCurrentPassword(current);
+			pwStep = 'new';
+		} catch (e) {
+			const m = errMsg(e);
+			toast(m.includes('비밀번호가 맞지') ? '비밀번호가 맞지 않아요' : m);
+			current = '';
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function sendCode() {
+		if (busy) return;
+		busy = true;
+		try {
+			codeSentTo = await sendOtpToMe();
+			resendAt = Date.now() + 60_000;
+			code = '';
+			pwStep = 'code';
+			toast('인증 코드를 보냈어요');
+		} catch (e) {
+			toast(errMsg(e));
+		} finally {
+			busy = false;
+		}
+	}
+
+	async function checkCode() {
+		if (!/^[0-9]{6,8}$/.test(code.trim()) || busy) return;
+		busy = true;
+		try {
+			await verifyOtpForMe(code);
+			pwStep = 'new';
+		} catch (e) {
+			toast(errMsg(e));
+			code = '';
+		} finally {
+			busy = false;
+		}
+	}
 
 	async function savePassword() {
 		if (!passwordOk || busy) return;
@@ -107,8 +177,8 @@
 		try {
 			await setPassword(password);
 			toast('비밀번호를 저장했어요');
-			pwOpen = false;
-			password = '';
+			pwStep = 'idle';
+			password = current = code = '';
 		} catch (e) {
 			toast(errMsg(e));
 		} finally {
@@ -210,15 +280,60 @@
 			<h2>비밀번호</h2>
 			<span class="muted small">{S.hasPassword ? '설정됨' : '아직 없음'}</span>
 		</div>
-		{#if pwOpen}
-			<PasswordFields bind:value={password} bind:valid={passwordOk} placeholder="새 비밀번호" />
-			<button class="btn" onclick={savePassword} disabled={!passwordOk || busy}>저장</button>
-		{:else}
-			<button class="btn-ghost" onclick={() => (pwOpen = true)}>
+		{#if pwStep === 'idle'}
+			<button class="btn-ghost" onclick={startPw}>
 				{S.hasPassword ? '비밀번호 바꾸기' : '비밀번호 만들기'}
 			</button>
+			<p class="muted small">학교 이메일 앞부분과 이 비밀번호로 로그인해요.</p>
+		{:else if pwStep === 'current'}
+			<p class="step muted">먼저 지금 쓰는 비밀번호를 확인할게요.</p>
+			<input
+				class="field"
+				type="password"
+				autocomplete="current-password"
+				placeholder="지금 비밀번호"
+				bind:value={current}
+				onkeydown={(e) => e.key === 'Enter' && checkCurrent()}
+			/>
+			<button class="btn" onclick={checkCurrent} disabled={!current || busy}>
+				{busy ? '확인 중…' : '확인'}
+			</button>
+			<div class="pwfoot">
+				<button class="btn-text" onclick={sendCode} disabled={busy}>
+					비밀번호를 잊었어요 · 인증 코드 받기
+				</button>
+				<button class="cancel" onclick={() => (pwStep = 'idle')}>취소</button>
+			</div>
+		{:else if pwStep === 'code'}
+			<p class="step muted"><strong>{codeSentTo}</strong> 으로 보낸 인증 코드를 입력해 주세요. 안 보이면 스팸함을 확인해 주세요.</p>
+			<input
+				class="field codein num"
+				type="text"
+				inputmode="numeric"
+				autocomplete="one-time-code"
+				maxlength="8"
+				placeholder="인증 코드"
+				bind:value={code}
+				onkeydown={(e) => e.key === 'Enter' && checkCode()}
+			/>
+			<button class="btn" onclick={checkCode} disabled={!/^[0-9]{6,8}$/.test(code.trim()) || busy}>
+				{busy ? '확인 중…' : '확인'}
+			</button>
+			<div class="pwfoot">
+				<button class="btn-text" onclick={sendCode} disabled={busy || S.now < resendAt}>코드 다시 받기</button>
+				<button class="cancel" onclick={() => (pwStep = 'idle')}>취소</button>
+			</div>
+		{:else}
+			<p class="step muted">{S.hasPassword ? '새 비밀번호를 정해 주세요.' : '로그인에 쓸 비밀번호를 정해 주세요.'}</p>
+			<PasswordFields bind:value={password} bind:valid={passwordOk} placeholder="새 비밀번호" />
+			<button class="btn" onclick={savePassword} disabled={!passwordOk || busy}>
+				{busy ? '저장 중…' : '저장'}
+			</button>
+			<div class="pwfoot">
+				<span></span>
+				<button class="cancel" onclick={() => (pwStep = 'idle')}>취소</button>
+			</div>
 		{/if}
-		<p class="muted small">학교 이메일 앞부분과 이 비밀번호로 로그인해요.</p>
 	</section>
 
 	<div class="rows">
@@ -378,6 +493,31 @@
 		background: var(--text);
 		color: var(--bg);
 		font-weight: 600;
+	}
+
+	.step {
+		margin: 0;
+		font-size: 13px;
+		line-height: 1.6;
+	}
+	.step strong {
+		color: var(--text);
+		font-weight: 600;
+	}
+	.codein {
+		text-align: center;
+		font-size: 20px;
+		font-weight: 600;
+		letter-spacing: 0.25em;
+	}
+	.pwfoot {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+	.cancel {
+		font-size: 14px;
+		color: var(--text-2);
 	}
 
 	.rowhead {

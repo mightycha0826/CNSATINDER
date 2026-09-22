@@ -227,6 +227,37 @@ export async function verifyOtp(email: string, token: string) {
 		type: 'email'
 	});
 	if (error) throw error;
+	otpVerifiedAt = Date.now();
+}
+
+// ── 본인 재확인 (비밀번호 바꾸기 전) ─────────────────────────────────
+// 기존 비밀번호로 확인하거나, 잊었으면 학교 메일 인증 코드로 확인한다.
+// 방금 인증 코드로 들어왔으면(10분 이내) 한 번 더 묻지 않는다 — "비밀번호를 잊어서 코드로 들어온" 경우.
+const REVERIFY_FRESH_MS = 10 * 60_000;
+let otpVerifiedAt = 0;
+export const recentlyVerified = () => Date.now() - otpVerifiedAt < REVERIFY_FRESH_MS;
+
+const myEmail = () => S.session?.user.email ?? '';
+
+/** 기존 비밀번호가 맞는지 — 맞으면 같은 계정으로 세션이 새로 발급될 뿐 아무것도 바뀌지 않는다 */
+export async function verifyCurrentPassword(password: string) {
+	const { error } = await supabase.auth.signInWithPassword({ email: myEmail(), password });
+	if (error) throw error;
+	otpVerifiedAt = Date.now();
+}
+
+/** 비밀번호를 잊었을 때 — 내 학교 메일로 인증 코드 (새 계정은 만들지 않는다) */
+export async function sendOtpToMe() {
+	const { error } = await supabase.auth.signInWithOtp({
+		email: myEmail(),
+		options: { shouldCreateUser: false }
+	});
+	if (error) throw error;
+	return myEmail();
+}
+
+export async function verifyOtpForMe(token: string) {
+	await verifyOtp(myEmail(), token);
 }
 
 // ── 비밀번호 로그인 ──────────────────────────────────────────────────

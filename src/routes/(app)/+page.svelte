@@ -13,10 +13,14 @@
 
 	const closed = $derived(S.settings ? !S.settings.is_open : false);
 	// 영구/무기한 정지(status) 또는 기간 정지(suspended_until)
+	// ★ 프로필을 아직(또는 못) 불러왔을 때를 정지로 착각하지 않는다 — 예전엔 profile 이 null 이면
+	//   status !== 'active' 가 참이 되어 멀쩡한 계정에 "이용이 제한된 계정"이 떴다.
 	const suspended = $derived(
-		S.profile?.status !== 'active' ||
-			(!!S.profile?.suspended_until && Date.parse(S.profile.suspended_until) > S.now)
+		!!S.profile &&
+			(S.profile.status !== 'active' ||
+				(!!S.profile.suspended_until && Date.parse(S.profile.suspended_until) > S.now))
 	);
+	const profileMissing = $derived(S.booted && !!S.session && !S.profile);
 	const suspendedUntil = $derived(
 		S.profile?.status === 'active' && S.profile?.suspended_until
 			? new Date(S.profile.suspended_until).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })
@@ -105,6 +109,8 @@
 			</div>
 			<button class="stop" onclick={() => seeker.cancel()}>그만</button>
 		</div>
+	{:else if profileMissing}
+		<button class="btn" disabled>계정 정보를 불러오지 못했어요 · 잠시 후 다시 열어 주세요</button>
 	{:else if closed}
 		<button class="btn" disabled>지금은 열려 있지 않아요</button>
 	{:else if suspended}
