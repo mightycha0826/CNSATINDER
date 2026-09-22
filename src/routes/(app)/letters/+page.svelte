@@ -52,12 +52,6 @@
 
 <div class="topbar">
 	<span class="title">익명편지</span>
-	<button class="icon" onclick={() => goto('/letters/new')} aria-label="편지 쓰기">
-		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<rect x="3.9" y="3.9" width="16.2" height="16.2" rx="4.5" stroke="currentColor" stroke-width="1.8" />
-			<path d="M12 8v8M8 12h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-		</svg>
-	</button>
 	<button class="me" onclick={() => goto('/me')} aria-label="내 프로필">
 		{#if S.profile?.nickname}<Avatar name={S.profile.nickname} size={28} />{/if}
 	</button>
@@ -142,19 +136,12 @@
 </div>
 
 <style>
-	.icon,
 	.me {
+		margin-left: auto;
 		display: grid;
 		place-items: center;
 		width: 32px;
 		height: 32px;
-	}
-	.icon {
-		margin-left: auto;
-	}
-	.icon svg {
-		width: 26px;
-		height: 26px;
 	}
 
 	.letters {

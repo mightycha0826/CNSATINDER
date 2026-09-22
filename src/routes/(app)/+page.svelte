@@ -120,40 +120,6 @@
 		<div class="notice">{S.settings.notice}</div>
 	{/if}
 
-	<!-- 새 상대 찾기 -->
-	{#if seeker.seeking}
-		<div class="seek">
-			<div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
-			<div class="seek-text">
-				<strong>상대를 찾는 중 <span class="num muted">{elapsed}</span></strong>
-				<span class="muted">
-					{#if seeker.reason === 'cooldown'}
-						너무 빨리 넘기고 있어요. 잠깐 쉬었다가 다시 찾을게요
-					{:else if seeker.reason === 'filtered'}
-						지금 찾는 사람들과는 조건이 맞지 않아요
-					{:else if seeker.reason === 'empty'}
-						지금은 찾는 사람이 없어요. 화면을 켜 두면 계속 찾아요
-					{:else}
-						잠시만요…
-					{/if}
-				</span>
-			</div>
-			<button class="stop" onclick={() => seeker.cancel()}>그만</button>
-		</div>
-	{:else if profileMissing}
-		<button class="btn" disabled>계정 정보를 불러오지 못함 · 잠시 후 다시 열어 주세요</button>
-	{:else if closed}
-		<button class="btn" disabled>지금은 열려 있지 않아요</button>
-	{:else if suspended}
-		<button class="btn" disabled>
-			{suspendedUntil ? `${suspendedUntil}까지 이용 제한` : '이용 제한된 계정'}
-		</button>
-	{:else if full}
-		<button class="btn" disabled>대화는 동시에 {maxRooms}개까지 할 수 있어요</button>
-	{:else}
-		<button class="btn" onclick={() => seeker.start()}>새 대화 찾기</button>
-	{/if}
-
 	<!-- 대화 목록 -->
 	{#if inbox.rooms.length}
 		<div class="head">
@@ -195,6 +161,42 @@
 			</p>
 		</div>
 	{/if}
+
+	<!-- 새 상대 찾기 — 엄지가 닿는 아래쪽에 고정 (탭바 바로 위) -->
+	<div class="cta">
+		{#if seeker.seeking}
+			<div class="seek">
+				<div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+				<div class="seek-text">
+					<strong>상대를 찾는 중 <span class="num muted">{elapsed}</span></strong>
+					<span class="muted">
+						{#if seeker.reason === 'cooldown'}
+							너무 빨리 넘기고 있어요. 잠깐 쉬었다가 다시 찾을게요
+						{:else if seeker.reason === 'filtered'}
+							지금 찾는 사람들과는 조건이 맞지 않아요
+						{:else if seeker.reason === 'empty'}
+							지금은 찾는 사람이 없어요. 화면을 켜 두면 계속 찾아요
+						{:else}
+							잠시만요…
+						{/if}
+					</span>
+				</div>
+				<button class="stop" onclick={() => seeker.cancel()}>그만</button>
+			</div>
+		{:else if profileMissing}
+			<button class="btn" disabled>계정 정보를 불러오지 못함 · 잠시 후 다시 열어 주세요</button>
+		{:else if closed}
+			<button class="btn" disabled>지금은 열려 있지 않아요</button>
+		{:else if suspended}
+			<button class="btn" disabled>
+				{suspendedUntil ? `${suspendedUntil}까지 이용 제한` : '이용 제한된 계정'}
+			</button>
+		{:else if full}
+			<button class="btn" disabled>대화는 동시에 {maxRooms}개까지 할 수 있어요</button>
+		{:else}
+			<button class="btn" onclick={() => seeker.start()}>새 대화 찾기</button>
+		{/if}
+	</div>
 </div>
 
 {#if askPush}
@@ -282,10 +284,19 @@
 		height: 32px;
 	}
 
+	.cta {
+		position: sticky;
+		bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+		margin-top: auto;
+		padding: 12px 0;
+		background: var(--bg);
+		z-index: 5;
+	}
+
 	.home {
 		gap: 14px;
 		padding-top: 12px;
-		padding-bottom: 24px; /* 아래 안전영역은 탭바가 맡는다 */
+		padding-bottom: 0; /* 아래 안전영역은 탭바가 맡는다 · 버튼 여백은 .cta 가 */
 	}
 
 	.nudge {
