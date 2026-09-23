@@ -1831,6 +1831,16 @@ grant select on public.letter_reply_assignments to authenticated;
 alter table public.letter_reply_cooldown enable row level security;
 revoke all on public.letter_reply_cooldown from anon, authenticated;   -- 정책 0개
 
+-- 하트 — 누가 눌렀는지는 private 에만 둔다. 화면에는 개수와 "내가 눌렀는지"만 간다 (작성자도 누가 눌렀는지 모른다).
+create table if not exists private.letter_likes (
+  letter_id  bigint not null references public.letters(id) on delete cascade,
+  user_id    uuid   not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (letter_id, user_id)
+);
+create index if not exists letter_likes_user on private.letter_likes (user_id);
+alter table private.letter_likes enable row level security;
+
 
 -- ── 32. 헬퍼 ────────────────────────────────────────────────────────
 -- 편지 이름 후보 — "형용사 명사" (공백 포함 → 채팅 닉네임 공간과 절대 겹치지 않음)
@@ -1969,6 +1979,8 @@ begin
   select coalesce(jsonb_agg(x order by x.id desc), '[]'::jsonb) into v from (
     select l.id, left(l.body, 280) as body, l.fmt, char_length(l.body) > 280 as truncated,
            a.alias as author_alias, a.user_id = me as is_mine, l.reply_status, l.created_at,
+           (select count(*) from private.letter_likes k where k.letter_id = l.id)::int as like_count,
+           exists (select 1 from private.letter_likes k where k.letter_id = l.id and k.user_id = me) as liked,
            (select count(*) from public.letter_comments c
              where c.letter_id = l.id and c.status = 'visible')::int as comment_count,
            exists (select 1 from public.letter_reply_assignments r
@@ -2027,6 +2039,8 @@ begin
     'letter', jsonb_build_object(
       'id', l.id, 'body', l.body, 'fmt', l.fmt, 'author_alias', v_author.alias, 'is_mine', v_author.user_id = me,
       'reply_status', l.reply_status, 'created_at', l.created_at,
+      'like_count', (select count(*) from private.letter_likes k where k.letter_id = l.id),
+      'liked', exists (select 1 from private.letter_likes k where k.letter_id = l.id and k.user_id = me),
       'assigned_to_me', v_task.reader_id = me and v_task.fulfilled_at is null,
       'task_expires_at', case when v_task.reader_id = me then v_task.expires_at end),
     'comments', v_comments,
@@ -2402,15 +2416,35 @@ begin
 end
 $fn$;
 
+-- 하트 누르기·취소 — 토글이 아니라 "이 상태로" 맞춘다 (연타·재전송해도 결과가 같다)
+create or replace function public.set_letter_like(p_letter bigint, p_like boolean)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); v_gate text;
+begin
+  v_gate := private.letter_eligible(me);
+  if v_gate is not null then return jsonb_build_object('status', v_gate); end if;
+  if not private.letter_visible_to(p_letter, me) then return jsonb_build_object('status', 'closed'); end if;
+  if coalesce(p_like, false) then
+    insert into private.letter_likes (letter_id, user_id) values (p_letter, me) on conflict do nothing;
+  else
+    delete from private.letter_likes where letter_id = p_letter and user_id = me;
+  end if;
+  return jsonb_build_object('status', 'ok', 'liked', coalesce(p_like, false),
+    'like_count', (select count(*) from private.letter_likes where letter_id = p_letter)::int);
+end
+$fn$;
+
 revoke all on function public.letter_feed(bigint, int), public.letter_detail(bigint), public.post_letter(text, jsonb),
                        public.post_comment(bigint, bigint, text, uuid), public.delete_my_letter(bigint),
                        public.delete_my_comment(bigint), public.request_letter_reply_task(),
-                       public.report_letter(bigint, bigint, text, text), public.block_letter_author(bigint, bigint)
+                       public.report_letter(bigint, bigint, text, text), public.block_letter_author(bigint, bigint),
+                       public.set_letter_like(bigint, boolean)
   from public, anon;
 grant execute on function public.letter_feed(bigint, int), public.letter_detail(bigint), public.post_letter(text, jsonb),
                           public.post_comment(bigint, bigint, text, uuid), public.delete_my_letter(bigint),
                           public.delete_my_comment(bigint), public.request_letter_reply_task(),
-                          public.report_letter(bigint, bigint, text, text), public.block_letter_author(bigint, bigint)
+                          public.report_letter(bigint, bigint, text, text), public.block_letter_author(bigint, bigint),
+                          public.set_letter_like(bigint, boolean)
   to authenticated;
 
 
@@ -2851,7 +2885,8 @@ begin
   values (p_staff, 'view_letter_authors', jsonb_build_object('letter', p_letter));
   return jsonb_build_object(
     'letter', jsonb_build_object('id', l.id, 'body', l.body, 'fmt', l.fmt, 'status', l.status,
-               'reply_status', l.reply_status, 'created_at', l.created_at),
+               'reply_status', l.reply_status, 'created_at', l.created_at,
+               'like_count', (select count(*) from private.letter_likes k where k.letter_id = l.id)),
     'participants', (select coalesce(jsonb_agg(jsonb_build_object(
                         'no', lp.participant_no, 'alias', lp.alias, 'is_author', lp.is_author,
                         'user_id', lp.user_id, 'nickname', p.nickname, 'status', p.status) order by lp.participant_no), '[]'::jsonb)

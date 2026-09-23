@@ -4,6 +4,7 @@
 	import { fetchFeed, requestReplyTask } from '$lib/letters/api';
 	import { LettersFeed } from '$lib/letters/feed.svelte';
 	import RichText from '$lib/letters/RichText.svelte';
+	import LikeButton from '$lib/letters/LikeButton.svelte';
 	import { ReplySeeker } from '$lib/letters/replySeeker.svelte';
 	import { S, toast } from '$lib/state.svelte';
 	import { ago } from '$lib/time';
@@ -85,22 +86,32 @@
 					<div class="body"><RichText body={l.body} fmt={l.fmt}>
 						{#snippet after()}{#if l.truncated}<span class="more muted">… 더 보기</span>{/if}{/snippet}
 					</RichText></div>
-					<div class="meta muted">
-						<span class="count">
-							<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-								<path d="M12 4.4c-4.4 0-7.9 3.2-7.9 7.2 0 2.2 1 4.1 2.7 5.4l-.5 2.5 2.7-1.3c.9.4 1.9.6 3 .6 4.4 0 7.9-3.2 7.9-7.2S16.4 4.4 12 4.4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-							</svg>
-							{l.comment_count}
-						</span>
-						{#if l.reply_status === 'replied'}
-							<span class="state done">답장 도착</span>
-						{:else if l.assigned_to_me}
-							<span class="state mine">내가 답장할 차례</span>
-						{:else if l.reply_status === 'assigned'}
-							<span class="state">답장 쓰는 중</span>
-						{/if}
-					</div>
 				</a>
+				<!-- 버튼은 링크 안에 넣을 수 없어서 게시물 아래 줄은 링크 밖에 둔다 -->
+				<div class="meta muted">
+					<LikeButton
+						id={l.id}
+						liked={l.liked}
+						count={l.like_count}
+						onchange={(v, n) => {
+							l.liked = v;
+							l.like_count = n;
+						}}
+					/>
+					<a class="count" href={`/letters/${l.id}`} aria-label="댓글 {l.comment_count}개">
+						<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+							<path d="M12 4.4c-4.4 0-7.9 3.2-7.9 7.2 0 2.2 1 4.1 2.7 5.4l-.5 2.5 2.7-1.3c.9.4 1.9.6 3 .6 4.4 0 7.9-3.2 7.9-7.2S16.4 4.4 12 4.4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+						</svg>
+						{l.comment_count}
+					</a>
+					{#if l.reply_status === 'replied'}
+						<span class="state done">답장 도착</span>
+					{:else if l.assigned_to_me}
+						<span class="state mine">내가 답장할 차례</span>
+					{:else if l.reply_status === 'assigned'}
+						<span class="state">답장 쓰는 중</span>
+					{/if}
+				</div>
 			</li>
 		{/each}
 	</ul>
@@ -287,7 +298,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		padding: 14px var(--pad);
+		padding: 14px var(--pad) 6px;
 		color: var(--text);
 	}
 	.post:active {
@@ -333,12 +344,15 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
+		padding: 0 var(--pad) 8px;
 		font-size: 13px;
 	}
 	.count {
 		display: flex;
 		align-items: center;
 		gap: 4px;
+		min-height: 32px;
+		color: inherit;
 	}
 	.count svg {
 		width: 18px;

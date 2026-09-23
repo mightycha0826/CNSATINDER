@@ -1825,5 +1825,45 @@ console.log('\n[58] ★ 편지 서식 — 정해진 종류·색·범위만');
 		(await one('select letter_tokens from public.user_presence where user_id = $1', [w])).letter_tokens >= 1);
 }
 
+console.log('\n[59] ★ 편지 하트 — 개수만 공개, 누가 눌렀는지는 비공개');
+{
+	await resetLetters();
+	const w = await person('m', 'f');
+	const x = await person('f', 'm');
+	const y = await person('m', 'f');
+	const like = (uid, letter, on) => rpcAs(uid, 'set_letter_like', letter, on);
+	const a = await postLetter(w, '하트 테스트 편지');
+
+	const r1 = await like(x, a.letter_id, true);
+	check('하트 누르기', r1.status === 'ok' && r1.liked === true && r1.like_count === 1, JSON.stringify(r1));
+	check('다시 눌러도(재전송) 그대로 1', (await like(x, a.letter_id, true)).like_count === 1);
+	check('다른 사람이 누르면 2', (await like(y, a.letter_id, true)).like_count === 2);
+	check('내 편지에도 누를 수 있다', (await like(w, a.letter_id, true)).like_count === 3);
+
+	const dx = await detail(x, a.letter_id);
+	check('상세: 개수 + 내가 눌렀는지', dx.letter.like_count === 3 && dx.letter.liked === true);
+	const fz = (await rpcAs(await person('f', 'm'), 'letter_feed', null, null)).letters.find((l) => l.id === a.letter_id);
+	check('피드: 안 누른 사람에게는 liked=false', fz.like_count === 3 && fz.liked === false);
+	check('★ 피드·상세 어디에도 누른 사람의 uuid 가 없다',
+		![x, y, w].some((id) => JSON.stringify(dx).includes(id) || JSON.stringify(fz).includes(id)));
+
+	const r2 = await like(x, a.letter_id, false);
+	check('하트 취소', r2.liked === false && r2.like_count === 2, JSON.stringify(r2));
+	check('취소를 또 해도 그대로', (await like(x, a.letter_id, false)).like_count === 2);
+
+	await expectError('★ 학생은 하트 표를 직접 못 읽는다', () => rowsAs(x, 'select * from private.letter_likes'), 'permission denied');
+	await expectError('★ 학생은 하트 표에 직접 못 쓴다',
+		() => rowsAs(x, `insert into private.letter_likes (letter_id, user_id) values ($1, $2)`, [a.letter_id, y]), 'permission denied');
+
+	await rpcAs(y, 'block_letter_author', a.letter_id, null);
+	check('차단한 사람의 편지에는 못 누른다', (await like(y, a.letter_id, true)).status === 'closed');
+	const b = await postLetter(x, '지울 편지');
+	await rpcAs(x, 'delete_my_letter', b.letter_id);
+	check('지워진 편지에는 못 누른다', (await like(w, b.letter_id, true)).status === 'closed');
+	const sus = await person('m', 'f');
+	await db.query(`update public.profiles set suspended_until = now() + interval '1 day' where id = $1`, [sus]);
+	check('정지된 계정은 못 누른다', (await like(sus, a.letter_id, true)).status === 'not_eligible');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -20,7 +20,7 @@
 			편지 #{v.letter.id}
 			{#if v.letter.status === 'removed'}<span class="pill red">내려짐</span>{/if}
 		</h1>
-		<p class="a-sub">{fmtTime(v.letter.created_at)} · {REPLY[v.letter.reply_status] ?? v.letter.reply_status}</p>
+		<p class="a-sub">{fmtTime(v.letter.created_at)} · {REPLY[v.letter.reply_status] ?? v.letter.reply_status} · 하트 {v.letter.like_count ?? 0}</p>
 	</div>
 </header>
 

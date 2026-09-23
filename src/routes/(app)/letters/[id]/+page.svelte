@@ -13,6 +13,7 @@
 	} from '$lib/letters/api';
 	import type { CommentRow, LetterDetail, ReportReason } from '$lib/letters/types';
 	import RichText from '$lib/letters/RichText.svelte';
+	import LikeButton from '$lib/letters/LikeButton.svelte';
 	import { REPORT_REASONS } from '$lib/reportReasons';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import { ago, waitText } from '$lib/time';
@@ -264,6 +265,18 @@
 					</div>
 				</div>
 				<div class="body"><RichText body={letter.body} fmt={letter.fmt} /></div>
+				<div class="acts muted">
+					<LikeButton
+						id={letter.id}
+						liked={letter.liked}
+						count={letter.like_count}
+						onchange={(v, n) => {
+							if (!data?.letter) return;
+							data.letter.liked = v;
+							data.letter.like_count = n;
+						}}
+					/>
+				</div>
 				<div class="status muted">
 					{#if letter.reply_status === 'replied'}
 						답장 도착 · 댓글 {data?.comments.filter((c) => !c.hidden).length ?? 0}
@@ -448,6 +461,11 @@
 		line-height: 1.75;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
+	}
+	.acts {
+		display: flex;
+		align-items: center;
+		margin: -4px 0 -6px;
 	}
 	.status {
 		font-size: 12px;

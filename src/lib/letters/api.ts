@@ -5,6 +5,7 @@ import type {
 	CommentThread,
 	LetterDetail,
 	LetterListItem,
+	LikeResult,
 	PostCommentResult,
 	PostLetterResult,
 	ReplyTaskResult,
@@ -54,6 +55,11 @@ export async function postComment(letterId: number, parentId: number | null, bod
 	});
 	if (r.status === 'ok') notifyLetterComment(r.comment_id);
 	return r;
+}
+
+/** 하트 — 토글이 아니라 원하는 상태를 보낸다 (연타·재전송해도 결과가 같다) */
+export function setLetterLike(id: number, like: boolean) {
+	return rpc<LikeResult>('set_letter_like', { p_letter: id, p_like: like });
 }
 
 export function deleteMyLetter(id: number) {

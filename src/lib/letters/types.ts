@@ -19,6 +19,9 @@ export type LetterListItem = {
 	is_mine: boolean;
 	reply_status: ReplyStatus;
 	comment_count: number;
+	/** 하트 수 · 내가 눌렀는지 — 누가 눌렀는지는 오지 않는다 */
+	like_count: number;
+	liked: boolean;
 	/** 내가 지정 답장자로 맡은 편지 */
 	assigned_to_me: boolean;
 	created_at: string;
@@ -32,6 +35,8 @@ export type LetterBody = {
 	author_alias: string;
 	is_mine: boolean;
 	reply_status: ReplyStatus;
+	like_count: number;
+	liked: boolean;
 	assigned_to_me: boolean | null;
 	task_expires_at: string | null;
 	created_at: string;
@@ -74,6 +79,10 @@ export type PostCommentResult =
 	| { status: 'duplicate'; comment_id: number }
 	| { status: 'rate_limited'; retry_after_ms: number }
 	| { status: 'max_depth_exceeded' | 'parent_missing' | 'closed' | 'not_eligible' | 'service_closed' };
+
+export type LikeResult =
+	| { status: 'ok'; liked: boolean; like_count: number }
+	| { status: 'closed' | 'not_eligible' | 'service_closed' };
 
 export type ReplyTaskResult =
 	| { status: 'assigned'; letter_id: number; expires_at: string }

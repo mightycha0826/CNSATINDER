@@ -195,7 +195,7 @@ export type RoomView = {
 };
 
 export type LetterPostView = {
-	letter: { id: number; body: string; fmt: LetterFmt | null; status: 'open' | 'removed'; reply_status: string; created_at: string };
+	letter: { id: number; body: string; fmt: LetterFmt | null; status: 'open' | 'removed'; reply_status: string; created_at: string; like_count: number };
 	participants: { no: number; alias: string; is_author: boolean; user_id: string; nickname: string | null; status: string }[];
 	reader: { user_id: string; expires_at: string; fulfilled_at: string | null; nickname: string | null } | null;
 	comments: { id: number; parent_id: number | null; author_no: number; body: string; status: 'visible' | 'removed'; created_at: string }[];
