@@ -80,6 +80,22 @@ body {
 	overscroll-behavior-y: none;
 }
 
+/*
+ * 학생 앱은 앱처럼 — 버튼·안내 문구·제목은 드래그하거나 길게 눌러도 선택·복사되지 않는다.
+ * 사람이 쓴 글(채팅·편지·댓글·공지·소개)에만 .selectable 을 붙여 예외로 둔다. 입력칸은 당연히 예외.
+ * 운영자 화면(body.admin)은 그대로 — 이메일·ID 를 복사해야 한다.
+ */
+body:not(.admin) {
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+}
+body:not(.admin) :is(input, textarea, [contenteditable='true'], .selectable) {
+	-webkit-user-select: text;
+	user-select: text;
+	-webkit-touch-callout: default;
+}
+
 body {
 	/* 앱은 모바일 폭 기준. 데스크톱에서는 가운데 정렬된 세로 캔버스. */
 	display: flex;

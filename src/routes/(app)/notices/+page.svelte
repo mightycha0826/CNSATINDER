@@ -40,11 +40,11 @@
 			{#each NOTICES.list as n (n.id)}
 				<li>
 					<div class="head">
-						<strong>{n.title}</strong>
+						<strong class="selectable">{n.title}</strong>
 						{#if seenBefore !== null && n.id > seenBefore}<span class="new">새</span>{/if}
 					</div>
 					<span class="muted when">{agoText(n.created_at, S.now)}</span>
-					{#if n.body}<p class="body">{n.body}</p>{/if}
+					{#if n.body}<p class="body selectable">{n.body}</p>{/if}
 				</li>
 			{/each}
 		</ul>

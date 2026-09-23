@@ -205,7 +205,7 @@
 					{#if c.is_designated}<span class="badge accent">답장</span>{/if}
 					{#if c.is_mine}<span class="badge">나</span>{/if}
 				</div>
-				<p class="c-body">{c.body}</p>
+				<p class="c-body selectable">{c.body}</p>
 				<div class="c-foot muted">
 					<span>{ago(c.created_at, serverNow)}</span>
 					{#if !reply}<button onclick={() => startReply(c)}>답글 달기</button>{/if}
@@ -255,7 +255,7 @@
 						<span class="muted small">{ago(letter.created_at, serverNow)}{letter.is_mine ? ' · 내 편지' : ''}</span>
 					</div>
 				</div>
-				<div class="body"><RichText body={letter.body} fmt={letter.fmt} /></div>
+				<div class="body selectable"><RichText body={letter.body} fmt={letter.fmt} /></div>
 				<div class="acts muted">
 					<LikeButton
 						id={letter.id}

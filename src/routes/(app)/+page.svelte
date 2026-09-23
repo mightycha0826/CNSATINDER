@@ -108,7 +108,7 @@
 	{/if}
 
 	{#if S.settings?.notice}
-		<div class="notice">{S.settings.notice}</div>
+		<div class="notice selectable">{S.settings.notice}</div>
 	{/if}
 
 	<!-- 대화 목록 -->

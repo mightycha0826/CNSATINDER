@@ -362,9 +362,10 @@
 		press = null;
 	}
 	function onBubbleDown(e: PointerEvent, m: Msg) {
-		if (e.button !== 0) return; // 오른쪽 클릭은 contextmenu 가 맡는다
 		longFired = false;
 		clearPress();
+		// 마우스는 길게 누르기 대신 오른쪽 클릭(contextmenu) — 누른 채 드래그로 글자를 고르는 중일 수 있다
+		if (e.button !== 0 || e.pointerType === 'mouse') return;
 		const el = e.currentTarget as HTMLElement;
 		press = {
 			x: e.clientX,
@@ -385,6 +386,7 @@
 		const now = Date.now();
 		if (lastTap.id === m.id && now - lastTap.at < 320) {
 			lastTap = { id: -1, at: 0 };
+			getSelection()?.removeAllRanges(); // 데스크톱 더블클릭이 고른 단어는 풀어 준다
 			if (canReact(m)) void doReact(m.id, 'heart');
 		} else lastTap = { id: m.id, at: now };
 	}
@@ -650,7 +652,7 @@
 					</p>
 				{/if}
 				{#if profile}
-					{#if profile.bio}<p class="bio">{profile.bio}</p>{/if}
+					{#if profile.bio}<p class="bio selectable">{profile.bio}</p>{/if}
 					{#if profile.mbti || profile.interests.length}
 						<div class="tags">
 							{#if profile.mbti}<span class="tag mbti">{profile.mbti}</span>{/if}
@@ -951,11 +953,18 @@
 	}
 	.bwrap .bubble {
 		max-width: none;
-		/* 길게 누르면 글자 선택 대신 공감 고르기 (복사는 고르기 줄에) */
+		/* 폰: 길게 누르면 글자 선택 대신 공감 고르기 (복사는 고르기 줄에) */
 		-webkit-user-select: none;
 		user-select: none;
 		-webkit-touch-callout: none;
 		touch-action: manipulation;
+	}
+	/* 마우스가 있는 기기: 길게 누르기 대신 오른쪽 클릭이 고르기라, 드래그로 글자를 골라 복사할 수 있다 */
+	@media (hover: hover) and (pointer: fine) {
+		.bwrap .bubble {
+			-webkit-user-select: text;
+			user-select: text;
+		}
 	}
 	.reacts {
 		position: absolute;
