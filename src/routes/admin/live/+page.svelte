@@ -1,0 +1,203 @@
+<script lang="ts">
+	import type { LiveUser } from '$lib/adminTypes';
+	import { ago } from '$lib/time';
+	import Sid from '$lib/admin/Sid.svelte';
+
+	let { data } = $props();
+	const admin = $derived(data.staff?.role === 'admin');
+
+	const REFRESH_MS = 10_000;
+	let fresh = $state<LiveUser[] | null>(null);
+	let now = $state(Date.now());
+	let failed = $state(false);
+	const users = $derived(fresh ?? data.users);
+
+	// 탭이 보이는 동안만 10초마다 상태를 다시 받는다
+	$effect(() => {
+		async function tick() {
+			if (document.visibilityState !== 'visible') return;
+			try {
+				const res = await fetch('/admin/live/status');
+				if (res.redirected) return void (location.href = '/admin/login');
+				if (!res.ok) throw new Error(String(res.status));
+				fresh = await res.json();
+				failed = false;
+			} catch {
+				failed = true;
+			}
+			now = Date.now();
+		}
+		const timer = setInterval(tick, REFRESH_MS);
+		document.addEventListener('visibilitychange', tick);
+		return () => {
+			clearInterval(timer);
+			document.removeEventListener('visibilitychange', tick);
+		};
+	});
+
+	type St = 'chat' | 'seeking' | 'online' | 'offline';
+	const RANK: Record<St, number> = { chat: 0, seeking: 1, online: 2, offline: 3 };
+	const LABEL: Record<St, string> = { chat: '대화 중', seeking: '매칭 대기', online: '접속 중', offline: '오프라인' };
+	const stOf = (u: LiveUser): St =>
+		u.room_count > 0 ? 'chat' : u.seeking ? 'seeking' : u.online ? 'online' : 'offline';
+	const restricted = (u: LiveUser) =>
+		u.status !== 'active' || (!!u.suspended_until && Date.parse(u.suspended_until) > now);
+
+	type Tab = St | 'all' | 'restricted';
+	let tab = $state<Tab>('all');
+	let q = $state('');
+
+	const rows = $derived(
+		users
+			.map((u) => ({ u, st: stOf(u), label: data.students[u.id] ?? '' }))
+			.sort(
+				(a, b) =>
+					RANK[a.st] - RANK[b.st] ||
+					Date.parse(b.u.last_seen ?? '1970-01-01') - Date.parse(a.u.last_seen ?? '1970-01-01')
+			)
+	);
+	const count = $derived({
+		all: rows.length,
+		chat: rows.filter((r) => r.st === 'chat').length,
+		seeking: rows.filter((r) => r.st === 'seeking').length,
+		online: rows.filter((r) => r.st === 'online').length,
+		offline: rows.filter((r) => r.st === 'offline').length,
+		restricted: rows.filter((r) => restricted(r.u)).length
+	});
+	const shown = $derived.by(() => {
+		const k = q.trim().toLowerCase();
+		return rows.filter(
+			(r) =>
+				(tab === 'all' || (tab === 'restricted' ? restricted(r.u) : r.st === tab)) &&
+				(!k ||
+					(r.u.nickname ?? '').toLowerCase().includes(k) ||
+					r.label.includes(k) ||
+					r.u.id.startsWith(k))
+		);
+	});
+
+	const TABS: { v: Tab; label: string }[] = [
+		{ v: 'all', label: '전체' },
+		{ v: 'chat', label: '대화 중' },
+		{ v: 'seeking', label: '매칭 대기' },
+		{ v: 'online', label: '접속 중' },
+		{ v: 'offline', label: '오프라인' },
+		{ v: 'restricted', label: '이용 제한' }
+	];
+
+	function since(iso: string | null) {
+		if (!iso) return '—';
+		const a = ago(iso, now);
+		return /[분간일]$/.test(a) ? `${a} 전` : a;
+	}
+	const clock = $derived(new Date(now).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+</script>
+
+<header class="a-head">
+	<div>
+		<h1 class="a-h1">실시간 현황</h1>
+		<p class="a-sub">
+			전체 사용자와 지금 상태 · 10초마다 자동 갱신 ({clock})
+			{#if failed}<span class="danger"> · 갱신 실패, 다시 시도 중</span>{/if}
+		</p>
+	</div>
+	<input
+		class="field search"
+		bind:value={q}
+		placeholder={admin ? '익명 이름, 학번, 이름' : '익명 이름, ID 앞자리'}
+		autocomplete="off"
+	/>
+</header>
+
+<nav class="a-tabs">
+	{#each TABS as t (t.v)}
+		<a
+			href="?tab={t.v}"
+			class:on={tab === t.v}
+			onclick={(e) => {
+				e.preventDefault();
+				tab = t.v;
+			}}>{t.label} <span class="n">{count[t.v]}</span></a
+		>
+	{/each}
+</nav>
+
+{#if shown.length === 0}
+	<p class="a-empty">{q ? '검색 결과 없음' : '해당하는 사용자 없음'}</p>
+{:else}
+	<table class="a-table">
+		<thead>
+			<tr>
+				<th>상태</th>
+				<th>익명 이름</th>
+				<th>대화</th>
+				<th>마지막 접속</th>
+			</tr>
+		</thead>
+		<tbody>
+			{#each shown as { u, st } (u.id)}
+				<tr>
+					<td class="st-cell">
+						<span class="dot" class:off={!u.online} title={u.online ? '앱 켜짐' : '앱 꺼짐'}></span>
+						<span class="s s-{st}">{LABEL[st]}</span>
+					</td>
+					<td>
+						<a href="/admin/users/{u.id}"><b>{u.nickname ?? '(이름 없음)'}</b></a><Sid label={data.students[u.id]} />
+						{#if u.staff_role}<span class="pill acc">{u.staff_role === 'admin' ? '관리자' : '운영진'}</span>{/if}
+						{#if u.status === 'banned'}<span class="pill red">영구정지</span>
+						{:else if restricted(u)}<span class="pill red">정지</span>{/if}
+						{#if !u.onboarded}<span class="pill">가입 중</span>{/if}
+					</td>
+					<td>
+						{#if u.room_count === 0}<span class="muted">—</span>
+						{:else if admin && u.rooms}
+							{#each u.rooms as id, i (id)}
+								{#if i > 0}<span class="muted"> · </span>{/if}<a href="/admin/rooms/{id}">열기{u.rooms.length > 1 ? ` ${i + 1}` : ''} →</a>
+							{/each}
+						{:else}{u.room_count}개{/if}
+					</td>
+					<td class="num muted">{u.online ? '지금' : since(u.last_seen)}</td>
+				</tr>
+			{/each}
+		</tbody>
+	</table>
+	<p class="a-hint">
+		접속 중 = 앱이 화면에 켜져 있음(약 1분 안에 신호). 대화 중·매칭 대기의 점은 지금 앱을 보고 있는지를 뜻합니다.
+		{#if !admin}어느 대화인지는 관리자만 볼 수 있습니다.{/if}
+	</p>
+{/if}
+
+<style>
+	.search {
+		width: min(100%, 300px);
+	}
+	.n {
+		margin-left: 2px;
+		font-size: 12px;
+		color: var(--text-2);
+		font-weight: 600;
+	}
+	.st-cell {
+		white-space: nowrap;
+	}
+	.dot.off {
+		background: var(--line);
+	}
+	.s {
+		font-weight: 700;
+		font-size: 13px;
+	}
+	.s-chat {
+		color: var(--accent);
+	}
+	.s-seeking {
+		color: #d97706;
+	}
+	.s-online {
+		color: #16a34a;
+	}
+	.s-offline {
+		color: var(--text-2);
+		font-weight: 500;
+	}
+</style>

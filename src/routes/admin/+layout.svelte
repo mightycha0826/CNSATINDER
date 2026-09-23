@@ -13,6 +13,7 @@
 
 	const NAV = $derived(
 		[
+			{ href: '/admin/live', label: '실시간' },
 			{ href: '/admin', label: '채팅 신고' },
 			{ href: '/admin/letters', label: '편지 신고' },
 			{ href: '/admin/users', label: '사용자' },

@@ -1734,5 +1734,45 @@ console.log('\n[56] ★ 학번-이름 명렬표 — 이메일 확인 옆 이름 
 		(await audits('view_identity', adm)) === before + 1);
 }
 
+console.log('\n[57] 실시간 현황 — 접속 중 · 매칭 대기 · 대화 중 · 오프라인');
+{
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+	await resetPool();
+	const off = await person('m', 'f');
+	const on = await person('f', 'm');
+	const seek = await person('m', 'f');
+	const c1 = await person('m', 'f');
+	const c2 = await person('f', 'm');
+	await db.query(`update public.user_presence set online_until = now() - interval '5 minutes' where user_id = $1`, [off]);
+	await db.query(`insert into public.user_presence (user_id, online_until) values ($1, now() + interval '1 minute')
+	                on conflict (user_id) do update set online_until = excluded.online_until`, [on]);
+	await db.query(`insert into public.user_presence (user_id, online_until, seeking_until, seeking_since)
+	                values ($1, now() + interval '1 minute', now() + interval '1 minute', now())
+	                on conflict (user_id) do update set online_until = excluded.online_until,
+	                  seeking_until = excluded.seeking_until, seeking_since = excluded.seeking_since`, [seek]);
+	const room = await pairRoom(c1, c2);
+
+	await expectError('★ 학생 계정으로 admin_live_users 호출 불가', () => rowsAs(off, `select public.admin_live_users('${off}')`), 'permission denied');
+	await expectError('★ 운영진 명단에 없으면 거절', () => svc('admin_live_users', off), 'not_staff');
+
+	const list = await svc('admin_live_users', adm);
+	const by = (id) => list.find((x) => x.id === id);
+	check('전체 사용자가 나온다', [off, on, seek, c1, c2].every((id) => by(id)));
+	check('오프라인: online=false, 마지막 접속 시각 있음', by(off).online === false && !!by(off).last_seen && by(off).room_count === 0);
+	check('접속 중', by(on).online === true && !by(on).seeking && by(on).room_count === 0);
+	check('매칭 대기', by(seek).seeking === true);
+	check('대화 중: 살아 있는 방 1개 + 관리자에게는 방 id', by(c1).room_count === 1 && by(c1).rooms?.[0] === room);
+	check('★ 이메일은 들어 있지 않다', !JSON.stringify(list).includes('@'));
+
+	const ml = await svc('admin_live_users', mod);
+	const mc1 = ml.find((x) => x.id === c1);
+	check('★ 운영진: 대화 중 개수는 보이지만 어느 방인지는 없다', mc1.room_count === 1 && mc1.rooms === null);
+
+	await db.query(`update public.rooms set status = 'closed', closed_at = now() where id = $1`, [room]);
+	await db.query(`update public.room_members set open = false where room_id = $1`, [room]);
+	check('방이 닫히면 대화 중이 아니다', (await svc('admin_live_users', adm)).find((x) => x.id === c1).room_count === 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

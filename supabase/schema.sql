@@ -2942,3 +2942,41 @@ begin
   end loop;
 end
 $do$;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 13 — 실시간 현황 (전체 사용자 + 지금 상태)
+--
+--  상태는 이미 있는 값에서만 계산한다 (새로 수집하는 정보 없음):
+--    · 접속 중   user_presence.online_until > now()   (앱이 화면에 떠 있으면 heartbeat 로 갱신)
+--    · 매칭 대기 user_presence.seeking_until > now()
+--    · 대화 중   열린 room_members + 살아 있는 방(닫히지 않았고 마감 전)
+--  어느 방인지(= 누구와 대화 중인지)는 전체 대화 열람과 같은 관리자 전용이라 운영진에게는 개수만 준다.
+--  상태만 보는 것이므로 열람 기록은 남기지 않는다 (학번·이름은 admin_student_labels 가 따로 기록).
+-- ════════════════════════════════════════════════════════════════════
+
+create or replace function public.admin_live_users(p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare v_admin boolean := private.require_staff(p_staff) = 'admin';
+begin
+  return (select coalesce(jsonb_agg(x), '[]'::jsonb) from (
+    select p.id, p.nickname, p.status, p.suspended_until, p.onboarded, s.role as staff_role,
+           coalesce(pr.online_until > now(), false) as online,
+           pr.online_until as last_seen,
+           coalesce(pr.seeking_until > now(), false) as seeking,
+           coalesce(lr.n, 0) as room_count,
+           case when v_admin then coalesce(lr.ids, '[]'::jsonb) end as rooms
+      from public.profiles p
+      left join public.user_presence pr on pr.user_id = p.id
+      left join private.staff s on s.user_id = p.id
+      left join lateral (
+        select count(*)::int as n, jsonb_agg(r.id order by r.created_at) as ids
+          from public.room_members rm
+          join public.rooms r on r.id = rm.room_id
+         where rm.user_id = p.id and rm.open and r.status <> 'closed' and now() < r.expires_at
+      ) lr on true
+  ) x);
+end
+$fn$;
+revoke all on function public.admin_live_users(uuid) from public, anon, authenticated;
+grant execute on function public.admin_live_users(uuid) to service_role;

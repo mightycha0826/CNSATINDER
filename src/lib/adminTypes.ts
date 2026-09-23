@@ -101,6 +101,21 @@ export type UserRow = {
 	reports_received: number;
 };
 
+/** 실시간 현황 한 줄 — rooms(살아 있는 방 id)는 관리자에게만, 운영진은 null */
+export type LiveUser = {
+	id: string;
+	nickname: string | null;
+	status: 'active' | 'suspended' | 'banned';
+	suspended_until: string | null;
+	onboarded: boolean;
+	staff_role: StaffRole | null;
+	online: boolean;
+	last_seen: string | null;
+	seeking: boolean;
+	room_count: number;
+	rooms: string[] | null;
+};
+
 export type UserDetail = {
 	profile: {
 		id: string;

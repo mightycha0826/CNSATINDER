@@ -85,6 +85,8 @@ npm run dev
    ```
 3. 브라우저에서 `/admin` → 학교 이메일 + 비밀번호로 로그인 (가입·인증 코드 경로 없음 — 운영진은 이미 있는 계정을 위 SQL 로 지정)
 
+- **실시간 현황**(`/admin/live`): 전체 사용자와 지금 상태(대화 중 · 매칭 대기 · 접속 중 · 오프라인), 10초마다 자동 갱신.
+  어느 대화인지(열기 링크)는 관리자만. 상태만 보는 것이라 새로고침마다 기록하지 않고, 학번·이름은 페이지를 열 때 한 번 기록된다.
 - **moderator(운영진)**: 신고 처리, 경고, 7일 이하 정지, 사용자 검색(익명 이름·ID)·상세, 서비스 열고 닫기
 - **admin(관리자)**: 위 전부 + 영구 정지·영구정지 해제, 이메일 열람·이메일 검색, **모든 대화 열람**(`/admin/rooms`),
   **모든 편지·댓글 작성자 확인**(`/admin/posts/[번호]`), 운영 수치 변경
@@ -111,6 +113,7 @@ npm run dev
 - [ ] **Phase 10 적용** — `schema.sql` 을 다시 실행 (익명편지 테이블·RPC). 안 하면 익명편지 탭이 비어 보인다.
 - [ ] **Phase 12 적용** — `schema.sql` 을 다시 실행 (학번-이름 명렬표 RPC). 이어서
       `node scripts/import-roster.mjs <1~3학년 합친 CSV>` 로 명단 반영.
+- [ ] **Phase 13 적용** — `schema.sql` 을 다시 실행 (실시간 현황 RPC). 안 하면 `/admin/live` 가 오류.
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
       Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
 - [ ] **푸시 알림 키** — `.env` 의 `PUBLIC_VAPID_KEY`·`VAPID_PRIVATE_KEY`(Secret)·`VAPID_SUBJECT` 를 Cloudflare Variables and Secrets 에도.
@@ -189,4 +192,5 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       관리자의 전체 대화 열람·편지 작성자 확인(전부 활동 기록), 학생 화면 개인정보 안내 문구 갱신
 - [x] **Phase 12 — 학번-이름 명렬표** — 관리자 화면의 익명 이름 옆 `(학번 이름)`·"이메일 확인" 옆 실명
       (CSV 반입 스크립트). 관리자만, 열 때마다 활동 기록
+- [x] **Phase 13 — 실시간 현황** — 전체 사용자 + 대화 중·매칭 대기·접속 중·오프라인, 10초 자동 갱신
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험
