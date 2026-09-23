@@ -2878,7 +2878,11 @@ begin
                   from public.room_members rm join public.profiles p on p.id = rm.user_id
                  where rm.room_id = p_room),
     'messages', (select coalesce(jsonb_agg(jsonb_build_object(
-                    'id', m.id, 'seat', m.sender_seat, 'body', m.body, 'created_at', m.created_at) order by m.id), '[]'::jsonb)
+                    'id', m.id, 'seat', m.sender_seat, 'body', m.body, 'created_at', m.created_at,
+                    -- 공감 (Phase 17) — { "1": "heart", "2": "laugh" } 누가(자리) 어떤 공감을 달았는지
+                    'reactions', (select jsonb_object_agg(mr.seat::text, mr.emoji)
+                                    from public.message_reactions mr
+                                   where mr.message_id = m.id and mr.emoji is not null)) order by m.id), '[]'::jsonb)
                    from public.messages m where m.room_id = p_room));
 end
 $fn$;
@@ -3195,3 +3199,76 @@ begin
   end loop;
 end
 $do$;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 17 — 메시지 공감 (❤️ 😂 😮 😢 👍 🔥)
+--
+--  · messages 는 그대로 둔다 (update 없음 = 증거 무결성). 공감은 별도 표에 자리(seat)로만 남긴다 —
+--    extension_votes 와 같은 방식이라 사용자 식별자가 없다.
+--  · 메시지 하나에 자리마다 공감 하나. 다른 걸 누르면 바뀌고, emoji = null 이 "취소".
+--    ★ 행을 지우지 않는 이유: Realtime 의 DELETE 는 room_id 필터·RLS 가 적용되지 않는다.
+--      null 로 바꾸는 UPDATE 는 둘 다 적용되어 같은 방 두 사람에게만 간다.
+--  · 대화 중(쓸 수 있는 방)에만 달 수 있다. 방이 닫히면 메시지와 함께 보이지 않고, 지워질 때 같이 지워진다.
+-- ════════════════════════════════════════════════════════════════════
+
+create table if not exists public.message_reactions (
+  message_id bigint   not null references public.messages(id) on delete cascade,
+  room_id    uuid     not null references public.rooms(id) on delete cascade,
+  seat       smallint not null check (seat in (1, 2)),
+  emoji      text     check (emoji in ('heart', 'laugh', 'wow', 'sad', 'like', 'fire')),
+  updated_at timestamptz not null default now(),
+  primary key (message_id, seat)
+);
+create index if not exists message_reactions_room on public.message_reactions (room_id);
+
+alter table public.message_reactions enable row level security;
+drop policy if exists "reactions: read while room alive" on public.message_reactions;
+create policy "reactions: read while room alive" on public.message_reactions
+  for select to authenticated
+  using (public.is_room_member(room_id) and public.room_is_visible(room_id));
+revoke all on public.message_reactions from anon, authenticated;
+grant select on public.message_reactions to authenticated;
+-- 쓰기는 react_message() 로만
+
+do $do$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.message_reactions;
+    exception when duplicate_object then null; end;
+  end if;
+end
+$do$;
+
+create or replace function public.react_message(p_message bigint, p_emoji text)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare
+  me       uuid := auth.uid();
+  v_room   uuid;
+  v_sender smallint;
+  v_seat   smallint;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if p_emoji is not null and p_emoji not in ('heart', 'laugh', 'wow', 'sad', 'like', 'fire') then
+    return jsonb_build_object('status', 'bad_emoji');
+  end if;
+  select room_id, sender_seat into v_room, v_sender from public.messages where id = p_message;
+  if found then
+    select seat into v_seat from public.room_members where room_id = v_room and user_id = me;
+  end if;
+  -- 내 방의 메시지가 아니면 있는지 없는지도 알려주지 않는다
+  if v_seat is null then return jsonb_build_object('status', 'not_found'); end if;
+  if v_sender = 0 then return jsonb_build_object('status', 'system'); end if;
+  if not public.room_is_writable(v_room) then return jsonb_build_object('status', 'closed'); end if;
+
+  insert into public.message_reactions (message_id, room_id, seat, emoji)
+  values (p_message, v_room, v_seat, p_emoji)
+  on conflict (message_id, seat) do update
+     set emoji = excluded.emoji, updated_at = now()
+   where public.message_reactions.emoji is distinct from excluded.emoji;  -- 같은 걸 또 보내면 이벤트 없음
+
+  return jsonb_build_object('status', 'ok', 'message_id', p_message, 'seat', v_seat, 'emoji', p_emoji);
+end
+$fn$;
+revoke all on function public.react_message(bigint, text) from public, anon;
+grant execute on function public.react_message(bigint, text) to authenticated;

@@ -1,9 +1,23 @@
-import type { MsgRow, PartnerProfile, ReportReason, RoomRow, RoomSnap, SendResult, VoteResult, VoteRow } from './types';
+import type {
+	MsgRow,
+	PartnerProfile,
+	ReactResult,
+	ReactionKey,
+	ReactionRow,
+	ReportReason,
+	RoomRow,
+	RoomSnap,
+	SendResult,
+	VoteResult,
+	VoteRow
+} from './types';
 
 export type TransportHandlers = {
 	onMessage(row: MsgRow): void;
 	onRoom(row: RoomRow): void;
 	onVote(row: VoteRow): void;
+	/** 공감이 달리거나 바뀌거나 취소됐다 (emoji = null) */
+	onReaction(row: ReactionRow): void;
 	onTyping(seat: number): void;
 	onPresence(seats: number[]): void;
 	/** 구독이 (재)성립했다. ★ 재연결마다 다시 호출된다 — 여기서 갭을 메운다. */
@@ -38,6 +52,10 @@ export interface ChatTransport {
 	report(roomId: string, reason: ReportReason, note: string): Promise<{ status: 'ok' | 'already'; snap: RoomSnap }>;
 	block(roomId: string): Promise<RoomSnap>;
 	markRead(roomId: string, lastId: number): Promise<void>;
+	/** 메시지에 공감 — emoji = null 이면 취소. 대화 중에만 된다. */
+	react(roomId: string, messageId: number, emoji: ReactionKey | null): Promise<ReactResult>;
+	/** 이 방의 공감 전부 (취소된 것 제외) — 재연결·갭 메우기용 */
+	fetchReactions(roomId: string): Promise<ReactionRow[]>;
 	/** 대화 상대의 기본 정보 (같은 방 멤버만) */
 	partnerProfile(roomId: string): Promise<PartnerProfile>;
 	typing(seat: 1 | 2): void;

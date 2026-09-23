@@ -2,10 +2,23 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import { notifySent } from '../push';
 import type { ChatTransport, TransportHandlers } from './transport';
-import type { MsgRow, PartnerProfile, ReportReason, RoomRow, RoomSnap, SendResult, VoteResult, VoteRow } from './types';
+import type {
+	MsgRow,
+	PartnerProfile,
+	ReactResult,
+	ReactionKey,
+	ReactionRow,
+	ReportReason,
+	RoomRow,
+	RoomSnap,
+	SendResult,
+	VoteResult,
+	VoteRow
+} from './types';
 
 // ★ select('*') 금지 — 항상 명시 컬럼
 const MSG_COLS = 'id, room_id, sender_seat, body, client_msg_id, created_at';
+const REACTION_COLS = 'message_id, room_id, seat, emoji';
 
 /**
  * Supabase Realtime(postgres_changes) 기반 전송.
@@ -46,6 +59,14 @@ export class SupabaseTransport implements ChatTransport {
 				{ event: '*', schema: 'public', table: 'extension_votes', filter: `room_id=eq.${roomId}` },
 				(p) => {
 					if (p.new && 'seat' in p.new) h.onVote(p.new as VoteRow);
+				}
+			)
+			.on(
+				'postgres_changes',
+				// 공감은 지우지 않고 emoji = null 로 바꾸므로 INSERT·UPDATE 만 온다 (DELETE 는 필터·RLS 가 안 걸린다)
+				{ event: '*', schema: 'public', table: 'message_reactions', filter: `room_id=eq.${roomId}` },
+				(p) => {
+					if (p.new && 'seat' in p.new) h.onReaction(p.new as ReactionRow);
 				}
 			)
 			.on('broadcast', { event: 'typing' }, ({ payload }) => {
@@ -179,6 +200,26 @@ export class SupabaseTransport implements ChatTransport {
 
 	async markRead(roomId: string, lastId: number) {
 		await supabase.rpc('mark_read', { p_room: roomId, p_last_id: lastId });
+	}
+
+	async react(roomId: string, messageId: number, emoji: ReactionKey | null): Promise<ReactResult> {
+		try {
+			const { data, error } = await supabase.rpc('react_message', { p_message: messageId, p_emoji: emoji });
+			if (error) return 'network';
+			return (data as { status: ReactResult }).status;
+		} catch {
+			return 'network';
+		}
+	}
+
+	async fetchReactions(roomId: string): Promise<ReactionRow[]> {
+		const { data, error } = await supabase
+			.from('message_reactions')
+			.select(REACTION_COLS)
+			.eq('room_id', roomId)
+			.not('emoji', 'is', null);
+		if (error) throw error; // 빈 목록으로 착각해 화면의 공감을 지우지 않게
+		return (data as ReactionRow[] | null) ?? [];
 	}
 
 	async partnerProfile(roomId: string) {

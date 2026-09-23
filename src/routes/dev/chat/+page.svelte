@@ -13,7 +13,7 @@
 	import ChatView from '$lib/chat/ChatView.svelte';
 	import { toast } from '$lib/state.svelte';
 	import type { ChatTransport, TransportHandlers } from '$lib/chat/transport';
-	import type { MsgRow, RoomSnap } from '$lib/chat/types';
+	import type { MsgRow, ReactionKey, ReactionRow, RoomSnap } from '$lib/chat/types';
 
 	const ROOM = 'preview-room';
 	const scenario = page.url.searchParams.get('s') ?? 'chat';
@@ -136,6 +136,20 @@
 			return this.#s();
 		}
 		async markRead() {}
+		// 공감 — 상대가 내 메시지 하나에 ❤️ 를 달아 둔 상태로 시작. 내 공감은 실시간처럼 조금 뒤 에코된다.
+		reactions: ReactionRow[] = this.rows
+			.filter((x) => x.sender_seat === 1 && x.body.startsWith('실리카겔'))
+			.map((x) => ({ message_id: x.id, room_id: ROOM, seat: 2 as const, emoji: 'heart' as const }));
+		async react(_r: string, messageId: number, emoji: ReactionKey | null) {
+			if (this.snap.status !== 'active') return 'closed' as const;
+			const row: ReactionRow = { message_id: messageId, room_id: ROOM, seat: 1, emoji };
+			this.reactions = [...this.reactions.filter((x) => !(x.message_id === messageId && x.seat === 1)), row];
+			setTimeout(() => this.h?.onReaction(row), 120);
+			return 'ok' as const;
+		}
+		async fetchReactions() {
+			return this.reactions.filter((x) => x.emoji);
+		}
 		async partnerProfile() {
 			return {
 				nickname: this.snap.partner_alias,

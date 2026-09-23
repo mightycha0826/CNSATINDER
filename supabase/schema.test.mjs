@@ -1933,5 +1933,60 @@ console.log('\n[61] ★ 공지사항 — 관리자만 올리고, 학생은 어�
 	await expectError('로그인 없이 공지 목록 불가', () => rpcAs(null, 'my_notices'), 'permission denied');
 }
 
+console.log('\n[62] ★ 메시지 공감 — 자리(seat)로만, 대화 중에만, 같은 방 두 사람만');
+{
+	const r = await fresh();
+	const seatA = Number(await rpcAs(A, 'my_seat', r));
+	const seatB = Number(await rpcAs(B, 'my_seat', r));
+	const say = async (uid, room, seat, body) =>
+		(await rowsAs(uid, `insert into public.messages (room_id, sender_seat, body, client_msg_id)
+		                    values ($1, $2, $3, gen_random_uuid()) returning id`, [room, seat, body]))[0].id;
+	const m1 = await say(A, r, seatA, '안녕');
+	const react = (uid, msg, emoji) => rpcAs(uid, 'react_message', msg, emoji);
+	const rows = (uid) => rowsAs(uid, `select message_id, seat, emoji from public.message_reactions where room_id = $1 and emoji is not null order by seat`, [r]);
+
+	const a = await react(B, m1, 'heart');
+	check('상대 메시지에 공감', a.status === 'ok' && Number(a.seat) === seatB && a.emoji === 'heart', JSON.stringify(a));
+	check('내 메시지에도 공감할 수 있다', (await react(A, m1, 'laugh')).status === 'ok');
+	const seen = await rows(A);
+	check('두 사람 모두 보인다 (자리마다 하나)', seen.length === 2 && seen.map((x) => x.emoji).join() === (seatA < seatB ? 'laugh,heart' : 'heart,laugh'), JSON.stringify(seen));
+	check('★ 공감 표에 사용자 식별자 없음 (자리만)',
+		(await db.query(`select column_name from information_schema.columns where table_schema = 'public' and table_name = 'message_reactions'`)).rows
+			.every((c) => !/user|profile|email/.test(c.column_name)));
+
+	check('다른 공감으로 바꾸기', (await react(B, m1, 'fire')).emoji === 'fire' && (await rows(B)).find((x) => Number(x.seat) === seatB).emoji === 'fire');
+	check('취소 (null)', (await react(B, m1, null)).status === 'ok' && !(await rows(A)).some((x) => Number(x.seat) === seatB));
+	check('없는 공감 종류는 거절', (await react(B, m1, 'angry')).status === 'bad_emoji');
+	await expectError('DB 에서도 정해진 종류만', () => db.query(`insert into public.message_reactions (message_id, room_id, seat, emoji) values ($1, $2, 1, 'poop')`, [m1, r]), 'check');
+
+	const sys = (await one(`insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, 0, '안내', gen_random_uuid()) returning id`, [r])).id;
+	check('시스템 안내에는 공감 불가', (await react(A, sys, 'heart')).status === 'system');
+
+	const outsider = await person('m', 'f');
+	check('★ 다른 방 사람은 공감 불가 (있는지도 모름)', (await react(outsider, m1, 'heart')).status === 'not_found');
+	check('★ 다른 방 사람에게는 공감이 안 보인다',
+		(await rowsAs(outsider, `select * from public.message_reactions where room_id = $1`, [r])).length === 0);
+	check('없는 메시지', (await react(A, 99999999, 'heart')).status === 'not_found');
+	await expectError('★ 학생이 표에 직접 쓰기 불가',
+		() => rowsAs(A, `insert into public.message_reactions (message_id, room_id, seat, emoji) values ($1, $2, $3, 'heart')`, [m1, r, seatA]), 'permission denied');
+	await expectError('★ 상대 자리로 위조 불가 (직접 수정 불가)',
+		() => rowsAs(A, `update public.message_reactions set emoji = 'sad' where message_id = $1`, [m1]), 'permission denied');
+
+	await setExpiry(r, -1);
+	check('★ 시간이 끝난 방에는 공감 불가', (await react(B, m1, 'heart')).status === 'closed');
+	await db.query(`update public.rooms set status = 'closed', closed_at = now() where id = $1`, [r]);
+	check('닫힌 방의 공감은 안 보인다 (메시지처럼)', (await rows(A)).length === 0);
+	await db.query(`delete from public.messages where id = $1`, [m1]);
+	check('메시지가 지워지면 공감도 같이', (await one(`select count(*)::int n from public.message_reactions where message_id = $1`, [m1])).n === 0);
+
+	const r2 = await fresh();
+	const m2 = await say(A, r2, Number(await rpcAs(A, 'my_seat', r2)), '관리자 열람용');
+	await react(B, m2, 'wow');
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const view = await svc('admin_room', r2, adm);
+	const vm = view.messages.find((m) => Number(m.id) === Number(m2));
+	check('관리자 대화 열람에 공감 표시 (자리별)', vm?.reactions?.[String(seatB)] === 'wow', JSON.stringify(vm));
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

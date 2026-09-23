@@ -7,7 +7,7 @@
 	import { tick, untrack } from 'svelte';
 	import { S, toast } from '$lib/state.svelte';
 	import type { ChatRoom } from './room.svelte';
-	import type { Msg, PartnerProfile, ReportReason } from './types';
+	import { REACTIONS, REACTION_EMOJI, type Msg, type PartnerProfile, type ReactionKey, type ReportReason } from './types';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import ReportPicker from '$lib/ui/ReportPicker.svelte';
@@ -188,6 +188,7 @@
 	}
 	function onScroll() {
 		if (!listEl) return;
+		picker = null;
 		paintSoon();
 		fromBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight;
 		atBottom = fromBottom < 48;
@@ -233,6 +234,7 @@
 		void room?.msgs.length;
 		void partnerTyping;
 		void seenMine;
+		void reactSig;
 		void pending;
 		void closed;
 		void timeUp;
@@ -292,6 +294,105 @@
 	const seenMine = $derived(
 		!!room?.snap?.their_read_id && lastMineId != null && room.snap.their_read_id >= lastMineId
 	);
+
+	// ── 공감 ─────────────────────────────────────────────────────
+	// 두 번 톡 = ❤️ (다시 두 번 톡이면 취소), 길게 누르기(데스크톱은 오른쪽 클릭) = 공감 고르기 + 복사.
+	// 말풍선은 글자 선택을 막는다 — 길게 누르면 iOS 가 글자를 잡아 버려서. 대신 고르기 줄에 "복사".
+	const canReact = (m: Msg) => !locked && m.id != null && m.sender_seat !== 0 && m.state === 'sent';
+	type Picker = { id: number; body: string; react: boolean; top: number; left: number | null; right: number | null };
+	let picker = $state<Picker | null>(null);
+	const PICK_H = 48;
+
+	function openPicker(m: Msg, bubble: Element | null) {
+		if (m.id == null || !bubble) return;
+		const r = bubble.getBoundingClientRect();
+		const header = listEl?.getBoundingClientRect().top ?? 0;
+		// 말풍선 위에, 자리가 없으면 아래에
+		const top = r.top - PICK_H - 8 >= header ? r.top - PICK_H - 8 : r.bottom + 8;
+		const mineSide = m.sender_seat === room?.seat;
+		picker = {
+			id: m.id,
+			body: m.body,
+			react: canReact(m),
+			top,
+			left: mineSide ? null : Math.max(8, r.left),
+			right: mineSide ? Math.max(8, window.innerWidth - r.right) : null
+		};
+		navigator.vibrate?.(10);
+	}
+
+	async function doReact(id: number, k: ReactionKey) {
+		picker = null;
+		const res = await room?.toggleReaction(id, k);
+		if (res === 'closed') toast('대화가 끝나서 공감할 수 없어요');
+		else if (res && res !== 'ok') toast('연결을 확인해 주세요');
+	}
+
+	async function copy() {
+		const text = picker?.body ?? '';
+		picker = null;
+		try {
+			await navigator.clipboard.writeText(text);
+			toast('복사됨');
+		} catch {
+			toast('복사하지 못했어요');
+		}
+	}
+
+	// 길게 누르기 · 두 번 톡 — pointer 이벤트로 직접 (모바일 브라우저의 dblclick 은 믿을 수 없다)
+	const LONG_MS = 450;
+	let press: { timer: ReturnType<typeof setTimeout>; x: number; y: number } | null = null;
+	let longFired = false;
+	let lastTap = { id: -1, at: 0 };
+
+	function clearPress() {
+		if (press) clearTimeout(press.timer);
+		press = null;
+	}
+	function onBubbleDown(e: PointerEvent, m: Msg) {
+		if (e.button !== 0) return; // 오른쪽 클릭은 contextmenu 가 맡는다
+		longFired = false;
+		clearPress();
+		const el = e.currentTarget as HTMLElement;
+		press = {
+			x: e.clientX,
+			y: e.clientY,
+			timer: setTimeout(() => {
+				press = null;
+				longFired = true;
+				openPicker(m, el);
+			}, LONG_MS)
+		};
+	}
+	function onBubbleMove(e: PointerEvent) {
+		if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) clearPress(); // 스크롤이다
+	}
+	function onBubbleUp(m: Msg) {
+		clearPress();
+		if (longFired || m.id == null) return;
+		const now = Date.now();
+		if (lastTap.id === m.id && now - lastTap.at < 320) {
+			lastTap = { id: -1, at: 0 };
+			if (canReact(m)) void doReact(m.id, 'heart');
+		} else lastTap = { id: m.id, at: now };
+	}
+	function onBubbleMenu(e: MouseEvent, m: Msg) {
+		e.preventDefault();
+		clearPress();
+		longFired = true;
+		openPicker(m, e.currentTarget as Element);
+	}
+
+	/** 말풍선 아래 표시 — 둘이 같은 공감이면 "❤️ 2" */
+	function badge(rx: Partial<Record<1 | 2, ReactionKey>> | undefined) {
+		const ks = [rx?.[1], rx?.[2]].filter((k): k is ReactionKey => !!k);
+		if (!ks.length) return null;
+		const same = ks.length === 2 && ks[0] === ks[1];
+		return { emojis: (same ? [ks[0]] : ks).map((k) => REACTION_EMOJI[k]), count: same ? 2 : 0 };
+	}
+	const myReaction = $derived(picker && room ? room.reactions[picker.id]?.[room.seat] : undefined);
+	// 공감이 달리면 말풍선 아래가 늘어난다 — 맨 아래를 보고 있으면 따라 내려가게 (아래 스크롤 effect 가 읽는다)
+	const reactSig = $derived(room ? JSON.stringify(room.reactions) : '');
 
 	// ★ 상대가 신고/차단해서 끝났을 때 사유를 알려주지 않는다 — "상대가 대화를 종료함"으로 통일.
 	//   신고당한 걸 알면 보복하거나 신고를 피하는 법을 배운다.
@@ -402,17 +503,36 @@
 					<div class="sys">{m.body}</div>
 				{:else}
 					{@const mine = m.sender_seat === room.seat}
+					{@const rx = m.id != null ? badge(room.reactions[m.id]) : null}
 					<div class="row" class:mine class:gap={p.first}>
-						<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-						<div
-							class="bubble"
-							class:first={p.first}
-							class:last={p.last}
-							class:sending={m.state === 'sending'}
-							class:failed={m.state === 'failed' || m.state === 'rate_limited'}
-							onclick={() => (m.state === 'failed' || m.state === 'rate_limited') && room?.retry(m)}
-						>
-							{m.body}
+						<div class="bwrap" class:reacted={!!rx}>
+							<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+							<div
+								class="bubble"
+								class:first={p.first}
+								class:last={p.last}
+								class:sending={m.state === 'sending'}
+								class:failed={m.state === 'failed' || m.state === 'rate_limited'}
+								onclick={() => (m.state === 'failed' || m.state === 'rate_limited') && room?.retry(m)}
+								onpointerdown={(e) => onBubbleDown(e, m)}
+								onpointermove={onBubbleMove}
+								onpointerup={() => onBubbleUp(m)}
+								onpointercancel={clearPress}
+								onpointerleave={clearPress}
+								oncontextmenu={(e) => onBubbleMenu(e, m)}
+							>
+								{m.body}
+							</div>
+							{#if rx}
+								<button
+									class="reacts"
+									onclick={(e) => openPicker(m, e.currentTarget.previousElementSibling)}
+									aria-label="공감 {rx.emojis.join(' ')}{rx.count ? ' 2개' : ''}"
+								>
+									{#each rx.emojis as e, i (i)}<span>{e}</span>{/each}
+									{#if rx.count}<span class="n">{rx.count}</span>{/if}
+								</button>
+							{/if}
 						</div>
 						{#if m.state === 'failed' || m.state === 'rate_limited'}
 							<button class="fail" onclick={() => room?.retry(m)} aria-label="다시 보내기">!</button>
@@ -472,6 +592,30 @@
 		</div>
 	{/if}
 </div>
+
+{#if picker}
+	<!-- 공감 고르기 — 바깥을 누르거나 스크롤하면 닫힌다 -->
+	<div class="rx-scrim" role="presentation" onpointerdown={() => (picker = null)}></div>
+	<div
+		class="rx-pick"
+		role="menu"
+		aria-label="공감"
+		style:top="{picker.top}px"
+		style:left={picker.left != null ? `${picker.left}px` : null}
+		style:right={picker.right != null ? `${picker.right}px` : null}
+	>
+		{#if picker.react}
+			{#each REACTIONS as r (r.k)}
+				<button class="rx" class:on={myReaction === r.k} role="menuitem" aria-label={r.label} onclick={() => doReact(picker!.id, r.k)}>
+					{r.e}
+				</button>
+			{/each}
+			<span class="sep" aria-hidden="true"></span>
+		{/if}
+		<button class="copy" role="menuitem" onclick={copy}>복사</button>
+	</div>
+{/if}
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (picker = null)} />
 
 {#if sheet}
 	<Sheet onclose={() => (sheet = null)}>
@@ -747,6 +891,103 @@
 	.mine .bubble:not(.last) {
 		border-bottom-right-radius: 4px;
 	}
+	/* ── 공감 ── */
+	.bwrap {
+		position: relative;
+		max-width: 75%;
+		min-width: 0;
+	}
+	.bwrap.reacted {
+		margin-bottom: 14px;
+	}
+	.bwrap .bubble {
+		max-width: none;
+		/* 길게 누르면 글자 선택 대신 공감 고르기 (복사는 고르기 줄에) */
+		-webkit-user-select: none;
+		user-select: none;
+		-webkit-touch-callout: none;
+		touch-action: manipulation;
+	}
+	.reacts {
+		position: absolute;
+		bottom: -15px;
+		left: 8px;
+		display: flex;
+		align-items: center;
+		gap: 1px;
+		height: 22px;
+		padding: 0 6px;
+		border-radius: 999px;
+		border: 2px solid var(--bg);
+		background: var(--field);
+		font-size: 12px;
+		line-height: 1;
+	}
+	.mine .reacts {
+		left: auto;
+		right: 8px;
+	}
+	.reacts .n {
+		margin-left: 2px;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--text-2);
+	}
+	.rx-scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 40;
+	}
+	.rx-pick {
+		position: fixed;
+		z-index: 41;
+		display: flex;
+		align-items: center;
+		gap: 2px;
+		max-width: calc(100vw - 16px);
+		height: 48px;
+		padding: 0 6px;
+		border-radius: 999px;
+		background: var(--bg);
+		box-shadow: 0 4px 20px rgb(0 0 0 / 0.18), 0 0 0 1px var(--line);
+		animation: rx-in 0.14s ease-out;
+	}
+	@keyframes rx-in {
+		from {
+			opacity: 0;
+			transform: scale(0.9);
+		}
+	}
+	.rx {
+		display: grid;
+		place-items: center;
+		width: 38px;
+		height: 38px;
+		border-radius: 50%;
+		font-size: 24px;
+		line-height: 1;
+		transition: transform 0.1s;
+	}
+	.rx:active {
+		transform: scale(1.25);
+	}
+	.rx.on {
+		background: var(--field);
+	}
+	.sep {
+		width: 1px;
+		height: 24px;
+		margin: 0 4px;
+		background: var(--line);
+	}
+	.copy {
+		padding: 0 10px;
+		height: 36px;
+		font-size: 14px;
+		font-weight: 600;
+		color: var(--text-2);
+	}
+
 	.bubble.sending {
 		opacity: 0.5;
 	}

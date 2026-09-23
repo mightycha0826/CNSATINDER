@@ -77,3 +77,23 @@ export type ReportReason =
 export type SendResult =
 	| { ok: true; row: MsgRow }
 	| { ok: false; reason: 'duplicate' | 'closed' | 'rate_limited' | 'network' | 'other'; message?: string };
+
+/**
+ * 메시지 공감 — 서버 check 제약(message_reactions.emoji)과 같은 값. 이 순서대로 고르기 줄에 보인다.
+ * 화나요·싫어요는 일부러 없다: 모르는 사람과의 대화에서 부정 반응은 공감보다 상처가 되기 쉽다.
+ */
+export const REACTIONS = [
+	{ k: 'heart', e: '❤️', label: '하트' },
+	{ k: 'laugh', e: '😂', label: '웃겨요' },
+	{ k: 'wow', e: '😮', label: '놀라워요' },
+	{ k: 'sad', e: '😢', label: '슬퍼요' },
+	{ k: 'like', e: '👍', label: '좋아요' },
+	{ k: 'fire', e: '🔥', label: '최고예요' }
+] as const;
+export type ReactionKey = (typeof REACTIONS)[number]['k'];
+export const REACTION_EMOJI = Object.fromEntries(REACTIONS.map((r) => [r.k, r.e])) as Record<ReactionKey, string>;
+
+/** message_reactions 행 — ★ 자리(seat)만, 사용자 식별자 없음. emoji = null 이면 취소된 것 */
+export type ReactionRow = { message_id: number; room_id: string; seat: 1 | 2; emoji: ReactionKey | null };
+
+export type ReactResult = 'ok' | 'closed' | 'not_found' | 'system' | 'bad_emoji' | 'network';

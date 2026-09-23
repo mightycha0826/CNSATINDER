@@ -1,12 +1,19 @@
 <script lang="ts">
 	import { CLOSE_LABEL, fmtClock, fmtTime } from '$lib/adminTypes';
 	import Sid from '$lib/admin/Sid.svelte';
+	import { REACTION_EMOJI } from '$lib/chat/types';
 
 	let { data } = $props();
 	const v = $derived(data.v);
 	const seat = (n: number) => v.members.find((m) => m.seat === n);
 	const time = fmtClock;
 	const userMsgs = $derived(v.messages.filter((m) => m.seat > 0).length);
+	/** "❤️ 새벽수달 · 😂 말랑복숭아" — 누가(방 안 이름) 어떤 공감을 달았는지 */
+	const reacts = (r: (typeof v.messages)[number]['reactions']) =>
+		(['1', '2'] as const)
+			.filter((k) => r?.[k])
+			.map((k) => `${REACTION_EMOJI[r![k]!]} ${seat(Number(k))?.alias ?? k}`)
+			.join(' · ');
 </script>
 
 <a class="a-back" href="/admin/rooms">← 전체 대화</a>
@@ -38,7 +45,10 @@
 				{:else}
 					<div class="m" class:s2={m.seat === 2}>
 						<span class="who">{seat(m.seat)?.alias ?? m.seat}</span>
-						<span class="body">{m.body}</span>
+						<span class="body">
+							{m.body}
+							{#if m.reactions}<span class="rx">{reacts(m.reactions)}</span>{/if}
+						</span>
 						<span class="t num">{time(m.created_at)}</span>
 					</div>
 				{/if}
@@ -100,6 +110,13 @@
 	.m .body {
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
+	}
+	.m .rx {
+		display: block;
+		margin-top: 2px;
+		font-size: 12px;
+		color: var(--text-2);
+		white-space: normal;
 	}
 	.m .t {
 		font-size: 12px;

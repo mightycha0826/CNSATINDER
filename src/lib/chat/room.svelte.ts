@@ -1,6 +1,18 @@
 import type { ChatTransport } from './transport';
 import { SupabaseTransport } from './supabase-transport';
-import type { Msg, MsgRow, PartnerProfile, ReportReason, RoomRow, RoomSnap, VoteResult, VoteRow } from './types';
+import type {
+	Msg,
+	MsgRow,
+	PartnerProfile,
+	ReactResult,
+	ReactionKey,
+	ReactionRow,
+	ReportReason,
+	RoomRow,
+	RoomSnap,
+	VoteResult,
+	VoteRow
+} from './types';
 
 const TYPING_SHOW_MS = 3000;
 const TYPING_SEND_EVERY_MS = 1500;
@@ -32,6 +44,8 @@ export class ChatRoom {
 	connected = $state(false);
 	/** serverNow - clientNow (ms). 모든 서버 응답의 server_now 로 갱신. */
 	skew = $state(0);
+	/** 메시지 id → 자리별 공감 { 1?: 'heart', 2?: 'laugh' } */
+	reactions = $state<Record<number, Partial<Record<1 | 2, ReactionKey>>>>({});
 
 	#t: ChatTransport;
 	#byCid = new Map<string, Msg>();
@@ -98,6 +112,11 @@ export class ChatRoom {
 			onMessage: (row) => this.upsert(row, 'sent'),
 			onRoom: (row) => this.#applyRoom(row),
 			onVote: (v) => this.#applyVote(v),
+			onReaction: (r) => {
+				// 내가 방금 바꾸는 중인 공감의 옛 에코는 건너뛴다 (❤️→😂 를 빨리 누르면 ❤️ 에코가 늦게 온다)
+				if (r.seat === this.seat && this.#pendingReact.has(r.message_id)) return;
+				this.#applyReaction(r);
+			},
 			onTyping: (s) => {
 				if (s !== this.seat) this.partnerTypingUntil = Date.now() + TYPING_SHOW_MS;
 			},
@@ -161,6 +180,12 @@ export class ChatRoom {
 			return;
 		}
 		for (const r of await this.#t.fetchAfter(this.roomId, this.#maxId)) this.upsert(r, 'sent');
+		// 끊겨 있던 동안 바뀐 공감도 — 방 전체를 다시 읽어 통째로 맞춘다 (방 하나에 많아야 메시지 수 × 2)
+		try {
+			this.#setReactions(await this.#t.fetchReactions(this.roomId));
+		} catch {
+			/* 다음 동기화 때 */
+		}
 
 		// ★ 커밋 순서 역전 보정
 		// identity 는 id 를 먼저 받은 트랜잭션이 나중에 커밋될 수 있다.
@@ -334,6 +359,46 @@ export class ChatRoom {
 		}
 		if (m) m.state = res.reason === 'rate_limited' ? 'rate_limited' : 'failed';
 		if (res.reason === 'closed') void this.resync(); // 만료/종료 — 스냅샷으로 확인
+	}
+
+	// ── 공감 ─────────────────────────────────────────────────────
+	/** 보내는 중인 내 공감 (메시지 id → 바라는 값). 그 사이 온 옛 목록이 화면을 되돌리지 않게. */
+	#pendingReact = new Map<number, ReactionKey | null>();
+
+	#applyReaction(r: Pick<ReactionRow, 'message_id' | 'seat' | 'emoji'>) {
+		const cur = { ...this.reactions[r.message_id] };
+		if (r.emoji) cur[r.seat] = r.emoji;
+		else delete cur[r.seat];
+		this.reactions[r.message_id] = cur;
+	}
+
+	#setReactions(rows: ReactionRow[]) {
+		const next: typeof this.reactions = {};
+		for (const r of rows) if (r.emoji) (next[r.message_id] ??= {})[r.seat] = r.emoji;
+		this.reactions = next;
+		for (const [id, emoji] of this.#pendingReact) this.#applyReaction({ message_id: id, seat: this.seat, emoji });
+	}
+
+	/** 내 공감을 바꾼다 (null = 취소). 화면에는 바로 반영하고, 서버가 거절하면 되돌린다. */
+	async react(messageId: number, emoji: ReactionKey | null): Promise<ReactResult> {
+		if (this.closed) return 'closed';
+		const seat = this.seat;
+		const before = this.reactions[messageId]?.[seat] ?? null;
+		if (before === emoji) return 'ok';
+		this.#pendingReact.set(messageId, emoji);
+		this.#applyReaction({ message_id: messageId, seat, emoji });
+		const res = await this.#t.react(this.roomId, messageId, emoji).catch((): ReactResult => 'network');
+		if (this.#pendingReact.get(messageId) === emoji) this.#pendingReact.delete(messageId);
+		if (res !== 'ok' && (this.reactions[messageId]?.[seat] ?? null) === emoji) {
+			this.#applyReaction({ message_id: messageId, seat, emoji: before });
+			if (res === 'closed') void this.resync(); // 시간이 끝났다 — 스냅샷으로 확인
+		}
+		return res;
+	}
+
+	/** 같은 공감을 다시 누르면 취소, 다른 걸 누르면 바꾸기 */
+	toggleReaction(messageId: number, emoji: ReactionKey) {
+		return this.react(messageId, this.reactions[messageId]?.[this.seat] === emoji ? null : emoji);
 	}
 
 	// ── 부가 ─────────────────────────────────────────────────────

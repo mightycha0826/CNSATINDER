@@ -1,3 +1,4 @@
+import type { ReactionKey } from './chat/types';
 import type { LetterFmt } from './letters/rich';
 
 export type ReportStatus = 'open' | 'reviewing' | 'actioned' | 'dismissed';
@@ -200,7 +201,14 @@ export type RoomView = {
 		live: boolean;
 	};
 	members: { seat: 1 | 2; user_id: string; open: boolean; alias: string; nickname: string | null; status: string }[];
-	messages: { id: number; seat: 0 | 1 | 2; body: string; created_at: string }[];
+	messages: {
+		id: number;
+		seat: 0 | 1 | 2;
+		body: string;
+		created_at: string;
+		/** 자리별 공감 { "1": "heart" } — 없으면 null */
+		reactions: Partial<Record<'1' | '2', ReactionKey>> | null;
+	}[];
 };
 
 export type LetterPostView = {

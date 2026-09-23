@@ -104,7 +104,16 @@ try {
 				return { ...t.snap, server_now: now() };
 			},
 			async markRead() {},
-			typing() {}
+			typing() {},
+			// 공감 — 서버에 있는 행 / 요청 처리 방식은 테스트마다 바꿔 끼운다
+			reactionRows: [],
+			reactImpl: null,
+			async react(_r, id, emoji) {
+				return t.reactImpl ? t.reactImpl(id, emoji) : 'ok';
+			},
+			async fetchReactions() {
+				return t.reactionRows.filter((x) => x.emoji);
+			}
 		};
 		return t;
 	}
@@ -373,6 +382,67 @@ try {
 		await r.leave(false);
 		check('나가기 → left 로 종료', r.closed && r.snap.close_reason === 'left');
 		r.dispose();
+	}
+
+	console.log('\n[15] 공감 — 바로 보이고, 거절되면 되돌리고, 늦은 에코에 흔들리지 않는다');
+	{
+		const t = fake();
+		const r = await mk(t);
+		r.upsert(row(2, '공감할 메시지', 'c1', 900), 'sent');
+		const mine = () => r.reactions[900]?.[1];
+
+		let release;
+		t.reactImpl = () => new Promise((res) => (release = res));
+		const p1 = r.toggleReaction(900, 'heart');
+		check('누르자마자 화면에 ❤️ (서버 응답 전)', mine() === 'heart');
+		release('ok');
+		check('서버가 받으면 그대로', (await p1) === 'ok' && mine() === 'heart');
+
+		t.reactImpl = async () => 'ok';
+		await r.toggleReaction(900, 'heart');
+		check('같은 걸 또 누르면 취소', mine() === undefined);
+
+		t.reactImpl = async () => 'closed';
+		const res = await r.toggleReaction(900, 'fire');
+		check('★ 시간이 끝나 거절되면 되돌린다', res === 'closed' && mine() === undefined);
+
+		t.handlers = null;
+		const room = new ChatRoom(ROOM, t);
+		await room.open();
+		room.upsert(row(1, '내 메시지', 'c2', 901), 'sent');
+		t.handlers.onReaction({ message_id: 901, room_id: ROOM, seat: 2, emoji: 'laugh' });
+		check('상대 공감이 실시간으로 온다', room.reactions[901]?.[2] === 'laugh');
+		t.handlers.onReaction({ message_id: 901, room_id: ROOM, seat: 2, emoji: null });
+		check('상대가 취소하면 사라진다', room.reactions[901]?.[2] === undefined);
+
+		// ❤️ → 😂 를 빨리 누르는 사이 ❤️ 에코가 늦게 도착
+		let rel2;
+		t.reactImpl = () => new Promise((res) => (rel2 = res));
+		const p2 = room.react(901, 'laugh');
+		t.handlers.onReaction({ message_id: 901, room_id: ROOM, seat: 1, emoji: 'heart' });
+		check('★ 보내는 중엔 내 자리의 옛 에코를 무시', room.reactions[901]?.[1] === 'laugh');
+		rel2('ok');
+		await p2;
+
+		// 재연결 동기화: 서버 목록으로 통째로 맞추되, 보내는 중인 내 공감은 지킨다
+		t.reactionRows = [
+			{ message_id: 901, room_id: ROOM, seat: 1, emoji: 'laugh' },
+			{ message_id: 900, room_id: ROOM, seat: 2, emoji: 'wow' }
+		];
+		let rel3;
+		t.reactImpl = () => new Promise((res) => (rel3 = res));
+		const p3 = room.react(900, 'sad');
+		await room.resync();
+		check('동기화로 놓친 상대 공감이 채워진다', room.reactions[900]?.[2] === 'wow');
+		check('★ 동기화가 보내는 중인 내 공감을 되돌리지 않는다', room.reactions[900]?.[1] === 'sad');
+		rel3('ok');
+		await p3;
+		t.fetchReactions = async () => {
+			throw new Error('network');
+		};
+		await room.resync();
+		check('목록을 못 받으면 화면의 공감을 지우지 않는다', room.reactions[901]?.[1] === 'laugh');
+		room.dispose();
 	}
 } catch (e) {
 	fail++;
