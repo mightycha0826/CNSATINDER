@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { CLOSE_LABEL, fmtTime } from '$lib/adminTypes';
+	import Sid from '$lib/admin/Sid.svelte';
 
 	let { data } = $props();
 	const v = $derived(data.v);
@@ -55,7 +56,7 @@
 				<h2 class="a-h2">{m.alias} <span class="muted">· 자리 {m.seat}</span></h2>
 				<dl class="a-dl">
 					<dt>계정</dt>
-					<dd><a href="/admin/users/{m.user_id}">{m.nickname ?? m.user_id.slice(0, 8)} →</a></dd>
+					<dd><a href="/admin/users/{m.user_id}">{m.nickname ?? m.user_id.slice(0, 8)}<Sid label={data.students[m.user_id]} /> →</a></dd>
 					<dt>상태</dt>
 					<dd>{m.status === 'active' ? '정상' : m.status === 'banned' ? '영구정지' : '정지'}</dd>
 					<dt>대화방</dt>

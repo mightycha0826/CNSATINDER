@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { ACTION_LABEL, CLOSE_LABEL, REASON_LABEL, STATUS_LABEL, fmtTime, type UserLetterRow } from '$lib/adminTypes';
 	import SanctionForm from '$lib/admin/SanctionForm.svelte';
+	import Sid from '$lib/admin/Sid.svelte';
 
 	let { data, form } = $props();
 	const d = $derived(data.d);
@@ -36,7 +37,7 @@
 <header class="a-head">
 	<div>
 		<h1 class="a-h1">
-			{p.nickname ?? '(이름 없음)'}
+			{p.nickname ?? '(이름 없음)'}<Sid label={data.students[p.id]} />
 			{#if d.staff_role}<span class="pill acc">{d.staff_role === 'admin' ? '관리자' : '운영진'}</span>{/if}
 			{#if p.status === 'banned'}<span class="pill red">영구정지</span>
 			{:else if p.status === 'suspended'}<span class="pill red">정지 (검토 대기)</span>
@@ -132,7 +133,7 @@
 									<td class="num muted"><a href="/admin/rooms/{r.id}">{fmtTime(r.created_at)}</a></td>
 									<td>{r.alias}</td>
 									<td>
-										{#if r.partner_id}<a href="/admin/users/{r.partner_id}">{r.partner_nickname ?? r.partner_id.slice(0, 8)}</a>{:else}—{/if}
+										{#if r.partner_id}<a href="/admin/users/{r.partner_id}">{r.partner_nickname ?? r.partner_id.slice(0, 8)}</a><Sid label={data.students[r.partner_id]} />{:else}—{/if}
 									</td>
 									<td class="r num">{r.message_count}</td>
 									<td>

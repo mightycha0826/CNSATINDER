@@ -16,6 +16,19 @@ export function requireAdmin(locals: App.Locals) {
 	if (!isAdmin(locals)) error(403, '관리자만 볼 수 있는 화면');
 }
 
+/**
+ * 화면에 나오는 사용자들의 "학번 이름" { user_id: '20529 홍길동' }.
+ * 관리자만 받는다 (운영진은 빈 객체). 한 번 부를 때마다 DB 가 활동 기록(view_identity)을 남긴다.
+ */
+export async function studentLabels(
+	locals: App.Locals,
+	ids: (string | null | undefined)[]
+): Promise<Record<string, string>> {
+	const users = [...new Set(ids.filter((x): x is string => !!x))];
+	if (!isAdmin(locals) || users.length === 0) return {};
+	return adminRpc<Record<string, string>>('admin_student_labels', { p_staff: locals.staff!.id, p_users: users });
+}
+
 const DB_ERR: Record<string, string> = {
 	admin_only: '관리자만 할 수 있는 조치',
 	mod_days_limit: `운영진은 최대 ${MOD_MAX_SUSPEND_DAYS}일까지 정지 가능`,

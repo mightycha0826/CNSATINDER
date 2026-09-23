@@ -200,7 +200,7 @@ export const fmtTime = (s: string) =>
 
 /** 활동 기록(audit_log.action) 표시 이름 */
 export const ACTION_LABEL: Record<string, string> = {
-	view_identity: '이메일 열람',
+	view_identity: '신원 열람',
 	search_email: '이메일 검색',
 	view_room: '대화 열람',
 	view_letter_authors: '편지 작성자 확인',

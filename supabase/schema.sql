@@ -2859,10 +2859,10 @@ $do$;
 --
 --  private.student_roster 는 학교가 관리하는 학번↔실명 명단이다. 학생이 직접 입력하는 값이 아니고
 --  (Phase 1~11 의 "실명·학번을 수집하지 않는다" 원칙은 학생 쪽 입력·저장에 대한 것),
---  admin(관리자)이 이미 "이메일 확인"으로 학교 이메일을 열람한 뒤 그 학번 앞자리에 대응하는 이름을
---  참고용으로 보여주는 데만 쓴다 — 새로운 열람 경로를 만들지 않는다:
---    · admin_roster_name 은 admin_log_identity_view 로 이미 기록된 열람 뒤에만 호출된다.
---    · public.private 어느 쪽에서도 학생 앱·PostgREST 에는 노출되지 않는다 (service_role RPC 전용).
+--  admin(관리자) 화면에서만 쓴다:
+--    · admin_roster_name — "이메일 확인"(admin_log_identity_view 로 기록됨) 옆에 이름
+--    · admin_student_labels — 운영자 화면의 익명 이름 옆에 "(학번 이름)". 부를 때마다 view_identity 기록.
+--    · 운영진(moderator)은 둘 다 못 부른다. 학생 앱·PostgREST 에는 노출되지 않는다 (service_role RPC 전용).
 --  명단 원본(xlsx/csv)은 실명이 들어 있으므로 저장소에 커밋하지 않는다 — scripts/import-roster.mjs 로
 --  로컬에서 서비스 키를 이용해 바로 DB 에 반영한다.
 -- ════════════════════════════════════════════════════════════════════
@@ -2890,10 +2890,18 @@ begin
 end
 $fn$;
 
+-- 이메일 앞자리의 학번 (숫자 1~9자리만 — 그보다 길면 학번이 아니고 int 로 바꿀 수도 없다)
+create or replace function private.email_student_no(p_email text) returns text
+language sql immutable as $fn$
+  select case when n ~ '^[0-9]{1,9}$' then n end
+    from (select substring(split_part(coalesce(p_email, ''), '@', 1) from '^[0-9]+') as n) x;
+$fn$;
+revoke all on function private.email_student_no(text) from public, anon, authenticated;
+
 -- 학교 이메일 앞자리(학번)로 이름 찾기 — admin(관리자)만, 이미 이메일을 확인한 다음에만 의미가 있다
 create or replace function public.admin_roster_name(p_staff uuid, p_email text)
 returns text language plpgsql security definer set search_path = public, private stable as $fn$
-declare v_no text := substring(split_part(coalesce(p_email, ''), '@', 1) from '^[0-9]+');
+declare v_no text := private.email_student_no(p_email);
 begin
   perform private.require_staff(p_staff, true);
   if v_no is null then return null; end if;
@@ -2901,10 +2909,33 @@ begin
 end
 $fn$;
 
+-- 화면에 나오는 사용자들의 "학번 이름" 한꺼번에 — 관리자만, 한 번 부를 때마다 활동 기록 한 줄.
+-- 명단에 이름이 없으면 학번만, 이메일이 학번 형태가 아니면 빠진다.
+create or replace function public.admin_student_labels(p_staff uuid, p_users uuid[])
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare r jsonb;
+begin
+  perform private.require_staff(p_staff, true);
+  if coalesce(cardinality(p_users), 0) = 0 then return '{}'::jsonb; end if;
+  select coalesce(jsonb_object_agg(x.id, x.label), '{}'::jsonb) into r from (
+    select u.id, concat_ws(' ', v.no, sr.name) as label
+      from auth.users u
+      cross join lateral (select private.email_student_no(u.email) as no) v
+      left join private.student_roster sr on sr.student_no = v.no::int
+     where u.id = any(p_users) and v.no is not null
+  ) x;
+  insert into private.audit_log (staff_id, action, target_user, detail)
+  values (p_staff, 'view_identity', case when cardinality(p_users) = 1 then p_users[1] end,
+          jsonb_build_object('users', p_users, 'via', 'label'));
+  return r;
+end
+$fn$;
+
 do $do$
 declare f text;
 begin
-  foreach f in array array['admin_roster_import(smallint, jsonb)', 'admin_roster_name(uuid, text)']
+  foreach f in array array['admin_roster_import(smallint, jsonb)', 'admin_roster_name(uuid, text)',
+                           'admin_student_labels(uuid, uuid[])']
   loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
     execute format('grant execute on function public.%s to service_role', f);

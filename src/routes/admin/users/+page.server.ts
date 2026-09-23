@@ -1,5 +1,5 @@
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import { friendly, isAdmin } from '$lib/server/adminAuth';
+import { friendly, isAdmin, studentLabels } from '$lib/server/adminAuth';
 import type { UserRow } from '$lib/adminTypes';
 import type { PageServerLoad } from './$types';
 
@@ -14,8 +14,9 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	const f = url.searchParams.get('filter');
 	const filter = (FILTERS as readonly string[]).includes(f ?? '') ? (f as (typeof FILTERS)[number]) : 'all';
 
+	const none = {} as Record<string, string>;
 	if (q.includes('@') && !isAdmin(locals)) {
-		return { q, filter, users: [] as UserRow[], error: '이메일 검색은 관리자만 가능' };
+		return { q, filter, users: [] as UserRow[], students: none, error: '이메일 검색은 관리자만 가능' };
 	}
 	try {
 		const users = await adminRpc<UserRow[]>('admin_find_users', {
@@ -24,9 +25,10 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 			p_staff: locals.staff!.id,
 			p_limit: 100
 		});
-		return { q, filter, users, error: null };
+		const students = await studentLabels(locals, users.map((u) => u.id));
+		return { q, filter, users, students, error: null };
 	} catch (e) {
 		const r = friendly(e);
-		return { q, filter, users: [] as UserRow[], error: r.data.error };
+		return { q, filter, users: [] as UserRow[], students: none, error: r.data.error };
 	}
 };

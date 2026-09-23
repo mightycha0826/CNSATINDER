@@ -1716,6 +1716,22 @@ console.log('\n[56] ★ 학번-이름 명렬표 — 이메일 확인 옆 이름 
 
 	check('같은 학번 재반입 → 이름 갱신', (await svc('admin_roster_import', 1, JSON.stringify([{ no: 10101, name: '정정된이름' }]))) === 1);
 	check('갱신된 이름이 바로 반영된다', (await svc('admin_roster_name', adm, '10101@cnsa.hs.kr')) === '정정된이름');
+	check('학번이 너무 길어도 오류 없이 null', (await svc('admin_roster_name', adm, '12345678901234@cnsa.hs.kr')) === null);
+
+	// 운영자 화면의 익명 이름 옆 "(학번 이름)"
+	const noName = await signUp('20999@cnsa.hs.kr', true); // 명단에 없는 학번
+	const plain = await person('m', 'f'); // 학번 형태가 아닌 이메일
+	await expectError('★ 학생 계정으로 admin_student_labels 호출 불가',
+		() => rowsAs(u, `select public.admin_student_labels('${u}', array['${u}']::uuid[])`), 'permission denied');
+	await expectError('★ 운영진은 학번·이름 목록 불가 (관리자 전용)', () => svc('admin_student_labels', mod, [u]), 'admin_only');
+	const before = await audits('view_identity', adm);
+	const labels = await svc('admin_student_labels', adm, [u, noName, plain]);
+	check('학번 + 이름', labels[u] === '10101 정정된이름', JSON.stringify(labels));
+	check('명단에 없는 학번은 학번만', labels[noName] === '20999', JSON.stringify(labels));
+	check('학번 형태가 아닌 이메일은 빠진다', !(plain in labels));
+	check('★ 학번·이름 목록도 활동 기록에 남는다', (await audits('view_identity', adm)) === before + 1);
+	check('빈 목록은 기록 없이 빈 객체', JSON.stringify(await svc('admin_student_labels', adm, [])) === '{}' &&
+		(await audits('view_identity', adm)) === before + 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

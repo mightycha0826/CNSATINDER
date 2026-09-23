@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { CLOSE_LABEL, fmtTime } from '$lib/adminTypes';
+	import Sid from '$lib/admin/Sid.svelte';
 
 	let { data } = $props();
 </script>
@@ -30,7 +31,7 @@
 					<td>
 						{#each r.members ?? [] as m, i (m.seat)}
 							{#if i > 0}<span class="muted"> · </span>{/if}
-							<a href="/admin/users/{m.user_id}">{m.nickname ?? m.user_id.slice(0, 8)}</a>
+							<a href="/admin/users/{m.user_id}">{m.nickname ?? m.user_id.slice(0, 8)}</a><Sid label={data.students[m.user_id]} />
 						{/each}
 					</td>
 					<td class="r num">{r.message_count}</td>

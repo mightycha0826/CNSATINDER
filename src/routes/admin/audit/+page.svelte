@@ -13,7 +13,7 @@
 		if (d.days) parts.push(`${d.days}일`);
 		if (d.note) parts.push(String(d.note));
 		if (d.distinct_reporters) parts.push(`신고자 ${d.distinct_reporters}명`);
-		if (Array.isArray(d.users)) parts.push(`${d.users.length}명 이메일`);
+		if (Array.isArray(d.users)) parts.push(`${d.users.length}명 ${d.via === 'label' ? '학번·이름' : '이메일'}`);
 		if (d.query) parts.push(`"${d.query}"`);
 		if (d.room || d.letter) return parts.join(' · ');
 		if (!parts.length && Object.keys(d).length) parts.push(JSON.stringify(d));

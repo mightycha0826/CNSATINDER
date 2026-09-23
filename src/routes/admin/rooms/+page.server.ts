@@ -1,5 +1,5 @@
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import { requireAdmin } from '$lib/server/adminAuth';
+import { requireAdmin, studentLabels } from '$lib/server/adminAuth';
 import type { RoomRow } from '$lib/adminTypes';
 import type { PageServerLoad } from './$types';
 
@@ -8,5 +8,6 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 	requireAdmin(locals);
 	const filter = url.searchParams.get('filter') === 'all' ? 'all' : 'live';
 	const rooms = await adminRpc<RoomRow[]>('admin_rooms', { p_filter: filter, p_staff: locals.staff!.id, p_limit: 200 });
-	return { filter, rooms };
+	const students = await studentLabels(locals, rooms.flatMap((r) => (r.members ?? []).map((m) => m.user_id)));
+	return { filter, rooms, students };
 };

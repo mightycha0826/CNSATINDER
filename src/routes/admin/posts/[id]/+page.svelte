@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { fmtTime } from '$lib/adminTypes';
+	import Sid from '$lib/admin/Sid.svelte';
 
 	let { data } = $props();
 	const v = $derived(data.v);
 	const who = (no: number) => v.participants.find((p) => p.no === no);
+	const sid = (uid?: string) => (uid ? data.students[uid] : undefined);
 	const tops = $derived(v.comments.filter((c) => c.parent_id === null));
 	const replies = (id: number) => v.comments.filter((c) => c.parent_id === id);
 	const REPLY: Record<string, string> = { unassigned: '답장자 없음', assigned: '답장 대기', replied: '답장 완료' };
@@ -29,7 +31,7 @@
 			<div class="by">
 				{who(1)?.alias}
 				<span class="pill acc">작성자</span>
-				<a href="/admin/users/{who(1)?.user_id}">{who(1)?.nickname ?? '계정'} →</a>
+				<a href="/admin/users/{who(1)?.user_id}">{who(1)?.nickname ?? '계정'}<Sid label={sid(who(1)?.user_id)} /> →</a>
 			</div>
 			<p class="body">{v.letter.body}</p>
 		</div>
@@ -52,7 +54,7 @@
 				{#each v.participants as p (p.no)}
 					<li>
 						<span>{p.alias}{#if p.is_author}<span class="pill acc">작성자</span>{/if}</span>
-						<a class="acc" href="/admin/users/{p.user_id}">{p.nickname ?? p.user_id.slice(0, 8)} →</a>
+						<a class="acc" href="/admin/users/{p.user_id}">{p.nickname ?? p.user_id.slice(0, 8)}<Sid label={sid(p.user_id)} /> →</a>
 					</li>
 				{/each}
 			</ul>
@@ -63,7 +65,7 @@
 				<h2 class="a-h2">지정 답장자</h2>
 				<dl class="a-dl">
 					<dt>계정</dt>
-					<dd><a class="acc" href="/admin/users/{v.reader.user_id}">{v.reader.nickname ?? v.reader.user_id.slice(0, 8)} →</a></dd>
+					<dd><a class="acc" href="/admin/users/{v.reader.user_id}">{v.reader.nickname ?? v.reader.user_id.slice(0, 8)}<Sid label={sid(v.reader.user_id)} /> →</a></dd>
 					<dt>상태</dt>
 					<dd>{v.reader.fulfilled_at ? `${fmtTime(v.reader.fulfilled_at)} 답장` : `${fmtTime(v.reader.expires_at)}까지`}</dd>
 				</dl>
@@ -78,7 +80,7 @@
 			{who(c.author_no)?.alias}
 			{#if who(c.author_no)?.is_author}<span class="pill acc">작성자</span>{/if}
 			{#if c.status === 'removed'}<span class="pill red">지워짐</span>{/if}
-			<a href="/admin/users/{who(c.author_no)?.user_id}">{who(c.author_no)?.nickname ?? '계정'} →</a>
+			<a href="/admin/users/{who(c.author_no)?.user_id}">{who(c.author_no)?.nickname ?? '계정'}<Sid label={sid(who(c.author_no)?.user_id)} /> →</a>
 			<span class="muted t">{fmtTime(c.created_at)}</span>
 		</div>
 		<p class="body">{c.body}</p>

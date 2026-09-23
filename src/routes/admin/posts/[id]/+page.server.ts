@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import { requireAdmin } from '$lib/server/adminAuth';
+import { requireAdmin, studentLabels } from '$lib/server/adminAuth';
 import type { LetterPostView } from '$lib/adminTypes';
 import type { PageServerLoad } from './$types';
 
@@ -11,5 +11,6 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!Number.isSafeInteger(id) || id < 1) error(404, '편지를 찾을 수 없습니다');
 	const v = await adminRpc<LetterPostView | null>('admin_letter_post', { p_letter: id, p_staff: locals.staff!.id });
 	if (!v) error(404, '편지를 찾을 수 없습니다');
-	return { v };
+	const students = await studentLabels(locals, [...v.participants.map((p) => p.user_id), v.reader?.user_id]);
+	return { v, students };
 };

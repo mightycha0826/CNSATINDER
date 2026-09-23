@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fmtTime } from '$lib/adminTypes';
+	import Sid from '$lib/admin/Sid.svelte';
 
 	let { data } = $props();
 	const admin = $derived(data.staff?.role === 'admin');
@@ -62,7 +63,7 @@
 			{#each data.users as u (u.id)}
 				<tr>
 					<td>
-						<a href="/admin/users/{u.id}"><b>{u.nickname ?? '(이름 없음)'}</b></a>
+						<a href="/admin/users/{u.id}"><b>{u.nickname ?? '(이름 없음)'}</b></a><Sid label={data.students[u.id]} />
 						{#if u.staff_role}<span class="pill acc">{u.staff_role === 'admin' ? '관리자' : '운영진'}</span>{/if}
 						{#if !u.onboarded}<span class="pill">가입 중</span>{/if}
 					</td>

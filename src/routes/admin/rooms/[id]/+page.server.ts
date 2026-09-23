@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import { requireAdmin } from '$lib/server/adminAuth';
+import { requireAdmin, studentLabels } from '$lib/server/adminAuth';
 import type { RoomView } from '$lib/adminTypes';
 import type { PageServerLoad } from './$types';
 
@@ -12,5 +12,6 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 	if (!UUID.test(params.id)) error(404, '대화를 찾을 수 없습니다');
 	const v = await adminRpc<RoomView | null>('admin_room', { p_room: params.id, p_staff: locals.staff!.id });
 	if (!v) error(404, '대화를 찾을 수 없습니다 (이미 지워졌을 수 있음)');
-	return { v };
+	const students = await studentLabels(locals, v.members.map((m) => m.user_id));
+	return { v, students };
 };

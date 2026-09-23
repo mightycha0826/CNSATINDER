@@ -1,6 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import { adminRpc, emailOf, rosterNameOf } from '$lib/server/supabaseAdmin';
-import { isAdmin, runSanction } from '$lib/server/adminAuth';
+import { isAdmin, runSanction, studentLabels } from '$lib/server/adminAuth';
 import type { UserDetail, UserLetterRow, UserRoomRow } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -22,7 +22,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 			? adminRpc<UserRoomRow[]>('admin_user_rooms', { p_user: params.id, p_staff: staff })
 			: Promise.resolve(null)
 	]);
-	return { d, rooms };
+	const students = await studentLabels(locals, [params.id, ...(rooms ?? []).map((r) => r.partner_id)]);
+	return { d, rooms, students };
 };
 
 export const actions: Actions = {
