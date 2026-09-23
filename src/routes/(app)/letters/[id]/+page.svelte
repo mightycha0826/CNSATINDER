@@ -12,6 +12,7 @@
 		threadComments
 	} from '$lib/letters/api';
 	import type { CommentRow, LetterDetail, ReportReason } from '$lib/letters/types';
+	import RichText from '$lib/letters/RichText.svelte';
 	import { REPORT_REASONS } from '$lib/reportReasons';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import { ago, waitText } from '$lib/time';
@@ -262,7 +263,7 @@
 						<span class="muted small">{ago(letter.created_at, serverNow)}{letter.is_mine ? ' · 내 편지' : ''}</span>
 					</div>
 				</div>
-				<p class="body">{letter.body}</p>
+				<div class="body"><RichText body={letter.body} fmt={letter.fmt} /></div>
 				<div class="status muted">
 					{#if letter.reply_status === 'replied'}
 						답장 도착 · 댓글 {data?.comments.filter((c) => !c.hidden).length ?? 0}

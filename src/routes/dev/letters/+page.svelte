@@ -21,13 +21,16 @@
 		{ id: 8, body: '오늘 급식 진짜 맛있었다', author_alias: '포근한 우표', is_mine: true, reply_status: 'assigned', comment_count: 1 },
 		{ id: 7, body: '시험 끝나면 뭐 할지 적어 보는 편지. 나는 일단 잠부터 잘 거고, 그 다음엔 밀린 드라마를 볼 거야. 친구들이랑 노래방도 가고 싶고 떡볶이도 먹고 싶어. 생각만 해도 행복하다. 다들 조금만 더 버티자! 우리 모두 고생 많았어. 끝나면 진짜 하고 싶은 거 다 하자. 이번 학기 정말 길었는데 이제 거의 다 왔어. 힘내자 다들.', author_alias: '반짝이는 엽서', is_mine: false, reply_status: 'unassigned', comment_count: 0, assigned_to_me: true },
 		{ id: 6, body: '도서관 3층 창가 자리 좋아하는 사람?', author_alias: '조용한 책갈피', is_mine: false, reply_status: 'unassigned', comment_count: 2 }
-	].map((l, i) => ({ truncated: l.body.length > 120, assigned_to_me: false, created_at: ago(3 + i * 70), ...l, body: l.body.slice(0, 120) }));
+	].map((l, i) => ({ truncated: l.body.length > 120, assigned_to_me: false, created_at: ago(3 + i * 70), fmt: null as unknown, ...l, body: l.body.slice(0, 120) }));
+	// 서식 예시 — "진로" 굵게+노랑 형광펜, "때문에" 밑줄, 둘째 줄 가운데 정렬·파란 글씨
+	FEED[0].fmt = { m: [[3, 5, 'b'], [3, 5, 'h:yellow'], [6, 9, 'u'], [41, 58, 'c:blue']], a: [[1, 'center']] };
 
 	const task = v === 'task';
 	const DETAIL = {
 		letter: {
 			id: 9,
 			body: FEED[0].body,
+			fmt: FEED[0].fmt,
 			author_alias: '느린 등대',
 			is_mine: false,
 			reply_status: task ? 'assigned' : 'replied',
@@ -49,11 +52,14 @@
 	};
 
 	if (import.meta.env.DEV && typeof window !== 'undefined') {
-		(window as unknown as { __LETTERS_FAKE__: unknown }).__LETTERS_FAKE__ = async (fn: string) => {
+		(window as unknown as { __LETTERS_FAKE__: unknown }).__LETTERS_FAKE__ = async (fn: string, args?: Record<string, unknown>) => {
 			if (fn === 'letter_feed') return { letters: FEED, server_now: new Date().toISOString() };
 			if (fn === 'letter_detail') return DETAIL;
 			if (fn === 'request_letter_reply_task') return { status: 'waiting', reason: 'empty', poll_ms: 60_000 };
-			if (fn === 'post_letter') return { status: 'ok', letter_id: 9, alias: '느린 등대' };
+			if (fn === 'post_letter') {
+				(window as unknown as { __LAST_POST__: unknown }).__LAST_POST__ = args;
+				return { status: 'ok', letter_id: 9, alias: '느린 등대' };
+			}
 			if (fn === 'post_comment') return { status: 'ok', comment_id: 99, my_alias: '둥근 풍선', designated: false };
 			return { status: 'ok' };
 		};

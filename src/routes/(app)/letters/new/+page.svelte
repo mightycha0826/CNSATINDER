@@ -1,27 +1,26 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { postLetter } from '$lib/letters/api';
+	import LetterEditor from '$lib/letters/LetterEditor.svelte';
+	import type { LetterFmt } from '$lib/letters/rich';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import { waitText } from '$lib/time';
 
 	/** 편지 쓰기 — 올리면 바로 공개 피드에 뜨고, 답장할 사람이 배정되기를 기다린다. */
 	let body = $state('');
+	let fmt = $state<LetterFmt | null>(null);
 	let busy = $state(false);
-	let area: HTMLTextAreaElement | undefined = $state();
 
 	const max = $derived(S.settings?.letter_max_len ?? 500);
-	const len = $derived(body.trim().length);
+	// 서버와 같은 셈 — 앞뒤 공백을 뺀 글자(code point) 수, 줄바꿈도 한 글자
+	const len = $derived(Array.from(body).length);
 	const ready = $derived(len > 0 && len <= max && !busy);
-
-	$effect(() => {
-		area?.focus();
-	});
 
 	async function submit() {
 		if (!ready) return;
 		busy = true;
 		try {
-			const r = await postLetter(body);
+			const r = await postLetter(body, fmt);
 			if (r.status === 'ok') {
 				toast('편지 올림');
 				void goto(`/letters/${r.letter_id}`, { replaceState: true });
@@ -49,15 +48,14 @@
 </div>
 
 <div class="page compose">
-	<textarea
-		bind:this={area}
-		bind:value={body}
-		maxlength={max}
-		placeholder="아무에게나 하고 싶은 이야기를 적어 보세요.&#10;답장해 줄 사람이 한 명 배정되고, 누구나 댓글을 달 수 있어요."
-	></textarea>
+	<LetterEditor
+		bind:body
+		bind:fmt
+		placeholder={'아무에게나 하고 싶은 이야기를 적어 보세요.\n답장해 줄 사람이 한 명 배정되고, 누구나 댓글을 달 수 있어요.'}
+	/>
 	<div class="foot">
 		<span class="muted">모두에게 공개 · 이 편지에서만 쓰는 새 익명 이름</span>
-		<span class="num" class:over={len > max}>{len}/{max}</span>
+		<span class="num" class:over={len > max}>{len > max ? `${len - max}자 넘음 · ` : ''}{len}/{max}</span>
 	</div>
 	<ul class="rules muted">
 		<li>이름·학번·반·SNS 아이디는 적지 않기</li>
@@ -84,22 +82,8 @@
 
 	.compose {
 		gap: 10px;
-		padding-top: 12px;
+		padding-top: 0;
 		padding-bottom: calc(24px + env(safe-area-inset-bottom));
-	}
-	textarea {
-		flex: 1;
-		min-height: 45dvh;
-		padding: 4px 0;
-		border: 0;
-		outline: none;
-		resize: none;
-		background: none;
-		font-size: 16px;
-		line-height: 1.7;
-	}
-	textarea::placeholder {
-		color: var(--text-2);
 	}
 	.foot {
 		display: flex;

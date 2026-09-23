@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fmtTime } from '$lib/adminTypes';
 	import Sid from '$lib/admin/Sid.svelte';
+	import RichText from '$lib/letters/RichText.svelte';
 
 	let { data } = $props();
 	const v = $derived(data.v);
@@ -33,7 +34,7 @@
 				<span class="pill acc">작성자</span>
 				<a href="/admin/users/{who(1)?.user_id}">{who(1)?.nickname ?? '계정'}<Sid label={sid(who(1)?.user_id)} /> →</a>
 			</div>
-			<p class="body">{v.letter.body}</p>
+			<div class="body"><RichText body={v.letter.body} fmt={v.letter.fmt} /></div>
 		</div>
 
 		<h2 class="a-h2 ch">댓글 <span class="muted">{v.comments.length}개</span></h2>

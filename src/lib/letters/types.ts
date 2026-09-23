@@ -3,6 +3,7 @@
  * ★ uuid 가 없다. 이름(alias)은 편지마다 새로 뽑은 임시 이름이고, 채팅 닉네임과는 다른 공간이다.
  */
 export type { ReportReason } from '../chat/types';
+import type { LetterFmt } from './rich';
 
 export type ReplyStatus = 'unassigned' | 'assigned' | 'replied';
 
@@ -11,6 +12,8 @@ export type LetterListItem = {
 	id: number;
 	/** 280자까지 잘린 미리보기 */
 	body: string;
+	/** 서식 — 전체 본문 기준이라 잘린 미리보기에서는 범위 밖이 무시된다 */
+	fmt: LetterFmt | null;
 	truncated: boolean;
 	author_alias: string;
 	is_mine: boolean;
@@ -25,6 +28,7 @@ export type LetterListItem = {
 export type LetterBody = {
 	id: number;
 	body: string;
+	fmt: LetterFmt | null;
 	author_alias: string;
 	is_mine: boolean;
 	reply_status: ReplyStatus;

@@ -1736,6 +1736,8 @@ create table if not exists public.letters (
   created_at                  timestamptz not null default now()
 );
 -- ★ 식별 컬럼이 없다. 작성자는 letter_participants 의 participant_no = 1.
+-- 서식(굵게·형광펜 등)은 본문과 따로 — {"m": [[시작, 끝, 종류]...], "a": [[줄, 정렬]...]} (private.letter_fmt_ok)
+alter table public.letters add column if not exists fmt jsonb;
 create index if not exists letters_feed  on public.letters (id desc) where status = 'open';
 create index if not exists letters_queue on public.letters (created_at) where status = 'open' and reply_status <> 'replied';
 
@@ -1965,7 +1967,7 @@ begin
   if me is null then raise exception 'unauthenticated'; end if;
   select * into cfg from public.app_settings where id;
   select coalesce(jsonb_agg(x order by x.id desc), '[]'::jsonb) into v from (
-    select l.id, left(l.body, 280) as body, char_length(l.body) > 280 as truncated,
+    select l.id, left(l.body, 280) as body, l.fmt, char_length(l.body) > 280 as truncated,
            a.alias as author_alias, a.user_id = me as is_mine, l.reply_status, l.created_at,
            (select count(*) from public.letter_comments c
              where c.letter_id = l.id and c.status = 'visible')::int as comment_count,
@@ -2023,7 +2025,7 @@ begin
 
   return jsonb_build_object(
     'letter', jsonb_build_object(
-      'id', l.id, 'body', l.body, 'author_alias', v_author.alias, 'is_mine', v_author.user_id = me,
+      'id', l.id, 'body', l.body, 'fmt', l.fmt, 'author_alias', v_author.alias, 'is_mine', v_author.user_id = me,
       'reply_status', l.reply_status, 'created_at', l.created_at,
       'assigned_to_me', v_task.reader_id = me and v_task.fulfilled_at is null,
       'task_expires_at', case when v_task.reader_id = me then v_task.expires_at end),
@@ -2035,10 +2037,54 @@ $fn$;
 
 
 -- ── 34. 쓰기 RPC ────────────────────────────────────────────────────
-create or replace function public.post_letter(p_body text)
+-- 편지 서식 검사. 화면은 이 목록에 있는 종류·색·크기만 그린다(src/lib/letters/rich.ts) — 여기서 한 번 더 막는다.
+--   m: [[시작, 끝, 종류]...]  글자(code point) 위치, 끝은 포함 안 함, 0 <= 시작 < 끝 <= 본문 길이
+--   a: [[줄 번호, 'center'|'right']...]  줄 번호는 본문의 줄 수보다 작아야 함
+create or replace function private.letter_fmt_ok(f jsonb, p_body text) returns boolean
+language plpgsql immutable as $fn$
+declare n int := char_length(p_body);
+        v_lines int := char_length(p_body) - char_length(replace(p_body, E'\n', '')) + 1;
+        e jsonb; k text;
+begin
+  if f is null then return true; end if;
+  if jsonb_typeof(f) <> 'object' then return false; end if;
+  for k in select jsonb_object_keys(f) loop
+    if k not in ('m', 'a') then return false; end if;
+  end loop;
+  if f ? 'm' then
+    if jsonb_typeof(f->'m') <> 'array' or jsonb_array_length(f->'m') > 500 then return false; end if;
+    for e in select value from jsonb_array_elements(f->'m') loop
+      if jsonb_typeof(e) <> 'array' or jsonb_array_length(e) <> 3 then return false; end if;
+      if jsonb_typeof(e->0) <> 'number' or jsonb_typeof(e->1) <> 'number' or jsonb_typeof(e->2) <> 'string' then
+        return false;
+      end if;
+      if (e->>0) !~ '^\d{1,5}$' or (e->>1) !~ '^\d{1,5}$' then return false; end if;
+      if (e->>0)::int >= (e->>1)::int or (e->>1)::int > n then return false; end if;
+      if (e->>2) !~ '^(b|i|u|s|h:(yellow|green|blue|pink|orange)|c:(red|orange|green|blue|purple|gray)|z:(sm|lg|xl))$' then
+        return false;
+      end if;
+    end loop;
+  end if;
+  if f ? 'a' then
+    if jsonb_typeof(f->'a') <> 'array' or jsonb_array_length(f->'a') > 500 then return false; end if;
+    for e in select value from jsonb_array_elements(f->'a') loop
+      if jsonb_typeof(e) <> 'array' or jsonb_array_length(e) <> 2 then return false; end if;
+      if jsonb_typeof(e->0) <> 'number' or (e->>0) !~ '^\d{1,5}$' then return false; end if;
+      if (e->>0)::int >= v_lines or (e->>1) is null or (e->>1) not in ('center', 'right') then return false; end if;
+    end loop;
+  end if;
+  return true;
+end
+$fn$;
+revoke all on function private.letter_fmt_ok(jsonb, text) from public, anon, authenticated;
+
+-- 서식이 생기며 인자가 늘었다 — 옛 한 인자 버전을 지워 두 버전이 헷갈리지 않게
+drop function if exists public.post_letter(text);
+create or replace function public.post_letter(p_body text, p_fmt jsonb default null)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare me uuid := auth.uid(); cfg public.app_settings%rowtype; v_gate text; v_b jsonb;
         v_body text := btrim(coalesce(p_body, '')); v_id bigint; v_alias jsonb;
+        v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
 begin
   v_gate := private.letter_eligible(me);
   if v_gate is not null then
@@ -2048,13 +2094,17 @@ begin
   select * into cfg from public.app_settings where id;
   if char_length(v_body) = 0 then raise exception 'empty_body'; end if;
   if char_length(v_body) > cfg.letter_max_len then raise exception 'too_long'; end if;
+  -- 서식 위치는 본문 기준이라, 앞뒤 공백이 잘려 나가면 어긋난다 — 클라가 미리 잘라서 보낸다
+  if v_fmt is not null and (v_body <> p_body or not private.letter_fmt_ok(v_fmt, v_body)) then
+    raise exception 'bad_format';
+  end if;
 
   v_b := private.letter_bucket_take(me, 'letter');
   if not (v_b->>'ok')::boolean then
     return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (v_b->>'retry_after_ms')::bigint);
   end if;
 
-  insert into public.letters (body) values (v_body) returning id into v_id;
+  insert into public.letters (body, fmt) values (v_body, v_fmt) returning id into v_id;
   v_alias := private.assign_letter_alias(v_id, me, true);
   return jsonb_build_object('status', 'ok', 'letter_id', v_id, 'alias', v_alias->>'alias');
 end
@@ -2352,12 +2402,12 @@ begin
 end
 $fn$;
 
-revoke all on function public.letter_feed(bigint, int), public.letter_detail(bigint), public.post_letter(text),
+revoke all on function public.letter_feed(bigint, int), public.letter_detail(bigint), public.post_letter(text, jsonb),
                        public.post_comment(bigint, bigint, text, uuid), public.delete_my_letter(bigint),
                        public.delete_my_comment(bigint), public.request_letter_reply_task(),
                        public.report_letter(bigint, bigint, text, text), public.block_letter_author(bigint, bigint)
   from public, anon;
-grant execute on function public.letter_feed(bigint, int), public.letter_detail(bigint), public.post_letter(text),
+grant execute on function public.letter_feed(bigint, int), public.letter_detail(bigint), public.post_letter(text, jsonb),
                           public.post_comment(bigint, bigint, text, uuid), public.delete_my_letter(bigint),
                           public.delete_my_comment(bigint), public.request_letter_reply_task(),
                           public.report_letter(bigint, bigint, text, text), public.block_letter_author(bigint, bigint)
@@ -2800,7 +2850,7 @@ begin
   insert into private.audit_log (staff_id, action, detail)
   values (p_staff, 'view_letter_authors', jsonb_build_object('letter', p_letter));
   return jsonb_build_object(
-    'letter', jsonb_build_object('id', l.id, 'body', l.body, 'status', l.status,
+    'letter', jsonb_build_object('id', l.id, 'body', l.body, 'fmt', l.fmt, 'status', l.status,
                'reply_status', l.reply_status, 'created_at', l.created_at),
     'participants', (select coalesce(jsonb_agg(jsonb_build_object(
                         'no', lp.participant_no, 'alias', lp.alias, 'is_author', lp.is_author,

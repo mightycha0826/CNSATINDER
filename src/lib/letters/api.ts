@@ -10,6 +10,7 @@ import type {
 	ReplyTaskResult,
 	ReportReason
 } from './types';
+import type { LetterFmt } from './rich';
 
 /**
  * 익명편지 서버 호출 — 전부 RPC. 편지·댓글 테이블에는 insert 권한이 아예 없다
@@ -39,8 +40,8 @@ export function fetchLetter(id: number) {
 	return rpc<LetterDetail>('letter_detail', { p_letter: id });
 }
 
-export function postLetter(body: string) {
-	return rpc<PostLetterResult>('post_letter', { p_body: body });
+export function postLetter(body: string, fmt: LetterFmt | null = null) {
+	return rpc<PostLetterResult>('post_letter', { p_body: body, p_fmt: fmt });
 }
 
 /** 댓글·대댓글. 성공하면 받을 사람(편지 작성자 또는 부모 댓글 작성자)에게 알림을 요청한다. */

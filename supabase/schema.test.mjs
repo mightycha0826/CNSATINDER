@@ -1774,5 +1774,56 @@ console.log('\n[57] 실시간 현황 — 접속 중 · 매칭 대기 · 대화 �
 	check('방이 닫히면 대화 중이 아니다', (await svc('admin_live_users', adm)).find((x) => x.id === c1).room_count === 0);
 }
 
+console.log('\n[58] ★ 편지 서식 — 정해진 종류·색·범위만');
+{
+	await resetLetters();
+	const w = await person('m', 'f');
+	const reader = await person('f', 'm');
+	const refill = () => db.query(`update public.user_presence set letter_tokens = 3 where user_id = $1`, [w]);
+	const post = (body, fmt) => rpcAs(w, 'post_letter', body, fmt === undefined ? null : JSON.stringify(fmt));
+
+	const fmt = { m: [[0, 5, 'b'], [0, 5, 'h:yellow'], [6, 11, 'u'], [6, 11, 's'], [6, 11, 'c:blue'], [6, 11, 'z:lg']], a: [[1, 'center']] };
+	const ok = await post('hello\nworld', fmt);
+	check('서식 있는 편지 올리기', ok.status === 'ok', JSON.stringify(ok));
+	const d = await detail(reader, ok.letter_id);
+	const same = (f) => !!f && JSON.stringify(f.m) === JSON.stringify(fmt.m) && JSON.stringify(f.a) === JSON.stringify(fmt.a);
+	check('상세에 서식이 그대로', same(d.letter.fmt), JSON.stringify(d.letter.fmt));
+	const feedItem = (await rpcAs(reader, 'letter_feed', null, null)).letters.find((x) => x.id === ok.letter_id);
+	check('피드에도 서식', same(feedItem?.fmt), JSON.stringify(feedItem));
+	check('본문은 순수 텍스트 그대로', d.letter.body === 'hello\nworld');
+
+	await refill();
+	const plain = await postLetter(w, '서식 없는 편지');
+	check('서식 없이(옛 방식 한 인자)도 올라간다', plain.status === 'ok' && (await detail(reader, plain.letter_id)).letter.fmt === null);
+	const empty = await post('빈 서식', {});
+	check('빈 서식 {} 는 null 로 저장', empty.status === 'ok' && (await detail(reader, empty.letter_id)).letter.fmt === null);
+
+	await refill();
+	const emoji = await post('😀ab', { m: [[1, 3, 'b']] });
+	check('위치는 글자(code point) 단위 — 이모지도 한 글자', emoji.status === 'ok', JSON.stringify(emoji));
+
+	const bad = [
+		['모르는 종류', { m: [[0, 1, 'x']] }],
+		['목록에 없는 형광펜 색', { m: [[0, 1, 'h:red']] }],
+		['★ 색 대신 CSS 값 끼워 넣기', { m: [[0, 1, 'c:red;background:url(//evil)']] }],
+		['★ 크기 대신 임의 값', { m: [[0, 1, 'z:999px']] }],
+		['본문보다 긴 범위', { m: [[0, 99, 'b']] }],
+		['시작 >= 끝', { m: [[3, 3, 'b']] }],
+		['음수 위치', { m: [[-1, 2, 'b']] }],
+		['소수 위치', { m: [[0.5, 2, 'b']] }],
+		['문자열 위치', { m: [['0', '2', 'b']] }],
+		['원소 개수가 틀림', { m: [[0, 2]] }],
+		['모르는 최상위 키', { m: [], x: 1 }],
+		['없는 줄 정렬', { a: [[5, 'center']] }],
+		['정렬 값이 목록에 없음', { a: [[0, 'justify']] }],
+		['서식이 배열', [[0, 1, 'b']]],
+		['범위가 너무 많음', { m: Array.from({ length: 501 }, () => [0, 1, 'b']) }]
+	];
+	for (const [name, f] of bad) await expectError(`★ 거절: ${name}`, () => post('hello\nworld', f), 'bad_format');
+	await expectError('★ 거절: 앞뒤 공백이 잘리면 위치가 어긋나므로', () => post('  hello', { m: [[0, 2, 'b']] }), 'bad_format');
+	check('거절된 시도는 편지 한도를 쓰지 않는다',
+		(await one('select letter_tokens from public.user_presence where user_id = $1', [w])).letter_tokens >= 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

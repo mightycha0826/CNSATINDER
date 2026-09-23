@@ -114,6 +114,7 @@ npm run dev
 - [ ] **Phase 12 적용** — `schema.sql` 을 다시 실행 (학번-이름 명렬표 RPC). 이어서
       `node scripts/import-roster.mjs <1~3학년 합친 CSV>` 로 명단 반영.
 - [ ] **Phase 13 적용** — `schema.sql` 을 다시 실행 (실시간 현황 RPC). 안 하면 `/admin/live` 가 오류.
+- [ ] **Phase 14 적용** — `schema.sql` 을 다시 실행 (편지 서식 `letters.fmt`·`post_letter(text, jsonb)`). 안 하면 편지 올리기가 실패한다.
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
       Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
 - [ ] **푸시 알림 키** — `.env` 의 `PUBLIC_VAPID_KEY`·`VAPID_PRIVATE_KEY`(Secret)·`VAPID_SUBJECT` 를 Cloudflare Variables and Secrets 에도.
@@ -193,4 +194,6 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 - [x] **Phase 12 — 학번-이름 명렬표** — 관리자 화면의 익명 이름 옆 `(학번 이름)`·"이메일 확인" 옆 실명
       (CSV 반입 스크립트). 관리자만, 열 때마다 활동 기록
 - [x] **Phase 13 — 실시간 현황** — 전체 사용자 + 대화 중·매칭 대기·접속 중·오프라인, 10초 자동 갱신
+- [x] **Phase 14 — 편지 서식** — 굵게·기울임·밑줄·취소선·형광펜(5색)·글자색(6색)·크기·정렬·되돌리기 (Tiptap).
+      본문은 순수 텍스트 그대로, 서식은 `letters.fmt` 에 범위 목록으로. 화면은 HTML 을 넣지 않고 정해진 표로만 그린다
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

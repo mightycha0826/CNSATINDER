@@ -85,6 +85,7 @@ export function errMsg(e: unknown): string {
 	if (m.includes('invalid_mbti')) return 'MBTI 를 다시 확인해 주세요';
 	// 익명편지
 	if (m.includes('too_long')) return '글자 수 초과';
+	if (m.includes('bad_format')) return '서식을 저장하지 못했어요. 다시 올려 주세요';
 	if (m.includes('empty_body')) return '내용을 적어 주세요';
 	if (m.includes('not_owner')) return '내가 쓴 글만 지울 수 있어요';
 	if (m.includes('Token has expired') || m.includes('expired'))

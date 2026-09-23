@@ -3,6 +3,7 @@
 	import Avatar from '$lib/Avatar.svelte';
 	import { fetchFeed, requestReplyTask } from '$lib/letters/api';
 	import { LettersFeed } from '$lib/letters/feed.svelte';
+	import RichText from '$lib/letters/RichText.svelte';
 	import { ReplySeeker } from '$lib/letters/replySeeker.svelte';
 	import { S, toast } from '$lib/state.svelte';
 	import { ago } from '$lib/time';
@@ -81,7 +82,9 @@
 						{#if l.is_mine}<span class="chip">내 편지</span>{/if}
 						<span class="when muted">{ago(l.created_at, serverNow)}</span>
 					</div>
-					<p class="body">{l.body}{#if l.truncated}<span class="more muted">… 더 보기</span>{/if}</p>
+					<div class="body"><RichText body={l.body} fmt={l.fmt}>
+						{#snippet after()}{#if l.truncated}<span class="more muted">… 더 보기</span>{/if}{/snippet}
+					</RichText></div>
 					<div class="meta muted">
 						<span class="count">
 							<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
