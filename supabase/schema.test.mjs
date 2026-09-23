@@ -1580,6 +1580,9 @@ console.log('\n[52] ★ 익명편지 — 알림 · 운영자');
 	const full = await svc('admin_letter_report', item.id);
 	check('상세: 증거 + 현재 글 상태', full.evidence.length === 1 && full.target.letter_status === 'open');
 	const staff = await person('m', 'f');
+	await expectError('★ 운영진이 아니면 글을 내릴 수 없다', () => svc('admin_remove_letter_content', a.letter_id, null, staff, item.id), 'not_staff');
+	await expectError('★ 운영진이 아니면 신고를 처리할 수 없다', () => svc('admin_set_letter_report', item.id, 'actioned', '', staff), 'not_staff');
+	await db.query(`insert into private.staff (user_id, role) values ($1, 'moderator')`, [staff]);
 	await svc('admin_remove_letter_content', a.letter_id, null, staff, item.id);
 	check('운영자 삭제 → 피드에서 빠짐', !(await rpcAs(z, 'letter_feed', null, null)).letters.some((x) => x.id === a.letter_id));
 	await svc('admin_set_letter_report', item.id, 'actioned', '삭제함', staff);
@@ -1823,6 +1826,27 @@ console.log('\n[58] ★ 편지 서식 — 정해진 종류·색·범위만');
 	await expectError('★ 거절: 앞뒤 공백이 잘리면 위치가 어긋나므로', () => post('  hello', { m: [[0, 2, 'b']] }), 'bad_format');
 	check('거절된 시도는 편지 한도를 쓰지 않는다',
 		(await one('select letter_tokens from public.user_presence where user_id = $1', [w])).letter_tokens >= 1);
+}
+
+console.log('\n[60] ★ 운영자 RPC 역할 점검 — DB 에서도 막는다');
+{
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+	const outsider = await person('m', 'f');
+
+	await expectError('★ 운영진: 운영 수치 변경 불가', () => svc('admin_update_settings', JSON.stringify({ room_minutes: 12 }), mod), 'admin_only');
+	await expectError('★ 운영진: 공지 변경 불가', () => svc('admin_update_settings', JSON.stringify({ notice: 'x' }), mod), 'admin_only');
+	check('운영진: 서비스 열고 닫기는 가능', (await svc('admin_update_settings', JSON.stringify({ is_open: false }), mod)).is_open === false);
+	await svc('admin_update_settings', JSON.stringify({ is_open: true }), mod);
+	await expectError('★ 명단에 없으면 설정 변경 불가', () => svc('admin_update_settings', JSON.stringify({ is_open: false }), outsider), 'not_staff');
+	check('관리자: 운영 수치 변경 가능', (await svc('admin_update_settings', JSON.stringify({ room_minutes: 10 }), adm)).room_minutes === 10);
+
+	const rep = (await one(`select id from private.reports order by created_at desc limit 1`))?.id;
+	if (rep) await expectError('★ 명단에 없으면 채팅 신고 처리 불가', () => svc('admin_set_report', rep, 'reviewing', '', outsider), 'not_staff');
+
+	const gone = await person('f', 'm');
+	await db.query(`delete from public.profiles where id = $1`, [gone]);
+	await expectError('탈퇴한 계정 제재는 "조치 완료"가 아니라 오류', () => svc('admin_sanction', gone, 'warn', null, adm, null, ''), 'user_not_found');
 }
 
 console.log('\n[59] ★ 편지 하트 — 개수만 공개, 누가 눌렀는지는 비공개');

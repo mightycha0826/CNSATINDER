@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { confirmed } from './confirm';
 
 	/**
 	 * 제재 폼 — 신고 상세(채팅·편지)와 사용자 상세에서 같이 쓴다.
@@ -34,14 +35,15 @@
 	let days = $state(3);
 	let note = $state('');
 
-	function confirmSanction(e: SubmitEvent) {
+	function question() {
 		const who = targets.find((t) => t.v === target)?.label ?? '이 계정';
-		const what = ACTIONS.find((a) => a.v === action)!.label.replace(/ \(.*\)$/, '') + (action === 'suspend' ? ` ${days}일` : '');
-		if (!confirm(`${who}에게 "${what}" 조치를 할까요? 이 조치는 기록됩니다.`)) e.preventDefault();
+		const what = (ACTIONS.find((a) => a.v === action)?.label ?? action).replace(/ \(.*\)$/, '') + (action === 'suspend' ? ` ${days}일` : '');
+		return `${who}에게 "${what}" 조치를 할까요? 이 조치는 기록됩니다.`;
 	}
+	const submit = confirmed(question, { keep: true, onSuccess: () => (note = '') });
 </script>
 
-<form method="POST" action="?/sanction" use:enhance onsubmit={confirmSanction}>
+<form method="POST" action="?/sanction" use:enhance={submit}>
 	{#if targets.length > 1}
 		<div class="seg">
 			{#each targets as t (t.v)}
@@ -58,7 +60,7 @@
 		</label>
 	{/if}
 	<textarea class="field ta" name="note" rows="2" placeholder="조치 사유 (기록용)" bind:value={note}></textarea>
-	<button class="btn" class:danger-btn={action === 'ban'}>조치하기</button>
+	<button class="btn" class:a-danger-btn={action === 'ban'}>조치하기</button>
 </form>
 
 <style>
@@ -86,8 +88,5 @@
 		height: auto;
 		padding: 8px 12px;
 		resize: vertical;
-	}
-	.danger-btn {
-		background: var(--danger);
 	}
 </style>

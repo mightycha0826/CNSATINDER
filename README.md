@@ -91,6 +91,11 @@ npm run dev
 - **admin(관리자)**: 위 전부 + 영구 정지·영구정지 해제, 이메일 열람·이메일 검색, **모든 대화 열람**(`/admin/rooms`),
   **모든 편지·댓글 작성자 확인**(`/admin/posts/[번호]`), 운영 수치 변경
 - 역할 검사는 서버 라우트(`$lib/server/adminAuth.ts`)와 DB 함수(`private.require_staff`) 양쪽에서 한다.
+  (신고 처리·글 내리기·운영 설정까지 전부 — 운영진은 설정 중 서비스 열고 닫기만)
+- 확인창이 있는 조치(제재·이메일 확인·글 내리기·서비스 닫기)는 `$lib/admin/confirm.ts` 의 `confirmed()` 를 쓴다.
+  `onsubmit` 에서 `preventDefault()` 로 막으면 SvelteKit `enhance` 가 그대로 요청을 보내므로 쓰지 말 것.
+- 예상 못 한 서버 오류는 화면에 `서버 오류 (번호)` 로 뜬다. 같은 번호로 Cloudflare Workers 로그에서 원인을 찾는다.
+- 운영자 로그인은 저장하지 않는 임시 Supabase 클라이언트로 한다 — 같은 기기의 학생 앱 로그인을 건드리지 않는다.
 - 목록·상세에는 이메일이 없다. "이메일 확인"·대화 열기·편지 작성자 확인·이메일 검색은 **누가 언제 했는지 활동 기록에 남는다.**
 - 운영진 명단에서 지우면 로그인 쿠키가 살아 있어도 다음 요청부터 차단된다.
 - `ADMIN_SESSION_SECRET` 을 바꾸면 운영진 전원이 즉시 로그아웃된다 (비상시).
@@ -116,6 +121,7 @@ npm run dev
 - [ ] **Phase 13 적용** — `schema.sql` 을 다시 실행 (실시간 현황 RPC). 안 하면 `/admin/live` 가 오류.
 - [ ] **Phase 14 적용** — `schema.sql` 을 다시 실행 (편지 서식 `letters.fmt`·`post_letter(text, jsonb)`). 안 하면 편지 올리기가 실패한다.
 - [ ] **Phase 15 적용** — `schema.sql` 을 다시 실행 (편지 하트 `private.letter_likes`·`set_letter_like`). 안 하면 편지 목록·상세가 오류.
+- [ ] **운영자 점검 반영** — `schema.sql` 을 다시 실행 (신고 처리·글 내리기·운영 설정 RPC 의 역할 검사, 탈퇴 계정 제재 오류).
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
       Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
 - [ ] **푸시 알림 키** — `.env` 의 `PUBLIC_VAPID_KEY`·`VAPID_PRIVATE_KEY`(Secret)·`VAPID_SUBJECT` 를 Cloudflare Variables and Secrets 에도.

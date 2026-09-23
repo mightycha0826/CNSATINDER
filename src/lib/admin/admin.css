@@ -60,6 +60,7 @@ body.admin .a-warn {
 
 /* 신원 확인에서 학번 명렬표 이름 — 이메일 옆 괄호 표기 */
 body.admin .rname {
+	margin-left: 4px;
 	color: var(--text-2);
 	font-weight: 600;
 }
@@ -74,8 +75,15 @@ body.admin .a-tabs {
 	gap: 2px;
 	border-bottom: 1px solid var(--line);
 	margin-bottom: 4px;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+body.admin .a-tabs::-webkit-scrollbar {
+	display: none;
 }
 body.admin .a-tabs a {
+	flex: none;
+	white-space: nowrap;
 	padding: 10px 12px;
 	margin-bottom: -1px;
 	color: var(--text-2);
@@ -260,4 +268,51 @@ body.admin .st-reviewing {
 body.admin .st-actioned,
 body.admin .st-dismissed {
 	color: var(--text-2);
+}
+
+/* 신고 목록 위 수치 띠 (채팅 신고 · 편지 신고) */
+body.admin .a-stats {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+	border: 1px solid var(--line);
+	border-radius: var(--r-sm);
+	overflow: hidden;
+	margin-bottom: 20px;
+}
+body.admin .a-stat {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 12px 14px;
+	border-right: 1px solid var(--line);
+	color: var(--text);
+}
+body.admin .a-stat b {
+	font-size: 22px;
+	font-weight: 800;
+	letter-spacing: -0.03em;
+}
+body.admin .a-stat span {
+	font-size: 12px;
+	color: var(--text-2);
+}
+body.admin .a-stat.hot b {
+	color: var(--danger);
+}
+body.admin .a-reason {
+	font-weight: 600;
+	white-space: nowrap;
+}
+body.admin .a-sm {
+	width: auto;
+	height: 34px;
+	padding: 0 12px;
+	font-size: 13px;
+}
+body.admin .a-danger-btn {
+	background: var(--danger);
+}
+/* 표가 화면보다 넓으면 표만 옆으로 민다 (페이지 전체가 밀리지 않게) */
+body.admin .a-scroll {
+	overflow-x: auto;
 }

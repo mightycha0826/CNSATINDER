@@ -1,5 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
-import { adminRpc } from './supabaseAdmin';
+import { adminRpc, emailOf, rosterNameOf } from './supabaseAdmin';
+import type { Identity } from '$lib/adminTypes';
 
 /**
  * 운영진(moderator) / 관리자(admin) 권한 — Phase 11
@@ -29,11 +30,27 @@ export async function studentLabels(
 	return adminRpc<Record<string, string>>('admin_student_labels', { p_staff: locals.staff!.id, p_users: users });
 }
 
+/**
+ * 신원 열람 (이메일 확인) — 관리자만. 먼저 활동 기록을 남기고, 기록이 실패하면 열람도 하지 않는다.
+ * 그다음 이메일과 명렬표 이름을 찾는다. 탈퇴한 계정은 email 이 null.
+ */
+export async function revealIdentity(locals: App.Locals, users: string[], report: string | null): Promise<Identity[]> {
+	const staff = locals.staff!.id;
+	await adminRpc('admin_log_identity_view', { p_staff: staff, p_users: users, p_report: report });
+	return Promise.all(
+		users.map(async (u) => {
+			const email = await emailOf(u);
+			return { email, name: await rosterNameOf(email, staff) };
+		})
+	);
+}
+
 const DB_ERR: Record<string, string> = {
 	admin_only: '관리자만 할 수 있는 조치',
 	mod_days_limit: `운영진은 최대 ${MOD_MAX_SUSPEND_DAYS}일까지 정지 가능`,
 	not_staff: '운영진 명단에 없는 계정',
-	days_required: '정지 기간을 입력해야 함'
+	days_required: '정지 기간을 입력해야 함',
+	user_not_found: '탈퇴한 계정이라 조치할 수 없음'
 };
 
 /** adminRpc 에러를 화면용 문구로. 모르는 에러는 그대로 던진다. */

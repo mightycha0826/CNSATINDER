@@ -1,6 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
-import { adminRpc, emailOf, rosterNameOf } from '$lib/server/supabaseAdmin';
-import { isAdmin, runSanction, studentLabels } from '$lib/server/adminAuth';
+import { adminRpc } from '$lib/server/supabaseAdmin';
+import { isAdmin, revealIdentity, runSanction, studentLabels } from '$lib/server/adminAuth';
 import type { UserDetail, UserLetterRow, UserRoomRow } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -30,10 +30,8 @@ export const actions: Actions = {
 	identity: async ({ params, locals }) => {
 		if (!isAdmin(locals)) return fail(403, { error: '이메일 확인은 관리자만 가능' });
 		await detail(params.id, locals.staff!.id);
-		await adminRpc('admin_log_identity_view', { p_staff: locals.staff!.id, p_users: [params.id], p_report: null });
-		const email = (await emailOf(params.id)) ?? '(탈퇴)';
-		const name = await rosterNameOf(email, locals.staff!.id);
-		return { email, name };
+		const [who] = await revealIdentity(locals, [params.id], null);
+		return { email: who.email ?? '(탈퇴)', name: who.name };
 	},
 
 	letters: async ({ params, locals }) => {

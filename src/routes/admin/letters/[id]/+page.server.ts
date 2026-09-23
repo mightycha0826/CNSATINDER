@@ -1,6 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
-import { adminRpc, emailOf, rosterNameOf } from '$lib/server/supabaseAdmin';
-import { isAdmin, runSanction } from '$lib/server/adminAuth';
+import { adminRpc } from '$lib/server/supabaseAdmin';
+import { isAdmin, revealIdentity, runSanction } from '$lib/server/adminAuth';
 import type { LetterReportDetail } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -21,12 +21,8 @@ export const actions: Actions = {
 		if (!isAdmin(locals)) return fail(403, { error: '이메일 확인은 관리자만 가능' });
 		const d = await detail(params.id);
 		const users = [d.report.reported_id, d.report.reporter_id];
-		await adminRpc('admin_log_identity_view', { p_staff: locals.staff!.id, p_users: users, p_report: d.report.id });
-		const [reported, reporter] = await Promise.all(users.map(emailOf));
-		const [reportedName, reporterName] = await Promise.all(
-			[reported, reporter].map((e) => rosterNameOf(e, locals.staff!.id))
-		);
-		return { identity: { reported, reporter, reportedName, reporterName } };
+		const [reported, reporter] = await revealIdentity(locals, users, d.report.id);
+		return { identity: { reported, reporter } };
 	},
 
 	status: async ({ params, request, locals }) => {

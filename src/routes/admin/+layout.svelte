@@ -67,13 +67,15 @@
 		z-index: 10;
 		display: flex;
 		align-items: center;
-		gap: 20px;
-		height: 52px;
+		gap: 4px 20px;
+		min-height: 52px;
 		padding: 0 24px;
 		background: var(--bg);
 		border-bottom: 1px solid var(--line);
 	}
 	.brand {
+		flex: none;
+		white-space: nowrap;
 		color: var(--text);
 		font-weight: 800;
 		font-size: 17px;
@@ -83,11 +85,20 @@
 		color: var(--text-2);
 		font-weight: 600;
 	}
+	/* 메뉴가 화면보다 길면 옆으로 민다 — 좁은 화면에서 글자가 한 자씩 줄바꿈되지 않게 */
 	nav {
 		display: flex;
 		gap: 4px;
+		min-width: 0;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	nav::-webkit-scrollbar {
+		display: none;
 	}
 	nav a {
+		flex: none;
+		white-space: nowrap;
 		padding: 6px 10px;
 		border-radius: var(--r-sm);
 		color: var(--text-2);
@@ -100,10 +111,12 @@
 	}
 	.who {
 		margin-left: auto;
+		flex: none;
 		font-size: 13px;
 		color: var(--text-2);
 	}
 	.out {
+		flex: none;
 		font-size: 13px;
 		font-weight: 600;
 	}
@@ -111,13 +124,28 @@
 		flex: 1;
 		padding: 24px;
 	}
-	@media (max-width: 640px) {
+	/* 좁은 화면: 첫 줄 = 이름 · 로그아웃, 둘째 줄 = 메뉴(옆으로 밀기) */
+	@media (max-width: 900px) {
 		.bar {
-			gap: 10px;
-			padding: 0 var(--pad);
+			flex-wrap: wrap;
+			padding: 8px 24px 6px;
+		}
+		nav {
+			order: 3;
+			flex: 1 1 100%;
+			margin: 0 -10px;
 		}
 		.who {
-			display: none;
+			margin-left: auto;
+		}
+	}
+	@media (max-width: 640px) {
+		.bar {
+			padding: 8px var(--pad) 6px;
+		}
+		nav {
+			margin: 0 calc(-1 * var(--pad));
+			padding: 0 calc(var(--pad) - 10px);
 		}
 		.wrap {
 			padding: var(--pad);

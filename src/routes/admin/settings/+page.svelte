@@ -1,9 +1,15 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { confirmed } from '$lib/admin/confirm';
 
 	let { data, form } = $props();
 	const s = $derived(data.s);
 	const isAdmin = $derived(data.staff?.role === 'admin');
+
+	// 전교생에게 바로 적용되는 스위치라 한 번 더 묻는다
+	const askToggle = confirmed(() =>
+		s.is_open ? '서비스를 닫을까요? 새 대화가 시작되지 않아요 (진행 중인 대화는 유지).' : '서비스를 다시 열까요?'
+	);
 
 	const FIELDS = [
 		{ k: 'room_minutes', label: '기본 대화 시간', unit: '분', hint: '둘 다 입장한 순간부터' },
@@ -16,10 +22,10 @@
 	] as const;
 </script>
 
-<h1>운영 설정</h1>
+<h1 class="a-h1 title">운영 설정</h1>
 
-{#if form?.done}<p class="ok">{form.done}</p>{/if}
-{#if form?.error}<p class="err">{form.error}</p>{/if}
+{#if form && 'done' in form && form.done}<p class="a-ok">{form.done}</p>{/if}
+{#if form && 'error' in form && form.error}<p class="a-err">{form.error}</p>{/if}
 
 <section class="kill" class:off={!s.is_open}>
 	<div>
@@ -30,13 +36,13 @@
 				: '학생들은 홈 화면에서 "지금은 열려 있지 않아요"를 보게 됩니다.'}
 		</span>
 	</div>
-	<form method="POST" action="?/toggle" use:enhance>
+	<form method="POST" action="?/toggle" use:enhance={askToggle}>
 		<input type="hidden" name="open" value={String(!s.is_open)} />
-		<button class={s.is_open ? 'btn danger-btn' : 'btn'}>{s.is_open ? '서비스 닫기' : '서비스 열기'}</button>
+		<button class="btn" class:a-danger-btn={s.is_open}>{s.is_open ? '서비스 닫기' : '서비스 열기'}</button>
 	</form>
 </section>
 
-<form method="POST" action="?/save" use:enhance class="form">
+<form method="POST" action="?/save" use:enhance={() => ({ update }) => update({ reset: false })} class="form">
 	<label class="row notice">
 		<span class="label">공지<small>홈 화면 상단에 표시</small></span>
 		<input class="field" name="notice" value={s.notice} maxlength="300" placeholder="(없음)" disabled={!isAdmin} />
@@ -58,26 +64,8 @@
 </form>
 
 <style>
-	h1 {
-		margin: 0 0 16px;
-		font-size: 22px;
-		font-weight: 800;
-		letter-spacing: -0.03em;
-	}
-	.ok,
-	.err {
-		padding: 10px 12px;
-		border-radius: var(--r-sm);
-		font-size: 13px;
-		margin: 0 0 12px;
-	}
-	.ok {
-		background: color-mix(in srgb, var(--accent) 10%, transparent);
-		color: var(--accent);
-	}
-	.err {
-		background: color-mix(in srgb, var(--danger) 10%, transparent);
-		color: var(--danger);
+	.title {
+		margin-bottom: 16px;
 	}
 	.kill {
 		display: flex;
@@ -110,9 +98,6 @@
 		width: auto;
 		padding: 0 16px;
 		white-space: nowrap;
-	}
-	.danger-btn {
-		background: var(--danger);
 	}
 	.form {
 		max-width: 720px;

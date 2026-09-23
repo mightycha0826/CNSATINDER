@@ -4,12 +4,15 @@
 	 * 운영진은 이미 계정이 있는 사람을 SQL(private.staff)로 지정하므로 가입·인증 코드 경로가 없다.
 	 *
 	 * Supabase 인증 뒤 토큰을 서버로 보내 운영진 여부를 다시 확인받는다 — 운영진이 아니면 들어오지 못한다.
-	 * 확인이 끝나면 이 브라우저의 학생용 세션은 지운다 (서버 서명 쿠키만 남는다).
+	 * ★ 로그인은 저장하지 않는 임시 클라이언트로 한다. 학생 앱과 같은 브라우저 저장소를 쓰면
+	 *   운영자 로그인이 이 기기의 학생 앱 로그인을 덮어쓰거나 지워 버린다(안드로이드는 앱과 브라우저가 저장소를 공유).
 	 */
+	import { createClient } from '@supabase/supabase-js';
+	import { env } from '$env/dynamic/public';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { supabase, hasSupabase } from '$lib/supabase';
-	import { SCHOOL_DOMAIN, errMsg, signInWithPassword } from '$lib/state.svelte';
+	import { hasSupabase } from '$lib/supabase';
+	import { SCHOOL_DOMAIN, errMsg } from '$lib/state.svelte';
 
 	const setup = page.url.searchParams.get('setup');
 
@@ -20,17 +23,20 @@
 	let busy = $state(false);
 	let msg = $state<string | null>(setup);
 
-	async function confirmStaff() {
-		const { data } = await supabase.auth.getSession();
-		const token = data.session?.access_token;
-		if (!token) throw new Error('로그인 세션이 없습니다');
+	async function login() {
+		const auth = createClient(
+			env.PUBLIC_SUPABASE_URL ?? '',
+			env.PUBLIC_SUPABASE_ANON_KEY ?? env.PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '',
+			{ auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'simbun-admin-login' } }
+		).auth;
+		const email = `${pwLocal.trim().toLowerCase()}@${SCHOOL_DOMAIN}`;
+		const { data, error } = await auth.signInWithPassword({ email, password: pw });
+		if (error) throw error;
 		const res = await fetch('/admin/session', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ token })
+			body: JSON.stringify({ token: data.session.access_token })
 		});
-		// 확인 결과와 관계없이 학생용 세션은 남기지 않는다
-		await supabase.auth.signOut({ scope: 'local' });
 		if (!res.ok) {
 			const t = await res.json().catch(() => ({}));
 			throw new Error(t.message ?? '운영진 확인에 실패했습니다');
@@ -50,11 +56,7 @@
 		}
 	}
 
-	const loginWithPassword = () =>
-		run(async () => {
-			await signInWithPassword(pwLocal, pw);
-			await confirmStaff();
-		});
+	const loginWithPassword = () => run(login);
 </script>
 
 <div class="box">

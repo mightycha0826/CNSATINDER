@@ -1,4 +1,4 @@
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { readSession } from '$lib/server/adminSession';
 import { adminRpc } from '$lib/server/supabaseAdmin';
 
@@ -35,7 +35,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 
-	const res = await resolve(event);
+	// 운영자 화면은 서버에서 그릴 때부터 넓은 레이아웃(body.admin) — 스크립트가 늦게 떠도 모양이 깨지지 않게
+	const res = await resolve(
+		event,
+		isAdmin ? { transformPageChunk: ({ html }) => html.replace('<body ', '<body class="admin" ') } : undefined
+	);
 	if (isAdmin) {
 		// 운영자 화면은 신원 정보를 다루므로 어디에도 캐시되거나 검색되면 안 된다
 		try {
@@ -48,4 +52,14 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 	return res;
+};
+
+/**
+ * 예상 못 한 서버 오류 — 원인은 서버 로그(Cloudflare Workers 로그)에 남기고, 화면에는 짧은 번호만.
+ * 운영자가 번호를 알려 주면 로그에서 같은 번호로 찾을 수 있다.
+ */
+export const handleError: HandleServerError = ({ error, event, status }) => {
+	const id = crypto.randomUUID().slice(0, 8);
+	if (status !== 404) console.error(`[${id}] ${event.request.method} ${event.url.pathname}`, error);
+	return { message: status === 404 ? '찾을 수 없는 주소' : `서버 오류 (${id})` };
 };

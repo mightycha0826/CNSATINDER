@@ -7,8 +7,12 @@
 
 	let { children } = $props();
 
+	const isAdmin = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
+
+	// 운영자 화면에서는 학생 앱을 부팅하지 않는다 — 접속 신호(heartbeat)·알림 구독이
+	// 이 브라우저의 학생 계정으로 나가면 실시간 현황에 운영진이 "접속 중"으로 잘못 뜬다
 	$effect(() => {
-		void init();
+		if (!isAdmin) void init();
 	});
 
 	// PWA 설치 프롬프트를 잡아둔다 (Android/Chrome)
@@ -66,7 +70,7 @@
 	});
 </script>
 
-{#if page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/')}
+{#if isAdmin}
 	<!-- 운영자 화면: 서버에서 그려지고 자체 가드(hooks.server.ts)를 쓴다. 학생용 부팅·설치 게이트 없음. -->
 	{@render children()}
 {:else if !hasSupabase}

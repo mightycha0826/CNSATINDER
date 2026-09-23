@@ -1222,6 +1222,7 @@ $fn$;
 create or replace function public.admin_set_report(p_id uuid, p_status text, p_note text, p_staff uuid)
 returns void language plpgsql security definer set search_path = public, private as $fn$
 begin
+  perform private.require_staff(p_staff);   -- 운영진 명단에 없는 id 로는 처리·기록할 수 없다
   update private.reports
      set status = p_status, action_note = nullif(p_note, ''), handled_by = p_staff, handled_at = now()
    where id = p_id;
@@ -1283,9 +1284,14 @@ returns jsonb language sql security definer set search_path = public stable as $
 $fn$;
 
 -- 허용된 키만 반영. 범위는 테이블 check 제약이 지킨다.
+-- 운영진(moderator)은 서비스 열고 닫기(is_open)만, 나머지 수치·공지는 관리자만.
 create or replace function public.admin_update_settings(p_patch jsonb, p_staff uuid)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 begin
+  if private.require_staff(p_staff) <> 'admin'
+     and exists (select 1 from jsonb_object_keys(coalesce(p_patch, '{}'::jsonb)) k where k <> 'is_open') then
+    raise exception 'admin_only';
+  end if;
   update public.app_settings set
     is_open               = coalesce((p_patch->>'is_open')::boolean, is_open),
     notice                = coalesce(p_patch->>'notice', notice),
@@ -2560,6 +2566,7 @@ $fn$;
 create or replace function public.admin_set_letter_report(p_id uuid, p_status text, p_note text, p_staff uuid)
 returns void language plpgsql security definer set search_path = public, private as $fn$
 begin
+  perform private.require_staff(p_staff);
   update private.letter_reports
      set status = p_status, action_note = nullif(p_note, ''), handled_by = p_staff, handled_at = now()
    where id = p_id;
@@ -2572,6 +2579,7 @@ $fn$;
 create or replace function public.admin_remove_letter_content(p_letter bigint, p_comment bigint, p_staff uuid, p_report uuid)
 returns void language plpgsql security definer set search_path = public, private as $fn$
 begin
+  perform private.require_staff(p_staff);
   if p_comment is null then
     update public.letters set status = 'removed' where id = p_letter;
   else
@@ -2663,6 +2671,8 @@ create or replace function public.admin_sanction(
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare v_role text := private.require_staff(p_staff);
 begin
+  -- 탈퇴한 계정 — 아무것도 바뀌지 않는데 "조치 완료"로 보이지 않게
+  if not exists (select 1 from public.profiles where id = p_user) then raise exception 'user_not_found'; end if;
   if v_role <> 'admin' then
     if p_action = 'ban' then raise exception 'admin_only'; end if;
     if p_action = 'suspend' and coalesce(p_days, 0) > private.mod_max_suspend_days() then

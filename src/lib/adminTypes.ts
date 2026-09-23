@@ -2,6 +2,9 @@ import type { LetterFmt } from './letters/rich';
 
 export type ReportStatus = 'open' | 'reviewing' | 'actioned' | 'dismissed';
 
+/** 신원 열람 결과 한 사람 — 탈퇴한 계정은 email 이 null, 명렬표에 없으면 name 이 null */
+export type Identity = { email: string | null; name: string | null };
+
 export type ReportRow = {
 	id: string;
 	created_at: string;
@@ -215,6 +218,9 @@ export const CLOSE_LABEL: Record<string, string> = {
 export const fmtTime = (s: string) =>
 	new Date(s).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+/** 사용자 id 앞 6자리 — 같은 사람인지 알아보는 용도. 신원이 아니다. */
+export const shortId = (id: string | null | undefined) => (id ? id.slice(0, 6) : '—');
+
 /** 활동 기록(audit_log.action) 표시 이름 */
 export const ACTION_LABEL: Record<string, string> = {
 	view_identity: '신원 열람',
@@ -238,5 +244,6 @@ export const ACTION_LABEL: Record<string, string> = {
 	letter_report_dismissed: '편지 신고 기각',
 	remove_letter: '편지 내림',
 	remove_comment: '댓글 내림',
-	update_settings: '설정 변경'
+	update_settings: '설정 변경',
+	roster_import: '명렬표 반영'
 };

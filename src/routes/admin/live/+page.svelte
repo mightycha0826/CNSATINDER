@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import type { LiveUser } from '$lib/adminTypes';
 	import { ago } from '$lib/time';
 	import Sid from '$lib/admin/Sid.svelte';
@@ -44,7 +45,10 @@
 		u.status !== 'active' || (!!u.suspended_until && Date.parse(u.suspended_until) > now);
 
 	type Tab = St | 'all' | 'restricted';
-	let tab = $state<Tab>('all');
+	const TAB_KEYS: Tab[] = ['all', 'chat', 'seeking', 'online', 'offline', 'restricted'];
+	const fromUrl = page.url.searchParams.get('tab') as Tab | null;
+	// 탭 링크는 ?tab= 주소라, 화면이 준비되기 전에 눌러도 그 탭으로 열린다
+	let tab = $state<Tab>(fromUrl && TAB_KEYS.includes(fromUrl) ? fromUrl : 'all');
 	let q = $state('');
 
 	const rows = $derived(

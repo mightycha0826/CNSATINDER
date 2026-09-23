@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { ACTION_LABEL, CLOSE_LABEL, REASON_LABEL, STATUS_LABEL, fmtTime, type UserLetterRow } from '$lib/adminTypes';
 	import SanctionForm from '$lib/admin/SanctionForm.svelte';
+	import { confirmed } from '$lib/admin/confirm';
 	import Sid from '$lib/admin/Sid.svelte';
 
 	let { data, form } = $props();
@@ -24,12 +25,8 @@
 	const GENDER: Record<string, string> = { m: '남', f: '여', x: '밝히지 않음', any: '상관없음' };
 	const suspended = $derived(!!p.suspended_until && Date.parse(p.suspended_until) > Date.now());
 
-	function confirmIdentity(e: SubmitEvent) {
-		if (!confirm('이 계정의 학교 이메일을 확인합니다. 열람 기록이 남습니다. 계속할까요?')) e.preventDefault();
-	}
-	function confirmLetters(e: SubmitEvent) {
-		if (!confirm('이 계정이 쓴 편지·댓글을 확인합니다. 열람 기록이 남습니다. 계속할까요?')) e.preventDefault();
-	}
+	const askIdentity = confirmed(() => '이 계정의 학교 이메일을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
+	const askLetters = confirmed(() => '이 계정이 쓴 편지·댓글을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
 </script>
 
 <a class="a-back" href="/admin/users">← 사용자 목록</a>
@@ -178,7 +175,7 @@
 						<p class="a-hint" style="margin-top:0">
 							편지 {d.counts.letters}통 · 댓글 {d.counts.comments}개. 어떤 글인지 보려면 열람 기록이 남습니다.
 						</p>
-						<form method="POST" action="?/letters" use:enhance onsubmit={confirmLetters}>
+						<form method="POST" action="?/letters" use:enhance={askLetters}>
 							<button class="btn-ghost sm">편지 · 댓글 보기</button>
 						</form>
 					</div>
@@ -217,11 +214,11 @@
 			<section class="a-card">
 				<h2 class="a-h2">학교 이메일</h2>
 				{#if email}
-					<p class="mono email">{email}{#if name} <span class="rname">({name})</span>{/if}</p>
+					<p class="mono email">{email}{#if name}<span class="rname">({name})</span>{/if}</p>
 					<p class="a-hint">이 열람은 활동 기록에 남습니다.</p>
 				{:else}
 					<p class="a-hint">열람하면 누가 언제 봤는지 기록됩니다.</p>
-					<form method="POST" action="?/identity" use:enhance onsubmit={confirmIdentity}>
+					<form method="POST" action="?/identity" use:enhance={askIdentity}>
 						<button class="btn-ghost sm">이메일 확인</button>
 					</form>
 				{/if}
