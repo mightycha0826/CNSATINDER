@@ -1,23 +1,29 @@
 <script lang="ts">
 	import {
 		SCHOOL_DOMAIN,
+		UI,
 		errMsg,
 		sendOtp,
+		sendResetOtp,
 		signInWithPassword,
 		toast,
 		verifyOtp
 	} from '$lib/state.svelte';
 
 	/**
-	 * 로그인 화면 — 두 갈래.
-	 *  위: 처음이면 학교 메일 인증 코드로 계정을 만든다 (비밀번호를 잊었을 때도 이 길로 들어온다)
-	 *  아래: 이미 계정이 있으면 학교 이메일 앞부분 + 비밀번호
-	 * 어느 쪽이든 도메인은 @cnsa.hs.kr 로 고정 — 입력칸은 앞부분만 받는다.
+	 * 로그인 화면.
+	 *  기본: 학교 이메일 앞부분 + 비밀번호
+	 *  처음이에요: 학교 메일 인증 코드로 계정을 만든다 (온보딩에서 비밀번호를 정한다)
+	 *  비밀번호를 잊었어요: 기존 계정에만 인증 코드 → 새 비밀번호 화면으로
+	 * 인증 코드는 가입 한 번, 비밀번호 분실 때만 쓴다. 가입 인증이 곧 "그 학번의 주인" 확인이다.
+	 * 도메인은 @cnsa.hs.kr 로 고정 — 입력칸은 앞부분만 받는다.
 	 */
+	type Mode = 'login' | 'signup' | 'reset';
+	let mode: Mode = $state('login');
+	let sent = $state(false);
 
-	// ── 인증 코드 (처음 가입 · 비밀번호 분실) ──
-	let step: 'email' | 'code' = $state('email');
 	let localPart = $state('');
+	let pw = $state('');
 	let email = $state('');
 	let code = $state('');
 	let busy = $state(false);
@@ -27,15 +33,36 @@
 	// (실제 강제는 DB 트리거가 한다. 여기는 UX 용.)
 	const LOCAL = /^[a-zA-Z0-9._%+-]{2,}$/;
 	const localOk = $derived(LOCAL.test(localPart.trim()));
+	const pwReady = $derived(localOk && pw.length >= 6);
 	// Supabase 프로젝트 설정(Email OTP length)에 따라 6~8자리
 	const codeOk = $derived(/^[0-9]{6,8}$/.test(code.trim()));
+
+	function go(m: Mode) {
+		mode = m;
+		sent = false;
+		code = '';
+		UI.afterLogin = null;
+	}
+
+	async function onPassword() {
+		if (!pwReady || busy) return;
+		busy = true;
+		try {
+			await signInWithPassword(localPart, pw);
+		} catch (e) {
+			toast(errMsg(e));
+			pw = '';
+		} finally {
+			busy = false;
+		}
+	}
 
 	async function onSend() {
 		if (!localOk || busy) return;
 		busy = true;
 		try {
-			email = await sendOtp(localPart);
-			step = 'code';
+			email = mode === 'reset' ? await sendResetOtp(localPart) : await sendOtp(localPart);
+			sent = true;
 			resendAt = Date.now() + 60_000;
 			toast('인증 코드 발송');
 		} catch (e) {
@@ -49,86 +76,44 @@
 		if (!codeOk || busy) return;
 		busy = true;
 		try {
+			UI.afterLogin = mode === 'reset' ? '/me#password' : null;
 			await verifyOtp(email, code);
-			// 로그인 성공 시 루트 레이아웃의 가드가 알아서 이동시킨다 (처음이면 온보딩에서 비밀번호를 정한다)
+			// 성공하면 루트 레이아웃의 가드가 이동시킨다 (처음이면 온보딩에서 비밀번호를 정한다)
 		} catch (e) {
+			UI.afterLogin = null;
 			toast(errMsg(e));
 			code = '';
 		} finally {
 			busy = false;
 		}
 	}
-
-	function back() {
-		step = 'email';
-		code = '';
-	}
-
-	// ── 비밀번호 로그인 (이미 계정이 있을 때) ──
-	let pwLocal = $state('');
-	let pw = $state('');
-	const pwReady = $derived(LOCAL.test(pwLocal.trim()) && pw.length >= 6);
-
-	async function onPassword() {
-		if (!pwReady || busy) return;
-		busy = true;
-		try {
-			await signInWithPassword(pwLocal, pw);
-		} catch (e) {
-			toast(errMsg(e));
-			pw = '';
-		} finally {
-			busy = false;
-		}
-	}
 </script>
+
+{#snippet emailField(onEnter?: () => void)}
+	<div class="emailfield">
+		<input
+			class="local"
+			bind:value={localPart}
+			type="text"
+			inputmode="email"
+			autocomplete="username"
+			autocapitalize="off"
+			autocorrect="off"
+			spellcheck="false"
+			placeholder="학교 이메일 앞부분"
+			onkeydown={(e) => e.key === 'Enter' && onEnter?.()}
+		/>
+		<span class="domain">@{SCHOOL_DOMAIN}</span>
+	</div>
+{/snippet}
 
 <div class="page login">
 	<img class="appicon" src="/icon-192.png" alt="" width="56" height="56" />
 	<div class="mark wordmark">CNSATINDER</div>
 
-	{#if step === 'email'}
+	{#if mode === 'login'}
 		<section>
-			<h2>처음 이용</h2>
-			<p class="lead muted">학교 이메일로 본인 확인만 하면 끝. 이름은 어디에도 남지 않아요.</p>
-
-			<div class="emailfield">
-				<input
-					class="local"
-					bind:value={localPart}
-					type="text"
-					inputmode="email"
-					autocapitalize="off"
-					autocorrect="off"
-					spellcheck="false"
-					placeholder="학교 이메일 앞부분"
-					onkeydown={(e) => e.key === 'Enter' && onSend()}
-				/>
-				<span class="domain">@{SCHOOL_DOMAIN}</span>
-			</div>
-
-			<button class="btn" onclick={onSend} disabled={!localOk || busy}>
-				{busy ? '보내는 중…' : '인증 코드 받기'}
-			</button>
-		</section>
-
-		<div class="or"><span>이미 계정이 있다면</span></div>
-
-		<section>
-			<div class="emailfield">
-				<input
-					class="local"
-					bind:value={pwLocal}
-					type="text"
-					inputmode="email"
-					autocomplete="username"
-					autocapitalize="off"
-					autocorrect="off"
-					spellcheck="false"
-					placeholder="학교 이메일 앞부분"
-				/>
-				<span class="domain">@{SCHOOL_DOMAIN}</span>
-			</div>
+			{@render emailField()}
 			<input
 				class="field"
 				bind:value={pw}
@@ -137,15 +122,36 @@
 				placeholder="비밀번호"
 				onkeydown={(e) => e.key === 'Enter' && onPassword()}
 			/>
-			<button class="btn-ghost" onclick={onPassword} disabled={!pwReady || busy}>
+			<button class="btn" onclick={onPassword} disabled={!pwReady || busy}>
 				{busy ? '확인 중…' : '로그인'}
 			</button>
-			<p class="hint muted">
-				비밀번호를 잊었다면 위에서 인증 코드로 들어온 뒤 <strong>설정</strong>에서 다시 정하세요.
-			</p>
 		</section>
+
+		<div class="links">
+			<button class="btn-text" onclick={() => go('signup')}>처음이에요 · 가입하기</button>
+			<button class="btn-text" onclick={() => go('reset')}>비밀번호를 잊었어요</button>
+		</div>
+	{:else if !sent}
+		<section>
+			<h2>{mode === 'signup' ? '처음 가입' : '비밀번호 찾기'}</h2>
+			<p class="lead muted">
+				{#if mode === 'signup'}
+					학교 이메일로 본인 확인만 하면 끝. 이름은 어디에도 남지 않아요.
+				{:else}
+					학교 메일로 인증 코드를 보내요. 확인이 끝나면 새 비밀번호를 정할 수 있어요.
+				{/if}
+			</p>
+			{@render emailField(onSend)}
+			<button class="btn" onclick={onSend} disabled={!localOk || busy}>
+				{busy ? '보내는 중…' : '인증 코드 받기'}
+			</button>
+		</section>
+		<button class="btn-text back" onclick={() => go('login')}>로그인으로 돌아가기</button>
 	{:else}
-		<p class="lead muted"><strong>{email}</strong> 으로<br />인증 코드 발송 완료.</p>
+		<p class="lead muted">
+			<strong>{email}</strong> 으로<br />인증 코드 발송 완료.
+			{#if mode === 'reset'}<br />(가입된 계정일 때만 메일이 가요){/if}
+		</p>
 		<p class="spam muted">
 			메일이 안 보이면 <strong>스팸함</strong>을 확인해 주세요. (발신자: <strong>CNSATINDER</strong>)
 		</p>
@@ -162,15 +168,16 @@
 		/>
 
 		<button class="btn" onclick={onVerify} disabled={!codeOk || busy}>
-			{busy ? '확인 중…' : '시작하기'}
+			{busy ? '확인 중…' : mode === 'signup' ? '시작하기' : '확인'}
 		</button>
 
 		<div class="row">
-			<button class="btn-text" onclick={back}>이메일 다시 입력</button>
+			<button class="btn-text" onclick={() => (sent = false)}>이메일 다시 입력</button>
 			<button class="btn-text" onclick={onSend} disabled={busy || Date.now() < resendAt}>
 				코드 다시 받기
 			</button>
 		</div>
+		<button class="btn-text back" onclick={() => go('login')}>로그인으로 돌아가기</button>
 	{/if}
 
 	<p class="terms muted">
@@ -214,32 +221,13 @@
 		font-weight: 600;
 	}
 
-	/* 두 갈래 사이 구분 — 인스타 로그인의 "또는" 줄 */
-	.or {
+	.links {
 		display: flex;
+		justify-content: space-between;
 		align-items: center;
-		gap: 12px;
-		margin: 6px 0 2px;
-		color: var(--text-2);
-		font-size: 13px;
-		font-weight: 600;
 	}
-	.or::before,
-	.or::after {
-		content: '';
-		flex: 1;
-		height: 1px;
-		background: var(--line);
-	}
-
-	.hint {
-		margin: 0;
-		font-size: 12px;
-		line-height: 1.6;
-	}
-	.hint strong {
-		color: var(--text);
-		font-weight: 600;
+	.back {
+		align-self: center;
 	}
 
 	.spam {

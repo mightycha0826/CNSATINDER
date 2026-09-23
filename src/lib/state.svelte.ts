@@ -49,7 +49,9 @@ export const S = $state({
 export const UI = $state({
 	standalone: true, // 설치 게이트. 부팅 시 실제 값으로 덮인다.
 	installEvt: null as BeforeInstallPromptEvent | null,
-	busy: false
+	busy: false,
+	/** 로그인 직후 갈 곳 — 비밀번호 찾기로 들어왔으면 새 비밀번호 화면으로 */
+	afterLogin: null as string | null
 });
 
 // ── 토스트 ────────────────────────────────────────────────────────────
@@ -70,7 +72,7 @@ export function errMsg(e: unknown): string {
 	if (m.includes('rate limit')) return '요청이 많아요. 잠시 후 다시 시도해 주세요';
 	// 비밀번호 로그인 — 계정이 없는지 비밀번호가 틀렸는지는 구분해 주지 않는다 (가입 여부 탐색 방지)
 	if (m.includes('Invalid login credentials')) return '이메일 또는 비밀번호가 맞지 않아요';
-	if (m.includes('Email not confirmed')) return '아직 인증을 마치지 않은 계정입니다. 인증 코드로 들어와 주세요';
+	if (m.includes('Email not confirmed')) return '아직 인증을 마치지 않은 계정입니다. "처음이에요 · 가입하기"로 인증해 주세요';
 	if (m.includes('Password should') || m.includes('weak_password'))
 		return '비밀번호는 8자 이상, 영문과 숫자를 섞어 주세요';
 	if (m.includes('same_password') || m.includes('should be different'))
@@ -226,6 +228,20 @@ export async function sendOtp(localPart: string) {
 		options: { shouldCreateUser: true }
 	});
 	if (error) throw error;
+	return email;
+}
+
+/**
+ * 비밀번호 찾기 — 이미 있는 계정에만 코드를 보낸다 (새 계정은 만들지 않는다).
+ * 계정이 없어도 성공처럼 돌려준다: 비밀번호 로그인과 마찬가지로 가입 여부를 알려 주지 않기 위해.
+ */
+export async function sendResetOtp(localPart: string) {
+	const email = `${localPart.trim().toLowerCase()}@${SCHOOL_DOMAIN}`;
+	const { error } = await supabase.auth.signInWithOtp({
+		email,
+		options: { shouldCreateUser: false }
+	});
+	if (error && !/signups? not allowed/i.test(error.message)) throw error;
 	return email;
 }
 

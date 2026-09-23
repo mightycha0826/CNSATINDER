@@ -51,9 +51,10 @@
 			return;
 		}
 		if (onLogin) {
-			void goto('/', { replaceState: true });
+			void goto(UI.afterLogin ?? '/', { replaceState: true });
 			return;
 		}
+		UI.afterLogin = null;
 
 		// 3) 온보딩 (성별·선호를 정해야 매칭이 가능하다)
 		const onOnboarding = path === '/onboarding';
