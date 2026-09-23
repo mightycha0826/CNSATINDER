@@ -1695,5 +1695,28 @@ console.log('\n[55] ★ 관리자 열람 — 대화 · 편지 작성자 (전부 
 	check('★ 학생 화면에는 여전히 uuid 가 없다', !yd.includes(x) && !yd.includes(y));
 }
 
+console.log('\n[56] ★ 학번-이름 명렬표 — 이메일 확인 옆 이름 표시');
+{
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+	const u = await signUp('10101@cnsa.hs.kr', true);
+
+	await expectError('★ 학생 계정으로 admin_roster_import 호출 불가', () => rowsAs(u, `select public.admin_roster_import(1::smallint, '[]'::jsonb)`), 'permission denied');
+	await expectError('★ 학생 계정으로 admin_roster_name 호출 불가', () => rowsAs(u, `select public.admin_roster_name('${u}', '10101@cnsa.hs.kr')`), 'permission denied');
+
+	const n = await svc('admin_roster_import', 1, JSON.stringify([{ no: 10101, name: '테스트생' }, { no: 10102, name: '둘째' }]));
+	check('명렬표 반영 개수', n === 2);
+	check('명렬표 반영은 활동 기록에 남는다 (staff_id 없이)', (await cnt(`select count(*)::int n from private.audit_log where action = 'roster_import'`)) >= 1);
+
+	check('이메일 앞자리(학번)로 이름 찾기', (await svc('admin_roster_name', adm, '10101@cnsa.hs.kr')) === '테스트생');
+	check('명단에 없는 학번은 null', (await svc('admin_roster_name', adm, '99999@cnsa.hs.kr')) === null);
+	check('학번 형태가 아닌 이메일도 null (에러 아님)', (await svc('admin_roster_name', adm, 'p1-m@cnsa.hs.kr')) === null);
+	check('이메일이 없어도(탈퇴 등) null', (await svc('admin_roster_name', adm, null)) === null);
+	await expectError('★ 운영진은 이름 조회 불가 (관리자 전용)', () => svc('admin_roster_name', mod, '10101@cnsa.hs.kr'), 'admin_only');
+
+	check('같은 학번 재반입 → 이름 갱신', (await svc('admin_roster_import', 1, JSON.stringify([{ no: 10101, name: '정정된이름' }]))) === 1);
+	check('갱신된 이름이 바로 반영된다', (await svc('admin_roster_name', adm, '10101@cnsa.hs.kr')) === '정정된이름');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

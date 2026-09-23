@@ -58,6 +58,12 @@ body.admin .a-warn {
 	color: var(--text-2);
 }
 
+/* 신원 확인에서 학번 명렬표 이름 — 이메일 옆 괄호 표기 */
+body.admin .rname {
+	color: var(--text-2);
+	font-weight: 600;
+}
+
 body.admin .a-tabs {
 	display: flex;
 	gap: 2px;

@@ -39,3 +39,9 @@ export async function emailOf(userId: string): Promise<string | null> {
 	const { data } = await supabaseAdmin().auth.admin.getUserById(userId);
 	return data.user?.email ?? null;
 }
+
+/** 학교 이메일 앞자리(학번)로 명렬표(private.student_roster)에서 이름 찾기 — emailOf 로 이미 열람한 뒤에만 의미가 있다 */
+export async function rosterNameOf(email: string | null, staffId: string): Promise<string | null> {
+	if (!email) return null;
+	return adminRpc<string | null>('admin_roster_name', { p_staff: staffId, p_email: email });
+}

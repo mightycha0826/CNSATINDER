@@ -17,6 +17,10 @@ Thumbs.db
 .env.*
 !.env.example
 
+# 학번-이름 명렬표 원본 — 실명 포함, 절대 커밋 금지 (scripts/import-roster.mjs 로 DB 에 직접 반영)
+*roster*.csv
+*roster*.xlsx
+
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*

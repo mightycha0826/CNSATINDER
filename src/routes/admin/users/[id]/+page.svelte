@@ -10,9 +10,13 @@
 
 	// 액션 결과는 다음 액션을 하면 사라지므로 따로 들고 있는다
 	let email = $state<string | null>(null);
+	let name = $state<string | null>(null);
 	let letters = $state<UserLetterRow[] | null>(null);
 	$effect(() => {
-		if (form && 'email' in form && form.email) email = form.email;
+		if (form && 'email' in form && form.email) {
+			email = form.email;
+			name = 'name' in form ? (form.name ?? null) : null;
+		}
 		if (form && 'letters' in form && form.letters) letters = form.letters;
 	});
 
@@ -212,7 +216,7 @@
 			<section class="a-card">
 				<h2 class="a-h2">학교 이메일</h2>
 				{#if email}
-					<p class="mono email">{email}</p>
+					<p class="mono email">{email}{#if name} <span class="rname">({name})</span>{/if}</p>
 					<p class="a-hint">이 열람은 활동 기록에 남습니다.</p>
 				{:else}
 					<p class="a-hint">열람하면 누가 언제 봤는지 기록됩니다.</p>

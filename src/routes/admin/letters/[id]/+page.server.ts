@@ -1,5 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
-import { adminRpc, emailOf } from '$lib/server/supabaseAdmin';
+import { adminRpc, emailOf, rosterNameOf } from '$lib/server/supabaseAdmin';
 import { isAdmin, runSanction } from '$lib/server/adminAuth';
 import type { LetterReportDetail } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
@@ -23,7 +23,10 @@ export const actions: Actions = {
 		const users = [d.report.reported_id, d.report.reporter_id];
 		await adminRpc('admin_log_identity_view', { p_staff: locals.staff!.id, p_users: users, p_report: d.report.id });
 		const [reported, reporter] = await Promise.all(users.map(emailOf));
-		return { identity: { reported, reporter } };
+		const [reportedName, reporterName] = await Promise.all(
+			[reported, reporter].map((e) => rosterNameOf(e, locals.staff!.id))
+		);
+		return { identity: { reported, reporter, reportedName, reporterName } };
 	},
 
 	status: async ({ params, request, locals }) => {

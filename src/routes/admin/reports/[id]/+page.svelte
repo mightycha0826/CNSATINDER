@@ -139,9 +139,15 @@
 			{#if form?.identity}
 				<dl>
 					<dt>피신고자</dt>
-					<dd class="mono">{form.identity.reported ?? '(탈퇴)'}</dd>
+					<dd class="mono">
+						{form.identity.reported ?? '(탈퇴)'}{#if form.identity.reportedName}
+							<span class="rname">({form.identity.reportedName})</span>{/if}
+					</dd>
 					<dt>신고자</dt>
-					<dd class="mono">{form.identity.reporter ?? '(탈퇴)'}</dd>
+					<dd class="mono">
+						{form.identity.reporter ?? '(탈퇴)'}{#if form.identity.reporterName}
+							<span class="rname">({form.identity.reporterName})</span>{/if}
+					</dd>
 				</dl>
 				<p class="hint">이 열람은 활동 기록에 남습니다. 학생에게 조치를 전달할 때만 사용하세요.</p>
 			{:else}
