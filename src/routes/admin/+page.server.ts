@@ -1,15 +1,11 @@
 import { adminRpc } from '$lib/server/supabaseAdmin';
+import { listReports, reportFilter } from '$lib/server/reports';
 import type { ReportRow, Stats } from '$lib/adminTypes';
 import type { PageServerLoad } from './$types';
 
-const FILTERS = ['open', 'reviewing', 'actioned', 'dismissed', 'all'] as const;
-
+/** 채팅 신고 큐 */
 export const load: PageServerLoad = async ({ url }) => {
-	const f = url.searchParams.get('status');
-	const status = (FILTERS as readonly string[]).includes(f ?? '') ? (f as (typeof FILTERS)[number]) : 'open';
-	const [stats, reports] = await Promise.all([
-		adminRpc<Stats>('admin_stats'),
-		adminRpc<ReportRow[]>('admin_list_reports', { p_status: status, p_limit: 200 })
-	]);
+	const status = reportFilter(url);
+	const [stats, reports] = await Promise.all([adminRpc<Stats>('admin_stats'), listReports<ReportRow>('chat', status)]);
 	return { stats, reports, status };
 };

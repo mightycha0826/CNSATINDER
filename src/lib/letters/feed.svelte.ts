@@ -1,3 +1,4 @@
+import { whileVisible } from '../visible';
 import type { LetterListItem } from './types';
 
 type FetchFeed = (cursor: number | null) => Promise<{ letters: LetterListItem[]; server_now: string }>;
@@ -21,28 +22,21 @@ export class LettersFeed {
 	/** serverNow - clientNow (ms) — "3분 전" 같은 상대 시간 표시용 */
 	skew = $state(0);
 
-	#timer: ReturnType<typeof setInterval> | null = null;
+	#stopPoll: (() => void) | null = null;
 	#stopped = false;
-	#onVis = () => {
-		if (document.visibilityState === 'visible') void this.refresh();
-	};
 
 	constructor(private fetchFeed: FetchFeed) {}
 
 	start() {
 		this.#stopped = false;
 		void this.refresh();
-		this.#timer = setInterval(() => {
-			if (document.visibilityState === 'visible') void this.refresh();
-		}, POLL_MS);
-		document.addEventListener('visibilitychange', this.#onVis);
+		this.#stopPoll = whileVisible(() => void this.refresh(), POLL_MS);
 	}
 
 	stop() {
 		this.#stopped = true;
-		if (this.#timer) clearInterval(this.#timer);
-		this.#timer = null;
-		document.removeEventListener('visibilitychange', this.#onVis);
+		this.#stopPoll?.();
+		this.#stopPoll = null;
 	}
 
 	/** 첫 페이지를 다시 읽는다. 새 글은 위에, 이미 불러온 아래쪽 글은 유지. */

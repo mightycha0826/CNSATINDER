@@ -8,8 +8,11 @@
 	import { S, toast } from '$lib/state.svelte';
 	import type { ChatRoom } from './room.svelte';
 	import type { Msg, PartnerProfile, ReportReason } from './types';
-	import Avatar from '$lib/Avatar.svelte';
-	import { REPORT_REASONS } from '$lib/reportReasons';
+	import Avatar from '$lib/ui/Avatar.svelte';
+	import BackButton from '$lib/ui/BackButton.svelte';
+	import ReportPicker from '$lib/ui/ReportPicker.svelte';
+	import Sheet from '$lib/ui/Sheet.svelte';
+	import { mmss as fmtClock } from '$lib/time';
 
 	let {
 		room,
@@ -39,10 +42,7 @@
 		room?.snap ? Math.max(0, Date.parse(room.snap.expires_at) - room.serverNow(S.now)) : 0
 	);
 	const timeUp = $derived(!!room?.snap && room.snap.status !== 'closed' && remainMs <= 0);
-	const mmss = $derived.by(() => {
-		const s = Math.ceil(remainMs / 1000);
-		return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-	});
+	const mmss = $derived(fmtClock(Math.ceil(remainMs / 1000), true));
 	const urgent = $derived(remainMs > 0 && remainMs <= 60_000);
 	const closed = $derived(room?.closed ?? false);
 	const pending = $derived(room?.snap?.status === 'pending');
@@ -97,8 +97,6 @@
 	let reportReason = $state<ReportReason | null>(null);
 	let reportNote = $state('');
 	let acting = $state(false);
-
-	const REASONS = REPORT_REASONS;
 
 	function openSheet(s: typeof sheet) {
 		sheet = s;
@@ -327,11 +325,7 @@
 	style:--vv-top={`${vvTop}px`}
 >
 	<header class="topbar">
-		<button class="back" onclick={() => goto('/')} aria-label="뒤로">
-			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-				<path d="M15 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-			</svg>
-		</button>
+		<BackButton href="/" />
 
 		{#if room?.snap}
 			{@const alias = room.snap.partner_alias}
@@ -480,82 +474,64 @@
 </div>
 
 {#if sheet}
-	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-	<div class="scrim" onclick={() => (sheet = null)}>
-		<div class="sheet" onclick={(e) => e.stopPropagation()}>
-			{#if sheet === 'profile'}
-				<div class="profile">
-					{#if room?.snap}
-						<Avatar name={room.snap.partner_alias} size={72} online={!!profile?.online} />
-						<h3>{room.snap.partner_alias}</h3>
-						<p class="status muted">
-							{#if profile}{profile.online ? '접속 중' : '오프라인'}{:else}&nbsp;{/if}
-						</p>
-					{/if}
-					{#if profile}
-						{#if profile.bio}<p class="bio">{profile.bio}</p>{/if}
-						{#if profile.mbti || profile.interests.length}
-							<div class="tags">
-								{#if profile.mbti}<span class="tag mbti">{profile.mbti}</span>{/if}
-								{#each profile.interests as t (t)}<span class="tag">{t}</span>{/each}
-							</div>
-						{/if}
-						{#if !profile.bio && !profile.mbti && !profile.interests.length}
-							<p class="muted small">아직 소개를 적지 않음</p>
-						{/if}
-					{:else if profileLoading}
-						<p class="muted small">불러오는 중…</p>
-					{:else}
-						<p class="muted small">프로필을 불러오지 못함</p>
-					{/if}
-				</div>
-				<button class="item" onclick={() => (sheet = null)}>닫기</button>
-			{:else if sheet === 'menu'}
-				<button class="item" onclick={() => openSheet('profile')}>프로필 보기</button>
-				<button class="item danger" onclick={() => openSheet('report')}>신고하기</button>
-				<button class="item danger" onclick={() => openSheet('block')}>차단하기</button>
-				<button class="item" onclick={() => openSheet('leave')}>대화 나가기</button>
-				<button class="item" onclick={() => (sheet = null)}>취소</button>
-			{:else if sheet === 'leave'}
-				<p class="warn">나가면 이 대화는 두 사람 모두에게서 끝나고<br />다시 볼 수 없어요.</p>
-				<button class="item danger" onclick={leave}>나가기</button>
-				<button class="item" onclick={() => (sheet = null)}>취소</button>
-			{:else if sheet === 'block'}
-				<p class="warn">
-					차단하면 대화가 바로 끝나고 <strong>다시는 이 사람과 연결되지 않아요.</strong><br />
-					상대에게는 차단했다는 사실이 알려지지 않아요.
-				</p>
-				<button class="item danger" onclick={block} disabled={acting}>차단하기</button>
-				<button class="item" onclick={() => (sheet = null)}>취소</button>
-			{:else if sheet === 'report'}
-				<div class="report">
-					<h3>무엇이 문제였나요?</h3>
-					<p class="warn left">
-						신고하면 대화가 끝나고 자동으로 차단돼요. 대화 내용은 운영진만 확인하고,
-						상대는 누가 신고했는지 알 수 없어요.
+	<Sheet onclose={() => (sheet = null)}>
+		{#if sheet === 'profile'}
+			<div class="profile">
+				{#if room?.snap}
+					<Avatar name={room.snap.partner_alias} size={72} online={!!profile?.online} />
+					<h3>{room.snap.partner_alias}</h3>
+					<p class="status muted">
+						{#if profile}{profile.online ? '접속 중' : '오프라인'}{:else}&nbsp;{/if}
 					</p>
-					<div class="reasons">
-						{#each REASONS as r (r.v)}
-							<button class="reason" class:on={reportReason === r.v} onclick={() => (reportReason = r.v)}>
-								{r.label}
-							</button>
-						{/each}
-					</div>
-					<textarea
-						class="note"
-						bind:value={reportNote}
-						rows="2"
-						maxlength="1000"
-						placeholder="운영진에게 더 알려줄 내용 (선택)"
-					></textarea>
-				</div>
-				<button class="item danger" onclick={report} disabled={!reportReason || acting}>
-					{acting ? '신고하는 중…' : '신고하기'}
-				</button>
-				<button class="item" onclick={() => (sheet = null)}>취소</button>
-			{/if}
-		</div>
-	</div>
+				{/if}
+				{#if profile}
+					{#if profile.bio}<p class="bio">{profile.bio}</p>{/if}
+					{#if profile.mbti || profile.interests.length}
+						<div class="tags">
+							{#if profile.mbti}<span class="tag mbti">{profile.mbti}</span>{/if}
+							{#each profile.interests as t (t)}<span class="tag">{t}</span>{/each}
+						</div>
+					{/if}
+					{#if !profile.bio && !profile.mbti && !profile.interests.length}
+						<p class="muted small">아직 소개를 적지 않음</p>
+					{/if}
+				{:else if profileLoading}
+					<p class="muted small">불러오는 중…</p>
+				{:else}
+					<p class="muted small">프로필을 불러오지 못함</p>
+				{/if}
+			</div>
+			<button class="item" onclick={() => (sheet = null)}>닫기</button>
+		{:else if sheet === 'menu'}
+			<button class="item" onclick={() => openSheet('profile')}>프로필 보기</button>
+			<button class="item danger" onclick={() => openSheet('report')}>신고하기</button>
+			<button class="item danger" onclick={() => openSheet('block')}>차단하기</button>
+			<button class="item" onclick={() => openSheet('leave')}>대화 나가기</button>
+			<button class="item" onclick={() => (sheet = null)}>취소</button>
+		{:else if sheet === 'leave'}
+			<p class="warn">나가면 이 대화는 두 사람 모두에게서 끝나고<br />다시 볼 수 없어요.</p>
+			<button class="item danger" onclick={leave}>나가기</button>
+			<button class="item" onclick={() => (sheet = null)}>취소</button>
+		{:else if sheet === 'block'}
+			<p class="warn">
+				차단하면 대화가 바로 끝나고 <strong>다시는 이 사람과 연결되지 않아요.</strong><br />
+				상대에게는 차단했다는 사실이 알려지지 않아요.
+			</p>
+			<button class="item danger" onclick={block} disabled={acting}>차단하기</button>
+			<button class="item" onclick={() => (sheet = null)}>취소</button>
+		{:else if sheet === 'report'}
+			<ReportPicker
+				bind:reason={reportReason}
+				bind:note={reportNote}
+				title="무엇이 문제였나요?"
+				intro="신고하면 대화가 끝나고 자동으로 차단돼요. 대화 내용은 운영진만 확인하고, 상대는 누가 신고했는지 알 수 없어요."
+			/>
+			<button class="item danger" onclick={report} disabled={!reportReason || acting}>
+				{acting ? '신고하는 중…' : '신고하기'}
+			</button>
+			<button class="item" onclick={() => (sheet = null)}>취소</button>
+		{/if}
+	</Sheet>
 {/if}
 
 <style>
@@ -584,17 +560,6 @@
 	}
 
 	/* ── 헤더 ── */
-	.back {
-		display: grid;
-		place-items: center;
-		width: 28px;
-		height: 28px;
-		margin-left: -4px;
-	}
-	.back svg {
-		width: 24px;
-		height: 24px;
-	}
 	.who {
 		display: flex;
 		align-items: center;
@@ -694,100 +659,7 @@
 		opacity: 0.5;
 	}
 
-	/* ── 하단 시트 ── */
-	.scrim {
-		position: fixed;
-		inset: 0;
-		z-index: 50;
-		display: flex;
-		align-items: flex-end;
-		justify-content: center;
-		background: rgb(0 0 0 / 0.45);
-	}
-	.sheet {
-		width: 100%;
-		max-width: 520px;
-		padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
-		border-radius: 12px 12px 0 0;
-		background: var(--bg);
-	}
-	.item {
-		display: block;
-		width: 100%;
-		height: 50px;
-		font-size: 15px;
-		border-top: 1px solid var(--line);
-	}
-	.item:first-child {
-		border-top: 0;
-	}
-	.item.danger {
-		color: var(--danger);
-		font-weight: 600;
-	}
-	.warn {
-		margin: 8px var(--pad) 12px;
-		text-align: center;
-		font-size: 13px;
-		line-height: 1.6;
-		color: var(--text-2);
-	}
-	.warn + .item {
-		border-top: 1px solid var(--line);
-	}
-	.warn strong {
-		color: var(--text);
-		font-weight: 600;
-	}
-	.warn.left {
-		text-align: left;
-		margin: 0 0 12px;
-	}
-	.item:disabled {
-		opacity: 0.4;
-	}
-
-	/* 신고 */
-	.report {
-		padding: 8px var(--pad) 12px;
-	}
-	.report h3 {
-		margin: 4px 0 8px;
-		font-size: 16px;
-		font-weight: 700;
-	}
-	.reasons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-bottom: 10px;
-	}
-	.reason {
-		height: 34px;
-		padding: 0 12px;
-		border: 1px solid var(--line);
-		border-radius: 17px;
-		font-size: 14px;
-	}
-	.reason.on {
-		border-color: var(--text);
-		background: var(--text);
-		color: var(--bg);
-		font-weight: 600;
-	}
-	.note {
-		width: 100%;
-		padding: 10px 12px;
-		border: 1px solid var(--line);
-		border-radius: var(--r-sm);
-		background: var(--surface);
-		resize: none;
-		outline: none;
-		font-size: 14px;
-	}
-	.report + .item {
-		border-top: 1px solid var(--line);
-	}
+	/* ── 하단 시트 (모양은 Sheet · ReportPicker) ── */
 	.report-after {
 		margin-top: 6px;
 		color: var(--text-2);

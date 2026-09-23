@@ -222,8 +222,11 @@ export async function promptInstall() {
 
 export const SCHOOL_DOMAIN = 'cnsa.hs.kr';
 
+/** 입력칸은 학교 이메일 앞부분만 받는다 — 도메인은 여기서 붙인다 */
+export const schoolEmail = (localPart: string) => `${localPart.trim().toLowerCase()}@${SCHOOL_DOMAIN}`;
+
 export async function sendOtp(localPart: string) {
-	const email = `${localPart.trim().toLowerCase()}@${SCHOOL_DOMAIN}`;
+	const email = schoolEmail(localPart);
 	const { error } = await supabase.auth.signInWithOtp({
 		email,
 		options: { shouldCreateUser: true }
@@ -237,7 +240,7 @@ export async function sendOtp(localPart: string) {
  * 계정이 없어도 성공처럼 돌려준다: 비밀번호 로그인과 마찬가지로 가입 여부를 알려 주지 않기 위해.
  */
 export async function sendResetOtp(localPart: string) {
-	const email = `${localPart.trim().toLowerCase()}@${SCHOOL_DOMAIN}`;
+	const email = schoolEmail(localPart);
 	const { error } = await supabase.auth.signInWithOtp({
 		email,
 		options: { shouldCreateUser: false }
@@ -297,7 +300,7 @@ export async function verifyOtpForMe(token: string) {
 export const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*[0-9]).{8,72}$/;
 
 export async function signInWithPassword(localPart: string, password: string) {
-	const email = `${localPart.trim().toLowerCase()}@${SCHOOL_DOMAIN}`;
+	const email = schoolEmail(localPart);
 	const { error } = await supabase.auth.signInWithPassword({ email, password });
 	if (error) throw error;
 }

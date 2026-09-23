@@ -12,7 +12,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { hasSupabase } from '$lib/supabase';
-	import { SCHOOL_DOMAIN, errMsg } from '$lib/state.svelte';
+	import { SCHOOL_DOMAIN, errMsg, schoolEmail } from '$lib/state.svelte';
 
 	const setup = page.url.searchParams.get('setup');
 
@@ -29,7 +29,7 @@
 			env.PUBLIC_SUPABASE_ANON_KEY ?? env.PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '',
 			{ auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'simbun-admin-login' } }
 		).auth;
-		const email = `${pwLocal.trim().toLowerCase()}@${SCHOOL_DOMAIN}`;
+		const email = schoolEmail(pwLocal);
 		const { data, error } = await auth.signInWithPassword({ email, password: pw });
 		if (error) throw error;
 		const res = await fetch('/admin/session', {

@@ -4,10 +4,7 @@ import { isAdmin, revealIdentity, runSanction, studentLabels } from '$lib/server
 import type { UserDetail, UserLetterRow, UserRoomRow } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
 
-const UUID = /^[0-9a-f-]{36}$/i;
-
 async function detail(id: string, staff: string) {
-	if (!UUID.test(id)) error(404, '계정을 찾을 수 없습니다');
 	const d = await adminRpc<UserDetail | null>('admin_user', { p_user: id, p_staff: staff });
 	if (!d) error(404, '계정을 찾을 수 없습니다');
 	return d;

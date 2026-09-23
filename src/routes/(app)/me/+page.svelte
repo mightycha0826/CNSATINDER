@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import Avatar from '$lib/Avatar.svelte';
-	import PasswordFields from '$lib/PasswordFields.svelte';
+	import Avatar from '$lib/ui/Avatar.svelte';
+	import BackButton from '$lib/ui/BackButton.svelte';
+	import PasswordFields from '$lib/ui/PasswordFields.svelte';
 	import { supabase } from '$lib/supabase';
 	import { disablePush, enablePush, pushEnabled, pushState, type PushState } from '$lib/push';
 	import {
@@ -221,17 +222,7 @@
 </script>
 
 <div class="topbar">
-	<button class="back" onclick={() => goto('/')} aria-label="뒤로">
-		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<path
-				d="M15 19l-7-7 7-7"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			/>
-		</svg>
-	</button>
+	<BackButton href="/" />
 	<span class="title">내 프로필</span>
 </div>
 
@@ -401,18 +392,6 @@
 </div>
 
 <style>
-	.back {
-		display: grid;
-		place-items: center;
-		width: 28px;
-		height: 28px;
-		margin-left: -4px;
-	}
-	.back svg {
-		width: 24px;
-		height: 24px;
-	}
-
 	.me {
 		gap: 28px;
 		padding-top: 20px;

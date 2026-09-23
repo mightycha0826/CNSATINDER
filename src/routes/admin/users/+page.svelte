@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fmtTime } from '$lib/adminTypes';
 	import Sid from '$lib/admin/Sid.svelte';
+	import { isRestricted as restricted } from '$lib/restriction';
 
 	let { data } = $props();
 	const admin = $derived(data.staff?.role === 'admin');
@@ -11,8 +12,6 @@
 		{ v: 'staff', label: '운영진' }
 	];
 	const href = (filter: string) => `?filter=${filter}${data.q ? `&q=${encodeURIComponent(data.q)}` : ''}`;
-	const restricted = (u: { status: string; suspended_until: string | null }) =>
-		u.status !== 'active' || (!!u.suspended_until && Date.parse(u.suspended_until) > Date.now());
 </script>
 
 <header class="a-head">

@@ -3,6 +3,8 @@
 	import { fmtClock, type LiveUser } from '$lib/adminTypes';
 	import { ago } from '$lib/time';
 	import Sid from '$lib/admin/Sid.svelte';
+	import { isRestricted } from '$lib/restriction';
+	import { whileVisible } from '$lib/visible';
 
 	let { data } = $props();
 	const admin = $derived(data.staff?.role === 'admin');
@@ -16,7 +18,6 @@
 	// 탭이 보이는 동안만 10초마다 상태를 다시 받는다
 	$effect(() => {
 		async function tick() {
-			if (document.visibilityState !== 'visible') return;
 			try {
 				const res = await fetch('/admin/live/status', { cache: 'no-store' });
 				if (res.redirected) return void (location.href = '/admin/login');
@@ -28,12 +29,7 @@
 			}
 			now = Date.now();
 		}
-		const timer = setInterval(tick, REFRESH_MS);
-		document.addEventListener('visibilitychange', tick);
-		return () => {
-			clearInterval(timer);
-			document.removeEventListener('visibilitychange', tick);
-		};
+		return whileVisible(() => void tick(), REFRESH_MS);
 	});
 
 	type St = 'chat' | 'seeking' | 'online' | 'offline';
@@ -41,8 +37,7 @@
 	const LABEL: Record<St, string> = { chat: '대화 중', seeking: '매칭 대기', online: '접속 중', offline: '오프라인' };
 	const stOf = (u: LiveUser): St =>
 		u.room_count > 0 ? 'chat' : u.seeking ? 'seeking' : u.online ? 'online' : 'offline';
-	const restricted = (u: LiveUser) =>
-		u.status !== 'active' || (!!u.suspended_until && Date.parse(u.suspended_until) > now);
+	const restricted = (u: LiveUser) => isRestricted(u, now);
 
 	type Tab = St | 'all' | 'restricted';
 	const TAB_KEYS: Tab[] = ['all', 'chat', 'seeking', 'online', 'offline', 'restricted'];

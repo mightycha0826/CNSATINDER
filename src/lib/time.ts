@@ -22,3 +22,10 @@ export function waitText(ms: number): string {
 	if (m < 60) return `${m}분 뒤`;
 	return `${Math.ceil(m / 60)}시간 뒤`;
 }
+
+/** 초 → "4:05" (pad 면 "04:05"). 반올림 방향(남은 시간은 올림, 지난 시간은 내림)은 부르는 쪽이 정한다. */
+export function mmss(sec: number, pad = false): string {
+	const s = Math.max(0, sec);
+	const m = Math.floor(s / 60);
+	return `${pad ? String(m).padStart(2, '0') : m}:${String(s % 60).padStart(2, '0')}`;
+}

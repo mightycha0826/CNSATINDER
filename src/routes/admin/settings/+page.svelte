@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { confirmed } from '$lib/admin/confirm';
+	import FormMsg from '$lib/admin/FormMsg.svelte';
 
 	let { data, form } = $props();
 	const s = $derived(data.s);
@@ -24,8 +25,7 @@
 
 <h1 class="a-h1 title">운영 설정</h1>
 
-{#if form && 'done' in form && form.done}<p class="a-ok">{form.done}</p>{/if}
-{#if form && 'error' in form && form.error}<p class="a-err">{form.error}</p>{/if}
+<FormMsg {form} />
 
 <section class="kill" class:off={!s.is_open}>
 	<div>

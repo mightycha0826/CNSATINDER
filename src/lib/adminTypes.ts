@@ -56,6 +56,12 @@ export const STATUS_LABEL: Record<ReportStatus, string> = {
 	dismissed: '기각'
 };
 
+/** 신고 목록 탭 (채팅·편지 공용) — ?status= 값 */
+export const REPORT_TABS = [
+	...(Object.entries(STATUS_LABEL) as [ReportStatus, string][]).map(([v, label]) => ({ v, label })),
+	{ v: 'all', label: '전체' }
+] as const;
+
 // ── 익명편지 신고 (private.letter_reports) ─────────────────────────────
 export type LetterReportRow = {
 	id: string;

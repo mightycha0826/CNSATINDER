@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import Avatar from '$lib/Avatar.svelte';
+	import Avatar from '$lib/ui/Avatar.svelte';
 	import { fetchFeed, requestReplyTask } from '$lib/letters/api';
 	import { LettersFeed } from '$lib/letters/feed.svelte';
 	import RichText from '$lib/letters/RichText.svelte';
 	import LikeButton from '$lib/letters/LikeButton.svelte';
 	import { ReplySeeker } from '$lib/letters/replySeeker.svelte';
 	import { S, toast } from '$lib/state.svelte';
-	import { ago } from '$lib/time';
+	import { ago, mmss } from '$lib/time';
 
 	/**
 	 * 익명편지 탭 = 공개 피드 (인스타그램 게시물 목록).
@@ -44,11 +44,7 @@
 	// 내가 맡은 답장 숙제
 	const myTask = $derived(feed.letters.find((l) => l.assigned_to_me && l.reply_status === 'assigned'));
 
-	const elapsed = $derived.by(() => {
-		if (!seeker.seeking) return '';
-		const s = Math.max(0, Math.floor((S.now - seeker.since) / 1000));
-		return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-	});
+	const elapsed = $derived(seeker.seeking ? mmss(Math.floor((S.now - seeker.since) / 1000)) : '');
 	const serverNow = $derived(S.now + feed.skew);
 </script>
 

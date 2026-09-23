@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import Avatar from '$lib/Avatar.svelte';
+	import Avatar from '$lib/ui/Avatar.svelte';
 	import { Inbox, type InboxRoom } from '$lib/inbox.svelte';
 	import { S, toast } from '$lib/state.svelte';
 	import { Seeker } from '$lib/seeker.svelte';
 	import { enablePush, pushState } from '$lib/push';
+	import { isRestricted } from '$lib/restriction';
+	import { mmss } from '$lib/time';
+	import Sheet from '$lib/ui/Sheet.svelte';
 
 	/**
 	 * 홈 = 대화 목록 (인스타 DM 받은편지함).
@@ -16,11 +19,7 @@
 	// 영구/무기한 정지(status) 또는 기간 정지(suspended_until)
 	// ★ 프로필을 아직(또는 못) 불러왔을 때를 정지로 착각하지 않는다 — 예전엔 profile 이 null 이면
 	//   status !== 'active' 가 참이 되어 멀쩡한 계정에 "이용이 제한된 계정"이 떴다.
-	const suspended = $derived(
-		!!S.profile &&
-			(S.profile.status !== 'active' ||
-				(!!S.profile.suspended_until && Date.parse(S.profile.suspended_until) > S.now))
-	);
+	const suspended = $derived(!!S.profile && isRestricted(S.profile, S.now));
 	const profileMissing = $derived(S.booted && !!S.session && !S.profile);
 	const suspendedUntil = $derived(
 		S.profile?.status === 'active' && S.profile?.suspended_until
@@ -50,16 +49,11 @@
 		};
 	});
 
-	const elapsed = $derived.by(() => {
-		if (!seeker.seeking) return '';
-		const s = Math.max(0, Math.floor((S.now - seeker.since) / 1000));
-		return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-	});
+	const elapsed = $derived(seeker.seeking ? mmss(Math.floor((S.now - seeker.since) / 1000)) : '');
 
 	function remain(r: InboxRoom) {
 		const ms = Math.max(0, Date.parse(r.expires_at) - (S.now + inbox.skew));
-		const s = Math.ceil(ms / 1000);
-		return { text: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, urgent: ms <= 60_000 };
+		return { text: mmss(Math.ceil(ms / 1000)), urgent: ms <= 60_000 };
 	}
 
 	// ── 알림 권한 — 처음 한 번 묻는다 ──
@@ -200,9 +194,9 @@
 </div>
 
 {#if askPush}
-	<!-- 처음 한 번 — 알림 권한 안내 -->
-	<div class="scrim">
-		<div class="sheet" role="dialog" aria-labelledby="push-title">
+	<!-- 처음 한 번 — 알림 권한 안내. 바깥을 눌러 닫지 않는다 (둘 중 하나를 골라야 다시 묻지 않는다) -->
+	<Sheet label="알림 받기">
+		<div class="ask">
 			<div class="bell" aria-hidden="true">
 				<svg viewBox="0 0 24 24" fill="none">
 					<path
@@ -222,36 +216,23 @@
 			<button class="btn" onclick={allowPush}>알림 받기</button>
 			<button class="later" onclick={doneAsking}>나중에</button>
 		</div>
-	</div>
+	</Sheet>
 {/if}
 
 <style>
-	/* 알림 권한 안내 시트 */
-	.scrim {
-		position: fixed;
-		inset: 0;
-		z-index: 50;
-		display: flex;
-		align-items: flex-end;
-		justify-content: center;
-		background: rgb(0 0 0 / 0.45);
-	}
-	.sheet {
-		width: 100%;
-		max-width: 520px;
+	/* 알림 권한 안내 (Sheet 안) */
+	.ask {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 10px;
-		padding: 24px var(--pad) calc(16px + env(safe-area-inset-bottom));
-		border-radius: 16px 16px 0 0;
-		background: var(--bg);
+		padding: 16px var(--pad) 8px;
 		text-align: center;
 	}
-	.sheet h2 {
+	.ask h2 {
 		font-size: 18px;
 	}
-	.sheet p {
+	.ask p {
 		margin: 0 0 8px;
 		font-size: 13px;
 		line-height: 1.6;

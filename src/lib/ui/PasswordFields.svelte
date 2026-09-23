@@ -1,6 +1,6 @@
 <script lang="ts">
 	/** 비밀번호 + 확인 입력. 규칙: 8자 이상, 영문과 숫자 섞기 (state.PASSWORD_RULE) */
-	import { PASSWORD_RULE } from './state.svelte';
+	import { PASSWORD_RULE } from '$lib/state.svelte';
 
 	let {
 		value = $bindable(''),

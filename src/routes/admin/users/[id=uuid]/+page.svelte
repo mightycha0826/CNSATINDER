@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { ACTION_LABEL, CLOSE_LABEL, REASON_LABEL, STATUS_LABEL, fmtTime, type UserLetterRow } from '$lib/adminTypes';
+	import AccountStatus from '$lib/admin/AccountStatus.svelte';
+	import FormMsg from '$lib/admin/FormMsg.svelte';
 	import SanctionForm from '$lib/admin/SanctionForm.svelte';
 	import { confirmed } from '$lib/admin/confirm';
 	import Sid from '$lib/admin/Sid.svelte';
@@ -23,7 +25,6 @@
 	});
 
 	const GENDER: Record<string, string> = { m: '남', f: '여', x: '밝히지 않음', any: '상관없음' };
-	const suspended = $derived(!!p.suspended_until && Date.parse(p.suspended_until) > Date.now());
 
 	const askIdentity = confirmed(() => '이 계정의 학교 이메일을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
 	const askLetters = confirmed(() => '이 계정이 쓴 편지·댓글을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
@@ -36,9 +37,7 @@
 		<h1 class="a-h1">
 			{p.nickname ?? '(이름 없음)'}<Sid label={data.students[p.id]} />
 			{#if d.staff_role}<span class="pill acc">{d.staff_role === 'admin' ? '관리자' : '운영진'}</span>{/if}
-			{#if p.status === 'banned'}<span class="pill red">영구정지</span>
-			{:else if p.status === 'suspended'}<span class="pill red">정지 (검토 대기)</span>
-			{:else if suspended}<span class="pill red">{fmtTime(p.suspended_until!)}까지 정지</span>{/if}
+			<AccountStatus account={p} pill />
 		</h1>
 		<p class="a-sub">
 			{#if d.online}<span class="dot"></span>접속 중{:else if d.last_seen}최근 접속 {fmtTime(d.last_seen)}{/if}
@@ -47,8 +46,7 @@
 	</div>
 </header>
 
-{#if form && 'done' in form && form.done}<p class="a-ok">{form.done}</p>{/if}
-{#if form && 'error' in form && form.error}<p class="a-err">{form.error}</p>{/if}
+<FormMsg {form} />
 
 <div class="a-grid">
 	<div class="a-col">

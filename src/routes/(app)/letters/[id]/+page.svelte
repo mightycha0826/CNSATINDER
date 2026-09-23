@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import Avatar from '$lib/Avatar.svelte';
+	import Avatar from '$lib/ui/Avatar.svelte';
 	import {
 		blockLetterAuthor,
 		deleteMyComment,
@@ -14,7 +14,10 @@
 	import type { CommentRow, LetterDetail, ReportReason } from '$lib/letters/types';
 	import RichText from '$lib/letters/RichText.svelte';
 	import LikeButton from '$lib/letters/LikeButton.svelte';
-	import { REPORT_REASONS } from '$lib/reportReasons';
+	import BackButton from '$lib/ui/BackButton.svelte';
+	import ReportPicker from '$lib/ui/ReportPicker.svelte';
+	import Sheet from '$lib/ui/Sheet.svelte';
+	import { whileVisible } from '$lib/visible';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import { ago, waitText } from '$lib/time';
 
@@ -47,15 +50,7 @@
 		loading = true;
 		data = null;
 		void load();
-		const t = setInterval(() => {
-			if (document.visibilityState === 'visible') void load();
-		}, 30_000);
-		const onVis = () => document.visibilityState === 'visible' && void load();
-		document.addEventListener('visibilitychange', onVis);
-		return () => {
-			clearInterval(t);
-			document.removeEventListener('visibilitychange', onVis);
-		};
+		return whileVisible(() => void load(), 30_000);
 	});
 
 	const letter = $derived(data?.letter ?? null);
@@ -229,11 +224,7 @@
 
 <div class="detail">
 	<div class="topbar">
-		<button class="back" onclick={() => (history.length > 1 ? history.back() : goto('/letters'))} aria-label="뒤로">
-			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-				<path d="M15 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-			</svg>
-		</button>
+		<BackButton href="/letters" history />
 		<span class="title">편지</span>
 		{#if letter}
 			<button
@@ -338,52 +329,45 @@
 </div>
 
 {#if sheet && target}
-	<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-	<div class="scrim" onclick={() => (sheet = null)}>
-		<div class="sheet" onclick={(e) => e.stopPropagation()}>
-			{#if sheet === 'menu'}
-				{#if target.mine}
-					<button class="item danger" onclick={() => (sheet = 'delete')}>
-						{target.commentId == null ? '편지 삭제' : '댓글 삭제'}
-					</button>
-				{:else}
-					<button class="item danger" onclick={() => (sheet = 'report')}>신고하기</button>
-					<button class="item danger" onclick={() => (sheet = 'block')}>차단하기</button>
-				{/if}
-				<button class="item" onclick={() => (sheet = null)}>취소</button>
-			{:else if sheet === 'delete'}
-				<p class="warn">
-					{target.commentId == null
-						? '편지와 거기 달린 댓글이 모두 보이지 않게 돼요.'
-						: '이 댓글이 보이지 않게 돼요. 달린 답글은 그대로 남아요.'}
-				</p>
-				<button class="item danger" onclick={doDelete} disabled={acting}>삭제</button>
-				<button class="item" onclick={() => (sheet = null)}>취소</button>
-			{:else if sheet === 'block'}
-				<p class="warn">
-					차단하면 이 사람의 편지·댓글이 더 보이지 않고, <strong>채팅에서도 다시 연결되지 않아요.</strong><br />
-					상대에게는 알려지지 않아요.
-				</p>
-				<button class="item danger" onclick={doBlock} disabled={acting}>차단하기</button>
-				<button class="item" onclick={() => (sheet = null)}>취소</button>
-			{:else if sheet === 'report'}
-				<div class="report">
-					<h3>무엇이 문제인가요?</h3>
-					<p class="warn left">신고하면 자동으로 차단돼요. 내용은 운영진만 확인하고, 상대는 누가 신고했는지 알 수 없어요.</p>
-					<div class="reasons">
-						{#each REPORT_REASONS as r (r.v)}
-							<button class="reason" class:on={reason === r.v} onclick={() => (reason = r.v)}>{r.label}</button>
-						{/each}
-					</div>
-					<textarea class="note" bind:value={note} rows="2" maxlength="1000" placeholder="운영진에게 더 알려줄 내용 (선택)"></textarea>
-				</div>
-				<button class="item danger" onclick={doReport} disabled={!reason || acting}>
-					{acting ? '신고하는 중…' : '신고하기'}
+	<Sheet onclose={() => (sheet = null)}>
+		{#if sheet === 'menu'}
+			{#if target.mine}
+				<button class="item danger" onclick={() => (sheet = 'delete')}>
+					{target.commentId == null ? '편지 삭제' : '댓글 삭제'}
 				</button>
-				<button class="item" onclick={() => (sheet = null)}>취소</button>
+			{:else}
+				<button class="item danger" onclick={() => (sheet = 'report')}>신고하기</button>
+				<button class="item danger" onclick={() => (sheet = 'block')}>차단하기</button>
 			{/if}
-		</div>
-	</div>
+			<button class="item" onclick={() => (sheet = null)}>취소</button>
+		{:else if sheet === 'delete'}
+			<p class="warn">
+				{target.commentId == null
+					? '편지와 거기 달린 댓글이 모두 보이지 않게 돼요.'
+					: '이 댓글이 보이지 않게 돼요. 달린 답글은 그대로 남아요.'}
+			</p>
+			<button class="item danger" onclick={doDelete} disabled={acting}>삭제</button>
+			<button class="item" onclick={() => (sheet = null)}>취소</button>
+		{:else if sheet === 'block'}
+			<p class="warn">
+				차단하면 이 사람의 편지·댓글이 더 보이지 않고, <strong>채팅에서도 다시 연결되지 않아요.</strong><br />
+				상대에게는 알려지지 않아요.
+			</p>
+			<button class="item danger" onclick={doBlock} disabled={acting}>차단하기</button>
+			<button class="item" onclick={() => (sheet = null)}>취소</button>
+		{:else if sheet === 'report'}
+			<ReportPicker
+				bind:reason
+				bind:note
+				title="무엇이 문제인가요?"
+				intro="신고하면 자동으로 차단돼요. 내용은 운영진만 확인하고, 상대는 누가 신고했는지 알 수 없어요."
+			/>
+			<button class="item danger" onclick={doReport} disabled={!reason || acting}>
+				{acting ? '신고하는 중…' : '신고하기'}
+			</button>
+			<button class="item" onclick={() => (sheet = null)}>취소</button>
+		{/if}
+	</Sheet>
 {/if}
 
 <style>
@@ -392,21 +376,11 @@
 		flex-direction: column;
 		height: 100dvh;
 	}
-	.back,
 	.more {
 		display: grid;
 		place-items: center;
 		width: 28px;
 		height: 28px;
-	}
-	.back {
-		margin-left: -4px;
-	}
-	.back svg {
-		width: 24px;
-		height: 24px;
-	}
-	.more {
 		margin-left: auto;
 	}
 	.more svg {
@@ -627,91 +601,5 @@
 	.as {
 		margin: 4px 4px 0;
 		font-size: 11px;
-	}
-
-	/* 하단 시트 — 대화방과 같은 모양 */
-	.scrim {
-		position: fixed;
-		inset: 0;
-		z-index: 50;
-		display: flex;
-		align-items: flex-end;
-		justify-content: center;
-		background: rgb(0 0 0 / 0.45);
-	}
-	.sheet {
-		width: 100%;
-		max-width: 520px;
-		padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
-		border-radius: 12px 12px 0 0;
-		background: var(--bg);
-	}
-	.item {
-		display: block;
-		width: 100%;
-		height: 50px;
-		font-size: 15px;
-		border-top: 1px solid var(--line);
-	}
-	.item:first-child {
-		border-top: 0;
-	}
-	.item.danger {
-		color: var(--danger);
-		font-weight: 600;
-	}
-	.item:disabled {
-		opacity: 0.5;
-	}
-	.warn {
-		margin: 12px var(--pad) 14px;
-		font-size: 14px;
-		line-height: 1.6;
-		text-align: center;
-		color: var(--text-2);
-	}
-	.warn.left {
-		text-align: left;
-		margin: 0 0 12px;
-	}
-	.warn strong {
-		color: var(--text);
-	}
-	.report {
-		padding: 8px var(--pad) 12px;
-	}
-	.report h3 {
-		margin: 4px 0 8px;
-		font-size: 16px;
-		font-weight: 700;
-	}
-	.reasons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
-		margin-bottom: 10px;
-	}
-	.reason {
-		height: 34px;
-		padding: 0 12px;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		font-size: 13px;
-	}
-	.reason.on {
-		border-color: var(--text);
-		background: var(--text);
-		color: var(--bg);
-		font-weight: 600;
-	}
-	.note {
-		width: 100%;
-		padding: 10px 12px;
-		border: 1px solid var(--line);
-		border-radius: var(--r-sm);
-		background: var(--surface);
-		outline: none;
-		resize: none;
-		font-size: 14px;
 	}
 </style>

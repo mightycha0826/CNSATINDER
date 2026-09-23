@@ -1,6 +1,6 @@
 <script lang="ts">
-	import Avatar from '$lib/Avatar.svelte';
-	import PasswordFields from '$lib/PasswordFields.svelte';
+	import Avatar from '$lib/ui/Avatar.svelte';
+	import PasswordFields from '$lib/ui/PasswordFields.svelte';
 	import { S, errMsg, saveOnboarding, setPassword, toast } from '$lib/state.svelte';
 
 	let gender: 'm' | 'f' | null = $state(null);

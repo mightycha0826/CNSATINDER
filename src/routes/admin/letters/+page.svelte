@@ -1,15 +1,7 @@
 <script lang="ts">
-	import { REASON_LABEL, STATUS_LABEL, fmtTime, shortId } from '$lib/adminTypes';
+	import { REASON_LABEL, REPORT_TABS, STATUS_LABEL, fmtTime, shortId } from '$lib/adminTypes';
 
 	let { data } = $props();
-
-	const TABS = [
-		{ v: 'open', label: '미처리' },
-		{ v: 'reviewing', label: '검토 중' },
-		{ v: 'actioned', label: '조치 완료' },
-		{ v: 'dismissed', label: '기각' },
-		{ v: 'all', label: '전체' }
-	];
 </script>
 
 <section class="a-stats">
@@ -29,7 +21,7 @@
 {/if}
 
 <nav class="a-tabs">
-	{#each TABS as t (t.v)}
+	{#each REPORT_TABS as t (t.v)}
 		<a href="?status={t.v}" class:on={data.status === t.v}>{t.label}</a>
 	{/each}
 </nav>

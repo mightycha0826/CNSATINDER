@@ -144,6 +144,20 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 
 테스트 스크립트가 중간에 죽어 남긴 계정 확인·정리: `node scripts/cleanup-test-users.mjs [--delete]`
 
+## 코드 구조
+
+| 위치 | 내용 |
+|---|---|
+| `src/lib/state.svelte.ts` | 학생 앱 전역 상태 · 로그인 · 접속 신호 · 에러 문구 |
+| `src/lib/ui/` | 학생 앱 공용 화면 조각 — `Sheet`(아래 시트) · `ReportPicker`(신고 사유) · `BackButton` · `Avatar` · `PasswordFields` |
+| `src/lib/pollSeeker.svelte.ts` | "찾는 중" 폴링 상태 기계 — 채팅 `Seeker` 와 편지 `ReplySeeker` 가 물려받는다 |
+| `src/lib/visible.ts` | `whileVisible` — 화면이 보이는 동안만 주기적으로 새로 읽기 (대화 목록·피드·편지·실시간 현황) |
+| `src/lib/time.ts` · `restriction.ts` | 상대 시간·`mm:ss` 표시 / 이용 제한 판정 (학생 앱·운영자 화면 공용) |
+| `src/lib/chat/` · `src/lib/letters/` | 채팅방 · 익명편지 |
+| `src/lib/admin/` | 운영자 화면 공용 조각 — 신고 상세 카드(`ReportHeader` · `ReportedCard` · `ReporterCard` · `IdentityCard`), `AccountStatus`, `FormMsg`, `SanctionForm` |
+| `src/lib/server/` | 서버 전용 — 운영자 세션·권한, `reports.ts`(채팅·편지 신고 공용 로드·액션), 푸시 |
+| `src/params/` | 라우트 주소 검사 — `[id=uuid]`, `[id=int]` (모양이 틀린 주소는 곧바로 404) |
+
 ## 명령어
 
 | 명령 | 설명 |

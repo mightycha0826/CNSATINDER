@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { whileVisible } from './visible';
 
 /** my_rooms() 의 한 줄. ★ uuid 는 room_id 뿐. */
 export type InboxRoom = {
@@ -37,27 +38,21 @@ export class Inbox {
 
 	#ch: RealtimeChannel | null = null;
 	#ids = '';
-	#poll: ReturnType<typeof setInterval> | null = null;
+	#stopPoll: (() => void) | null = null;
 	#debounce: ReturnType<typeof setTimeout> | null = null;
 	#stopped = false;
-	#onVis = () => {
-		if (document.visibilityState === 'visible') void this.load();
-	};
 
 	start() {
 		this.#stopped = false;
 		void this.load();
-		this.#poll = setInterval(() => {
-			if (document.visibilityState === 'visible') void this.load();
-		}, POLL_MS);
-		document.addEventListener('visibilitychange', this.#onVis);
+		this.#stopPoll = whileVisible(() => void this.load(), POLL_MS);
 	}
 
 	stop() {
 		this.#stopped = true;
-		if (this.#poll) clearInterval(this.#poll);
+		this.#stopPoll?.();
+		this.#stopPoll = null;
 		if (this.#debounce) clearTimeout(this.#debounce);
-		document.removeEventListener('visibilitychange', this.#onVis);
 		this.#unsubscribe();
 		this.#ids = '';
 	}

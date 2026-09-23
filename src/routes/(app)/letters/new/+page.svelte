@@ -5,6 +5,7 @@
 	import type { LetterFmt } from '$lib/letters/rich';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import { waitText } from '$lib/time';
+	import BackButton from '$lib/ui/BackButton.svelte';
 
 	/** 편지 쓰기 — 올리면 바로 공개 피드에 뜨고, 답장할 사람이 배정되기를 기다린다. */
 	let body = $state('');
@@ -38,11 +39,7 @@
 </script>
 
 <div class="topbar">
-	<button class="back" onclick={() => history.length > 1 ? history.back() : goto('/letters')} aria-label="뒤로">
-		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<path d="M15 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-		</svg>
-	</button>
+	<BackButton href="/letters" history />
 	<span class="title">편지 쓰기</span>
 	<button class="post btn-text" onclick={submit} disabled={!ready}>{busy ? '올리는 중…' : '올리기'}</button>
 </div>
@@ -64,17 +61,6 @@
 </div>
 
 <style>
-	.back {
-		display: grid;
-		place-items: center;
-		width: 28px;
-		height: 28px;
-		margin-left: -4px;
-	}
-	.back svg {
-		width: 24px;
-		height: 24px;
-	}
 	.post {
 		margin-left: auto;
 		font-size: 15px;
