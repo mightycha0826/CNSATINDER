@@ -3075,3 +3075,123 @@ end
 $fn$;
 revoke all on function public.admin_live_users(uuid) from public, anon, authenticated;
 grant execute on function public.admin_live_users(uuid) to service_role;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 16 — 공지사항 (종 아이콘 · 빨간 점)
+--
+--  · 공지는 관리자만 올리고 내린다 (활동 기록에 남음). 운영진은 목록만 본다.
+--  · 학생은 my_notices() 로 최근 공지와 "어디까지 봤는지"를 함께 받는다.
+--    봤는지는 계정에 저장한다 (private.notice_reads) — 폰을 바꿔도 이미 본 공지에 점이 다시 뜨지 않게.
+--  · 홈 화면 맨 위 한 줄(app_settings.notice)은 그대로 둔다 — 서비스를 닫았을 때 안내로도 쓰인다.
+-- ════════════════════════════════════════════════════════════════════
+
+create table if not exists private.notices (
+  id          bigint generated always as identity primary key,
+  title       text not null check (char_length(btrim(title)) between 1 and 80),
+  body        text not null default '' check (char_length(body) <= 2000),
+  created_by  uuid,
+  created_at  timestamptz not null default now(),
+  removed_at  timestamptz
+);
+create index if not exists notices_live on private.notices (id desc) where removed_at is null;
+alter table private.notices enable row level security;
+
+create table if not exists private.notice_reads (
+  user_id    uuid   primary key references public.profiles(id) on delete cascade,
+  last_id    bigint not null default 0,
+  updated_at timestamptz not null default now()
+);
+alter table private.notice_reads enable row level security;
+
+-- 학생: 최근 공지 30개 + 내가 마지막으로 본 공지 번호. 이용 제한 계정도 공지는 본다.
+create or replace function public.my_notices()
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  return jsonb_build_object(
+    'notices', coalesce((
+      select jsonb_agg(jsonb_build_object('id', n.id, 'title', n.title, 'body', n.body, 'created_at', n.created_at)
+                       order by n.id desc)
+        from (select * from private.notices where removed_at is null order by id desc limit 30) n
+    ), '[]'::jsonb),
+    'last_seen', coalesce((select last_id from private.notice_reads where user_id = me), 0)
+  );
+end
+$fn$;
+
+-- 학생: 여기까지 봤다. 뒤로 가지 않고(greatest), 없는 번호로 앞질러 가지도 않는다.
+create or replace function public.mark_notices_seen(p_id bigint)
+returns bigint language plpgsql security definer set search_path = public, private as $fn$
+declare
+  me uuid := auth.uid();
+  v  bigint := least(coalesce(p_id, 0), coalesce((select max(id) from private.notices), 0));
+  r  bigint;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  insert into private.notice_reads (user_id, last_id) values (me, greatest(v, 0))
+  on conflict (user_id) do update
+     set last_id = greatest(private.notice_reads.last_id, excluded.last_id), updated_at = now()
+  returning last_id into r;
+  return r;
+end
+$fn$;
+
+revoke all on function public.my_notices(), public.mark_notices_seen(bigint) from public, anon;
+grant execute on function public.my_notices(), public.mark_notices_seen(bigint) to authenticated;
+
+-- 운영자: 목록 (운영진도 볼 수 있다)
+create or replace function public.admin_notices(p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  perform private.require_staff(p_staff);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', id, 'title', title, 'body', body, 'created_at', created_at)
+                     order by id desc)
+      from private.notices where removed_at is null
+  ), '[]'::jsonb);
+end
+$fn$;
+
+-- 관리자: 공지 올리기
+create or replace function public.admin_post_notice(p_staff uuid, p_title text, p_body text)
+returns bigint language plpgsql security definer set search_path = public, private as $fn$
+declare v bigint;
+begin
+  perform private.require_staff(p_staff, true);
+  insert into private.notices (title, body, created_by)
+  values (btrim(p_title), btrim(coalesce(p_body, '')), p_staff)
+  returning id into v;
+  insert into private.audit_log (staff_id, action, detail)
+  values (p_staff, 'post_notice', jsonb_build_object('notice', v, 'title', btrim(p_title)));
+  return v;
+end
+$fn$;
+
+-- 관리자: 공지 내리기 (지우지 않고 숨긴다 — 기록은 남는다)
+create or replace function public.admin_remove_notice(p_staff uuid, p_id bigint)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare v_title text;
+begin
+  perform private.require_staff(p_staff, true);
+  update private.notices set removed_at = now()
+   where id = p_id and removed_at is null
+  returning title into v_title;
+  if not found then raise exception 'notice_not_found'; end if;
+  insert into private.audit_log (staff_id, action, detail)
+  values (p_staff, 'remove_notice', jsonb_build_object('notice', p_id, 'title', v_title));
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['admin_notices(uuid)', 'admin_post_notice(uuid, text, text)',
+                           'admin_remove_notice(uuid, bigint)']
+  loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+    execute format('grant execute on function public.%s to service_role', f);
+  end loop;
+end
+$do$;

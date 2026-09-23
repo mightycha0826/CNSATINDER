@@ -10,7 +10,7 @@
 	const VIEW = new Set(['view_identity', 'search_email', 'view_room', 'view_letter_authors', 'view_user_letters']);
 	const SETTING: Record<string, string> = {
 		is_open: '서비스',
-		notice: '공지',
+		notice: '홈 배너',
 		room_minutes: '대화 시간',
 		extend_minutes: '연장 시간',
 		vote_window_sec: '연장 질문',
@@ -34,6 +34,7 @@
 			return parts.join(' · ');
 		}
 		if (a.action === 'roster_import') return `${d.grade}학년 ${d.count}명`;
+		if (a.action === 'post_notice' || a.action === 'remove_notice') return `"${d.title}"`;
 		if (a.action === 'remove_comment' && d.comment_id) parts.push(`댓글 #${d.comment_id}`);
 		if (d.days) parts.push(`${d.days}일`);
 		if (d.note) parts.push(String(d.note));

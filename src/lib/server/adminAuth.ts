@@ -50,7 +50,8 @@ const DB_ERR: Record<string, string> = {
 	mod_days_limit: `운영진은 최대 ${MOD_MAX_SUSPEND_DAYS}일까지 정지 가능`,
 	not_staff: '운영진 명단에 없는 계정',
 	days_required: '정지 기간을 입력해야 함',
-	user_not_found: '탈퇴한 계정이라 조치할 수 없음'
+	user_not_found: '탈퇴한 계정이라 조치할 수 없음',
+	notice_not_found: '이미 내린 공지'
 };
 
 /** adminRpc 에러를 화면용 문구로. 모르는 에러는 그대로 던진다. */

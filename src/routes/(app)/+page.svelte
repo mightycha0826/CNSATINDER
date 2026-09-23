@@ -9,6 +9,7 @@
 	import { isRestricted } from '$lib/restriction';
 	import { mmss } from '$lib/time';
 	import Sheet from '$lib/ui/Sheet.svelte';
+	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 
 	/**
 	 * 홈 = 대화 목록 (인스타 DM 받은편지함).
@@ -95,11 +96,7 @@
 
 <div class="topbar">
 	<span class="title wordmark">CNSATINDER</span>
-	<button class="me" onclick={() => goto('/me')} aria-label="내 프로필">
-		{#if S.profile?.nickname}
-			<Avatar name={S.profile.nickname} size={28} />
-		{/if}
-	</button>
+	<TopbarMe />
 </div>
 
 <div class="page home">
@@ -255,14 +252,6 @@
 		font-size: 14px;
 		font-weight: 600;
 		color: var(--text-2);
-	}
-
-	.me {
-		margin-left: auto;
-		display: grid;
-		place-items: center;
-		width: 32px;
-		height: 32px;
 	}
 
 	.cta {

@@ -87,6 +87,8 @@ npm run dev
 
 - **실시간 현황**(`/admin/live`): 전체 사용자와 지금 상태(대화 중 · 매칭 대기 · 접속 중 · 오프라인), 10초마다 자동 갱신.
   어느 대화인지(열기 링크)는 관리자만. 상태만 보는 것이라 새로고침마다 기록하지 않고, 학번·이름은 페이지를 열 때 한 번 기록된다.
+- **공지사항**(`/admin/notices`): 올리면 학생 앱 종 아이콘에 빨간 점이 뜨고, 학생이 공지 화면을 열면 꺼진다.
+  올리기·내리기는 관리자만 (운영진은 목록만). 운영 설정의 "홈 배너"는 채팅 홈 맨 위 한 줄로 따로 남아 있다.
 - **moderator(운영진)**: 신고 처리, 경고, 7일 이하 정지, 사용자 검색(익명 이름·ID)·상세, 서비스 열고 닫기
 - **admin(관리자)**: 위 전부 + 영구 정지·영구정지 해제, 이메일 열람·이메일 검색, **모든 대화 열람**(`/admin/rooms`),
   **모든 편지·댓글 작성자 확인**(`/admin/posts/[번호]`), 운영 수치 변경
@@ -121,6 +123,7 @@ npm run dev
 - [ ] **Phase 13 적용** — `schema.sql` 을 다시 실행 (실시간 현황 RPC). 안 하면 `/admin/live` 가 오류.
 - [ ] **Phase 14 적용** — `schema.sql` 을 다시 실행 (편지 서식 `letters.fmt`·`post_letter(text, jsonb)`). 안 하면 편지 올리기가 실패한다.
 - [ ] **Phase 15 적용** — `schema.sql` 을 다시 실행 (편지 하트 `private.letter_likes`·`set_letter_like`). 안 하면 편지 목록·상세가 오류.
+- [ ] **Phase 16 적용** — `schema.sql` 을 다시 실행 (공지사항 `private.notices`·`my_notices`). 안 하면 종 아이콘에 점이 뜨지 않고 `/admin/notices` 가 오류.
 - [ ] **운영자 점검 반영** — `schema.sql` 을 다시 실행 (신고 처리·글 내리기·운영 설정 RPC 의 역할 검사, 탈퇴 계정 제재 오류).
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
       Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
@@ -149,7 +152,8 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | 위치 | 내용 |
 |---|---|
 | `src/lib/state.svelte.ts` | 학생 앱 전역 상태 · 로그인 · 접속 신호 · 에러 문구 |
-| `src/lib/ui/` | 학생 앱 공용 화면 조각 — `Sheet`(아래 시트) · `ReportPicker`(신고 사유) · `BackButton` · `Avatar` · `PasswordFields` |
+| `src/lib/ui/` | 학생 앱 공용 화면 조각 — `Sheet`(아래 시트) · `ReportPicker`(신고 사유) · `BackButton` · `TopbarMe`(공지 종 + 프로필) · `Avatar` · `PasswordFields` |
+| `src/lib/notices.svelte.ts` | 공지사항 목록 · 안 본 공지(빨간 점) · 본 것으로 저장 |
 | `src/lib/pollSeeker.svelte.ts` | "찾는 중" 폴링 상태 기계 — 채팅 `Seeker` 와 편지 `ReplySeeker` 가 물려받는다 |
 | `src/lib/visible.ts` | `whileVisible` — 화면이 보이는 동안만 주기적으로 새로 읽기 (대화 목록·피드·편지·실시간 현황) |
 | `src/lib/time.ts` · `restriction.ts` | 상대 시간·`mm:ss` 표시 / 이용 제한 판정 (학생 앱·운영자 화면 공용) |
@@ -219,4 +223,6 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       본문은 순수 텍스트 그대로, 서식은 `letters.fmt` 에 범위 목록으로. 화면은 HTML 을 넣지 않고 정해진 표로만 그린다
 - [x] **Phase 15 — 편지 하트** — 목록·상세에서 하트 누르기/취소. 개수와 "내가 눌렀는지"만 보이고 누가 눌렀는지는
       `private.letter_likes` 에만 (작성자도 모름). 알림 없음
+- [x] **Phase 16 — 공지사항** — 채팅·익명편지 상단 프로필 왼쪽에 종 아이콘, 안 본 공지가 있으면 오른쪽 위 빨간 점.
+      어디까지 봤는지는 계정에 저장(`private.notice_reads`). 올리기·내리기는 관리자만(`/admin/notices`), 활동 기록에 남음
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

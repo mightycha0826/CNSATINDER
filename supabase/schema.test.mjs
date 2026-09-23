@@ -1889,5 +1889,49 @@ console.log('\n[59] ★ 편지 하트 — 개수만 공개, 누가 눌렀는지�
 	check('정지된 계정은 못 누른다', (await like(sus, a.letter_id, true)).status === 'not_eligible');
 }
 
+console.log('\n[61] ★ 공지사항 — 관리자만 올리고, 학생은 어디까지 봤는지 계정에 남는다');
+{
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+	const st = await person('m', 'f');
+	const st2 = await person('f', 'm');
+
+	const empty = await rpcAs(st, 'my_notices');
+	check('처음: 공지 없음 · 본 번호 0', empty.notices.length === 0 && Number(empty.last_seen) === 0, JSON.stringify(empty));
+	check('없는데 봤다고 해도 0', Number(await rpcAs(st, 'mark_notices_seen', 999)) === 0);
+
+	await expectError('★ 운영진은 공지를 못 올린다', () => svc('admin_post_notice', mod, '제목', ''), 'admin_only');
+	await expectError('★ 명단 밖은 공지를 못 올린다', () => svc('admin_post_notice', st, '제목', ''), 'not_staff');
+	await expectError('빈 제목은 안 된다', () => svc('admin_post_notice', adm, '   ', ''), 'check');
+	const n1 = Number(await svc('admin_post_notice', adm, ' 첫 공지 ', '내용 1'));
+	const n2 = Number(await svc('admin_post_notice', adm, '둘째 공지', ''));
+	check('운영진도 목록은 본다', (await svc('admin_notices', mod)).length === 2);
+
+	const a = await rpcAs(st, 'my_notices');
+	check('학생: 최신순 · 제목 앞뒤 공백 정리', a.notices.map((n) => Number(n.id)).join() === `${n2},${n1}` && a.notices[1].title === '첫 공지');
+	check('★ 학생에게 올린 사람 uuid 는 안 보인다', !JSON.stringify(a).includes(adm));
+	check('아직 안 봤다 (빨간 점)', Number(a.last_seen) < n2);
+
+	check('봤다 → 최신 번호까지', Number(await rpcAs(st, 'mark_notices_seen', n2)) === n2);
+	check('뒤로 가지 않는다', Number(await rpcAs(st, 'mark_notices_seen', n1)) === n2);
+	check('없는 번호로 앞질러 가지 않는다', Number(await rpcAs(st, 'mark_notices_seen', n2 + 100)) === n2);
+	check('다른 학생은 따로', Number((await rpcAs(st2, 'my_notices')).last_seen) === 0);
+
+	const n3 = Number(await svc('admin_post_notice', adm, '셋째 공지', '새 소식'));
+	const b = await rpcAs(st, 'my_notices');
+	check('새 공지가 오면 다시 빨간 점', Number(b.notices[0].id) === n3 && Number(b.last_seen) === n2);
+
+	await svc('admin_remove_notice', adm, n3);
+	check('내린 공지는 학생에게 안 보인다', !(await rpcAs(st, 'my_notices')).notices.some((n) => Number(n.id) === n3));
+	await expectError('이미 내린 공지는 다시 못 내린다', () => svc('admin_remove_notice', adm, n3), 'notice_not_found');
+	await expectError('★ 운영진은 공지를 못 내린다', () => svc('admin_remove_notice', mod, n2), 'admin_only');
+	const log = (await db.query(`select action, detail from private.audit_log where action in ('post_notice', 'remove_notice') order by id`)).rows;
+	check('올리고 내린 것이 활동 기록에', log.filter((l) => l.action === 'post_notice').length === 3 && log.some((l) => l.action === 'remove_notice' && l.detail.title === '셋째 공지'));
+
+	await expectError('★ 학생은 공지 표를 직접 못 읽는다', () => rowsAs(st, 'select * from private.notices'), 'permission denied');
+	await expectError('★ 학생은 공지를 직접 못 올린다', () => rpcAs(st, 'admin_post_notice', st, 'x', ''), 'permission denied');
+	await expectError('로그인 없이 공지 목록 불가', () => rpcAs(null, 'my_notices'), 'permission denied');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -269,5 +269,10 @@ export const ACTION_LABEL: Record<string, string> = {
 	remove_letter: '편지 내림',
 	remove_comment: '댓글 내림',
 	update_settings: '설정 변경',
-	roster_import: '명렬표 반영'
+	roster_import: '명렬표 반영',
+	post_notice: '공지 올림',
+	remove_notice: '공지 내림'
 };
+
+/** 공지사항 (admin_notices) */
+export type NoticeRow = { id: number; title: string; body: string; created_at: string };

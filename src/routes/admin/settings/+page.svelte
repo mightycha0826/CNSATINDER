@@ -44,7 +44,7 @@
 
 <form method="POST" action="?/save" use:enhance={() => ({ update }) => update({ reset: false })} class="form">
 	<label class="row notice">
-		<span class="label">공지<small>홈 화면 상단에 표시</small></span>
+		<span class="label">홈 배너<small>채팅 홈 맨 위 한 줄 · 서비스를 닫았을 때 안내로도 보임. 여러 줄 공지는 <a href="/admin/notices">공지사항</a>에서</small></span>
 		<input class="field" name="notice" value={s.notice} maxlength="300" placeholder="(없음)" disabled={!isAdmin} />
 	</label>
 	{#each FIELDS as f (f.k)}

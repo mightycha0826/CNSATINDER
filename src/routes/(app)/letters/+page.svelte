@@ -8,6 +8,7 @@
 	import { ReplySeeker } from '$lib/letters/replySeeker.svelte';
 	import { S, toast } from '$lib/state.svelte';
 	import { ago, mmss } from '$lib/time';
+	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 
 	/**
 	 * 익명편지 탭 = 공개 피드 (인스타그램 게시물 목록).
@@ -50,9 +51,7 @@
 
 <div class="topbar">
 	<span class="title">익명편지</span>
-	<button class="me" onclick={() => goto('/me')} aria-label="내 프로필">
-		{#if S.profile?.nickname}<Avatar name={S.profile.nickname} size={28} />{/if}
-	</button>
+	<TopbarMe />
 </div>
 
 <div class="page letters">
@@ -152,14 +151,6 @@
 </div>
 
 <style>
-	.me {
-		margin-left: auto;
-		display: grid;
-		place-items: center;
-		width: 32px;
-		height: 32px;
-	}
-
 	.letters {
 		gap: 12px;
 		padding-top: 12px;

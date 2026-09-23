@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { fmtClock, type LiveUser } from '$lib/adminTypes';
-	import { ago } from '$lib/time';
+	import { agoText } from '$lib/time';
 	import Sid from '$lib/admin/Sid.svelte';
 	import { isRestricted } from '$lib/restriction';
 	import { whileVisible } from '$lib/visible';
@@ -90,11 +90,7 @@
 		{ v: 'restricted', label: '이용 제한' }
 	];
 
-	function since(iso: string | null) {
-		if (!iso) return '—';
-		const a = ago(iso, now);
-		return /[분간일]$/.test(a) ? `${a} 전` : a;
-	}
+	const since = (iso: string | null) => (iso ? agoText(iso, now) : '—');
 	const clock = $derived(fmtClock(now));
 </script>
 

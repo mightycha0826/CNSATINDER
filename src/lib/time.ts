@@ -16,6 +16,12 @@ export function ago(iso: string, now: number): string {
 	return new Date(t).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
 }
 
+/** ago() 에 "전"을 붙인 것 — "3분 전 · 어제 · 9월 3일" */
+export function agoText(iso: string, now: number): string {
+	const a = ago(iso, now);
+	return /[분간일]$/.test(a) ? `${a} 전` : a;
+}
+
 /** 도배 제한 대기 시간 → "3분 뒤" / "2시간 뒤" */
 export function waitText(ms: number): string {
 	const m = Math.ceil(ms / 60_000);
