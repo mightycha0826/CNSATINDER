@@ -83,7 +83,7 @@ npm run dev
    insert into private.staff (user_id, role)
    select id, 'admin' from auth.users where email = '담당자@cnsa.hs.kr';   -- 'moderator' 도 가능
    ```
-3. 브라우저에서 `/admin` → 학교 이메일 + 비밀번호로 로그인 (처음이거나 비밀번호를 잊었으면 인증 코드로)
+3. 브라우저에서 `/admin` → 학교 이메일 + 비밀번호로 로그인 (가입·인증 코드 경로 없음 — 운영진은 이미 있는 계정을 위 SQL 로 지정)
 
 - **moderator(운영진)**: 신고 처리, 경고, 7일 이하 정지, 사용자 검색(익명 이름·ID)·상세, 서비스 열고 닫기
 - **admin(관리자)**: 위 전부 + 영구 정지·영구정지 해제, 이메일 열람·이메일 검색, **모든 대화 열람**(`/admin/rooms`),

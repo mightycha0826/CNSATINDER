@@ -1,33 +1,21 @@
 <script lang="ts">
 	/**
-	 * 운영자 로그인.
+	 * 운영자 로그인 — 학교 이메일 + 비밀번호만.
+	 * 운영진은 이미 계정이 있는 사람을 SQL(private.staff)로 지정하므로 가입·인증 코드 경로가 없다.
 	 *
-	 * 기본: 학교 이메일 + 비밀번호로 바로 로그인 (평소 사용 경로 — 단순 로그인).
-	 * 보조: 처음 등록하거나 비밀번호를 잊었을 때만 인증 코드(OTP) 경로를 쓴다.
-	 *
-	 * 어느 경로든 Supabase 인증 뒤 토큰을 서버로 보내 운영진(private.staff) 여부를
-	 * 다시 확인받는다 — "단순 로그인"이어도 운영진이 아니면 절대 들어오지 못한다.
+	 * Supabase 인증 뒤 토큰을 서버로 보내 운영진 여부를 다시 확인받는다 — 운영진이 아니면 들어오지 못한다.
 	 * 확인이 끝나면 이 브라우저의 학생용 세션은 지운다 (서버 서명 쿠키만 남는다).
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { supabase, hasSupabase } from '$lib/supabase';
-	import { SCHOOL_DOMAIN, errMsg, sendOtp, signInWithPassword, verifyOtp } from '$lib/state.svelte';
+	import { SCHOOL_DOMAIN, errMsg, signInWithPassword } from '$lib/state.svelte';
 
 	const setup = page.url.searchParams.get('setup');
 
-	let mode: 'password' | 'otp-email' | 'otp-code' = $state('password');
-
-	// 비밀번호 로그인 (기본)
 	let pwLocal = $state('');
 	let pw = $state('');
 	const pwReady = $derived(pwLocal.trim().length >= 2 && pw.length >= 6);
-
-	// 인증 코드 로그인 (최초 등록 · 비밀번호 분실)
-	let otpLocal = $state('');
-	let otpEmail = $state('');
-	let code = $state('');
-	const codeOk = $derived(/^[0-9]{6,8}$/.test(code.trim()));
 
 	let busy = $state(false);
 	let msg = $state<string | null>(setup);
@@ -67,26 +55,6 @@
 			await signInWithPassword(pwLocal, pw);
 			await confirmStaff();
 		});
-	const sendCode = () =>
-		run(async () => {
-			otpEmail = await sendOtp(otpLocal);
-			mode = 'otp-code';
-		});
-	const verifyCode = () =>
-		run(async () => {
-			await verifyOtp(otpEmail, code);
-			await confirmStaff();
-		});
-
-	function toOtp() {
-		mode = 'otp-email';
-		msg = null;
-	}
-	function toPassword() {
-		mode = 'password';
-		code = '';
-		msg = null;
-	}
 </script>
 
 <div class="box">
@@ -97,7 +65,7 @@
 
 	{#if !hasSupabase}
 		<p class="err">PUBLIC_SUPABASE_URL 설정이 필요합니다.</p>
-	{:else if mode === 'password'}
+	{:else}
 		<div class="row">
 			<input class="field" bind:value={pwLocal} placeholder="학교 이메일 앞부분" autocapitalize="off" autocomplete="username" />
 			<span class="muted dom">@{SCHOOL_DOMAIN}</span>
@@ -111,19 +79,6 @@
 			onkeydown={(e) => e.key === 'Enter' && loginWithPassword()}
 		/>
 		<button class="btn" onclick={loginWithPassword} disabled={busy || !pwReady}>로그인</button>
-		<button class="btn-text" onclick={toOtp} disabled={busy}>처음이거나 비밀번호를 잊었다면</button>
-	{:else if mode === 'otp-email'}
-		<div class="row">
-			<input class="field" bind:value={otpLocal} placeholder="학교 이메일 앞부분" autocapitalize="off" />
-			<span class="muted dom">@{SCHOOL_DOMAIN}</span>
-		</div>
-		<button class="btn" onclick={sendCode} disabled={busy || otpLocal.trim().length < 2}>인증 코드 받기</button>
-		<button class="btn-text" onclick={toPassword} disabled={busy}>비밀번호로 로그인</button>
-	{:else}
-		<p class="muted"><strong>{otpEmail}</strong> 으로 인증 코드를 보냈어요.</p>
-		<input class="field" bind:value={code} inputmode="numeric" maxlength="8" placeholder="인증 코드" />
-		<button class="btn" onclick={verifyCode} disabled={busy || !codeOk}>들어가기</button>
-		<button class="btn-text" onclick={toPassword} disabled={busy}>비밀번호로 로그인</button>
 	{/if}
 </div>
 
@@ -164,11 +119,5 @@
 	.dom {
 		font-size: 14px;
 		white-space: nowrap;
-	}
-	.btn-text {
-		align-self: center;
-		font-size: 13px;
-		color: var(--text-2);
-		font-weight: 600;
 	}
 </style>
