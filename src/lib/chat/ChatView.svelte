@@ -119,6 +119,18 @@
 		// 개발용 미리보기에서 &sheet=profile 로 바로 열었을 때
 		if (room && sheet === 'profile' && !profile) untrack(() => void loadProfile());
 	});
+	// 대화 맨 위 소개 카드에 쓰려고 방을 열면 한 번 미리 불러온다 (실패해도 다시 조르지 않는다)
+	let introTried = false;
+	$effect(() => {
+		if (room?.snap && !introTried) {
+			introTried = true;
+			untrack(() => void loadProfile());
+		}
+	});
+	/** 소개 카드 둘째 줄 — "INFP · 밴드 · 기타", 적어 둔 게 없으면 앱 이름 */
+	const introLine = $derived(
+		[profile?.mbti, ...(profile?.interests ?? []).slice(0, 2)].filter(Boolean).join(' · ') || 'CNSATINDER 익명 대화'
+	);
 	// 방 화면을 보고 있음(presence) > 앱이 켜져 있음(heartbeat) > 꺼짐
 	const partnerOnline = $derived(!!room && (room.partnerHere || !!room.snap?.partner_online));
 
@@ -497,6 +509,15 @@
 		{#if loading}
 			<div class="empty muted">불러오는 중…</div>
 		{:else if room}
+			{#if room.snap}
+				<!-- 대화의 맨 처음 — 인스타 DM 처럼 상대 소개. 위로 끝까지 올리면 보인다 -->
+				<div class="intro">
+					<Avatar name={room.snap.partner_alias} size={88} online={partnerOnline} />
+					<h2>{room.snap.partner_alias}</h2>
+					<p>{introLine}</p>
+					<button class="intro-btn" onclick={() => openSheet('profile')}>프로필 보기</button>
+				</div>
+			{/if}
 			{#each room.msgs as m, i (m.client_msg_id)}
 				{@const p = pos(room.msgs, i)}
 				{#if m.sender_seat === 0}
@@ -832,6 +853,34 @@
 	.empty {
 		margin: auto;
 		font-size: 14px;
+	}
+	.intro {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+		padding: 20px 0 12px;
+		text-align: center;
+	}
+	.intro h2 {
+		margin: 10px 0 0;
+		font-size: 20px;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+	}
+	.intro p {
+		margin: 0;
+		font-size: 14px;
+		color: var(--text-2);
+	}
+	.intro-btn {
+		margin-top: 12px;
+		height: 34px;
+		padding: 0 16px;
+		border-radius: 10px;
+		background: var(--field);
+		font-size: 14px;
+		font-weight: 600;
 	}
 	.sys {
 		align-self: center;

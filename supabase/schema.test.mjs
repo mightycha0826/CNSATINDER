@@ -1988,5 +1988,42 @@ console.log('\n[62] ★ 메시지 공감 — 자리(seat)로만, 대화 중에�
 	check('관리자 대화 열람에 공감 표시 (자리별)', vm?.reactions?.[String(seatB)] === 'wow', JSON.stringify(vm));
 }
 
+console.log('\n[63] ★ 공감 푸시 — 상대 메시지에, 한 번만, 앱을 안 보고 있을 때만');
+{
+	const r = await fresh();
+	const seatA = Number(await rpcAs(A, 'my_seat', r));
+	const seatB = Number(await rpcAs(B, 'my_seat', r));
+	const say = async (uid, seat, body) =>
+		(await rowsAs(uid, `insert into public.messages (room_id, sender_seat, body, client_msg_id)
+		                    values ($1, $2, $3, gen_random_uuid()) returning id`, [r, seat, body]))[0].id;
+	const mA = await say(A, seatA, '실리카겔 좋아하세요?');
+	await db.query(`insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://push.example/a', 'k', 'x')
+	                on conflict do nothing`, [A]);
+	await db.query(`update public.user_presence set online_until = now() - interval '1 minute' where user_id = $1`, [A]);
+	const pay = (actor, msg) => svc('reaction_push_payload', msg, actor);
+
+	check('공감 전에는 보낼 것 없음', (await pay(B, mA)).skip === 'no_reaction');
+	await rpcAs(B, 'react_message', mA, 'heart');
+	const p = await pay(B, mA);
+	const aliasB = (await rpcAs(A, 'room_snapshot', r)).partner_alias;
+	check('상대 메시지에 공감 → A 의 기기로 알림', p.subs?.length === 1 && p.subs[0].endpoint === 'https://push.example/a', JSON.stringify(p));
+	check('제목 = 공감한 사람의 방 안 이름, 본문 = 공감 + 메시지', p.title === aliasB && p.body === '❤️ 공감: 실리카겔 좋아하세요?' && p.room_id === r, JSON.stringify(p));
+	check('★ 알림에 uuid 없음', ![A, B].some((u) => JSON.stringify({ ...p, subs: [] }).includes(u)));
+	check('같은 공감을 또 요청해도 한 번만', (await pay(B, mA)).skip === 'already');
+	await rpcAs(B, 'react_message', mA, 'laugh');
+	check('★ 공감을 바꿔도 다시 울리지 않는다 (알림 폭탄 방지)', (await pay(B, mA)).skip === 'already');
+
+	const mB = await say(B, seatB, '내 메시지');
+	await rpcAs(B, 'react_message', mB, 'fire');
+	check('내 메시지에 단 공감은 알림 없음', (await pay(B, mB)).skip === 'own_message');
+	check('★ 다른 사람이 대신 요청할 수 없다', (await pay(await person('m', 'f'), mA)).skip === 'not_member');
+
+	const mA2 = await say(A, seatA, '두 번째');
+	await rpcAs(B, 'react_message', mA2, 'wow');
+	await db.query(`update public.user_presence set online_until = now() + interval '1 minute' where user_id = $1`, [A]);
+	check('받는 사람이 앱을 보고 있으면 보내지 않는다', (await pay(B, mA2)).skip === 'online');
+	await expectError('★ 학생은 직접 부를 수 없다', () => rpcAs(B, 'reaction_push_payload', mA, B), 'permission denied');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

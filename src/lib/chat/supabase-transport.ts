@@ -1,6 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
-import { notifySent } from '../push';
+import { notifyReaction, notifySent } from '../push';
 import type { ChatTransport, TransportHandlers } from './transport';
 import type {
 	MsgRow,
@@ -206,7 +206,10 @@ export class SupabaseTransport implements ChatTransport {
 		try {
 			const { data, error } = await supabase.rpc('react_message', { p_message: messageId, p_emoji: emoji });
 			if (error) return 'network';
-			return (data as { status: ReactResult }).status;
+			const status = (data as { status: ReactResult }).status;
+			// 공감을 달았을 때만 (취소는 알리지 않는다). 보낼지 말지는 서버가 정한다.
+			if (status === 'ok' && emoji) notifyReaction(messageId);
+			return status;
 		} catch {
 			return 'network';
 		}

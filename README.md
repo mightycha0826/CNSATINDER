@@ -124,7 +124,7 @@ npm run dev
 - [ ] **Phase 14 적용** — `schema.sql` 을 다시 실행 (편지 서식 `letters.fmt`·`post_letter(text, jsonb)`). 안 하면 편지 올리기가 실패한다.
 - [ ] **Phase 15 적용** — `schema.sql` 을 다시 실행 (편지 하트 `private.letter_likes`·`set_letter_like`). 안 하면 편지 목록·상세가 오류.
 - [ ] **Phase 16 적용** — `schema.sql` 을 다시 실행 (공지사항 `private.notices`·`my_notices`). 안 하면 종 아이콘에 점이 뜨지 않고 `/admin/notices` 가 오류.
-- [ ] **Phase 17 적용** — `schema.sql` 을 다시 실행 (메시지 공감 `public.message_reactions`·`react_message`, Realtime 발행 포함).
+- [ ] **Phase 17 적용** — `schema.sql` 을 다시 실행 (메시지 공감 `public.message_reactions`·`react_message`·공감 알림 `reaction_push_payload`, Realtime 발행 포함).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
 - [ ] **운영자 점검 반영** — `schema.sql` 을 다시 실행 (신고 처리·글 내리기·운영 설정 RPC 의 역할 검사, 탈퇴 계정 제재 오류).
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
@@ -229,5 +229,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       어디까지 봤는지는 계정에 저장(`private.notice_reads`). 올리기·내리기는 관리자만(`/admin/notices`), 활동 기록에 남음
 - [x] **Phase 17 — 메시지 공감** — ❤️ 😂 😮 😢 👍 🔥. 말풍선 두 번 톡 = ❤️, 길게 누르기(데스크톱 오른쪽 클릭) = 고르기 + 복사.
       자리(seat)마다 하나, 대화 중에만. `messages` 는 그대로 두고 별도 표에 자리로만 남긴다(사용자 식별자 없음).
-      취소는 행 삭제가 아니라 emoji = null (Realtime DELETE 는 방 필터·RLS 가 안 걸려서). 관리자 대화 열람에도 보인다
+      취소는 행 삭제가 아니라 emoji = null (Realtime DELETE 는 방 필터·RLS 가 안 걸려서). 관리자 대화 열람에도 보인다.
+      상대 메시지에 처음 단 공감은 푸시 알림("❤️ 공감: …") — 메시지 하나 × 사람 하나에 한 번(`private.reaction_push_log`)
+- [x] **대화 소개 카드** — 대화 맨 위에 상대의 큰 아바타 · 익명 이름 · MBTI·관심사 한 줄 · "프로필 보기" (인스타 DM 첫 화면)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

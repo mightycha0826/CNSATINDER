@@ -3272,3 +3272,60 @@ end
 $fn$;
 revoke all on function public.react_message(bigint, text) from public, anon;
 grant execute on function public.react_message(bigint, text) to authenticated;
+
+-- ── 공감 푸시 알림 ─────────────────────────────────────────────────
+-- 상대 메시지에 공감을 달면 상대에게 알림. /api/push 가 { reaction_message_id } 로 부른다.
+--  · 메시지 하나 × 자리 하나에 딱 한 번 — 공감을 바꾸거나 껐다 켜도 다시 울리지 않는다 (연타로 알림 폭탄 방지)
+--  · 내 메시지에 단 공감, 받는 사람이 앱을 보고 있을 때(이미 보인다)는 보내지 않는다
+--  · 문구에 uuid 없음 — 제목은 공감한 사람의 방 안 이름
+create table if not exists private.reaction_push_log (
+  message_id bigint   not null references public.messages(id) on delete cascade,
+  seat       smallint not null,
+  created_at timestamptz not null default now(),
+  primary key (message_id, seat)
+);
+alter table private.reaction_push_log enable row level security;
+
+create or replace function public.reaction_push_payload(p_message bigint, p_actor uuid)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  m      public.messages%rowtype;
+  r      public.rooms%rowtype;
+  v_seat smallint;
+  v_rx   public.message_reactions%rowtype;
+  v_to   uuid;
+  v_subs jsonb;
+begin
+  select * into m from public.messages where id = p_message;
+  if not found then return jsonb_build_object('skip', 'no_message'); end if;
+  select seat into v_seat from public.room_members where room_id = m.room_id and user_id = p_actor;
+  if v_seat is null then return jsonb_build_object('skip', 'not_member'); end if;
+  if m.sender_seat = v_seat or m.sender_seat = 0 then return jsonb_build_object('skip', 'own_message'); end if;
+  select * into v_rx from public.message_reactions where message_id = p_message and seat = v_seat;
+  if not found or v_rx.emoji is null then return jsonb_build_object('skip', 'no_reaction'); end if;
+  if v_rx.updated_at < now() - interval '2 minutes' then return jsonb_build_object('skip', 'stale'); end if;
+  select * into r from public.rooms where id = m.room_id;
+  if r.status = 'closed' then return jsonb_build_object('skip', 'closed'); end if;
+
+  insert into private.reaction_push_log (message_id, seat) values (p_message, v_seat) on conflict do nothing;
+  if not found then return jsonb_build_object('skip', 'already'); end if;
+
+  select user_id into v_to from public.room_members where room_id = m.room_id and seat = m.sender_seat;
+  if exists (select 1 from public.user_presence where user_id = v_to and online_until > now()) then
+    return jsonb_build_object('skip', 'online');
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth)), '[]'::jsonb)
+    into v_subs from public.push_subscriptions where user_id = v_to;
+  if jsonb_array_length(v_subs) = 0 then return jsonb_build_object('skip', 'no_device'); end if;
+
+  return jsonb_build_object(
+    'title',   case when v_seat = 1 then r.alias1 else r.alias2 end,
+    'body',    (case v_rx.emoji when 'heart' then '❤️' when 'laugh' then '😂' when 'wow' then '😮'
+                               when 'sad' then '😢' when 'like' then '👍' else '🔥' end)
+               || ' 공감: ' || left(m.body, 80),
+    'room_id', m.room_id,
+    'subs',    v_subs);
+end
+$fn$;
+revoke all on function public.reaction_push_payload(bigint, uuid) from public, anon, authenticated;
+grant execute on function public.reaction_push_payload(bigint, uuid) to service_role;

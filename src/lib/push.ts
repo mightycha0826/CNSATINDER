@@ -106,6 +106,13 @@ export function notifyLetterComment(commentId: number) {
 	requestPush({ letter_comment_id: commentId });
 }
 
+/**
+ * 채팅 메시지에 공감을 단 직후. 상대 메시지에 처음 단 공감만, 상대가 앱을 안 보고 있을 때만 서버가 보낸다.
+ */
+export function notifyReaction(messageId: number) {
+	requestPush({ reaction_message_id: messageId });
+}
+
 function requestPush(body: Record<string, number>) {
 	void (async () => {
 		const { data } = await supabase.auth.getSession();
