@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import { Inbox, type InboxRoom } from '$lib/inbox.svelte';
-	import { S, toast } from '$lib/state.svelte';
+	import { S, UI, toast } from '$lib/state.svelte';
 	import { Seeker } from '$lib/seeker.svelte';
 	import { enablePush, pushState } from '$lib/push';
 	import { isRestricted } from '$lib/restriction';
@@ -40,8 +41,12 @@
 	$effect(() => {
 		inbox.start();
 		// 대화가 끝나고 "새 대화 찾기"로 왔으면 바로 찾기 시작
-		if (page.url.searchParams.has('seek')) {
-			void goto('/', { replaceState: true, keepFocus: true, noScroll: true });
+		if (untrack(() => UI.seekOnHome)) {
+			UI.seekOnHome = false;
+			seeker.start();
+		} else if (page.url.searchParams.has('seek')) {
+			// 옛 주소(/?seek) 호환 — 주소만 정리
+			void goto('/', { replaceState: true, keepFocus: true, noScroll: true, state: page.state });
 			seeker.start();
 		}
 		return () => {
@@ -95,7 +100,17 @@
 </script>
 
 <div class="topbar">
-	<span class="title wordmark">CNSATINDER</span>
+	<!-- 로고 = 홈(채팅). 이미 홈이면 맨 위로 -->
+	<a
+		class="title wordmark logo"
+		href="/"
+		draggable="false"
+		onclick={(e) => {
+			if (page.url.pathname !== '/') return;
+			e.preventDefault();
+			window.scrollTo({ top: 0, behavior: 'smooth' });
+		}}>CNSATINDER</a
+	>
 	<TopbarMe />
 </div>
 

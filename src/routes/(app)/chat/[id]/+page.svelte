@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/nav';
 	import { page } from '$app/state';
 	import { ChatRoom } from '$lib/chat/room.svelte';
 	import ChatView from '$lib/chat/ChatView.svelte';
@@ -22,7 +22,7 @@
 				// 내 방이 아니거나 없는 방 — 목록으로
 				if (!cancelled) {
 					toast('대화를 찾을 수 없어요');
-					void goto('/', { replaceState: true });
+					goBack('/'); // 홈 위에 홈을 쌓지 않게 (lib/nav.ts)
 				}
 				return;
 			}

@@ -51,7 +51,9 @@ export const UI = $state({
 	installEvt: null as BeforeInstallPromptEvent | null,
 	busy: false,
 	/** 로그인 직후 갈 곳 — 비밀번호 찾기로 들어왔으면 새 비밀번호 화면으로 */
-	afterLogin: null as string | null
+	afterLogin: null as string | null,
+	/** 대화방에서 "새 대화 찾기"로 홈에 돌아왔다 — 홈이 바로 찾기를 시작한다 (lib/nav.ts backToSeek) */
+	seekOnHome: false
 });
 
 // ── 토스트 ────────────────────────────────────────────────────────────

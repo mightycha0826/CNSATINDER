@@ -3,7 +3,6 @@
 	 * 대화방 화면 — ChatRoom 상태만 읽어서 그린다.
 	 * 실제 방(/chat)과 개발용 미리보기(/dev/chat)가 같은 컴포넌트를 쓴다.
 	 */
-	import { goto } from '$app/navigation';
 	import { tick, untrack } from 'svelte';
 	import { S, toast } from '$lib/state.svelte';
 	import type { ChatRoom } from './room.svelte';
@@ -12,6 +11,7 @@
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import ReportPicker from '$lib/ui/ReportPicker.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
+	import { backToSeek, goBack } from '$lib/nav';
 	import { mmss as fmtClock } from '$lib/time';
 
 	let {
@@ -88,7 +88,7 @@
 
 	async function skip() {
 		await room?.leave(true);
-		void goto('/?seek', { replaceState: true });
+		backToSeek();
 	}
 
 	// ── 메뉴 · 신고 · 차단 ───────────────────────────────────────
@@ -440,7 +440,7 @@
 	style:--vv-top={`${vvTop}px`}
 >
 	<header class="topbar">
-		<BackButton href="/" />
+		<BackButton href="/" history />
 
 		{#if room?.snap}
 			{@const alias = room.snap.partner_alias}
@@ -585,8 +585,8 @@
 				<div class="ended">
 					<p>{endedText}</p>
 					<p class="muted small">이 대화는 이 화면을 떠나면 다시 볼 수 없어요.</p>
-					<button class="btn" onclick={() => goto('/?seek', { replaceState: true })}>새 대화 찾기</button>
-					<button class="btn-ghost" onclick={() => goto('/', { replaceState: true })}>대화 목록</button>
+					<button class="btn" onclick={backToSeek}>새 대화 찾기</button>
+					<button class="btn-ghost" onclick={() => goBack('/')}>대화 목록</button>
 					{#if !room.reported}
 						<!-- 대화가 끝난 뒤에야 신고를 결심하는 경우가 많다 — 서버는 닫힌 방도 받는다 -->
 						<button class="btn-text report-after" onclick={() => openSheet('report')}>이 대화 신고하기</button>

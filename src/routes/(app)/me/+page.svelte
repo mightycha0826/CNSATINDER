@@ -222,7 +222,7 @@
 </script>
 
 <div class="topbar">
-	<BackButton href="/" />
+	<BackButton href="/" history />
 	<span class="title">내 프로필</span>
 </div>
 

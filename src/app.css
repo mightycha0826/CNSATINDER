@@ -90,6 +90,10 @@ body:not(.admin) {
 	user-select: none;
 	-webkit-touch-callout: none;
 }
+/* 링크·그림을 끌면 주소·그림이 딸려 나오는 것도 막는다 (누르면 이동은 그대로) */
+body:not(.admin) :is(a, img) {
+	-webkit-user-drag: none;
+}
 body:not(.admin) :is(input, textarea, [contenteditable='true'], .selectable) {
 	-webkit-user-select: text;
 	user-select: text;

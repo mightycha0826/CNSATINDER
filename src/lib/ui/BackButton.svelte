@@ -1,14 +1,16 @@
 <script lang="ts">
 	/**
 	 * 상단 바 왼쪽 뒤로가기.
-	 * history = true 면 브라우저 뒤로가기(스크롤 자리 유지), 들어온 기록이 없으면(알림으로 바로 열림) href 로.
+	 * history = true 면 브라우저 뒤로가기(스크롤 자리 유지 · 기록이 쌓이지 않음), 들어온 기록이 없으면(알림으로 바로 열림)
+	 * href 로 바꿔 끼운다 — lib/nav.ts goBack. false 면 href 로 이동.
 	 */
 	import { goto } from '$app/navigation';
+	import { goBack } from '$lib/nav';
 
 	let { href = '/', history: useHistory = false }: { href?: string; history?: boolean } = $props();
 
 	function back() {
-		if (useHistory && history.length > 1) history.back();
+		if (useHistory) goBack(href);
 		else void goto(href);
 	}
 </script>
