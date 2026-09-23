@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import type { LiveUser } from '$lib/adminTypes';
+	import { fmtClock, type LiveUser } from '$lib/adminTypes';
 	import { ago } from '$lib/time';
 	import Sid from '$lib/admin/Sid.svelte';
 
@@ -18,7 +18,7 @@
 		async function tick() {
 			if (document.visibilityState !== 'visible') return;
 			try {
-				const res = await fetch('/admin/live/status');
+				const res = await fetch('/admin/live/status', { cache: 'no-store' });
 				if (res.redirected) return void (location.href = '/admin/login');
 				if (!res.ok) throw new Error(String(res.status));
 				fresh = await res.json();
@@ -51,13 +51,19 @@
 	let tab = $state<Tab>(fromUrl && TAB_KEYS.includes(fromUrl) ? fromUrl : 'all');
 	let q = $state('');
 
+	// 켜져 있는 사람의 last_seen 은 30초마다 앞으로 밀리므로, 그걸로 정렬하면 갱신 때마다 줄이 뒤섞인다.
+	// 상태 → 앱 켜짐 먼저 → (오프라인만) 마지막 접속 → 이름 순으로 고정한다.
+	const seen = (u: LiveUser) => Date.parse(u.last_seen ?? '1970-01-01');
 	const rows = $derived(
 		users
 			.map((u) => ({ u, st: stOf(u), label: data.students[u.id] ?? '' }))
 			.sort(
 				(a, b) =>
 					RANK[a.st] - RANK[b.st] ||
-					Date.parse(b.u.last_seen ?? '1970-01-01') - Date.parse(a.u.last_seen ?? '1970-01-01')
+					Number(b.u.online) - Number(a.u.online) ||
+					(a.st === 'offline' ? seen(b.u) - seen(a.u) : 0) ||
+					(a.u.nickname ?? '').localeCompare(b.u.nickname ?? '', 'ko') ||
+					a.u.id.localeCompare(b.u.id)
 			)
 	);
 	const count = $derived({
@@ -94,7 +100,7 @@
 		const a = ago(iso, now);
 		return /[분간일]$/.test(a) ? `${a} 전` : a;
 	}
-	const clock = $derived(new Date(now).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+	const clock = $derived(fmtClock(now));
 </script>
 
 <header class="a-head">

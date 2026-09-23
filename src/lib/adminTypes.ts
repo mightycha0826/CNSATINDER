@@ -215,8 +215,26 @@ export const CLOSE_LABEL: Record<string, string> = {
 	admin: '운영 조치'
 };
 
-export const fmtTime = (s: string) =>
-	new Date(s).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+/**
+ * 표에 쓰는 시각 — "9/23 14:05". 짧고 폭이 일정해서 칸 안에서 줄바꿈되지 않는다.
+ * 운영자 화면은 서버(Cloudflare, UTC)에서 그리므로 시간대를 한국으로 못박는다 — 안 그러면 9시간 어긋난다.
+ */
+const KST = new Intl.DateTimeFormat('en-US', {
+	timeZone: 'Asia/Seoul',
+	month: 'numeric',
+	day: 'numeric',
+	hour: '2-digit',
+	minute: '2-digit',
+	hourCycle: 'h23'
+});
+export function fmtTime(s: string) {
+	const p = Object.fromEntries(KST.formatToParts(new Date(s)).map((x) => [x.type, x.value]));
+	return `${p.month}/${p.day} ${p.hour}:${p.minute}`;
+}
+
+/** 메시지 시각 — "14:05:09" (한국 시간) */
+export const fmtClock = (s: string | number) =>
+	new Date(s).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 /** 사용자 id 앞 6자리 — 같은 사람인지 알아보는 용도. 신원이 아니다. */
 export const shortId = (id: string | null | undefined) => (id ? id.slice(0, 6) : '—');

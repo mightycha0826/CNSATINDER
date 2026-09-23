@@ -7,8 +7,18 @@
  *   · Supabase API / 웹소켓 요청에는 절대 손대지 않는다
  */
 
-const VERSION = 'cnsatinder-v6'; // 아이콘을 바꾸면 올린다 — 설치된 앱이 캐시를 새로 받는다
+// v7: v6 까지는 같은 출처의 GET 을 전부 캐시 우선으로 돌려줘서, 운영자 화면 데이터(__data.json)와
+//     실시간 현황(/admin/live/status)이 처음 받은 사본에 멈춰 있었다. 올리면 그 캐시가 통째로 지워진다.
+const VERSION = 'cnsatinder-v7';
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/manifest.webmanifest'];
+
+/**
+ * 캐시해도 되는 것 = 내용이 바뀌면 주소도 바뀌는 파일뿐.
+ *   · /_app/immutable/ — 빌드 해시가 붙은 JS·CSS
+ *   · SHELL 의 아이콘·매니페스트
+ * 그 밖의 요청(페이지 데이터 __data.json, /admin, /api, version.json …)은 서비스워커가 아예 손대지 않는다.
+ */
+const cacheable = (url) => url.pathname.startsWith('/_app/immutable/') || (url.pathname !== '/' && SHELL.includes(url.pathname));
 
 self.addEventListener('install', (e) => {
 	e.waitUntil(
@@ -75,6 +85,8 @@ self.addEventListener('fetch', (e) => {
 	const url = new URL(req.url);
 	// 외부 출처(Supabase REST/Realtime 등)는 건드리지 않는다
 	if (url.origin !== self.location.origin) return;
+	// 운영자 화면은 서버에서 매번 새로 그린다 — 네비게이션도 가로채지 않는다
+	if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) return;
 
 	// 네비게이션: 네트워크 우선, 실패 시 캐시된 앱 셸
 	if (req.mode === 'navigate') {
@@ -84,7 +96,8 @@ self.addEventListener('fetch', (e) => {
 		return;
 	}
 
-	// 정적 자산: 캐시 우선 (빌드 해시가 붙으므로 안전)
+	// 해시가 붙은 정적 자산만 캐시 우선. 나머지는 브라우저가 평소처럼 네트워크로.
+	if (!cacheable(url)) return;
 	e.respondWith(
 		caches.match(req).then(
 			(hit) =>

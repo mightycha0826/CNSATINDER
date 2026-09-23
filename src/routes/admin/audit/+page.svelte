@@ -51,45 +51,106 @@
 	</div>
 </header>
 
-<div class="a-scroll">
-	<table class="a-table">
-		<thead>
-			<tr><th>시각</th><th>누가</th><th>무엇을</th><th>대상</th><th>내용</th></tr>
-		</thead>
-		<tbody>
-			{#each data.log as a (a.id)}
-				<tr class:identity={VIEW.has(a.action)}>
-					<td class="num muted">{fmtTime(a.created_at)}</td>
-					<td class="mono">
-						{#if a.staff_id}<a href="/admin/users/{a.staff_id}">{shortId(a.staff_id)}</a>{:else}시스템{/if}
-					</td>
-					<td class="act">{LABEL[a.action] ?? a.action}</td>
-					<td class="mono">
-						{#if a.detail?.room}<a href="/admin/rooms/{a.detail.room}">대화 {shortId(String(a.detail.room))}</a>
-						{:else if letterOf(a.detail)}<a href="/admin/posts/{letterOf(a.detail)}">편지 #{letterOf(a.detail)}</a>
-						{:else if a.target_user}<a href="/admin/users/{a.target_user}">{shortId(a.target_user)}</a>
-						{:else if a.report_id}<a href="/admin/{a.action.includes('letter') ? 'letters' : 'reports'}/{a.report_id}">신고 {shortId(a.report_id)}</a>
-						{:else}—{/if}
-					</td>
-					<td class="d">{detail(a)}</td>
-				</tr>
-			{:else}
-				<tr><td colspan="5" class="a-empty">아직 기록이 없어요.</td></tr>
-			{/each}
-		</tbody>
-	</table>
-</div>
+<table class="a-table log">
+	<thead>
+		<tr><th>시각</th><th>누가</th><th>무엇을</th><th>대상</th><th>내용</th></tr>
+	</thead>
+	<tbody>
+		{#each data.log as a (a.id)}
+			<tr class:identity={VIEW.has(a.action)}>
+				<td class="num muted">{fmtTime(a.created_at)}</td>
+				<td class="mono">
+					{#if a.staff_id}<a href="/admin/users/{a.staff_id}">{shortId(a.staff_id)}</a>{:else}<span class="muted">시스템</span>{/if}
+				</td>
+				<td class="act">{LABEL[a.action] ?? a.action}</td>
+				<td class="tgt">
+					{#if a.detail?.room}<a href="/admin/rooms/{a.detail.room}">대화 <span class="mono">{shortId(String(a.detail.room))}</span></a>
+					{:else if letterOf(a.detail)}<a href="/admin/posts/{letterOf(a.detail)}">편지 #{letterOf(a.detail)}</a>
+					{:else if a.target_user}<a class="mono" href="/admin/users/{a.target_user}">{shortId(a.target_user)}</a>
+					{:else if a.report_id}<a href="/admin/{a.action.includes('letter') ? 'letters' : 'reports'}/{a.report_id}">신고 <span class="mono">{shortId(a.report_id)}</span></a>
+					{:else}<span class="muted">—</span>{/if}
+				</td>
+				<td class="d">{detail(a)}</td>
+			</tr>
+		{:else}
+			<tr><td colspan="5" class="a-empty">아직 기록이 없어요.</td></tr>
+		{/each}
+	</tbody>
+</table>
 
 <style>
+	/* 내용 칸만 여러 줄이 될 수 있다 — 모든 칸을 윗줄에 맞춰서 첫 줄 높이가 같게 */
+	.log td {
+		vertical-align: top;
+		line-height: 1.5;
+	}
+	.log .act,
+	.log .tgt {
+		white-space: nowrap;
+	}
 	.act {
 		font-weight: 600;
-		white-space: nowrap;
 	}
 	.identity .act {
 		color: var(--danger);
 	}
 	.d {
+		width: 100%;
 		color: var(--text-2);
 		font-size: 13px;
+		word-break: keep-all;
+		overflow-wrap: anywhere;
+	}
+	.log .d:empty::before {
+		content: '—';
+	}
+
+	/* 폰: 한 기록 = 한 카드. 윗줄 "무엇을 · 대상", 아랫줄 "시각 · 누가", 그 아래 내용 */
+	@media (max-width: 640px) {
+		.log thead {
+			display: none;
+		}
+		.log tr {
+			display: grid;
+			grid-template-columns: auto 1fr;
+			gap: 2px 10px;
+			padding: 10px 0;
+			border-bottom: 1px solid var(--line);
+		}
+		/* 공용 .a-table td 보다 우선하도록 .log 를 두 번 */
+		.log.log td {
+			padding: 0;
+			border: 0;
+			background: none;
+		}
+		.log .act {
+			grid-row: 1;
+			grid-column: 1;
+		}
+		.log .tgt {
+			grid-row: 1;
+			grid-column: 2;
+			text-align: right;
+		}
+		.log .num {
+			grid-row: 2;
+			grid-column: 1;
+			font-size: 12px;
+		}
+		.log .mono:nth-child(2) {
+			grid-row: 2;
+			grid-column: 2;
+			text-align: right;
+		}
+		.log .d {
+			grid-column: 1 / -1;
+			width: auto;
+		}
+		.log .d:empty {
+			display: none;
+		}
+		.log .a-empty {
+			grid-column: 1 / -1;
+		}
 	}
 </style>

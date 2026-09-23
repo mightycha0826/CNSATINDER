@@ -11,6 +11,27 @@
 		return () => document.body.classList.remove('admin');
 	});
 
+	// 예전 서비스워커(cnsatinder-v6 까지)는 운영자 데이터까지 캐시해서 옛 화면을 계속 돌려줬다.
+	// 새 워커를 바로 받아오게 하고, 그 사이에 쓰일 수 있는 캐시된 운영자 응답은 지금 지운다.
+	$effect(() => {
+		void (async () => {
+			try {
+				await (await navigator.serviceWorker?.getRegistration())?.update();
+			} catch {
+				/* 오프라인 등 — 다음에 다시 */
+			}
+			try {
+				for (const name of await caches.keys()) {
+					const c = await caches.open(name);
+					for (const req of await c.keys())
+						if (new URL(req.url).pathname.startsWith('/admin')) await c.delete(req);
+				}
+			} catch {
+				/* caches 를 못 쓰는 환경 */
+			}
+		})();
+	});
+
 	const NAV = $derived(
 		[
 			{ href: '/admin/live', label: '실시간' },

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { CLOSE_LABEL, fmtTime } from '$lib/adminTypes';
+	import { CLOSE_LABEL, fmtClock, fmtTime } from '$lib/adminTypes';
 	import Sid from '$lib/admin/Sid.svelte';
 
 	let { data } = $props();
 	const v = $derived(data.v);
 	const seat = (n: number) => v.members.find((m) => m.seat === n);
-	const time = (s: string) => new Date(s).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+	const time = fmtClock;
 	const userMsgs = $derived(v.messages.filter((m) => m.seat > 0).length);
 </script>
 

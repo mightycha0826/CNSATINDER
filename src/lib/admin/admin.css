@@ -115,6 +115,12 @@ body.admin .a-table td {
 	border-bottom: 1px solid var(--line);
 	vertical-align: middle;
 }
+/* 시각·짧은 ID 칸은 한 줄로 — 칸이 좁아져도 "9/23 / 14:05" 처럼 쪼개지지 않게 */
+body.admin .a-table td.num,
+body.admin .a-table td.mono {
+	white-space: nowrap;
+	word-break: normal;
+}
 body.admin .a-table tr:hover td {
 	background: var(--surface);
 }

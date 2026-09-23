@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { REASON_LABEL, STATUS_LABEL, fmtTime, type Identity } from '$lib/adminTypes';
+	import { REASON_LABEL, STATUS_LABEL, fmtClock, fmtTime, type Identity } from '$lib/adminTypes';
 	import SanctionForm from '$lib/admin/SanctionForm.svelte';
 	import { confirmed } from '$lib/admin/confirm';
 
@@ -9,7 +9,7 @@
 	const r = $derived(d.report);
 	const admin = $derived(data.staff?.role === 'admin');
 
-	const time = (s: string) => new Date(s).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+	const time = fmtClock;
 	const suspended = $derived(!!d.reported?.suspended_until && Date.parse(d.reported.suspended_until) > Date.now());
 
 	const askIdentity = confirmed(() => '두 사람의 학교 이메일을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
