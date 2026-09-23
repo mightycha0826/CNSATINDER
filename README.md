@@ -93,7 +93,9 @@ npm run dev
 - 운영진 명단에서 지우면 로그인 쿠키가 살아 있어도 다음 요청부터 차단된다.
 - `ADMIN_SESSION_SECRET` 을 바꾸면 운영진 전원이 즉시 로그아웃된다 (비상시).
 - **학번-이름 명렬표**: "이메일 확인"으로 나온 학교 이메일 앞자리(학번) 옆에 실명을 괄호로 보여준다.
-  `node scripts/import-roster.mjs <학번,이름 CSV> <학년>` 으로 학년별로 반영 (원본 xlsx/csv 는 절대 커밋하지 않는다 — `.gitignore` 에 `*roster*` 패턴으로 막아둠).
+  `node scripts/import-roster.mjs <학번,이름 CSV>` 로 반영 — 여러 학년을 한 파일에 섞어도 되고(학년은 학번 첫 자리),
+  엑셀 CSV(CP949)·CSV UTF-8 둘 다 읽는다. `--dry-run` 으로 학년별 인원만 먼저 확인할 수 있다.
+  원본 xlsx/csv 는 절대 커밋하지 않는다 — `.gitignore` 에 `*roster*` 패턴으로 막아둠.
   새로운 열람 경로가 아니라 이미 기록되는 "이메일 확인"에 얹은 것뿐이다.
 
 ## 배포 전 체크리스트
@@ -107,8 +109,8 @@ npm run dev
 - [ ] **Phase 8 적용** — `schema.sql` 을 SQL Editor 에서 다시 실행 (익명 이름·프로필·여러 대화). 안 하면 새 화면이 프로필을 못 읽는다.
 - [ ] **Phase 11 적용** — `schema.sql` 을 다시 실행 (관리자 권한 확장 RPC). 안 하면 사용자·전체 대화 화면이 오류.
 - [ ] **Phase 10 적용** — `schema.sql` 을 다시 실행 (익명편지 테이블·RPC). 안 하면 익명편지 탭이 비어 보인다.
-- [ ] **Phase 12 적용** — `schema.sql` 을 다시 실행 (학번-이름 명렬표 RPC). 이어서 `node scripts/import-roster.mjs`
-      로 학년별 CSV 반영 (2학년·3학년은 명단이 오는 대로).
+- [ ] **Phase 12 적용** — `schema.sql` 을 다시 실행 (학번-이름 명렬표 RPC). 이어서
+      `node scripts/import-roster.mjs <1~3학년 합친 CSV>` 로 명단 반영.
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
       Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
 - [ ] **푸시 알림 키** — `.env` 의 `PUBLIC_VAPID_KEY`·`VAPID_PRIVATE_KEY`(Secret)·`VAPID_SUBJECT` 를 Cloudflare Variables and Secrets 에도.
@@ -146,7 +148,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `npm run test:platform` | 설치 안내 — 실제 UA 로 iOS/안드로이드·카카오톡 등 인앱 브라우저 판별 검증 |
 | `npm run test:push` | 푸시 알림 암호화(RFC 8291)·VAPID 서명(RFC 8292) — 받는 브라우저 입장에서 복호화·검증 |
 | `node scripts/vapid-keys.mjs` | 푸시 알림용 VAPID 키를 만들어 `.env` 에 추가 (이미 있으면 그대로) |
-| `node scripts/import-roster.mjs <csv> <학년>` | 학번-이름 명렬표를 DB 에 반영 (관리자 화면의 이메일 확인 옆 이름 표시용) |
+| `node scripts/import-roster.mjs <csv> [--dry-run]` | 학번-이름 명렬표를 DB 에 반영 (관리자 화면의 이메일 확인 옆 이름 표시용) |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.*`(png/webp/jpg 아무거나) (헤드리스 Chrome 사용) |
 
