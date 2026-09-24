@@ -1623,6 +1623,24 @@ grant execute on function public.save_push_subscription(text, text, text), publi
 
 -- ★ service_role 전용 — 알림을 보낼지, 누구에게, 무슨 문구로.
 --   p_sender 는 서버가 JWT 로 확인한 보낸 사람. 그 사람이 실제로 보낸 메시지일 때만 동작한다.
+-- 받는 사람의 알림 대상 — 채팅 메시지 · 편지 댓글 · 공감 알림이 같이 쓴다.
+--   지금 앱을 보고 있으면 보내지 않는다(앱 안에서 이미 보인다) → { skip: 'online' }
+--   알림을 켠 기기가 없으면 → { skip: 'no_device' },  있으면 → { subs: [{endpoint, p256dh, auth}, …] }
+create or replace function private.push_target(p_user uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare v_subs jsonb;
+begin
+  if exists (select 1 from public.user_presence where user_id = p_user and online_until > now()) then
+    return jsonb_build_object('skip', 'online');
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth)), '[]'::jsonb)
+    into v_subs from public.push_subscriptions where user_id = p_user;
+  if jsonb_array_length(v_subs) = 0 then return jsonb_build_object('skip', 'no_device'); end if;
+  return jsonb_build_object('subs', v_subs);
+end
+$fn$;
+revoke all on function private.push_target(uuid) from public, anon, authenticated;
+
 create or replace function public.push_payload(p_message bigint, p_sender uuid)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare
@@ -1645,14 +1663,9 @@ begin
   if not found then return jsonb_build_object('skip', 'already'); end if;
 
   select user_id into v_to from public.room_members where room_id = m.room_id and seat <> m.sender_seat;
-  -- 받는 사람이 지금 앱을 보고 있으면 보내지 않는다 (앱 안에서 이미 보인다)
-  if exists (select 1 from public.user_presence where user_id = v_to and online_until > now()) then
-    return jsonb_build_object('skip', 'online');
-  end if;
-
-  select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth)), '[]'::jsonb)
-    into v_subs from public.push_subscriptions where user_id = v_to;
-  if jsonb_array_length(v_subs) = 0 then return jsonb_build_object('skip', 'no_device'); end if;
+  v_subs := private.push_target(v_to);          -- 앱을 보고 있거나 기기가 없으면 { skip }
+  if v_subs ? 'skip' then return v_subs; end if;
+  v_subs := v_subs -> 'subs';
 
   -- ★ 알림 문구에 uuid 는 없다. 제목 = 받는 사람이 보는 상대 이름(보낸 사람의 익명 이름).
   return jsonb_build_object(
@@ -2493,13 +2506,9 @@ begin
 
   if v_to is null or v_to = p_actor then return jsonb_build_object('skip', 'self'); end if;
   if private.blocked_between(v_to, p_actor) then return jsonb_build_object('skip', 'blocked'); end if;
-  if exists (select 1 from public.user_presence where user_id = v_to and online_until > now()) then
-    return jsonb_build_object('skip', 'online');
-  end if;
-
-  select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth)), '[]'::jsonb)
-    into v_subs from public.push_subscriptions where user_id = v_to;
-  if jsonb_array_length(v_subs) = 0 then return jsonb_build_object('skip', 'no_device'); end if;
+  v_subs := private.push_target(v_to);
+  if v_subs ? 'skip' then return v_subs; end if;
+  v_subs := v_subs -> 'subs';
 
   -- ★ uuid 없음. 이름은 이 편지 안에서만 쓰는 임시 이름.
   return jsonb_build_object(
@@ -3311,12 +3320,9 @@ begin
   if not found then return jsonb_build_object('skip', 'already'); end if;
 
   select user_id into v_to from public.room_members where room_id = m.room_id and seat = m.sender_seat;
-  if exists (select 1 from public.user_presence where user_id = v_to and online_until > now()) then
-    return jsonb_build_object('skip', 'online');
-  end if;
-  select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth)), '[]'::jsonb)
-    into v_subs from public.push_subscriptions where user_id = v_to;
-  if jsonb_array_length(v_subs) = 0 then return jsonb_build_object('skip', 'no_device'); end if;
+  v_subs := private.push_target(v_to);
+  if v_subs ? 'skip' then return v_subs; end if;
+  v_subs := v_subs -> 'subs';
 
   return jsonb_build_object(
     'title',   case when v_seat = 1 then r.alias1 else r.alias2 end,

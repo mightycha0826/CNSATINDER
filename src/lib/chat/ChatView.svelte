@@ -6,7 +6,13 @@
 	import { tick, untrack } from 'svelte';
 	import { S, toast } from '$lib/state.svelte';
 	import type { ChatRoom } from './room.svelte';
-	import { REACTIONS, REACTION_EMOJI, type Msg, type PartnerProfile, type ReactionKey, type ReportReason } from './types';
+	import type { Msg, PartnerProfile, ReactionKey, ReportReason } from './types';
+	import ChatIntro from './ChatIntro.svelte';
+	import PartnerCard from './PartnerCard.svelte';
+	import ReactionBadge from './ReactionBadge.svelte';
+	import ReactionPicker from './ReactionPicker.svelte';
+	import { pressGestures } from './gestures';
+	import { summarize } from './reactions';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import ReportPicker from '$lib/ui/ReportPicker.svelte';
@@ -127,10 +133,6 @@
 			untrack(() => void loadProfile());
 		}
 	});
-	/** 소개 카드 둘째 줄 — "INFP · 밴드 · 기타", 적어 둔 게 없으면 앱 이름 */
-	const introLine = $derived(
-		[profile?.mbti, ...(profile?.interests ?? []).slice(0, 2)].filter(Boolean).join(' · ') || 'CNSATINDER 익명 대화'
-	);
 	// 방 화면을 보고 있음(presence) > 앱이 켜져 있음(heartbeat) > 꺼짐
 	const partnerOnline = $derived(!!room && (room.partnerHere || !!room.snap?.partner_online));
 
@@ -351,59 +353,13 @@
 		}
 	}
 
-	// 길게 누르기 · 두 번 톡 — pointer 이벤트로 직접 (모바일 브라우저의 dblclick 은 믿을 수 없다)
-	const LONG_MS = 450;
-	let press: { timer: ReturnType<typeof setTimeout>; x: number; y: number } | null = null;
-	let longFired = false;
-	let lastTap = { id: -1, at: 0 };
+	const press = pressGestures<Msg>({
+		onLong: (m, el) => openPicker(m, el),
+		onDouble: (m) => {
+			if (canReact(m)) void doReact(m.id!, 'heart');
+		}
+	});
 
-	function clearPress() {
-		if (press) clearTimeout(press.timer);
-		press = null;
-	}
-	function onBubbleDown(e: PointerEvent, m: Msg) {
-		longFired = false;
-		clearPress();
-		// 마우스는 길게 누르기 대신 오른쪽 클릭(contextmenu) — 누른 채 드래그로 글자를 고르는 중일 수 있다
-		if (e.button !== 0 || e.pointerType === 'mouse') return;
-		const el = e.currentTarget as HTMLElement;
-		press = {
-			x: e.clientX,
-			y: e.clientY,
-			timer: setTimeout(() => {
-				press = null;
-				longFired = true;
-				openPicker(m, el);
-			}, LONG_MS)
-		};
-	}
-	function onBubbleMove(e: PointerEvent) {
-		if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) clearPress(); // 스크롤이다
-	}
-	function onBubbleUp(m: Msg) {
-		clearPress();
-		if (longFired || m.id == null) return;
-		const now = Date.now();
-		if (lastTap.id === m.id && now - lastTap.at < 320) {
-			lastTap = { id: -1, at: 0 };
-			getSelection()?.removeAllRanges(); // 데스크톱 더블클릭이 고른 단어는 풀어 준다
-			if (canReact(m)) void doReact(m.id, 'heart');
-		} else lastTap = { id: m.id, at: now };
-	}
-	function onBubbleMenu(e: MouseEvent, m: Msg) {
-		e.preventDefault();
-		clearPress();
-		longFired = true;
-		openPicker(m, e.currentTarget as Element);
-	}
-
-	/** 말풍선 아래 표시 — 둘이 같은 공감이면 "❤️ 2" */
-	function badge(rx: Partial<Record<1 | 2, ReactionKey>> | undefined) {
-		const ks = [rx?.[1], rx?.[2]].filter((k): k is ReactionKey => !!k);
-		if (!ks.length) return null;
-		const same = ks.length === 2 && ks[0] === ks[1];
-		return { emojis: (same ? [ks[0]] : ks).map((k) => REACTION_EMOJI[k]), count: same ? 2 : 0 };
-	}
 	const myReaction = $derived(picker && room ? room.reactions[picker.id]?.[room.seat] : undefined);
 	// 공감이 달리면 말풍선 아래가 늘어난다 — 맨 아래를 보고 있으면 따라 내려가게 (아래 스크롤 effect 가 읽는다)
 	const reactSig = $derived(room ? JSON.stringify(room.reactions) : '');
@@ -512,13 +468,7 @@
 			<div class="empty muted">불러오는 중…</div>
 		{:else if room}
 			{#if room.snap}
-				<!-- 대화의 맨 처음 — 인스타 DM 처럼 상대 소개. 위로 끝까지 올리면 보인다 -->
-				<div class="intro">
-					<Avatar name={room.snap.partner_alias} size={88} online={partnerOnline} />
-					<h2>{room.snap.partner_alias}</h2>
-					<p>{introLine}</p>
-					<button class="intro-btn" onclick={() => openSheet('profile')}>프로필 보기</button>
-				</div>
+				<ChatIntro alias={room.snap.partner_alias} online={partnerOnline} {profile} onprofile={() => openSheet('profile')} />
 			{/if}
 			{#each room.msgs as m, i (m.client_msg_id)}
 				{@const p = pos(room.msgs, i)}
@@ -526,7 +476,7 @@
 					<div class="sys">{m.body}</div>
 				{:else}
 					{@const mine = m.sender_seat === room.seat}
-					{@const rx = m.id != null ? badge(room.reactions[m.id]) : null}
+					{@const rx = m.id != null ? summarize(room.reactions[m.id]) : null}
 					<div class="row" class:mine class:gap={p.first}>
 						<div class="bwrap" class:reacted={!!rx}>
 							<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
@@ -537,24 +487,21 @@
 								class:sending={m.state === 'sending'}
 								class:failed={m.state === 'failed' || m.state === 'rate_limited'}
 								onclick={() => (m.state === 'failed' || m.state === 'rate_limited') && room?.retry(m)}
-								onpointerdown={(e) => onBubbleDown(e, m)}
-								onpointermove={onBubbleMove}
-								onpointerup={() => onBubbleUp(m)}
-								onpointercancel={clearPress}
-								onpointerleave={clearPress}
-								oncontextmenu={(e) => onBubbleMenu(e, m)}
+								onpointerdown={(e) => press.down(e, m)}
+								onpointermove={press.move}
+								onpointerup={() => press.up(m)}
+								onpointercancel={press.cancel}
+								onpointerleave={press.cancel}
+								oncontextmenu={(e) => press.menu(e, m)}
 							>
 								{m.body}
 							</div>
 							{#if rx}
-								<button
-									class="reacts"
-									onclick={(e) => openPicker(m, e.currentTarget.previousElementSibling)}
-									aria-label="공감 {rx.emojis.join(' ')}{rx.count ? ' 2개' : ''}"
-								>
-									{#each rx.emojis as e, i (i)}<span>{e}</span>{/each}
-									{#if rx.count}<span class="n">{rx.count}</span>{/if}
-								</button>
+								<ReactionBadge
+									summary={rx}
+									{mine}
+									onclick={(e) => openPicker(m, (e.currentTarget as Element).previousElementSibling)}
+								/>
 							{/if}
 						</div>
 						{#if m.state === 'failed' || m.state === 'rate_limited'}
@@ -617,57 +564,20 @@
 </div>
 
 {#if picker}
-	<!-- 공감 고르기 — 바깥을 누르거나 스크롤하면 닫힌다 -->
-	<div class="rx-scrim" role="presentation" onpointerdown={() => (picker = null)}></div>
-	<div
-		class="rx-pick"
-		role="menu"
-		aria-label="공감"
-		style:top="{picker.top}px"
-		style:left={picker.left != null ? `${picker.left}px` : null}
-		style:right={picker.right != null ? `${picker.right}px` : null}
-	>
-		{#if picker.react}
-			{#each REACTIONS as r (r.k)}
-				<button class="rx" class:on={myReaction === r.k} role="menuitem" aria-label={r.label} onclick={() => doReact(picker!.id, r.k)}>
-					{r.e}
-				</button>
-			{/each}
-			<span class="sep" aria-hidden="true"></span>
-		{/if}
-		<button class="copy" role="menuitem" onclick={copy}>복사</button>
-	</div>
+	<ReactionPicker
+		at={picker}
+		react={picker.react}
+		current={myReaction}
+		onpick={(k) => doReact(picker!.id, k)}
+		oncopy={copy}
+		onclose={() => (picker = null)}
+	/>
 {/if}
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (picker = null)} />
 
 {#if sheet}
 	<Sheet onclose={() => (sheet = null)}>
 		{#if sheet === 'profile'}
-			<div class="profile">
-				{#if room?.snap}
-					<Avatar name={room.snap.partner_alias} size={72} online={!!profile?.online} />
-					<h3>{room.snap.partner_alias}</h3>
-					<p class="status muted">
-						{#if profile}{profile.online ? '접속 중' : '오프라인'}{:else}&nbsp;{/if}
-					</p>
-				{/if}
-				{#if profile}
-					{#if profile.bio}<p class="bio selectable">{profile.bio}</p>{/if}
-					{#if profile.mbti || profile.interests.length}
-						<div class="tags">
-							{#if profile.mbti}<span class="tag mbti">{profile.mbti}</span>{/if}
-							{#each profile.interests as t (t)}<span class="tag">{t}</span>{/each}
-						</div>
-					{/if}
-					{#if !profile.bio && !profile.mbti && !profile.interests.length}
-						<p class="muted small">아직 소개를 적지 않음</p>
-					{/if}
-				{:else if profileLoading}
-					<p class="muted small">불러오는 중…</p>
-				{:else}
-					<p class="muted small">프로필을 불러오지 못함</p>
-				{/if}
-			</div>
+			<PartnerCard alias={room?.snap?.partner_alias ?? null} {profile} loading={profileLoading} />
 			<button class="item" onclick={() => (sheet = null)}>닫기</button>
 		{:else if sheet === 'menu'}
 			<button class="item" onclick={() => openSheet('profile')}>프로필 보기</button>
@@ -856,34 +766,6 @@
 		margin: auto;
 		font-size: 14px;
 	}
-	.intro {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 4px;
-		padding: 20px 0 12px;
-		text-align: center;
-	}
-	.intro h2 {
-		margin: 10px 0 0;
-		font-size: 20px;
-		font-weight: 700;
-		letter-spacing: -0.02em;
-	}
-	.intro p {
-		margin: 0;
-		font-size: 14px;
-		color: var(--text-2);
-	}
-	.intro-btn {
-		margin-top: 12px;
-		height: 34px;
-		padding: 0 16px;
-		border-radius: 10px;
-		background: var(--field);
-		font-size: 14px;
-		font-weight: 600;
-	}
 	.sys {
 		align-self: center;
 		max-width: 85%;
@@ -966,86 +848,6 @@
 			user-select: text;
 		}
 	}
-	.reacts {
-		position: absolute;
-		bottom: -15px;
-		left: 8px;
-		display: flex;
-		align-items: center;
-		gap: 1px;
-		height: 22px;
-		padding: 0 6px;
-		border-radius: 999px;
-		border: 2px solid var(--bg);
-		background: var(--field);
-		font-size: 12px;
-		line-height: 1;
-	}
-	.mine .reacts {
-		left: auto;
-		right: 8px;
-	}
-	.reacts .n {
-		margin-left: 2px;
-		font-size: 11px;
-		font-weight: 600;
-		color: var(--text-2);
-	}
-	.rx-scrim {
-		position: fixed;
-		inset: 0;
-		z-index: 40;
-	}
-	.rx-pick {
-		position: fixed;
-		z-index: 41;
-		display: flex;
-		align-items: center;
-		gap: 2px;
-		max-width: calc(100vw - 16px);
-		height: 48px;
-		padding: 0 6px;
-		border-radius: 999px;
-		background: var(--bg);
-		box-shadow: 0 4px 20px rgb(0 0 0 / 0.18), 0 0 0 1px var(--line);
-		animation: rx-in 0.14s ease-out;
-	}
-	@keyframes rx-in {
-		from {
-			opacity: 0;
-			transform: scale(0.9);
-		}
-	}
-	.rx {
-		display: grid;
-		place-items: center;
-		width: 38px;
-		height: 38px;
-		border-radius: 50%;
-		font-size: 24px;
-		line-height: 1;
-		transition: transform 0.1s;
-	}
-	.rx:active {
-		transform: scale(1.25);
-	}
-	.rx.on {
-		background: var(--field);
-	}
-	.sep {
-		width: 1px;
-		height: 24px;
-		margin: 0 4px;
-		background: var(--line);
-	}
-	.copy {
-		padding: 0 10px;
-		height: 36px;
-		font-size: 14px;
-		font-weight: 600;
-		color: var(--text-2);
-	}
-
 	.bubble.sending {
 		opacity: 0.5;
 	}
@@ -1118,54 +920,6 @@
 		font-size: 12px;
 		font-weight: 400;
 		margin-bottom: 8px;
-	}
-
-	/* ── 상대 프로필 시트 ── */
-	.profile {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 6px;
-		padding: 16px var(--pad) 18px;
-		text-align: center;
-	}
-	.profile h3 {
-		margin: 6px 0 0;
-		font-size: 18px;
-		font-weight: 700;
-	}
-	.profile .status {
-		margin: 0;
-		font-size: 12px;
-	}
-	.profile .bio {
-		margin: 8px 0 0;
-		font-size: 14px;
-		line-height: 1.55;
-		white-space: pre-wrap;
-		overflow-wrap: anywhere;
-	}
-	.profile .small {
-		margin: 8px 0 0;
-		font-size: 13px;
-	}
-	.tags {
-		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: 6px;
-		margin-top: 8px;
-	}
-	.tag {
-		padding: 4px 10px;
-		border-radius: 999px;
-		background: var(--field);
-		font-size: 13px;
-	}
-	.tag.mbti {
-		background: var(--text);
-		color: var(--bg);
-		font-weight: 600;
 	}
 
 	/* ── 입력창 ── */

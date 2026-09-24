@@ -22,6 +22,13 @@ type Payload =
 
 const isId = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
 
+/** 요청 본문의 키 → 발송 판단 DB 함수 */
+const KINDS = [
+	{ field: 'message_id', rpc: 'push_payload', param: 'p_message', actor: 'p_sender' },
+	{ field: 'letter_comment_id', rpc: 'letter_notify', param: 'p_comment', actor: 'p_actor' },
+	{ field: 'reaction_message_id', rpc: 'reaction_push_payload', param: 'p_message', actor: 'p_actor' }
+] as const;
+
 export const POST: RequestHandler = async ({ request, platform }) => {
 	const vapid = {
 		publicKey: pub.PUBLIC_VAPID_KEY ?? '',
@@ -31,29 +38,15 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	if (!vapid.publicKey || !vapid.privateKey) return json({ skip: 'not_configured' });
 
 	const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-	const body = (await request.json().catch(() => ({}))) as {
-		message_id?: unknown;
-		letter_comment_id?: unknown;
-		reaction_message_id?: unknown;
-	};
-	const kind = isId(body.message_id)
-		? 'message'
-		: isId(body.letter_comment_id)
-			? 'letter'
-			: isId(body.reaction_message_id)
-				? 'reaction'
-				: null;
+	const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+	const kind = KINDS.find((k) => isId(body[k.field]));
 	if (!token || !kind) return json({ error: 'bad_request' }, { status: 400 });
 
 	const { data: who } = await supabaseAdmin().auth.getUser(token);
 	if (!who.user) return json({ error: 'unauthorized' }, { status: 401 });
 
-	const p =
-		kind === 'message'
-			? await adminRpc<Payload>('push_payload', { p_message: body.message_id, p_sender: who.user.id })
-			: kind === 'letter'
-				? await adminRpc<Payload>('letter_notify', { p_comment: body.letter_comment_id, p_actor: who.user.id })
-				: await adminRpc<Payload>('reaction_push_payload', { p_message: body.reaction_message_id, p_actor: who.user.id });
+	// 누가 보냈는지는 클라가 아니라 토큰에서 — DB 함수가 "진짜 그 사람의 글·공감인지"를 다시 확인한다
+	const p = await adminRpc<Payload>(kind.rpc, { [kind.param]: body[kind.field], [kind.actor]: who.user.id });
 	if ('skip' in p) return json(p);
 
 	const work = (async () => {
