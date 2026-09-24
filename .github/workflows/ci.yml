@@ -1,0 +1,72 @@
+# main 에 푸시할 때마다(그리고 PR 마다) 자동 검사. 실서버·계정·비밀키 없이 돈다 (가짜 Supabase · PGlite).
+# 실서버가 필요한 test:e2e(Realtime) · test:match(매칭 부하) 는 여기서 돌리지 않는다.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: 타입 검사 · 단위 테스트 · DB 스키마 · 빌드
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 타입 검사
+        run: npm run check
+      - name: 채팅 로직
+        run: npm run test:chat
+      - name: 편지 로직
+        run: npm run test:letters
+      - name: 운영자 세션
+        run: npm run test:admin
+      - name: 알림(toast)
+        run: npm run test:toast
+      - name: 기기 판별
+        run: npm run test:platform
+      - name: 웹 푸시 서명
+        run: npm run test:push
+      - name: DB 스키마 (PGlite)
+        run: npm run test:schema
+      - name: 빌드
+        run: npm run build
+
+  ui:
+    name: 화면 테스트 (브라우저)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_OUT: ${{ runner.temp }}/e2e-shots
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Chromium 설치
+        run: npx playwright-core install --with-deps chromium
+      - name: 화면 테스트 전부
+        run: npm run test:ui
+      - name: 실패하면 스크린샷 올리기
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: ${{ runner.temp }}/e2e-shots
+          retention-days: 7
