@@ -211,7 +211,9 @@
 	}
 	function onScroll() {
 		if (!listEl) return;
-		picker = null;
+		// 고르기 줄이 열려 있는 동안 사람의 손가락·휠은 가림막(ReactionPicker 의 scrim)이 받아서 닫는다.
+		// 그래도 scroll 이 오면 목록이 저절로 움직인 것(상대 입력 중 표시가 사라짐 · 새 메시지) — 닫지 않고 따라간다.
+		followPicker();
 		paintSoon();
 		fromBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight;
 		atBottom = fromBottom < 48;
@@ -345,8 +347,10 @@
 	let picker = $state<Picker | null>(null);
 	const PICK_H = 48;
 
-	function openPicker(m: Msg, bubble: Element | null) {
-		if (m.id == null || !bubble) return;
+	/** 고르기 줄이 붙어 있는 말풍선 — 목록이 저절로 움직이면(입력 중 표시가 사라짐 등) 따라간다 */
+	let pickerAnchor: { m: Msg; el: Element } | null = null;
+	function placePicker(m: Msg, bubble: Element) {
+		if (m.id == null) return;
 		const r = bubble.getBoundingClientRect();
 		const header = listEl?.getBoundingClientRect().top ?? 0;
 		// 말풍선 위에, 자리가 없으면 아래에
@@ -360,7 +364,20 @@
 			left: mineSide ? null : Math.max(8, r.left),
 			right: mineSide ? Math.max(8, window.innerWidth - r.right) : null
 		};
+	}
+	function openPicker(m: Msg, bubble: Element | null) {
+		if (m.id == null || !bubble) return;
+		pickerAnchor = { m, el: bubble };
+		placePicker(m, bubble);
 		navigator.vibrate?.(10);
+	}
+	/** 목록이 움직였다 — 말풍선이 아직 보이면 고르기 줄을 옮기고, 화면 밖으로 나갔으면 닫는다 */
+	function followPicker() {
+		if (!picker || !pickerAnchor || !listEl) return;
+		const { m, el } = pickerAnchor;
+		const r = el.getBoundingClientRect(), box = listEl.getBoundingClientRect();
+		if (!el.isConnected || r.bottom < box.top || r.top > box.bottom) picker = null;
+		else placePicker(m, el);
 	}
 
 	async function doReact(id: number, k: ReactionKey) {

@@ -55,10 +55,18 @@ async function devServer(port) {
 function run(name) {
 	return new Promise((resolve) => {
 		let log = '';
-		const p = spawn('node', [`${DIR}${name}.mjs`], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
+		// 스위트도 자기 프로세스 그룹에서 — 끝나면 그룹째 정리해서, 스위트가 띄운 vite 가 남아 다음 스위트의 포트를 막지 않게
+		const p = spawn('node', [`${DIR}${name}.mjs`], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
 		p.stdout.on('data', (d) => (log += d));
 		p.stderr.on('data', (d) => (log += d));
-		p.on('exit', (code) => resolve({ code, log }));
+		p.on('exit', (code) => {
+			try {
+				process.kill(-p.pid);
+			} catch {
+				/* 이미 다 꺼짐 */
+			}
+			setTimeout(() => resolve({ code, log }), 300);
+		});
 	});
 }
 

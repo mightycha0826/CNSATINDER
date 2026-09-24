@@ -40,16 +40,21 @@ export const handle: Handle = async ({ event, resolve }) => {
 		event,
 		isAdmin ? { transformPageChunk: ({ html }) => html.replace('<body ', '<body class="admin" ') } : undefined
 	);
-	if (isAdmin) {
-		// 운영자 화면은 신원 정보를 다루므로 어디에도 캐시되거나 검색되면 안 된다
-		try {
+	try {
+		// 모든 화면 공통 — 틀(iframe) 안에 띄우기 금지(옛 브라우저용, 새 브라우저는 CSP frame-ancestors),
+		// 파일 종류 추측 금지, 다른 사이트로 나갈 때 주소는 도메인까지만, 카메라·마이크·위치는 쓰지 않음
+		res.headers.set('X-Frame-Options', 'DENY');
+		res.headers.set('X-Content-Type-Options', 'nosniff');
+		res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+		res.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+		if (isAdmin) {
+			// 운영자 화면은 신원 정보를 다루므로 어디에도 캐시되거나 검색되면 안 된다
 			res.headers.set('Cache-Control', 'no-store');
 			res.headers.set('X-Robots-Tag', 'noindex, nofollow');
 			res.headers.set('Referrer-Policy', 'no-referrer');
-			res.headers.set('X-Frame-Options', 'DENY');
-		} catch {
-			/* 불변 헤더인 응답(리다이렉트 등)은 건너뛴다 */
 		}
+	} catch {
+		/* 불변 헤더인 응답(리다이렉트 등)은 건너뛴다 */
 	}
 	return res;
 };

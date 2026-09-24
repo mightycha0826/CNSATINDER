@@ -64,6 +64,33 @@ try {
 	check('둘 다 ❤️ → "❤️2"', both === '❤️2', both);
 	await page.screenshot({ path: `${SP}/react-3.png` });
 
+	console.log('[목록이 저절로 움직일 때]');
+	// 상대 입력 중 표시가 사라지거나 새 메시지가 오면 목록이 저절로 움직인다 — 고르기 줄은 닫히지 않고 말풍선을 따라간다
+	await longPress('와 진짜요? 반갑네요');
+	const before = await page.locator('.rx-pick').boundingBox();
+	const moved = await page.locator('.list').evaluate(async (l) => {
+		const from = l.scrollTop;
+		l.scrollTop = from - 30;
+		await new Promise((r) => setTimeout(r, 200));
+		return from - l.scrollTop;
+	});
+	const after = await page.locator('.rx-pick').boundingBox();
+	check('저절로 움직여도 고르기 줄은 열려 있다', moved > 0 && after != null, `moved=${moved}`);
+	check('…그리고 말풍선을 따라 내려간다', after && Math.abs(after.y - before.y - moved) < 2, JSON.stringify({ before, after, moved }));
+	// 사람이 목록을 밀려고 손가락을 대면 가림막이 받아서 닫는다
+	const lb = await page.locator('.list').boundingBox();
+	const at = { x: lb.x + lb.width / 2, y: lb.y + 60 };
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...at, y: at.y + 80 }] });
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	await page.waitForTimeout(300);
+	check('손가락으로 밀면 닫힌다', (await page.locator('.rx-pick').count()) === 0);
+	// 말풍선이 화면 밖으로 밀려나면 닫힌다
+	await longPress('와 진짜요? 반갑네요');
+	await page.locator('.list').evaluate(async (l) => { l.scrollTop = 0; await new Promise((r) => setTimeout(r, 200)); });
+	check('말풍선이 화면 밖으로 나가면 닫힌다', (await page.locator('.rx-pick').count()) === 0);
+	await page.locator('.list').evaluate((l) => l.scrollTo(0, l.scrollHeight)); await page.waitForTimeout(1100);
+
 	console.log('[복사 · 닫기]');
 	await longPress('혹시 요즘 뭐 듣는 노래');
 	await page.locator('.rx-pick .copy', { hasText: '복사' }).click(); await page.waitForTimeout(300);

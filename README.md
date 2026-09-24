@@ -186,7 +186,12 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `node scripts/vapid-keys.mjs` | 푸시 알림용 VAPID 키를 만들어 `.env` 에 추가 (이미 있으면 그대로) |
 | `node scripts/import-roster.mjs <csv> [--dry-run]` | 학번-이름 명렬표를 DB 에 반영 (관리자 화면의 이메일 확인 옆 이름 표시용) |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
+| `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 18묶음 — `scripts/e2e/`. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `cnsatinder-e2e/` |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.*`(png/webp/jpg 아무거나) (헤드리스 Chrome 사용) |
+
+> **자동 검사 (GitHub Actions, `.github/workflows/ci.yml`)** — main 에 푸시할 때마다 타입 검사 · 단위 테스트 전부 ·
+> DB 스키마 · 빌드, 그리고 화면 테스트 전부를 돌린다. 실서버가 필요한 `test:e2e` · `test:match` 는 빼고.
+> 결과는 GitHub 저장소의 Actions 탭, 커밋 옆 ✓/✗.
 
 > `npm run test:schema` 는 PGlite 단일 커넥션이라 **동시 트랜잭션을 재현하지 못한다.**
 > 매칭 advisory lock 과 연장 투표 경쟁은 `supabase start`(로컬 Docker Postgres)에서
@@ -194,7 +199,8 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 
 ## 개발용 훅
 
-- `/dev/chat?s=chat|vote|waiting|pending|ended` — 대화방 화면 미리보기 (Supabase 불필요, 개발 모드 전용)
+- `/dev/chat?s=chat|fresh|vote|waiting|pending|ended` — 대화방 화면 미리보기 (Supabase 불필요, 개발 모드 전용).
+  `&matched` 연결 화면, `&incoming` 상대 새 메시지, `&sheet=menu|report|block|profile` 시트
 - `/dev/letters?v=feed|detail|task|new` — 익명편지 화면 미리보기 (가짜 서버, 개발 모드 전용)
 - `?gate` — 개발 모드에서 PWA 설치 게이트 화면을 강제로 띄운다
   (평소 DEV 에서는 게이트가 꺼져 있다)
@@ -243,6 +249,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 - [x] **접근성** — 기기에서 "동작 줄이기"를 켜면 나타나기·튀기·깜빡임 애니메이션과 부드러운 스크롤을 끈다
       (답장 이동 반짝임은 커지지 않고 어두워지기만). 화면 낭독기: 말풍선마다 "나:"/"상대 이름:" 을 숨은 글로,
       상대의 새 메시지는 따로 된 안내 칸(`aria-live`)에서 하나씩 읽는다 — 들어올 때 지난 대화는 읽지 않는다
+- [x] **보안 헤더** — 모든 화면에 콘텐츠 보안 정책(CSP, `vite.config.ts`): 스크립트는 SvelteKit nonce 가 붙은 것만,
+      연결은 우리 사이트와 `*.supabase.co` 만, 다른 사이트의 틀(iframe) 안에서는 안 열림. 그리고 `X-Frame-Options` ·
+      `nosniff` · `Referrer-Policy` · `Permissions-Policy`(카메라·마이크·위치 안 씀) (`hooks.server.ts`).
+      ★ Supabase 주소를 사용자 도메인으로 바꾸면 `vite.config.ts` 의 connect-src 에 추가
 - [x] **뒤로가기 (설치된 앱)** — 홈(채팅)에서 뒤로 → "뒤로가기를 한 번 더 누르면 종료됩니다", 2초 안에 또 누르면 앱 종료.
       익명편지 탭에서 뒤로 → 채팅 홈. 탭 첫 화면에 얕은 기록(`pushState` guard)을 하나 쌓아 두고 그게 걷히는 순간을 잡는다
       (`(app)/+layout.svelte`). 홈이 기록 맨 아래여야 하므로 탭 전환은 기록을 바꿔 끼우고, 다른 화면에서 홈으로는
