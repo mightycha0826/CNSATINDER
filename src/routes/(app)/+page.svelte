@@ -9,6 +9,7 @@
 	import { enablePush, pushState } from '$lib/push';
 	import { isRestricted } from '$lib/restriction';
 	import { mmss } from '$lib/time';
+	import { scrollBehavior } from '$lib/motion';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 
@@ -108,7 +109,7 @@
 		onclick={(e) => {
 			if (page.url.pathname !== '/') return;
 			e.preventDefault();
-			window.scrollTo({ top: 0, behavior: 'smooth' });
+			window.scrollTo({ top: 0, behavior: scrollBehavior() });
 		}}>CNSATINDER</a
 	>
 	<TopbarMe />

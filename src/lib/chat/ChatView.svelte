@@ -24,6 +24,7 @@
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import { backToSeek, goBack } from '$lib/nav';
 	import { mmss as fmtClock } from '$lib/time';
+	import { scrollBehavior } from '$lib/motion';
 
 	let {
 		room,
@@ -206,7 +207,7 @@
 	/** 맨 아래에서 얼마나 떨어져 있는지 — 목록 높이가 바뀌어도(키보드) 보던 자리를 지킨다 */
 	let fromBottom = 0;
 	function scrollToBottom(smooth = true) {
-		listEl?.scrollTo({ top: listEl.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+		listEl?.scrollTo({ top: listEl.scrollHeight, behavior: smooth ? scrollBehavior() : 'auto' });
 	}
 	function onScroll() {
 		if (!listEl) return;
@@ -319,6 +320,23 @@
 		!!room?.snap?.their_read_id && lastMineId != null && room.snap.their_read_id >= lastMineId
 	);
 
+	// ── 화면 낭독기 ──────────────────────────────────────────────
+	// 상대의 새 메시지만 소리 내어 읽는다. 목록 전체를 live 로 두면 들어올 때 지난 대화를 다 읽어 버려서,
+	// 처음 불러온 대화까지는 기준선으로만 잡고, 그 뒤에 온 상대 메시지 하나씩만 따로 된 안내 칸에 넣는다.
+	let spoken: number | null = null;
+	let announce = $state('');
+	$effect(() => {
+		if (!room?.snap || !room.msgs.length) return;
+		let last: Msg | undefined;
+		for (let i = room.msgs.length - 1; i >= 0 && !last; i--) {
+			const m = room.msgs[i];
+			if (m.id != null && m.sender_seat !== 0 && m.sender_seat !== room.seat) last = m;
+		}
+		const id = last?.id ?? 0;
+		if (spoken != null && last && id > spoken) announce = `${room.snap.partner_alias}: ${last.body}`;
+		spoken = Math.max(spoken ?? 0, id);
+	});
+
 	// ── 공감 ─────────────────────────────────────────────────────
 	// 두 번 톡 = ❤️ (다시 두 번 톡이면 취소), 길게 누르기(데스크톱은 오른쪽 클릭) = 공감 고르기 + 복사.
 	// 말풍선은 글자 선택을 막는다 — 길게 누르면 iOS 가 글자를 잡아 버려서. 대신 고르기 줄에 "복사".
@@ -401,7 +419,7 @@
 	function jumpTo(id: number) {
 		const el = listEl?.querySelector<HTMLElement>(`[data-mid="${id}"]`);
 		if (!el) return toast('원래 메시지를 찾을 수 없어요');
-		el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		el.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
 		flashId = id;
 		setTimeout(() => flashId === id && (flashId = null), 1200);
 	}
@@ -527,7 +545,8 @@
 		<div class="conn">연결 중…</div>
 	{/if}
 
-	<div class="list" bind:this={listEl} onscroll={onScroll}>
+	<div class="sr-only" aria-live="polite">{announce}</div>
+	<div class="list" bind:this={listEl} onscroll={onScroll} role="region" aria-label="대화 내용">
 		{#if loading}
 			<div class="empty muted">불러오는 중…</div>
 		{:else if room}
@@ -569,7 +588,7 @@
 								onpointerleave={press.cancel}
 								oncontextmenu={(e) => press.menu(e, m)}
 							>
-								{m.body}
+								<span class="sr-only">{mine ? '나' : room.snap?.partner_alias}: </span>{m.body}
 							</div>
 							{#if rx}
 								<ReactionBadge
@@ -933,6 +952,18 @@
 		40% {
 			filter: brightness(0.82);
 			transform: scale(1.03);
+		}
+	}
+	/* 동작 줄이기: 커지지 않고 어두워지기만 — 어디로 왔는지는 알려야 하니 끄지는 않는다 */
+	@media (prefers-reduced-motion: reduce) {
+		.bwrap.flash .bubble {
+			animation: flash-still 1.2s ease-out !important;
+		}
+	}
+	@keyframes flash-still {
+		0%,
+		40% {
+			filter: brightness(0.82);
 		}
 	}
 	.replying {

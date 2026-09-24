@@ -2,6 +2,7 @@ import { tick, untrack } from 'svelte';
 import { goto, pushState } from '$app/navigation';
 import { page } from '$app/state';
 import { UI, toast } from './state.svelte';
+import { scrollBehavior } from './motion';
 
 /**
  * 탭 첫 화면(채팅 홈 · 익명편지)의 뒤로가기 — 설치된 앱에서 인스타처럼:
@@ -68,7 +69,7 @@ export function useTabBack() {
 		if (!UI.standalone) return; // 브라우저는 평소처럼 링크
 		e.preventDefault();
 		if (page.url.pathname === href) {
-			window.scrollTo({ top: 0, behavior: 'smooth' });
+			window.scrollTo({ top: 0, behavior: scrollBehavior() });
 			return;
 		}
 		switching = true;

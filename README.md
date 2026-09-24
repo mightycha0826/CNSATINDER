@@ -160,6 +160,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `src/lib/pollSeeker.svelte.ts` | "찾는 중" 폴링 상태 기계 — 채팅 `Seeker` 와 편지 `ReplySeeker` 가 물려받는다 |
 | `src/lib/nav.ts` | 앱 안의 "뒤로" — 기록을 쌓지 않고 돌아가기(`goBack`), 대화 끝나고 홈에서 바로 찾기(`backToSeek`) |
 | `src/lib/visible.ts` | `whileVisible` — 화면이 보이는 동안만 주기적으로 새로 읽기 (대화 목록·피드·편지·실시간 현황) |
+| `src/lib/motion.ts` | 기기의 "동작 줄이기" 설정 — JS 스크롤을 부드럽게 할지 (CSS 애니메이션은 `app.css` 에서 한꺼번에 끈다) |
 | `src/lib/time.ts` · `restriction.ts` | 상대 시간·`mm:ss` 표시 / 이용 제한 판정 (학생 앱·운영자 화면 공용) |
 | `src/lib/chat/` | 채팅방 — `ChatView`(화면) · `room.svelte.ts`(상태·동기화) · `ChatIntro`(맨 위 소개) · `PartnerCard`(상대 프로필) · `ReactionPicker`·`ReactionBadge`·`reactions.ts`(공감) · `ReplyQuote`(답장 인용) · `Starters`(첫마디 도우미) · `MatchScreen`(연결 화면) · `gestures.ts`(길게 누르기·두 번 톡) |
 | `src/lib/letters/` | 익명편지 |
@@ -239,6 +240,9 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       누르면 그 메시지로 스크롤 + 반짝. `messages.reply_to` 는 같은 방·시스템 메시지 아닌 것만(`msg_reply_check`), 관리자 열람에도 표시.
       내가 아직 말을 안 했으면 입력창 위에 첫마디 질문 3개(신상 묻는 질문 없음, 겹치는 관심사가 있으면 그 얘기부터, 누르면 채우기만).
       5분 넘게 끊기면 시간 구분선, 매칭 직후 "○○님과 연결됐어요" 화면(1.6초)
+- [x] **접근성** — 기기에서 "동작 줄이기"를 켜면 나타나기·튀기·깜빡임 애니메이션과 부드러운 스크롤을 끈다
+      (답장 이동 반짝임은 커지지 않고 어두워지기만). 화면 낭독기: 말풍선마다 "나:"/"상대 이름:" 을 숨은 글로,
+      상대의 새 메시지는 따로 된 안내 칸(`aria-live`)에서 하나씩 읽는다 — 들어올 때 지난 대화는 읽지 않는다
 - [x] **뒤로가기 (설치된 앱)** — 홈(채팅)에서 뒤로 → "뒤로가기를 한 번 더 누르면 종료됩니다", 2초 안에 또 누르면 앱 종료.
       익명편지 탭에서 뒤로 → 채팅 홈. 탭 첫 화면에 얕은 기록(`pushState` guard)을 하나 쌓아 두고 그게 걷히는 순간을 잡는다
       (`(app)/+layout.svelte`). 홈이 기록 맨 아래여야 하므로 탭 전환은 기록을 바꿔 끼우고, 다른 화면에서 홈으로는

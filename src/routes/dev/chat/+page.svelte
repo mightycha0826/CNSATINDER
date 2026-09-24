@@ -3,7 +3,7 @@
 	 * 개발 전용 — 대화방 화면 미리보기. Supabase 없이 가짜 전송 계층으로 상태를 재현한다.
 	 * 연장 배너처럼 실계정으로는 8분 넘게 기다려야 보이는 화면을 바로 확인하기 위한 것.
 	 *
-	 *   /dev/chat?s=chat | fresh | vote | waiting | pending | ended   (&sheet=menu|report|block|profile 로 시트 열기, &matched 로 연결 화면)
+	 *   /dev/chat?s=chat | fresh | vote | waiting | pending | ended   (&sheet=menu|report|block|profile 로 시트 열기, &matched 로 연결 화면, &incoming 으로 상대 새 메시지)
 	 *
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
@@ -89,6 +89,13 @@
 				h.onPresence(scenario === 'pending' ? [1] : [1, 2]);
 				if (scenario === 'chat') h.onTyping(2);
 			}, 50);
+			// &incoming : 1.2초 뒤 상대가 새 메시지를 보낸다 (화면 낭독기 안내 확인용)
+			if (page.url.searchParams.has('incoming'))
+				setTimeout(() => {
+					const row = m(2, '방금 온 메시지예요');
+					this.rows.push(row);
+					h.onMessage(row);
+				}, 1200);
 		}
 		disconnect() {}
 		async send(_r: string, seat: 1 | 2, body: string, cid: string, replyTo: number | null = null) {
