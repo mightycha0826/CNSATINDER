@@ -50,8 +50,6 @@ jobs:
     name: 화면 테스트 (브라우저)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      E2E_OUT: ${{ runner.temp }}/e2e-shots
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -62,6 +60,9 @@ jobs:
       - name: Chromium 설치
         run: npx playwright-core install --with-deps chromium
       - name: 화면 테스트 전부
+        # runner 컨텍스트는 job 수준 env 에서 못 쓴다 — 단계에서
+        env:
+          E2E_OUT: ${{ runner.temp }}/e2e-shots
         run: npm run test:ui
       - name: 실패하면 스크린샷 올리기
         if: failure()
