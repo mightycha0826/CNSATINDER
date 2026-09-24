@@ -72,8 +72,8 @@ try {
 				t.handlers = h;
 			},
 			disconnect() {},
-			async send(roomId, seat, body, cid) {
-				return t.sendImpl(roomId, seat, body, cid);
+			async send(roomId, seat, body, cid, replyTo = null) {
+				return t.sendImpl(roomId, seat, body, cid, replyTo);
 			},
 			async fetchAfter(_r, after) {
 				t.calls.fetchAfter++;
@@ -443,6 +443,29 @@ try {
 		await room.resync();
 		check('목록을 못 받으면 화면의 공감을 지우지 않는다', room.reactions[901]?.[1] === 'laugh');
 		room.dispose();
+	}
+
+	console.log('\n[16] 답장 — 대상 id 가 전송까지 가고, 실패 후 다시 보내도 유지된다');
+	{
+		const t = fake();
+		const r = await mk(t);
+		r.upsert(row(2, '원래 메시지', 'o1', 950), 'sent');
+		const sent = [];
+		t.sendImpl = async (_r, seat, body, cid, replyTo) => {
+			sent.push(replyTo);
+			if (sent.length === 1) return { ok: false, reason: 'network' };
+			const x = { ...row(seat, body, cid), reply_to: replyTo };
+			t.server.push(x);
+			return { ok: true, row: x };
+		};
+		await r.send('답장이에요', 950);
+		const m = r.msgs.find((x) => x.body === '답장이에요');
+		check('보내기 전부터 화면의 메시지에 답장 대상', m.reply_to === 950);
+		check('첫 전송에 대상 id 가 실린다', sent[0] === 950 && m.state === 'failed');
+		await r.retry(m);
+		check('★ 다시 보내도 같은 대상으로', sent[1] === 950 && m.state === 'sent' && m.reply_to === 950);
+		await r.send('그냥 메시지');
+		check('답장이 아니면 null', sent[2] === null && r.msgs.at(-1).reply_to === null);
 	}
 } catch (e) {
 	fail++;

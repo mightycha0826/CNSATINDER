@@ -206,6 +206,8 @@ export type RoomView = {
 		seat: 0 | 1 | 2;
 		body: string;
 		created_at: string;
+		/** 답장 대상 메시지 id (Phase 18) */
+		reply_to?: number | null;
 		/** 자리별 공감 { "1": "heart" } — 없으면 null */
 		reactions: Partial<Record<'1' | '2', ReactionKey>> | null;
 	}[];

@@ -2025,5 +2025,33 @@ console.log('\n[63] ★ 공감 푸시 — 상대 메시지에, 한 번만, 앱�
 	await expectError('★ 학생은 직접 부를 수 없다', () => rpcAs(B, 'reaction_push_payload', mA, B), 'permission denied');
 }
 
+console.log('\n[64] ★ 메시지 답장 — 같은 방의 사람 메시지만, 보낸 뒤 못 바꾼다');
+{
+	const r = await fresh();
+	const seatA = Number(await rpcAs(A, 'my_seat', r));
+	const seatB = Number(await rpcAs(B, 'my_seat', r));
+	const say = async (uid, room, seat, body, replyTo = null) =>
+		(await rowsAs(uid, `insert into public.messages (room_id, sender_seat, body, client_msg_id, reply_to)
+		                    values ($1, $2, $3, gen_random_uuid(), $4) returning id, reply_to`, [room, seat, body, replyTo]))[0];
+	const m1 = await say(A, r, seatA, '실리카겔 좋아하세요?');
+	const m2 = await say(B, r, seatB, '네 완전요!', m1.id);
+	check('답장 저장 · 상대도 읽힘', Number(m2.reply_to) === Number(m1.id) &&
+		Number((await rowsAs(A, `select reply_to from public.messages where id = $1`, [m2.id]))[0].reply_to) === Number(m1.id));
+	check('내 메시지에도 답장 가능', Number((await say(A, r, seatA, '저도요', m2.id)).reply_to) === Number(m2.id));
+	const sys = (await one(`select id from public.messages where room_id = $1 and sender_seat = 0 order by id limit 1`, [r])).id;
+	await expectError('시스템 안내에는 답장 불가', () => say(B, r, seatB, 'x', sys), 'bad_reply');
+	await expectError('없는 메시지 번호', () => say(B, r, seatB, 'x', 99999999), 'bad_reply');
+	const other = await fresh();   // A·B 의 이전 방은 닫힌다 — 다른 방 메시지는 트리거가 먼저 막는지 본다
+	const oA = Number(await rpcAs(A, 'my_seat', other));
+	const oB = Number(await rpcAs(B, 'my_seat', other));
+	const o1 = await say(A, other, oA, '다른 방');
+	await expectError('★ 다른 방 메시지 번호로 답장 불가 (내용 엿보기 방지)', () => say(B, other, oB, 'x', m1.id), 'bad_reply');
+	await expectError('★ 보낸 뒤 답장 대상을 바꿀 수 없다', () => rowsAs(A, `update public.messages set reply_to = null where id = $1`, [o1.id]), 'permission denied');
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const reply = await say(B, other, oB, '답장', o1.id);
+	const view = await svc('admin_room', other, adm);
+	check('관리자 대화 열람에 답장 대상', Number(view.messages.find((m) => Number(m.id) === Number(reply.id))?.reply_to) === Number(o1.id));
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

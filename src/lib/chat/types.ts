@@ -6,6 +6,8 @@ export type MsgRow = {
 	body: string;
 	client_msg_id: string;
 	created_at: string;
+	/** 답장 대상 (같은 방의 메시지 id) — Phase 18. 예전 행·가짜 전송에서는 없을 수 있다 */
+	reply_to?: number | null;
 };
 
 export type MsgState = 'sending' | 'sent' | 'failed' | 'rate_limited';

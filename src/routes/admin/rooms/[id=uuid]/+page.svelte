@@ -8,6 +8,7 @@
 	const seat = (n: number) => v.members.find((m) => m.seat === n);
 	const time = fmtClock;
 	const userMsgs = $derived(v.messages.filter((m) => m.seat > 0).length);
+	const byId = $derived(new Map(v.messages.map((m) => [m.id, m])));
 	/** "❤️ 새벽수달 · 😂 말랑복숭아" — 누가(방 안 이름) 어떤 공감을 달았는지 */
 	const reacts = (r: (typeof v.messages)[number]['reactions']) =>
 		(['1', '2'] as const)
@@ -46,6 +47,10 @@
 					<div class="m" class:s2={m.seat === 2}>
 						<span class="who">{seat(m.seat)?.alias ?? m.seat}</span>
 						<span class="body">
+							{#if m.reply_to != null}
+								{@const o = byId.get(m.reply_to)}
+								<span class="re">↳ 답장: {o ? `${seat(o.seat)?.alias ?? o.seat} "${o.body.slice(0, 40)}${o.body.length > 40 ? '…' : ''}"` : `#${m.reply_to}`}</span>
+							{/if}
 							{m.body}
 							{#if m.reactions}<span class="rx">{reacts(m.reactions)}</span>{/if}
 						</span>
@@ -110,6 +115,13 @@
 	.m .body {
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
+	}
+	.m .re {
+		display: block;
+		margin-bottom: 2px;
+		font-size: 12px;
+		color: var(--text-2);
+		white-space: normal;
 	}
 	.m .rx {
 		display: block;

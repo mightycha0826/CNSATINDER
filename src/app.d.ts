@@ -7,6 +7,8 @@ declare global {
 		/** 얕은 기록 항목 (pushState) — guard = 탭 첫 화면의 "뒤로가기 한 번 더" 표식 ((app)/+layout.svelte) */
 		interface PageState {
 			guard?: boolean;
+			/** 방금 매칭돼서 들어가는 대화방 — 연결 화면을 한 번 보여 준다 (chat/[id]) */
+			matched?: boolean;
 		}
 		/** Cloudflare Workers — 응답 뒤에도 작업(푸시 발송)을 마저 하기 위해 */
 		interface Platform {

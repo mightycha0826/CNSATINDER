@@ -36,7 +36,8 @@ export type TransportHandlers = {
 export interface ChatTransport {
 	connect(roomId: string, seat: 1 | 2, h: TransportHandlers): void;
 	disconnect(): void;
-	send(roomId: string, seat: 1 | 2, body: string, clientMsgId: string): Promise<SendResult>;
+	/** replyTo = 답장 대상 메시지 id (같은 방) */
+	send(roomId: string, seat: 1 | 2, body: string, clientMsgId: string, replyTo?: number | null): Promise<SendResult>;
 	/** id > afterId 인 메시지를 오름차순으로 전부 */
 	fetchAfter(roomId: string, afterId: number): Promise<MsgRow[]>;
 	/** 가장 최근 n 개 (커밋 순서 역전 보정용) */

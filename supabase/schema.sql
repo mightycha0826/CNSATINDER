@@ -2888,6 +2888,7 @@ begin
                  where rm.room_id = p_room),
     'messages', (select coalesce(jsonb_agg(jsonb_build_object(
                     'id', m.id, 'seat', m.sender_seat, 'body', m.body, 'created_at', m.created_at,
+                    'reply_to', m.reply_to,   -- 답장 (Phase 18)
                     -- 공감 (Phase 17) — { "1": "heart", "2": "laugh" } 누가(자리) 어떤 공감을 달았는지
                     'reactions', (select jsonb_object_agg(mr.seat::text, mr.emoji)
                                     from public.message_reactions mr
@@ -3335,3 +3336,35 @@ end
 $fn$;
 revoke all on function public.reaction_push_payload(bigint, uuid) from public, anon, authenticated;
 grant execute on function public.reaction_push_payload(bigint, uuid) to service_role;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 18 — 메시지 답장 (특정 메시지를 짚어서 답하기)
+--
+--  · messages.reply_to = 같은 방의 다른 메시지 id. 식별 정보가 아니라 메시지 번호일 뿐이다.
+--  · 보낼 때 한 번만 정하고 바꿀 수 없다 (update 권한 없음 — 증거 무결성 그대로).
+--  · 같은 방 · 시스템 안내가 아닌 메시지만 — 트리거가 검사한다 (다른 방 메시지 번호를 넣어 내용을 엿볼 수 없게).
+--    FK 를 걸지 않는 이유: 방이 지워질 때 메시지가 한꺼번에 지워지므로 가리킬 대상이 남지 않는다.
+-- ════════════════════════════════════════════════════════════════════
+
+alter table public.messages add column if not exists reply_to bigint;
+
+create or replace function public.msg_reply_check()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+begin
+  if new.reply_to is not null and not exists (
+       select 1 from public.messages r
+        where r.id = new.reply_to and r.room_id = new.room_id and r.sender_seat <> 0) then
+    raise exception 'bad_reply';
+  end if;
+  return new;
+end
+$fn$;
+revoke all on function public.msg_reply_check() from public, anon, authenticated;
+
+drop trigger if exists messages_reply_check on public.messages;
+create trigger messages_reply_check
+  before insert on public.messages
+  for each row execute function public.msg_reply_check();
+
+grant insert (reply_to) on public.messages to authenticated;

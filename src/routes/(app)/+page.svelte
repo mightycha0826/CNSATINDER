@@ -33,7 +33,7 @@
 
 	const inbox = new Inbox();
 	const seeker = new Seeker(
-		(roomId) => void goto(`/chat/${roomId}`),
+		(roomId) => void goto(`/chat/${roomId}`, { state: { matched: true } }),
 		(msg) => toast(msg)
 	);
 	const full = $derived(inbox.rooms.length >= maxRooms);
@@ -136,7 +136,8 @@
 			{#each inbox.rooms as r (r.room_id)}
 				{@const t = remain(r)}
 				<li>
-					<button class="room" onclick={() => goto(`/chat/${r.room_id}`)}>
+					<!-- 아직 안 열어 본 새 대화(상대가 나를 잡아감)면 연결 화면부터 -->
+					<button class="room" onclick={() => goto(`/chat/${r.room_id}`, { state: { matched: !r.joined } })}>
 						<Avatar name={r.partner_alias} size={52} online={r.partner_online} />
 						<span class="mid">
 							<span class="name" class:bold={r.unread > 0 || !r.joined}>{r.partner_alias}</span>

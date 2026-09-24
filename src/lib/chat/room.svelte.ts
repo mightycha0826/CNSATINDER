@@ -318,6 +318,7 @@ export class ChatRoom {
 				body: row.body ?? '',
 				client_msg_id: row.client_msg_id,
 				created_at: row.created_at ?? new Date(this.serverNow()).toISOString(),
+				reply_to: row.reply_to ?? null,
 				state: row.id != null ? 'sent' : state
 			};
 			this.msgs.push(m);
@@ -329,23 +330,24 @@ export class ChatRoom {
 		this.msgs.sort((a, b) => (a.id ?? Infinity) - (b.id ?? Infinity));
 	}
 
-	async send(raw: string) {
+	/** replyTo = 답장 대상 메시지 id (없으면 그냥 메시지) */
+	async send(raw: string, replyTo: number | null = null) {
 		const body = raw.trim();
 		if (!body || !this.snap || this.closed) return;
 		const cid = crypto.randomUUID();
-		this.upsert({ client_msg_id: cid, sender_seat: this.seat, body }, 'sending');
-		await this.#flush(cid, body);
+		this.upsert({ client_msg_id: cid, sender_seat: this.seat, body, reply_to: replyTo }, 'sending');
+		await this.#flush(cid, body, replyTo);
 	}
 
 	/** 재전송 — 같은 client_msg_id 로 보내므로 unique index 가 중복을 막는다 */
 	async retry(m: Msg) {
 		if (m.state === 'sending' || this.closed) return;
 		m.state = 'sending';
-		await this.#flush(m.client_msg_id, m.body);
+		await this.#flush(m.client_msg_id, m.body, m.reply_to ?? null);
 	}
 
-	async #flush(cid: string, body: string) {
-		const res = await this.#t.send(this.roomId, this.seat, body, cid);
+	async #flush(cid: string, body: string, replyTo: number | null) {
+		const res = await this.#t.send(this.roomId, this.seat, body, cid, replyTo);
 		const m = this.#byCid.get(cid);
 		if (res.ok) {
 			this.upsert(res.row, 'sent');

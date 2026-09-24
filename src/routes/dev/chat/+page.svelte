@@ -3,7 +3,7 @@
 	 * 개발 전용 — 대화방 화면 미리보기. Supabase 없이 가짜 전송 계층으로 상태를 재현한다.
 	 * 연장 배너처럼 실계정으로는 8분 넘게 기다려야 보이는 화면을 바로 확인하기 위한 것.
 	 *
-	 *   /dev/chat?s=chat | vote | waiting | pending | ended   (&sheet=menu|report|block|profile 로 시트 열기)
+	 *   /dev/chat?s=chat | fresh | vote | waiting | pending | ended   (&sheet=menu|report|block|profile 로 시트 열기, &matched 로 연결 화면)
 	 *
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
@@ -40,6 +40,7 @@
 	};
 	const SNAPS: Record<string, Partial<RoomSnap>> = {
 		chat: {},
+		fresh: { their_read_id: null },
 		vote: { expires_at: sec(72), partner_vote: true },
 		waiting: { expires_at: sec(48), my_vote: true },
 		pending: { status: 'pending', expires_at: sec(47), partner_joined: false, their_read_id: null },
@@ -47,28 +48,34 @@
 	};
 
 	let id = 0;
-	const m = (seat: 0 | 1 | 2, body: string): MsgRow => ({
+	/** minAgo 분 전에 보낸 메시지. replyTo = 답장 대상 id */
+	const m = (seat: 0 | 1 | 2, body: string, minAgo = 0, replyTo: number | null = null): MsgRow => ({
 		id: ++id,
 		room_id: ROOM,
 		sender_seat: seat,
 		body,
 		client_msg_id: crypto.randomUUID(),
-		created_at: new Date().toISOString()
+		created_at: new Date(Date.now() - minAgo * 60_000).toISOString(),
+		reply_to: replyTo
 	});
+	// 앞쪽은 8분 전, 뒤쪽은 방금 — 사이에 시간 구분선. 6번은 5번("실리카겔 좋아하세요?")에 대한 답장.
+	// &s=fresh : 상대 인사만 있고 내가 아직 말을 안 한 상태 (첫마디 도우미)
 	const MSGS: MsgRow[] =
 		scenario === 'pending'
 			? []
-			: [
-					m(0, '10분 동안 이야기할 수 있어요. 이름·학번·SNS는 묻지도 말하지도 않기로 해요.'),
-					m(2, '안녕하세요!'),
-					m(2, '혹시 요즘 뭐 듣는 노래 있어요?'),
-					m(1, '저 요즘 밴드 음악만 들어요'),
-					m(1, '실리카겔 좋아하세요?'),
-					m(2, '헐 저도 좋아해요 ㅋㅋㅋ 무드 좋던데'),
-					m(1, '와 진짜요? 반갑네요'),
-					m(2, '공연도 가봤어요?'),
-					m(1, '아직이요… 이번에 가보고 싶어요')
-				];
+			: scenario === 'fresh'
+				? [m(0, '10분 동안 이야기할 수 있어요. 이름·학번·SNS는 묻지도 말하지도 않기로 해요.'), m(2, '안녕하세요!')]
+				: [
+						m(0, '10분 동안 이야기할 수 있어요. 이름·학번·SNS는 묻지도 말하지도 않기로 해요.', 8),
+						m(2, '안녕하세요!', 8),
+						m(2, '혹시 요즘 뭐 듣는 노래 있어요?', 8),
+						m(1, '저 요즘 밴드 음악만 들어요', 7),
+						m(1, '실리카겔 좋아하세요?', 1),
+						m(2, '헐 저도 좋아해요 ㅋㅋㅋ 무드 좋던데', 1, 5),
+						m(1, '와 진짜요? 반갑네요'),
+						m(2, '공연도 가봤어요?'),
+						m(1, '아직이요… 이번에 가보고 싶어요')
+					];
 
 	/** 인메모리 가짜 전송 — 보내면 바로 성공, 상대는 이따금 타이핑 */
 	class PreviewTransport implements ChatTransport {
@@ -84,8 +91,8 @@
 			}, 50);
 		}
 		disconnect() {}
-		async send(_r: string, seat: 1 | 2, body: string, cid: string) {
-			const row: MsgRow = { ...m(seat, body), client_msg_id: cid };
+		async send(_r: string, seat: 1 | 2, body: string, cid: string, replyTo: number | null = null) {
+			const row: MsgRow = { ...m(seat, body), client_msg_id: cid, reply_to: replyTo };
 			this.rows.push(row);
 			// &read : 보낸 메시지를 상대가 1초 뒤 읽음 ("읽음" 표시가 화면 안으로 따라오는지 확인용)
 			if (page.url.searchParams.has('read')) {
@@ -180,5 +187,5 @@
 </script>
 
 {#if import.meta.env.DEV}
-	<ChatView {room} {loading} initialSheet={page.url.searchParams.get('sheet') as never} />
+	<ChatView {room} {loading} initialSheet={page.url.searchParams.get('sheet') as never} matched={page.url.searchParams.has('matched')} />
 {/if}

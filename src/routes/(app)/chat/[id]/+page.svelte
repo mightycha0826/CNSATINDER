@@ -38,4 +38,4 @@
 	});
 </script>
 
-<ChatView {room} {loading} />
+<ChatView {room} {loading} matched={!!page.state.matched} />

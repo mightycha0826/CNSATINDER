@@ -11,6 +11,11 @@
 	import PartnerCard from './PartnerCard.svelte';
 	import ReactionBadge from './ReactionBadge.svelte';
 	import ReactionPicker from './ReactionPicker.svelte';
+	import ReplyQuote from './ReplyQuote.svelte';
+	import Starters from './Starters.svelte';
+	import MatchScreen from './MatchScreen.svelte';
+	import { replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { pressGestures } from './gestures';
 	import { summarize } from './reactions';
 	import Avatar from '$lib/ui/Avatar.svelte';
@@ -23,10 +28,13 @@
 	let {
 		room,
 		loading,
-		initialSheet = null
+		initialSheet = null,
+		matched = false
 	}: {
 		room: ChatRoom | null;
 		loading: boolean;
+		/** 방금 매칭돼서 들어왔다 — 연결 화면을 한 번 */
+		matched?: boolean;
 		/** 개발용 미리보기에서만 사용 */
 		initialSheet?: null | 'menu' | 'report' | 'block' | 'leave' | 'profile';
 	} = $props();
@@ -267,10 +275,12 @@
 			toast('500자까지 보낼 수 있어요');
 			return;
 		}
+		const to = replyTo?.id ?? null;
 		draft = '';
+		replyTo = null;
 		atBottom = true;
 		inputEl?.focus();
-		await room.send(text);
+		await room.send(text, to);
 	}
 	function onKey(e: KeyboardEvent) {
 		// 한글 조합 중 Enter 는 무시 (IME)
@@ -340,6 +350,60 @@
 		const res = await room?.toggleReaction(id, k);
 		if (res === 'closed') toast('대화가 끝나서 공감할 수 없어요');
 		else if (res && res !== 'ok') toast('연결을 확인해 주세요');
+	}
+
+	// ── 답장 ─────────────────────────────────────────────────────
+	// 공감 고르기 줄의 "답장" → 입력창 위에 "○○에게 답장" 막대. 보내면 그 메시지를 짚은 답장이 된다.
+	let replyTo = $state<Msg | null>(null);
+	const byId = $derived(new Map((room?.msgs ?? []).filter((m) => m.id != null).map((m) => [m.id!, m])));
+	const whose = (m: Msg) => (m.sender_seat === room?.seat ? '내' : `${room?.snap?.partner_alias ?? '상대'}의`);
+
+	function startReply() {
+		const m = picker ? byId.get(picker.id) : undefined;
+		picker = null;
+		if (!m || locked) return;
+		replyTo = m;
+		inputEl?.focus();
+	}
+	$effect(() => {
+		if (locked) replyTo = null; // 대화가 끝나면 답장 준비도 접는다
+	});
+
+	// ── 연결 화면 · 시간 구분선 ──────────────────────────────────
+	let showMatch = $state(untrack(() => matched));
+	function matchDone() {
+		showMatch = false;
+		// 뒤로 왔다가 다시 이 방으로 와도(기록에 matched 가 남아 있어도) 또 뜨지 않게 지운다
+		if (page.state.matched) replaceState('', { ...page.state, matched: false });
+	}
+
+	/** 대화 시작과, 5분 넘게 쉬었다 이어질 때만 가운데에 시각 ("오후 3:12") */
+	const GAP_MS = 5 * 60_000;
+	function timeSep(i: number) {
+		const list = room?.msgs ?? [];
+		const cur = Date.parse(list[i].created_at);
+		if (i > 0 && cur - Date.parse(list[i - 1].created_at) < GAP_MS) return null;
+		return new Date(cur).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' });
+	}
+
+	// ── 첫마디 도우미 ─────────────────────────────────────────────
+	// 내가 아직 한 마디도 안 했고 입력창이 비어 있을 때만. 한 번 보내면 사라진다.
+	const showStarters = $derived(
+		!!room?.snap && !locked && !draft && !replyTo && !room.msgs.some((m) => m.sender_seat === room.seat)
+	);
+	function useStarter(text: string) {
+		draft = text;
+		inputEl?.focus();
+	}
+
+	/** 인용을 누르면 원래 메시지로 — 가운데로 스크롤하고 잠깐 반짝 */
+	let flashId = $state<number | null>(null);
+	function jumpTo(id: number) {
+		const el = listEl?.querySelector<HTMLElement>(`[data-mid="${id}"]`);
+		if (!el) return toast('원래 메시지를 찾을 수 없어요');
+		el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		flashId = id;
+		setTimeout(() => flashId === id && (flashId = null), 1200);
 	}
 
 	async function copy() {
@@ -472,13 +536,24 @@
 			{/if}
 			{#each room.msgs as m, i (m.client_msg_id)}
 				{@const p = pos(room.msgs, i)}
+				{@const sep = timeSep(i)}
+				{#if sep}<div class="time-sep num">{sep}</div>{/if}
 				{#if m.sender_seat === 0}
 					<div class="sys">{m.body}</div>
 				{:else}
 					{@const mine = m.sender_seat === room.seat}
 					{@const rx = m.id != null ? summarize(room.reactions[m.id]) : null}
-					<div class="row" class:mine class:gap={p.first}>
-						<div class="bwrap" class:reacted={!!rx}>
+					<div class="row" class:mine class:gap={p.first || m.reply_to != null} data-mid={m.id}>
+						<div class="bwrap" class:reacted={!!rx} class:flash={m.id != null && m.id === flashId}>
+							{#if m.reply_to != null}
+								{@const orig = byId.get(m.reply_to)}
+								<ReplyQuote
+									label={orig ? `${whose(orig)} 메시지에 답장` : '답장'}
+									text={orig?.body ?? null}
+									{mine}
+									onclick={() => jumpTo(m.reply_to!)}
+								/>
+							{/if}
 							<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 							<div
 								class="bubble"
@@ -547,6 +622,18 @@
 
 	{#if !closed}
 		<div class="composer">
+			{#if showStarters && room}
+				<Starters roomId={room.roomId} mine={S.profile?.interests ?? []} theirs={profile?.interests ?? []} onpick={useStarter} />
+			{/if}
+			{#if replyTo}
+				<div class="replying">
+					<div class="replying-text">
+						<b>{replyTo.sender_seat === room?.seat ? '내 메시지에 답장' : `${room?.snap?.partner_alias ?? '상대'}에게 답장`}</b>
+						<span>{replyTo.body}</span>
+					</div>
+					<button class="replying-x" onclick={() => (replyTo = null)} aria-label="답장 취소">✕</button>
+				</div>
+			{/if}
 			<div class="pill" class:disabled={locked}>
 				<textarea
 					bind:this={inputEl}
@@ -563,12 +650,17 @@
 	{/if}
 </div>
 
+{#if showMatch && room?.snap}
+	<MatchScreen alias={room.snap.partner_alias} minutes={S.settings?.room_minutes ?? 10} ondone={matchDone} />
+{/if}
+
 {#if picker}
 	<ReactionPicker
 		at={picker}
 		react={picker.react}
 		current={myReaction}
 		onpick={(k) => doReact(picker!.id, k)}
+		onreply={startReply}
 		oncopy={copy}
 		onclose={() => (picker = null)}
 	/>
@@ -824,6 +916,61 @@
 	.mine .bubble:not(.last) {
 		border-bottom-right-radius: 4px;
 	}
+	.time-sep {
+		align-self: center;
+		margin: 14px 0 4px;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--text-2);
+	}
+
+	/* ── 답장 ── */
+	.bwrap.flash .bubble {
+		animation: flash 1.2s ease-out;
+	}
+	@keyframes flash {
+		0%,
+		40% {
+			filter: brightness(0.82);
+			transform: scale(1.03);
+		}
+	}
+	.replying {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 0 4px 8px 12px;
+	}
+	.replying-text {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		padding-left: 10px;
+		border-left: 3px solid var(--accent);
+		font-size: 13px;
+	}
+	.replying-text b {
+		font-weight: 600;
+	}
+	.replying-text span {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--text-2);
+	}
+	.replying-x {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		color: var(--text-2);
+		font-size: 14px;
+	}
+
 	/* ── 공감 ── */
 	.bwrap {
 		position: relative;
