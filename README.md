@@ -126,6 +126,9 @@ npm run dev
 - [ ] **Phase 16 적용** — `schema.sql` 을 다시 실행 (공지사항 `private.notices`·`my_notices`). 안 하면 종 아이콘에 점이 뜨지 않고 `/admin/notices` 가 오류.
 - [ ] **Phase 17 적용** — `schema.sql` 을 다시 실행 (메시지 공감 `public.message_reactions`·`react_message`·공감 알림 `reaction_push_payload`, Realtime 발행 포함).
 - [ ] **Phase 18 적용** — `schema.sql` 을 다시 실행 (답장 `messages.reply_to`·`msg_reply_check`). 안 해도 채팅은 되고 답장만 안 된다.
+- [ ] **Phase 19 적용** — `schema.sql` 을 다시 실행 (검열봇 규칙 필터 · AI 검토 대기열 · AI 대화 한도). 실행하는 즉시 신상정보·금칙어 차단이
+      채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
+      운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
 - [ ] **운영자 점검 반영** — `schema.sql` 을 다시 실행 (신고 처리·글 내리기·운영 설정 RPC 의 역할 검사, 탈퇴 계정 제재 오류).
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
@@ -166,7 +169,8 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `src/lib/letters/` | 익명편지 |
 | `src/lib/tabBack.svelte.ts` | 탭 첫 화면 뒤로가기 — 익명편지 → 홈, 홈에서 두 번 누르면 종료 |
 | `src/lib/admin/` | 운영자 화면 공용 조각 — 신고 상세 카드(`ReportHeader` · `ReportedCard` · `ReporterCard` · `IdentityCard`), `AccountStatus`, `FormMsg`, `SanctionForm` |
-| `src/lib/server/` | 서버 전용 — 운영자 세션·권한, `reports.ts`(채팅·편지 신고 공용 로드·액션), 푸시 (`/api/push` 는 요청 키 → DB 판단 함수 표, 받을 기기는 DB `private.push_target`) |
+| `src/lib/server/` | 서버 전용 — 운영자 세션·권한, `reports.ts`(채팅·편지 신고 공용 로드·액션), 푸시 (`/api/push` 는 요청 키 → DB 판단 함수 표, 받을 기기는 DB `private.push_target`), `ai.ts`(Workers AI 호출) · `moderation.ts`(검열 판정 프롬프트) · `aiChat.ts`(AI 대화 프롬프트) |
+| `src/lib/ai/` · `src/lib/moderation.ts` | AI 대화 상대 화면(`AiChat`, 홈 위에 덮어 띄움) · 글을 올린 뒤 검열봇 부르기(`/api/moderate`) |
 | `src/params/` | 라우트 주소 검사 — `[id=uuid]`, `[id=int]` (모양이 틀린 주소는 곧바로 404) |
 
 ## 명령어
@@ -202,6 +206,9 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 - `/dev/chat?s=chat|fresh|vote|waiting|pending|ended` — 대화방 화면 미리보기 (Supabase 불필요, 개발 모드 전용).
   `&matched` 연결 화면, `&incoming` 상대 새 메시지, `&sheet=menu|report|block|profile` 시트
 - `/dev/letters?v=feed|detail|task|new` — 익명편지 화면 미리보기 (가짜 서버, 개발 모드 전용)
+- `/dev/ai?s=ok|limit|full|off` — AI 대화 상대 화면 미리보기 (`&turns=2` 턴 한도, `&short` 20초 뒤 끝, `&down` AI 오류)
+- `AI_FAKE=1 npm run dev` — Workers AI 대신 정해진 답 (검열: 글에 `[flag:harassment]` 가 있으면 걸림 / 대화: "AI 답: …").
+  개발 서버는 원격 바인딩을 붙이지 않는다 — 진짜 AI 는 `npx wrangler login` 뒤 `CF_REMOTE=1 npm run dev`. 모델은 `AI_MODEL` 로 바꿀 수 있다
 - `?gate` — 개발 모드에서 PWA 설치 게이트 화면을 강제로 띄운다
   (평소 DEV 에서는 게이트가 꺼져 있다)
 
@@ -253,6 +260,17 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       연결은 우리 사이트와 `*.supabase.co` 만, 다른 사이트의 틀(iframe) 안에서는 안 열림. 그리고 `X-Frame-Options` ·
       `nosniff` · `Referrer-Policy` · `Permissions-Policy`(카메라·마이크·위치 안 씀) (`hooks.server.ts`).
       ★ Supabase 주소를 사용자 도메인으로 바꾸면 `vite.config.ts` 의 connect-src 에 추가
+- [x] **Phase 19 — 검열봇 · AI 대화 상대**
+      · 1단 규칙 필터 (무료, 보내기 전): 전화번호 · 학번(학년1~3·반01~12·번호01~39) · "N학년 N반" · SNS 아이디/주소 · 금칙어
+        (`private.banned_terms`, 운영 설정에서 관리자가 편집 — 틀린 정규식은 저장 전에 거른다). 채팅·편지·댓글 insert 트리거.
+        막힌 채팅은 말풍선을 지우고 글을 입력창에 돌려놓는다
+      · 2단 AI 검토 (보낸 뒤): 글이 올라가면 `private.mod_queue` 에 쌓이고, 학생 앱이 `/api/moderate` 를 부르면 서버가 쌓인 순서대로
+        Cloudflare Workers AI(Gemma 3 12B)에 판정을 받는다. 걸리면 신고함에 "자동" 표시로(`source = auto`, 신고자 없음) — 판단은 사람이.
+        위기 신호(자해·자살)도 분류한다. 자동 신고는 자동 정지 횟수에 세지 않는다. 하루 한도(`ai_mod_daily_cap`)
+      · AI 대화 상대: 상대를 찾는 동안 홈에서 "AI 와 얘기하기". 늘 "AI" 표시, 신상정보는 AI 에게도 못 보냄(같은 규칙 필터),
+        사람당·앱 전체 하루 한도 · 한 번에 N분 · N턴. 대화 내용은 어디에도 저장하지 않는다(횟수만). 위기 신호엔 109 · 1388 안내
+      · Workers AI 무료 몫은 하루 10,000 Neuron(UTC 00:00 = 한국 오전 9시 초기화) — 두 기능이 나눠 쓴다. 기본 한도: 검토 250건 · AI 대화 3번
+        (어림값: 검토 1건 ≈ 17 Neuron, AI 대화 30턴 ≈ 1,600 Neuron). 한도를 넘기면 검토는 규칙 필터만, AI 대화는 "오늘 끝" 안내
 - [x] **뒤로가기 (설치된 앱)** — 홈(채팅)에서 뒤로 → "뒤로가기를 한 번 더 누르면 종료됩니다", 2초 안에 또 누르면 앱 종료.
       익명편지 탭에서 뒤로 → 채팅 홈. 탭 첫 화면에 얕은 기록(`pushState` guard)을 하나 쌓아 두고 그게 걷히는 순간을 잡는다
       (`(app)/+layout.svelte`). 홈이 기록 맨 아래여야 하므로 탭 전환은 기록을 바꿔 끼우고, 다른 화면에서 홈으로는

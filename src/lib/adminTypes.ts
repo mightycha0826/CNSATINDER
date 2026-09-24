@@ -13,7 +13,9 @@ export type ReportRow = {
 	note: string;
 	status: ReportStatus;
 	reported_id: string;
-	reporter_id: string;
+	/** AI 자동 감지(source = auto)면 null */
+	reporter_id: string | null;
+	source?: 'user' | 'auto';
 	reported_30d: number;
 	evidence_count: number;
 	reported_status: 'active' | 'suspended' | 'banned' | null;
@@ -47,7 +49,9 @@ export const REASON_LABEL: Record<string, string> = {
 	hate: '혐오 표현',
 	impersonation: '사칭',
 	spam: '도배·광고',
-	other: '기타'
+	other: '기타',
+	/** AI 자동 감지만 붙인다 (학생 신고 사유에는 없음) */
+	self_harm: '위기 신호(자해·자살)'
 };
 
 export const STATUS_LABEL: Record<ReportStatus, string> = {
@@ -74,7 +78,9 @@ export type LetterReportRow = {
 	note: string;
 	status: ReportStatus;
 	reported_id: string;
-	reporter_id: string;
+	/** AI 자동 감지(source = auto)면 null */
+	reporter_id: string | null;
+	source?: 'user' | 'auto';
 	reported_30d: number;
 	/** 신고한 글 앞부분 (증거 사본에서) */
 	preview: string | null;
@@ -279,6 +285,7 @@ export const ACTION_LABEL: Record<string, string> = {
 	remove_letter: '편지 내림',
 	remove_comment: '댓글 내림',
 	update_settings: '설정 변경',
+	update_banned_terms: '금칙어 변경',
 	roster_import: '명렬표 반영',
 	post_notice: '공지 올림',
 	remove_notice: '공지 내림'

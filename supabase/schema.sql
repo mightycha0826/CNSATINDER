@@ -976,6 +976,8 @@ create table if not exists private.reports (
   created_at   timestamptz not null default now(),
   unique (room_id, reporter_id)       -- 같은 방을 두 번 신고할 수 없다
 );
+-- Phase 19: 누가 올렸나 — user = 사람이 신고 / auto = AI 자동 감지 (auto 는 reporter_id 가 비어 있다)
+alter table private.reports add column if not exists source text not null default 'user' check (source in ('user','auto'));
 create index if not exists reports_queue    on private.reports (status, created_at desc);
 create index if not exists reports_reported on private.reports (reported_id, created_at desc);
 alter table private.reports enable row level security;
@@ -1180,7 +1182,7 @@ create or replace function public.admin_list_reports(p_status text default 'open
 returns jsonb language sql security definer set search_path = public, private stable as $fn$
   select coalesce(jsonb_agg(x order by x.created_at desc), '[]'::jsonb) from (
     select r.id, r.created_at, r.reason, left(r.note, 140) as note, r.status,
-           r.reported_id, r.reporter_id,
+           r.reported_id, r.reporter_id, r.source,
            (select count(distinct r2.reporter_id) from private.reports r2
              where r2.reported_id = r.reported_id and r2.status <> 'dismissed'
                and r2.created_at > now() - interval '30 days') as reported_30d,
@@ -1301,7 +1303,15 @@ begin
     max_rounds            = coalesce((p_patch->>'max_rounds')::smallint, max_rounds),
     rematch_cooldown_days = coalesce((p_patch->>'rematch_cooldown_days')::int, rematch_cooldown_days),
     auto_suspend_reports  = coalesce((p_patch->>'auto_suspend_reports')::int, auto_suspend_reports),
-    max_open_rooms        = coalesce((p_patch->>'max_open_rooms')::int, max_open_rooms)
+    max_open_rooms        = coalesce((p_patch->>'max_open_rooms')::int, max_open_rooms),
+    -- Phase 19 — AI 검토 · AI 대화 (컬럼은 Phase 19 에서 추가. 이 함수가 먼저 만들어져도 실행 시점엔 있다)
+    ai_moderation         = coalesce((p_patch->>'ai_moderation')::boolean, ai_moderation),
+    ai_mod_daily_cap      = coalesce((p_patch->>'ai_mod_daily_cap')::int, ai_mod_daily_cap),
+    ai_chat               = coalesce((p_patch->>'ai_chat')::boolean, ai_chat),
+    ai_chat_per_user      = coalesce((p_patch->>'ai_chat_per_user')::int, ai_chat_per_user),
+    ai_chat_daily_cap     = coalesce((p_patch->>'ai_chat_daily_cap')::int, ai_chat_daily_cap),
+    ai_chat_minutes       = coalesce((p_patch->>'ai_chat_minutes')::int, ai_chat_minutes),
+    ai_chat_max_turns     = coalesce((p_patch->>'ai_chat_max_turns')::int, ai_chat_max_turns)
   where id;
   insert into private.audit_log (staff_id, action, detail) values (p_staff, 'update_settings', p_patch);
   return public.admin_get_settings();
@@ -2324,6 +2334,7 @@ create table if not exists private.letter_reports (
   action_note text,
   created_at  timestamptz not null default now()
 );
+alter table private.letter_reports add column if not exists source text not null default 'user' check (source in ('user','auto'));
 create index if not exists letter_reports_queue    on private.letter_reports (status, created_at desc);
 create index if not exists letter_reports_reported on private.letter_reports (reported_id, created_at desc);
 create unique index if not exists letter_reports_once_letter
@@ -2528,7 +2539,7 @@ create or replace function public.admin_list_letter_reports(p_status text defaul
 returns jsonb language sql security definer set search_path = public, private stable as $fn$
   select coalesce(jsonb_agg(x order by x.created_at desc), '[]'::jsonb) from (
     select r.id, r.created_at, r.target_type, r.letter_id, r.comment_id, r.reason, left(r.note, 140) as note,
-           r.status, r.reported_id, r.reporter_id,
+           r.status, r.reported_id, r.reporter_id, r.source,
            (select count(distinct r2.reporter_id) from private.letter_reports r2
              where r2.reported_id = r.reported_id and r2.status <> 'dismissed'
                and r2.created_at > now() - interval '30 days') as reported_30d,
@@ -3368,3 +3379,471 @@ create trigger messages_reply_check
   for each row execute function public.msg_reply_check();
 
 grant insert (reply_to) on public.messages to authenticated;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 19 — 검열봇 (규칙 필터 + AI 검토) · AI 대화 상대
+--
+--  1단 규칙 필터 — 보내기 전에 DB 가 막는다 (무료 · 즉시 · 밖으로 나가는 데이터 없음).
+--     전화번호 · 학번 · "N학년 N반" · SNS 아이디/주소 · 금칙어(private.banned_terms, 관리자가 고친다).
+--     채팅 메시지 · 편지 · 댓글 모두 insert 트리거에서. 막히면 'personal_info' / 'blocked_word' 오류.
+--  2단 AI 검토 — 올라간 뒤에 서버(/api/moderate)가 Cloudflare Workers AI 로 판정한다.
+--     걸리면 운영진 신고함에 '자동 감지'(source = 'auto', reporter_id 없음)로 올라간다. 판단은 사람이.
+--     하루 한도(ai_mod_daily_cap) — Workers AI 무료 몫이 하루 단위(UTC 00:00 = 한국 오전 9시)라서.
+--     자동 신고는 자동 정지 횟수에 세지 않는다 (count(distinct reporter_id) 가 null 을 빼므로).
+--  AI 대화 상대 — 매칭을 기다리는 동안. 사람당 하루 N번 · 앱 전체 하루 N번 · 한 번에 N분 · N턴.
+--     대화 내용은 DB 에 남기지 않는다 (몇 번 썼는지만 센다).
+--  AI 두 기능 모두 기본은 꺼짐 — 개인정보 처리방침에 적고 운영 설정에서 켠다.
+-- ════════════════════════════════════════════════════════════════════
+
+-- ── 설정 ──
+alter table public.app_settings add column if not exists ai_moderation     boolean not null default false;
+alter table public.app_settings add column if not exists ai_mod_daily_cap  int     not null default 250;
+alter table public.app_settings add column if not exists ai_chat           boolean not null default false;
+alter table public.app_settings add column if not exists ai_chat_per_user  int     not null default 3;
+alter table public.app_settings add column if not exists ai_chat_daily_cap int     not null default 3;
+alter table public.app_settings add column if not exists ai_chat_minutes   int     not null default 10;
+alter table public.app_settings add column if not exists ai_chat_max_turns int     not null default 30;
+do $do$
+begin
+  alter table public.app_settings add constraint app_settings_ai_check check (
+    ai_mod_daily_cap between 0 and 100000 and ai_chat_per_user between 0 and 50
+    and ai_chat_daily_cap between 0 and 100000 and ai_chat_minutes between 1 and 30
+    and ai_chat_max_turns between 1 and 100);
+exception when duplicate_object then null;
+end
+$do$;
+
+-- ── 1단: 규칙 필터 ──
+create table if not exists private.banned_terms (
+  pattern    text primary key,     -- 정규식 (소문자로 바꾼 글에 맞춘다)
+  created_at timestamptz not null default now()
+);
+alter table private.banned_terms enable row level security;
+-- 처음 한 번만 채운다 (관리자가 지운 것을 schema.sql 을 다시 돌릴 때 되살리지 않게)
+insert into private.banned_terms (pattern)
+select unnest(array[
+  '섹\s*스', '씹\s*창', '보\s*빨', '느\s*금\s*마', '니\s*애\s*미', '니\s*엄\s*마\s*(뒤|죽)',
+  '자\s*살\s*(해\s*라|하\s*세\s*요|해\s*버\s*려)', '뒤\s*져\s*(라|버\s*려)', '창\s*녀', '한\s*남\s*충', '김\s*치\s*녀'])
+ where not exists (select 1 from private.banned_terms);
+
+-- null = 통과, 아니면 막는 이유
+create or replace function private.rule_violation(p_text text)
+returns text language plpgsql stable security definer set search_path = public, private as $fn$
+declare
+  t text := lower(coalesce(p_text, ''));
+  d text;
+begin
+  -- 숫자 사이의 띄어쓰기·하이픈·점을 없앤 글 (010 1234 5678, 010-1234-5678 → 01012345678)
+  d := regexp_replace(t, '([0-9])[\s.\-]+(?=[0-9])', '\1', 'g');
+  if d ~ '01[016789][0-9]{7,8}' then return 'personal_info'; end if;
+  -- 학번: 학년 1~3 · 반 01~12 · 번호 01~39 (20529). 돈·개수 같은 숫자(15000원)는 반 자리가 맞지 않거나 단위로 걸러진다
+  if t ~ '(^|[^0-9])[1-3](0[1-9]|1[0-2])(0[1-9]|[1-3][0-9])(?![0-9]|\s*(원|명|개|년|점|번|위|등|분|초|살|층|호|회|장|권|m|km|kg|%))' then
+    return 'personal_info';
+  end if;
+  if t ~ '[1-3]\s*학년\s*[0-9]{1,2}\s*반' then return 'personal_info'; end if;
+  -- SNS · 메신저 — @아이디, 주소, "인스타 아이디" 같은 말
+  if t ~ '@[a-z0-9_.]{3,}' then return 'personal_info'; end if;
+  if t ~ '(instagram\.com|instagr\.am|open\.kakao\.com|discord\.gg|discord\.com/invite|t\.me/|facebook\.com|tiktok\.com|snapchat\.com)' then
+    return 'personal_info';
+  end if;
+  if t ~ '(인스타|insta|카톡|카카오톡|kakao|페메|페북|디코|디스코드|discord|텔레그램|telegram|스냅챗|snapchat|틱톡|tiktok)\s*(아이디|id|아뒤|주소|계정|알려|추가|맞팔|팔로|친추|dm|디엠)' then
+    return 'personal_info';
+  end if;
+  if exists (select 1 from private.banned_terms b where t ~ b.pattern) then return 'blocked_word'; end if;
+  return null;
+end
+$fn$;
+revoke all on function private.rule_violation(text) from public, anon, authenticated;
+
+create or replace function public.content_rule_check()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+declare v text;
+begin
+  -- ★ 조건을 and 로 묶으면 편지 표에도 new.sender_seat 를 찾다가 오류 — 따로 묻는다
+  if tg_table_name = 'messages' then
+    if new.sender_seat = 0 then return new; end if;  -- 시스템 안내
+  end if;
+  v := private.rule_violation(new.body);
+  if v is not null then raise exception '%', v; end if;
+  return new;
+end
+$fn$;
+revoke all on function public.content_rule_check() from public, anon, authenticated;
+
+drop trigger if exists messages_rule_check on public.messages;
+create trigger messages_rule_check before insert on public.messages
+  for each row execute function public.content_rule_check();
+drop trigger if exists letters_rule_check on public.letters;
+create trigger letters_rule_check before insert on public.letters
+  for each row execute function public.content_rule_check();
+drop trigger if exists letter_comments_rule_check on public.letter_comments;
+create trigger letter_comments_rule_check before insert on public.letter_comments
+  for each row execute function public.content_rule_check();
+
+-- ── 2단: AI 검토 대기열 ──
+alter table private.reports        alter column reporter_id drop not null;
+alter table private.letter_reports alter column reporter_id drop not null;
+-- self_harm(위기 신호)은 AI 만 붙인다 — 학생 신고 사유 목록(report_partner · report_letter)은 그대로
+alter table private.reports drop constraint if exists reports_reason_check;
+alter table private.reports add constraint reports_reason_check check (reason in
+  ('harassment','sexual','spam','personal_info','hate','impersonation','other','self_harm'));
+alter table private.letter_reports drop constraint if exists letter_reports_reason_check;
+alter table private.letter_reports add constraint letter_reports_reason_check check (reason in
+  ('harassment','sexual','spam','personal_info','hate','impersonation','other','self_harm'));
+
+create table if not exists private.mod_queue (
+  id         bigint generated always as identity primary key,
+  kind       text not null check (kind in ('message','letter','comment')),
+  ref_id     bigint not null,
+  status     text not null default 'pending' check (status in ('pending','working','done','skipped','error')),
+  tries      smallint not null default 0,
+  verdict    jsonb,              -- {flag, category, reason} — 글 본문은 담지 않는다
+  created_at timestamptz not null default now(),
+  claimed_at timestamptz,
+  done_at    timestamptz,
+  unique (kind, ref_id)
+);
+create index if not exists mod_queue_open on private.mod_queue (created_at) where status in ('pending','working');
+create index if not exists mod_queue_claimed on private.mod_queue (claimed_at);
+alter table private.mod_queue enable row level security;
+
+create or replace function public.mod_enqueue()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+begin
+  if not coalesce((select ai_moderation from public.app_settings where id), false) then return null; end if;
+  if tg_table_name = 'messages' then
+    if new.sender_seat = 0 then return null; end if;
+    insert into private.mod_queue (kind, ref_id) values ('message', new.id) on conflict do nothing;
+  elsif tg_table_name = 'letters' then
+    insert into private.mod_queue (kind, ref_id) values ('letter', new.id) on conflict do nothing;
+  else
+    insert into private.mod_queue (kind, ref_id) values ('comment', new.id) on conflict do nothing;
+  end if;
+  return null;
+end
+$fn$;
+revoke all on function public.mod_enqueue() from public, anon, authenticated;
+
+drop trigger if exists messages_mod_enqueue on public.messages;
+create trigger messages_mod_enqueue after insert on public.messages
+  for each row execute function public.mod_enqueue();
+drop trigger if exists letters_mod_enqueue on public.letters;
+create trigger letters_mod_enqueue after insert on public.letters
+  for each row execute function public.mod_enqueue();
+drop trigger if exists letter_comments_mod_enqueue on public.letter_comments;
+create trigger letter_comments_mod_enqueue after insert on public.letter_comments
+  for each row execute function public.mod_enqueue();
+
+-- 오늘 (Workers AI 무료 몫이 초기화되는 UTC 00:00 = 한국 오전 9시 기준)
+create or replace function private.ai_day_start()
+returns timestamptz language sql stable as $fn$
+  select date_trunc('day', now() at time zone 'utc') at time zone 'utc';
+$fn$;
+
+-- 검토할 글 N개를 가져간다 (서버 전용). 글 본문 + 앞뒤 맥락. 동시에 여러 요청이 와도 같은 글을 두 번 가져가지 않는다.
+create or replace function public.mod_claim(p_n int default 3)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  cfg    public.app_settings%rowtype;
+  v_used int;
+  v_take int;
+  v_out  jsonb;
+begin
+  select * into cfg from public.app_settings where id;
+  if not cfg.ai_moderation then return '[]'::jsonb; end if;
+
+  -- 정리: 하루 지난 것은 건너뜀 · 세 번 실패한 것은 오류 · 오래된 기록은 지움 (본문은 원래 없다)
+  update private.mod_queue set status = 'skipped', done_at = now()
+   where status in ('pending','working') and created_at < now() - interval '1 day';
+  update private.mod_queue set status = 'error', done_at = now()
+   where status = 'working' and claimed_at < now() - interval '2 minutes' and tries >= 3;
+  delete from private.mod_queue where created_at < now() - interval '30 days';
+  delete from private.ai_chats where created_at < now() - interval '7 days';
+
+  select count(*) into v_used from private.mod_queue where claimed_at >= private.ai_day_start();
+  v_take := least(greatest(coalesce(p_n, 0), 0), 10, cfg.ai_mod_daily_cap - v_used);
+  if v_take <= 0 then return '[]'::jsonb; end if;
+
+  update private.mod_queue q set status = 'working', claimed_at = now(), tries = q.tries + 1
+   where q.id in (select id from private.mod_queue
+                   where status = 'pending'
+                      or (status = 'working' and claimed_at < now() - interval '2 minutes')
+                   order by created_at limit v_take
+                   for update skip locked);
+
+  -- 원문이 이미 지워졌으면(방 purge 등) 건너뜀
+  update private.mod_queue q set status = 'skipped', done_at = now()
+   where q.status = 'working' and q.claimed_at = now()
+     and not case q.kind
+       when 'message' then exists (select 1 from public.messages m where m.id = q.ref_id)
+       when 'letter'  then exists (select 1 from public.letters l where l.id = q.ref_id)
+       else exists (select 1 from public.letter_comments c where c.id = q.ref_id) end;
+
+  select coalesce(jsonb_agg(jsonb_build_object('id', q.id, 'kind', q.kind, 'text', x.body, 'context', x.ctx)
+                            order by q.id), '[]'::jsonb) into v_out
+    from private.mod_queue q
+    cross join lateral (
+      select m.body,
+             -- 앞의 메시지 4개 (시간 순) — 같은 사람 = 작성자, 다른 사람 = 상대
+             (select coalesce(jsonb_agg(jsonb_build_object('who', case when p.sender_seat = m.sender_seat then '작성자' else '상대' end,
+                                                           'text', left(p.body, 300)) order by p.id), '[]'::jsonb)
+                from (select * from public.messages p2
+                       where p2.room_id = m.room_id and p2.id < m.id and p2.sender_seat <> 0
+                       order by p2.id desc limit 4) p) as ctx
+        from public.messages m where q.kind = 'message' and m.id = q.ref_id
+      union all
+      select l.body, '[]'::jsonb from public.letters l where q.kind = 'letter' and l.id = q.ref_id
+      union all
+      select c.body,
+             jsonb_build_array(jsonb_build_object('who', '편지', 'text', left(l.body, 300)))
+             || coalesce((select jsonb_build_array(jsonb_build_object('who', '윗댓글', 'text', left(pc.body, 300)))
+                            from public.letter_comments pc where pc.id = c.parent_comment_id), '[]'::jsonb)
+        from public.letter_comments c join public.letters l on l.id = c.letter_id
+       where q.kind = 'comment' and c.id = q.ref_id
+    ) x
+   where q.status = 'working' and q.claimed_at = now();
+  return v_out;
+end
+$fn$;
+
+-- AI 가 판정을 못 냈다 (한도 초과 · 오류) — 다음 기회에 다시
+create or replace function public.mod_release(p_ids bigint[])
+returns void language sql security definer set search_path = public, private as $fn$
+  update private.mod_queue set status = 'pending', claimed_at = null, tries = greatest(tries - 1, 0)
+   where id = any(p_ids) and status = 'working';
+$fn$;
+
+-- 채팅 자동 신고 — 같은 방 · 같은 사람의 처리 안 된 자동 신고가 있으면 거기에 덧붙인다
+create or replace function private.auto_report_message(p_msg bigint, p_reason text, p_why text)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare m public.messages%rowtype; v_sender uuid; v_report uuid; v_line text;
+begin
+  select * into m from public.messages where id = p_msg;
+  if not found then return; end if;
+  select user_id into v_sender from public.room_members where room_id = m.room_id and seat = m.sender_seat;
+  if v_sender is null then return; end if;
+  v_line := '[자동 감지] "' || left(m.body, 60) || '" — ' || left(coalesce(p_why, ''), 200);
+
+  select id into v_report from private.reports
+   where room_id = m.room_id and source = 'auto' and reported_id = v_sender and status in ('open','reviewing')
+   limit 1;
+  if v_report is null then
+    insert into private.reports (room_id, reporter_id, reported_id, reason, note, source)
+    values (m.room_id, null, v_sender, p_reason, v_line, 'auto')
+    returning id into v_report;
+  else
+    update private.reports set note = left(note || E'\n' || v_line, 1000) where id = v_report;
+    delete from private.report_evidence where report_id = v_report;
+  end if;
+
+  -- 증거: 지금까지의 대화 전문 (1 = 상대, 2 = 걸린 사람)
+  insert into private.report_evidence (report_id, ord, sender, body, sent_at)
+  select v_report, row_number() over (order by x.id),
+         case when x.sender_seat = 0 then 0 when x.sender_seat = m.sender_seat then 2 else 1 end,
+         x.body, x.created_at
+    from public.messages x where x.room_id = m.room_id and x.id <= m.id;
+end
+$fn$;
+
+-- 편지 · 댓글 자동 신고
+create or replace function private.auto_report_letter(p_kind text, p_ref bigint, p_reason text, p_why text)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare v_letter bigint; v_comment bigint; v_target uuid; v_report uuid; v_body text; c public.letter_comments%rowtype;
+begin
+  if p_kind = 'letter' then
+    v_letter := p_ref;
+    select body into v_body from public.letters where id = p_ref;
+  else
+    select * into c from public.letter_comments where id = p_ref;
+    if not found then return; end if;
+    v_letter := c.letter_id; v_comment := c.id; v_body := c.body;
+  end if;
+  v_target := private.letter_target_user(v_letter, v_comment);
+  if v_target is null then return; end if;
+
+  select id into v_report from private.letter_reports
+   where source = 'auto' and letter_id = v_letter and comment_id is not distinct from v_comment
+     and status in ('open','reviewing')
+   limit 1;
+  if v_report is not null then return; end if;   -- 글 하나에 자동 신고 하나
+
+  insert into private.letter_reports (target_type, letter_id, comment_id, reporter_id, reported_id, reason, note, source)
+  values (case when v_comment is null then 'letter' else 'comment' end, v_letter, v_comment, null, v_target,
+          p_reason, '[자동 감지] ' || left(coalesce(p_why, ''), 200), 'auto')
+  returning id into v_report;
+
+  -- 증거: 편지 본문, (대댓글이면) 윗댓글, 걸린 댓글 — report_letter 와 같은 모양
+  insert into private.letter_report_evidence (report_id, ord, kind, alias, body, sent_at)
+  select v_report, 1, 'letter', a.alias, l.body, l.created_at
+    from public.letters l
+    join public.letter_participants a on a.letter_id = l.id and a.participant_no = 1
+   where l.id = v_letter;
+  if v_comment is not null then
+    if c.parent_comment_id is not null then
+      insert into private.letter_report_evidence (report_id, ord, kind, alias, body, sent_at)
+      select v_report, 2, 'parent', pp.alias, k.body, k.created_at
+        from public.letter_comments k
+        join public.letter_participants pp on pp.letter_id = k.letter_id and pp.participant_no = k.author_no
+       where k.id = c.parent_comment_id;
+    end if;
+    insert into private.letter_report_evidence (report_id, ord, kind, alias, body, sent_at)
+    select v_report, 3, 'comment', pp.alias, c.body, c.created_at
+      from public.letter_participants pp where pp.letter_id = c.letter_id and pp.participant_no = c.author_no;
+  end if;
+end
+$fn$;
+revoke all on function private.auto_report_message(bigint, text, text) from public, anon, authenticated;
+revoke all on function private.auto_report_letter(text, bigint, text, text) from public, anon, authenticated;
+
+-- AI 판정 결과 (서버 전용). 걸렸으면 자동 신고.
+create or replace function public.mod_verdict(p_id bigint, p_flag boolean, p_category text, p_reason text)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare q private.mod_queue%rowtype; v_cat text;
+begin
+  select * into q from private.mod_queue where id = p_id for update;
+  if not found or q.status <> 'working' then return jsonb_build_object('status', 'gone'); end if;
+  v_cat := case when p_category in ('harassment','sexual','hate','personal_info','spam','self_harm')
+                then p_category else 'other' end;
+  update private.mod_queue
+     set status = 'done', done_at = now(),
+         verdict = jsonb_build_object('flag', coalesce(p_flag, false), 'category', v_cat, 'reason', left(coalesce(p_reason, ''), 200))
+   where id = p_id;
+  if coalesce(p_flag, false) then
+    if q.kind = 'message' then perform private.auto_report_message(q.ref_id, v_cat, p_reason);
+    else perform private.auto_report_letter(q.kind, q.ref_id, v_cat, p_reason);
+    end if;
+  end if;
+  return jsonb_build_object('status', 'ok', 'flagged', coalesce(p_flag, false));
+end
+$fn$;
+
+-- ── AI 대화 상대 ──
+create table if not exists private.ai_chats (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references auth.users on delete cascade,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  turns      int not null default 0
+);
+create index if not exists ai_chats_day  on private.ai_chats (created_at);
+create index if not exists ai_chats_user on private.ai_chats (user_id, created_at desc);
+alter table private.ai_chats enable row level security;
+
+-- 학생이 부른다. 한도 안이면 새 AI 대화(또는 아직 안 끝난 대화)를 돌려준다.
+create or replace function public.ai_chat_start()
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  me     uuid := auth.uid();
+  cfg    public.app_settings%rowtype;
+  p      public.profiles%rowtype;
+  v_day  timestamptz := private.ai_day_start();
+  v_mine int;
+  v_all  int;
+  c      private.ai_chats%rowtype;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select * into cfg from public.app_settings where id;
+  if not cfg.ai_chat or not cfg.is_open then return jsonb_build_object('status', 'off'); end if;
+  select * into p from public.profiles where id = me;
+  if not found or p.status <> 'active' or coalesce(p.suspended_until > now(), false) then
+    return jsonb_build_object('status', 'restricted');
+  end if;
+
+  -- 아직 안 끝난 대화가 있으면 그걸 이어간다 (화면을 다시 열어도 한 번으로 센다)
+  select * into c from private.ai_chats
+   where user_id = me and expires_at > now() and turns < cfg.ai_chat_max_turns
+   order by created_at desc limit 1;
+  if not found then
+    select count(*) filter (where user_id = me), count(*) into v_mine, v_all
+      from private.ai_chats where created_at >= v_day;
+    if v_mine >= cfg.ai_chat_per_user then return jsonb_build_object('status', 'limit', 'per_user', cfg.ai_chat_per_user); end if;
+    if v_all >= cfg.ai_chat_daily_cap then return jsonb_build_object('status', 'full'); end if;
+    insert into private.ai_chats (user_id, expires_at)
+    values (me, now() + make_interval(mins => cfg.ai_chat_minutes))
+    returning * into c;
+  end if;
+  select count(*) into v_mine from private.ai_chats where user_id = me and created_at >= v_day;
+  return jsonb_build_object('status', 'ok', 'id', c.id, 'expires_at', c.expires_at, 'turns', c.turns,
+    'max_turns', cfg.ai_chat_max_turns, 'left_today', greatest(cfg.ai_chat_per_user - v_mine, 0),
+    'server_now', now());
+end
+$fn$;
+
+-- 한 턴 (서버 전용 — /api/ai-chat 이 토큰에서 확인한 사용자로 부른다). 규칙 필터도 여기서.
+create or replace function public.ai_chat_turn(p_chat uuid, p_user uuid, p_text text)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare cfg public.app_settings%rowtype; c private.ai_chats%rowtype; v text;
+begin
+  select * into cfg from public.app_settings where id;
+  select * into c from private.ai_chats where id = p_chat and user_id = p_user for update;
+  if not found then return jsonb_build_object('status', 'not_found'); end if;
+  if not cfg.ai_chat then return jsonb_build_object('status', 'off'); end if;
+  if now() >= c.expires_at then return jsonb_build_object('status', 'expired'); end if;
+  if c.turns >= cfg.ai_chat_max_turns then return jsonb_build_object('status', 'turns'); end if;
+  if char_length(btrim(coalesce(p_text, ''))) not between 1 and 500 then return jsonb_build_object('status', 'bad_text'); end if;
+  v := private.rule_violation(p_text);
+  if v is not null then return jsonb_build_object('status', 'blocked', 'code', v); end if;
+  update private.ai_chats set turns = turns + 1 where id = p_chat;
+  return jsonb_build_object('status', 'ok', 'turns', c.turns + 1, 'max_turns', cfg.ai_chat_max_turns);
+end
+$fn$;
+
+-- ── 운영자 ──
+create or replace function public.admin_ai_usage()
+returns jsonb language sql security definer set search_path = public, private stable as $fn$
+  select jsonb_build_object(
+    'mod_checked_today', (select count(*) from private.mod_queue where claimed_at >= private.ai_day_start()),
+    'mod_flagged_today', (select count(*) from private.mod_queue
+                           where done_at >= private.ai_day_start() and (verdict->>'flag')::boolean),
+    'mod_pending',       (select count(*) from private.mod_queue where status in ('pending','working')),
+    'ai_chats_today',    (select count(*) from private.ai_chats where created_at >= private.ai_day_start()),
+    'day_start',         private.ai_day_start());
+$fn$;
+
+create or replace function public.admin_banned_terms()
+returns jsonb language sql security definer set search_path = public, private stable as $fn$
+  select coalesce(jsonb_agg(pattern order by created_at, pattern), '[]'::jsonb) from private.banned_terms;
+$fn$;
+
+-- 통째로 바꾼다 (관리자만). 정규식이 틀리면 모든 글이 막히므로 하나씩 미리 돌려 본다.
+create or replace function public.admin_set_banned_terms(p_terms text[], p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare t text; v_clean text[] := '{}';
+begin
+  if private.require_staff(p_staff) <> 'admin' then raise exception 'admin_only'; end if;
+  foreach t in array coalesce(p_terms, '{}') loop
+    t := lower(btrim(t));
+    if t = '' or t = any(v_clean) then continue; end if;
+    if char_length(t) > 100 then raise exception 'bad_pattern:%', left(t, 40); end if;
+    begin
+      perform '' ~ t;
+    exception when others then
+      raise exception 'bad_pattern:%', left(t, 40);
+    end;
+    v_clean := v_clean || t;
+  end loop;
+  if cardinality(v_clean) > 300 then raise exception 'too_many_terms'; end if;
+  delete from private.banned_terms where pattern <> all(v_clean);
+  insert into private.banned_terms (pattern) select unnest(v_clean) on conflict do nothing;
+  insert into private.audit_log (staff_id, action, detail)
+  values (p_staff, 'update_banned_terms', jsonb_build_object('count', cardinality(v_clean)));
+  return public.admin_banned_terms();
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array[
+    'mod_claim(int)', 'mod_release(bigint[])', 'mod_verdict(bigint, boolean, text, text)',
+    'ai_chat_turn(uuid, uuid, text)', 'admin_ai_usage()', 'admin_banned_terms()',
+    'admin_set_banned_terms(text[], uuid)']
+  loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+    execute format('grant execute on function public.%s to service_role', f);
+  end loop;
+end
+$do$;
+revoke all on function public.ai_chat_start() from public, anon;
+grant execute on function public.ai_chat_start() to authenticated;

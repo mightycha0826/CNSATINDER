@@ -17,8 +17,16 @@
 		max_rounds: '연장 상한',
 		rematch_cooldown_days: '재매칭 금지',
 		auto_suspend_reports: '자동 정지 기준',
-		max_open_rooms: '동시 대화'
+		max_open_rooms: '동시 대화',
+		ai_moderation: 'AI 검토',
+		ai_mod_daily_cap: 'AI 검토 한도',
+		ai_chat: 'AI 대화',
+		ai_chat_per_user: 'AI 대화 사람당',
+		ai_chat_daily_cap: 'AI 대화 전체',
+		ai_chat_minutes: 'AI 대화 시간',
+		ai_chat_max_turns: 'AI 대화 턴'
 	};
+	const ONOFF = new Set(['is_open', 'ai_moderation', 'ai_chat']);
 
 	/** 편지 번호 — 예전 기록은 letter_id, 요즘 기록은 letter 로 남아 있다 */
 	const letterOf = (d: Record<string, unknown>) => (d.letter ?? d.letter_id) as number | undefined;
@@ -29,11 +37,14 @@
 		if (a.action === 'update_settings') {
 			for (const [k, v] of Object.entries(d)) {
 				if (!SETTING[k]) continue;
-				parts.push(k === 'is_open' ? (v ? '서비스 열기' : '서비스 닫기') : `${SETTING[k]} ${k === 'notice' ? `"${v}"` : v}`);
+				if (k === 'is_open') parts.push(v ? '서비스 열기' : '서비스 닫기');
+				else if (ONOFF.has(k)) parts.push(`${SETTING[k]} ${v ? '켬' : '끔'}`);
+				else parts.push(`${SETTING[k]} ${k === 'notice' ? `"${v}"` : v}`);
 			}
 			return parts.join(' · ');
 		}
 		if (a.action === 'roster_import') return `${d.grade}학년 ${d.count}명`;
+		if (a.action === 'update_banned_terms') return `${d.count}개`;
 		if (a.action === 'post_notice' || a.action === 'remove_notice') return `"${d.title}"`;
 		if (a.action === 'remove_comment' && d.comment_id) parts.push(`댓글 #${d.comment_id}`);
 		if (d.days) parts.push(`${d.days}일`);

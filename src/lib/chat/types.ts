@@ -78,7 +78,9 @@ export type ReportReason =
 
 export type SendResult =
 	| { ok: true; row: MsgRow }
-	| { ok: false; reason: 'duplicate' | 'closed' | 'rate_limited' | 'network' | 'other'; message?: string };
+	| { ok: false; reason: 'duplicate' | 'closed' | 'rate_limited' | 'network' | 'other'; message?: string }
+	/** 검열 1단(규칙 필터)에 막힘 — code = personal_info | blocked_word. 서버에 남지 않는다 */
+	| { ok: false; reason: 'blocked'; code: string };
 
 /**
  * 메시지 공감 — 서버 check 제약(message_reactions.emoji)과 같은 값. 이 순서대로 고르기 줄에 보인다.

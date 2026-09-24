@@ -330,37 +330,48 @@ export class ChatRoom {
 		this.msgs.sort((a, b) => (a.id ?? Infinity) - (b.id ?? Infinity));
 	}
 
-	/** replyTo = 답장 대상 메시지 id (없으면 그냥 메시지) */
-	async send(raw: string, replyTo: number | null = null) {
+	/**
+	 * replyTo = 답장 대상 메시지 id (없으면 그냥 메시지).
+	 * 검열 1단에 막히면 화면에서 지우고 이유 코드를 돌려준다 (화면이 입력창에 글을 되돌려 놓는다).
+	 */
+	async send(raw: string, replyTo: number | null = null): Promise<{ blocked: string } | null> {
 		const body = raw.trim();
-		if (!body || !this.snap || this.closed) return;
+		if (!body || !this.snap || this.closed) return null;
 		const cid = crypto.randomUUID();
 		this.upsert({ client_msg_id: cid, sender_seat: this.seat, body, reply_to: replyTo }, 'sending');
-		await this.#flush(cid, body, replyTo);
+		return this.#flush(cid, body, replyTo);
 	}
 
 	/** 재전송 — 같은 client_msg_id 로 보내므로 unique index 가 중복을 막는다 */
 	async retry(m: Msg) {
-		if (m.state === 'sending' || this.closed) return;
+		if (m.state === 'sending' || this.closed) return null;
 		m.state = 'sending';
-		await this.#flush(m.client_msg_id, m.body, m.reply_to ?? null);
+		return this.#flush(m.client_msg_id, m.body, m.reply_to ?? null);
 	}
 
-	async #flush(cid: string, body: string, replyTo: number | null) {
+	async #flush(cid: string, body: string, replyTo: number | null): Promise<{ blocked: string } | null> {
 		const res = await this.#t.send(this.roomId, this.seat, body, cid, replyTo);
 		const m = this.#byCid.get(cid);
 		if (res.ok) {
 			this.upsert(res.row, 'sent');
-			return;
+			return null;
+		}
+		if (res.reason === 'blocked') {
+			// 서버에 남지 않았다 — "실패(다시 보내기)"로 두면 몇 번을 눌러도 똑같이 막히므로 아예 지운다
+			const i = this.msgs.findIndex((x) => x.client_msg_id === cid);
+			if (i >= 0) this.msgs.splice(i, 1);
+			this.#byCid.delete(cid);
+			return { blocked: res.code };
 		}
 		if (res.reason === 'duplicate') {
 			// 타임아웃 후 재시도였는데 서버엔 이미 들어가 있다 → 그 행을 읽어 확정
 			for (const r of await this.#t.fetchRecent(this.roomId, 50)) this.upsert(r, 'sent');
 			if (m && m.id == null) m.state = 'failed';
-			return;
+			return null;
 		}
 		if (m) m.state = res.reason === 'rate_limited' ? 'rate_limited' : 'failed';
 		if (res.reason === 'closed') void this.resync(); // 만료/종료 — 스냅샷으로 확인
+		return null;
 	}
 
 	// ── 공감 ─────────────────────────────────────────────────────

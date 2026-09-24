@@ -32,6 +32,10 @@ export type Settings = {
 	max_open_rooms: number;
 	letter_max_len: number;
 	comment_max_len: number;
+	/** Phase 19 — DB 에 아직 없으면(패치 전) undefined */
+	ai_moderation?: boolean;
+	ai_chat?: boolean;
+	ai_chat_per_user?: number;
 };
 
 export const S = $state({
@@ -85,6 +89,8 @@ export function errMsg(e: unknown): string {
 	if (m.includes('too_many_interests')) return '관심사는 5개까지 담을 수 있어요';
 	if (m.includes('interest_too_long')) return '관심사 하나는 12자까지 담을 수 있어요';
 	if (m.includes('invalid_mbti')) return 'MBTI 를 다시 확인해 주세요';
+	// 검열 1단 (규칙 필터) — personal_info 는 위에서
+	if (m.includes('blocked_word')) return '보낼 수 없는 표현이 있어요. 다른 말로 바꿔 주세요';
 	// 익명편지
 	if (m.includes('too_long')) return '글자 수 초과';
 	if (m.includes('bad_format')) return '서식을 저장하지 못했어요. 다시 올려 주세요';
@@ -153,14 +159,14 @@ export async function loadProfile() {
 	S.profile = (data as Profile) ?? null;
 }
 
+const SETTINGS_COLS =
+	'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms, letter_max_len, comment_max_len';
 async function loadSettings() {
-	const { data } = await supabase
-		.from('app_settings')
-		.select(
-			'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms, letter_max_len, comment_max_len'
-		)
-		.maybeSingle();
-	S.settings = (data as Settings) ?? null;
+	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();
+	let { data, error } = await read(`${SETTINGS_COLS}, ai_moderation, ai_chat, ai_chat_per_user`);
+	// AI 설정(Phase 19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
+	if (error) ({ data } = await read(SETTINGS_COLS));
+	S.settings = (data as unknown as Settings) ?? null;
 }
 
 export async function loadAccount() {

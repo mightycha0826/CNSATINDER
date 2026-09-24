@@ -5,12 +5,15 @@
 	import ReportHeader from '$lib/admin/ReportHeader.svelte';
 	import ReportedCard from '$lib/admin/ReportedCard.svelte';
 	import ReporterCard from '$lib/admin/ReporterCard.svelte';
+	import AutoReportCard from '$lib/admin/AutoReportCard.svelte';
 	import SanctionForm from '$lib/admin/SanctionForm.svelte';
 
 	let { data, form } = $props();
 	const d = $derived(data.d);
 	const r = $derived(d.report);
 	const admin = $derived(data.staff?.role === 'admin');
+	/** AI 자동 감지 — 신고자가 없고, 사본의 1 은 '상대' */
+	const auto = $derived(r.source === 'auto');
 </script>
 
 <ReportHeader back={{ href: '/admin', label: '신고 목록' }} title={REASON_LABEL[r.reason] ?? r.reason} report={r} />
@@ -20,14 +23,14 @@
 	<section class="a-col">
 		<div>
 			<h2 class="a-h2">대화 사본 <span class="muted">{d.evidence.length}개</span></h2>
-			{#if r.note}<p class="rnote"><b>신고자 메모</b> {r.note}</p>{/if}
+			{#if r.note}<p class="rnote selectable"><b>{auto ? 'AI 판정' : '신고자 메모'}</b> {r.note}</p>{/if}
 			<div class="msgs">
 				{#each d.evidence as m (m.ord)}
 					{#if m.sender === 0}
 						<div class="sys">{m.body}</div>
 					{:else}
 						<div class="m" class:by-reported={m.sender === 2}>
-							<span class="who">{m.sender === 2 ? '피신고자' : '신고자'}</span>
+							<span class="who">{m.sender === 2 ? '피신고자' : auto ? '상대' : '신고자'}</span>
 							<span class="body">{m.body}</span>
 							<span class="t num">{fmtClock(m.sent_at)}</span>
 						</div>
@@ -47,17 +50,23 @@
 			historyLabel="다른 신고"
 			historyHref="/admin/reports"
 		/>
-		<ReporterCard filed={d.reporter_filed} dismissed={d.reporter_dismissed} />
+		{#if auto}
+			<AutoReportCard />
+		{:else}
+			<ReporterCard filed={d.reporter_filed} dismissed={d.reporter_dismissed} />
+		{/if}
 
 		<section class="a-card">
 			<h2 class="a-h2">조치</h2>
 			<SanctionForm
 				isAdmin={admin}
 				banned={d.reported?.status === 'banned'}
-				targets={[
-					{ v: 'reported', label: '피신고자' },
-					{ v: 'reporter', label: '신고자' }
-				]}
+				targets={auto
+					? [{ v: 'reported', label: '피신고자' }]
+					: [
+							{ v: 'reported', label: '피신고자' },
+							{ v: 'reporter', label: '신고자' }
+						]}
 			/>
 		</section>
 
@@ -66,7 +75,7 @@
 			<div class="a-links">
 				{#if admin}<a href="/admin/rooms/{r.room_id}">이 대화 전체 보기 →</a>{/if}
 				<a href="/admin/users/{r.reported_id}">피신고자 계정 →</a>
-				<a href="/admin/users/{r.reporter_id}">신고자 계정 →</a>
+				{#if r.reporter_id}<a href="/admin/users/{r.reporter_id}">신고자 계정 →</a>{/if}
 			</div>
 			{#if admin}<p class="a-hint">대화 열람은 활동 기록에 남습니다. 대화는 끝나고 24시간 뒤 지워집니다.</p>{/if}
 		</section>

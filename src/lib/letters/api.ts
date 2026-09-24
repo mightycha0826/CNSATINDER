@@ -1,5 +1,6 @@
 import { supabase } from '../supabase';
 import { notifyLetterComment } from '../push';
+import { requestModeration } from '../moderation';
 import type {
 	CommentRow,
 	CommentThread,
@@ -41,8 +42,11 @@ export function fetchLetter(id: number) {
 	return rpc<LetterDetail>('letter_detail', { p_letter: id });
 }
 
-export function postLetter(body: string, fmt: LetterFmt | null = null) {
-	return rpc<PostLetterResult>('post_letter', { p_body: body, p_fmt: fmt });
+/** 올라가면 검열봇(AI 검토)에 알린다. 신상정보·금칙어는 서버가 먼저 막는다 (personal_info / blocked_word 오류) */
+export async function postLetter(body: string, fmt: LetterFmt | null = null) {
+	const r = await rpc<PostLetterResult>('post_letter', { p_body: body, p_fmt: fmt });
+	if (r.status === 'ok') requestModeration();
+	return r;
 }
 
 /** 댓글·대댓글. 성공하면 받을 사람(편지 작성자 또는 부모 댓글 작성자)에게 알림을 요청한다. */
@@ -53,7 +57,10 @@ export async function postComment(letterId: number, parentId: number | null, bod
 		p_body: body,
 		p_client_id: clientId
 	});
-	if (r.status === 'ok') notifyLetterComment(r.comment_id);
+	if (r.status === 'ok') {
+		notifyLetterComment(r.comment_id);
+		requestModeration();
+	}
 	return r;
 }
 

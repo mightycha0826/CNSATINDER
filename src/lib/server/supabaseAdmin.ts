@@ -45,3 +45,11 @@ export async function rosterNameOf(email: string | null, staffId: string): Promi
 	if (!email) return null;
 	return adminRpc<string | null>('admin_roster_name', { p_staff: staffId, p_email: email });
 }
+
+/** 요청한 학생 — Authorization: Bearer <access token> 에서. 클라가 주장하는 id 는 믿지 않는다. */
+export async function userFromBearer(request: Request): Promise<string | null> {
+	const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+	if (!token) return null;
+	const { data } = await supabaseAdmin().auth.getUser(token);
+	return data.user?.id ?? null;
+}

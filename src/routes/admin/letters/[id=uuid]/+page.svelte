@@ -7,6 +7,7 @@
 	import ReportHeader from '$lib/admin/ReportHeader.svelte';
 	import ReportedCard from '$lib/admin/ReportedCard.svelte';
 	import ReporterCard from '$lib/admin/ReporterCard.svelte';
+	import AutoReportCard from '$lib/admin/AutoReportCard.svelte';
 	import SanctionForm from '$lib/admin/SanctionForm.svelte';
 
 	let { data, form } = $props();
@@ -36,7 +37,7 @@
 	<section class="a-col">
 		<div>
 			<h2 class="a-h2">신고 시점 사본 <span class="muted">{d.evidence.length}개</span></h2>
-			{#if r.note}<p class="rnote"><b>신고자 메모</b> {r.note}</p>{/if}
+			{#if r.note}<p class="rnote selectable"><b>{r.source === 'auto' ? 'AI 판정' : '신고자 메모'}</b> {r.note}</p>{/if}
 			<div class="msgs">
 				{#each d.evidence as e (e.ord)}
 					<div class="m" class:target={e.kind === 'comment' || (e.kind === 'letter' && !r.comment_id)}>
@@ -77,17 +78,23 @@
 				<dd class="num" class:danger={d.chat_reports > 0}>{d.chat_reports}건</dd>
 			{/snippet}
 		</ReportedCard>
-		<ReporterCard filed={d.reporter_filed} dismissed={d.reporter_dismissed} filedLabel="낸 편지 신고" />
+		{#if r.source === 'auto'}
+			<AutoReportCard />
+		{:else}
+			<ReporterCard filed={d.reporter_filed} dismissed={d.reporter_dismissed} filedLabel="낸 편지 신고" />
+		{/if}
 
 		<section class="a-card">
 			<h2 class="a-h2">조치</h2>
 			<SanctionForm
 				isAdmin={admin}
 				banned={d.reported?.status === 'banned'}
-				targets={[
-					{ v: 'reported', label: '작성자' },
-					{ v: 'reporter', label: '신고자' }
-				]}
+				targets={r.source === 'auto'
+					? [{ v: 'reported', label: '작성자' }]
+					: [
+							{ v: 'reported', label: '작성자' },
+							{ v: 'reporter', label: '신고자' }
+						]}
 			/>
 		</section>
 
@@ -95,7 +102,7 @@
 			<div class="a-links">
 				{#if admin}<a href="/admin/posts/{r.letter_id}">편지 전체 · 참여자 보기 →</a>{/if}
 				<a href="/admin/users/{r.reported_id}">작성자 계정 →</a>
-				<a href="/admin/users/{r.reporter_id}">신고자 계정 →</a>
+				{#if r.reporter_id}<a href="/admin/users/{r.reporter_id}">신고자 계정 →</a>{/if}
 			</div>
 		</section>
 

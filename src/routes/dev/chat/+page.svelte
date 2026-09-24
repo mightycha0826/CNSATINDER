@@ -99,6 +99,8 @@
 		}
 		disconnect() {}
 		async send(_r: string, seat: 1 | 2, body: string, cid: string, replyTo: number | null = null) {
+			// 검열 1단 흉내 — 전화번호는 서버(DB 트리거)가 막는다
+			if (/01[016789]\d{7,8}/.test(body.replace(/[\s.-]/g, ''))) return { ok: false as const, reason: 'blocked' as const, code: 'personal_info' };
 			const row: MsgRow = { ...m(seat, body), client_msg_id: cid, reply_to: replyTo };
 			this.rows.push(row);
 			// &read : 보낸 메시지를 상대가 1초 뒤 읽음 ("읽음" 표시가 화면 안으로 따라오는지 확인용)

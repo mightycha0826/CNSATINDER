@@ -27,7 +27,7 @@ export function reportFilter(url: URL): ReportFilter {
 export const listReports = <T>(kind: ReportKind, status: ReportFilter) =>
 	adminRpc<T[]>(RPC[kind].list, { p_status: status, p_limit: 200 });
 
-type ReportCore = { report: { id: string; reported_id: string; reporter_id: string; status: ReportStatus } };
+type ReportCore = { report: { id: string; reported_id: string; reporter_id: string | null; status: ReportStatus } };
 
 export async function reportDetail<D extends ReportCore>(kind: ReportKind, id: string): Promise<D> {
 	const d = await adminRpc<D | null>(RPC[kind].detail, { p_id: id });
@@ -47,7 +47,9 @@ export function reportActions(kind: ReportKind) {
 		identity: async ({ params, locals }) => {
 			if (!isAdmin(locals)) return fail(403, { error: '이메일 확인은 관리자만 가능' });
 			const d = await reportDetail(kind, params.id!);
-			const [reported, reporter] = await revealIdentity(locals, [d.report.reported_id, d.report.reporter_id], d.report.id);
+			// AI 자동 감지 신고에는 신고자가 없다 — 피신고자만
+			const who = d.report.reporter_id ? [d.report.reported_id, d.report.reporter_id] : [d.report.reported_id];
+			const [reported, reporter = null] = await revealIdentity(locals, who, d.report.id);
 			return { identity: { reported, reporter } };
 		},
 
@@ -63,6 +65,7 @@ export function reportActions(kind: ReportKind) {
 			const d = await reportDetail(kind, params.id!);
 			const f = await request.formData();
 			const target = f.get('target') === 'reporter' ? d.report.reporter_id : d.report.reported_id;
+			if (!target) return fail(400, { error: '자동 감지 신고에는 신고자가 없어요' });
 			const res = await runSanction(locals, target, f, d.report.id);
 			if (typeof res !== 'string') return res;
 			// 피신고자에게 조치했으면 신고는 조치 완료로

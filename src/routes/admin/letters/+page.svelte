@@ -47,7 +47,10 @@
 					<tr>
 						<td class="num muted">{fmtTime(r.created_at)}</td>
 						<td>{r.target_type === 'letter' ? '편지' : '댓글'}</td>
-						<td><span class="a-reason">{REASON_LABEL[r.reason] ?? r.reason}</span></td>
+						<td>
+							<span class="a-reason">{REASON_LABEL[r.reason] ?? r.reason}</span>
+							{#if r.source === 'auto'}<span class="pill auto" title="AI 자동 감지">자동</span>{/if}
+						</td>
 						<td class="clip"><a href="/admin/letters/{r.id}">{r.preview || '(내용 없음)'}</a></td>
 						<td class="mono">
 							{shortId(r.reported_id)}

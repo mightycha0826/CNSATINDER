@@ -4,7 +4,7 @@
 	 * 실제 방(/chat)과 개발용 미리보기(/dev/chat)가 같은 컴포넌트를 쓴다.
 	 */
 	import { tick, untrack } from 'svelte';
-	import { S, toast } from '$lib/state.svelte';
+	import { S, errMsg, toast } from '$lib/state.svelte';
 	import type { ChatRoom } from './room.svelte';
 	import type { Msg, PartnerProfile, ReactionKey, ReportReason } from './types';
 	import ChatIntro from './ChatIntro.svelte';
@@ -279,11 +279,18 @@
 			return;
 		}
 		const to = replyTo?.id ?? null;
+		const quoting = replyTo;
 		draft = '';
 		replyTo = null;
 		atBottom = true;
 		inputEl?.focus();
-		await room.send(text, to);
+		const res = await room.send(text, to);
+		if (res?.blocked) {
+			// 검열 1단에 막힘 — 쓴 글을 입력창에 돌려놓고 이유를 알려 준다 (고쳐서 다시 보내면 된다)
+			if (!draft) draft = text;
+			if (!replyTo) replyTo = quoting;
+			toast(errMsg(res.blocked));
+		}
 	}
 	function onKey(e: KeyboardEvent) {
 		// 한글 조합 중 Enter 는 무시 (IME)

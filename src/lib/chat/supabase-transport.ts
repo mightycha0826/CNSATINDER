@@ -1,6 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import { notifyReaction, notifySent } from '../push';
+import { requestModeration } from '../moderation';
 import type { ChatTransport, TransportHandlers } from './transport';
 import type {
 	MsgRow,
@@ -126,12 +127,16 @@ export class SupabaseTransport implements ChatTransport {
 			if (!error) {
 				const sent = data as unknown as MsgRow; // 열 목록이 문자열 변수라 supabase 타입 추론이 안 된다
 				notifySent(sent.id); // 상대가 앱을 안 보고 있으면 푸시 알림
+				requestModeration(); // 검열봇 2단 (AI 검토가 켜져 있을 때만)
 				return { ok: true, row: sent };
 			}
 
 			const m = error.message ?? '';
 			if (error.code === '23505') return { ok: false, reason: 'duplicate' };
 			if (m.includes('rate_limited')) return { ok: false, reason: 'rate_limited' };
+			// 검열 1단 — DB 트리거가 신상정보·금칙어를 막았다
+			if (m.includes('personal_info')) return { ok: false, reason: 'blocked', code: 'personal_info' };
+			if (m.includes('blocked_word')) return { ok: false, reason: 'blocked', code: 'blocked_word' };
 			// room_is_writable 위반 = 방이 만료/종료됐다 (클라 시계가 틀렸거나 상대가 나감)
 			if (error.code === '42501' || m.includes('row-level security'))
 				return { ok: false, reason: 'closed' };

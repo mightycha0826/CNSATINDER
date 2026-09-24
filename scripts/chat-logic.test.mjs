@@ -467,6 +467,22 @@ try {
 		await r.send('그냥 메시지');
 		check('답장이 아니면 null', sent[2] === null && r.msgs.at(-1).reply_to === null);
 	}
+	console.log('\n[17] 검열 1단에 막힌 메시지 — 화면에서 지우고 이유를 돌려준다');
+	{
+		const t = fake();
+		const r = await mk(t);
+		t.sendImpl = async () => ({ ok: false, reason: 'blocked', code: 'personal_info' });
+		const before = r.msgs.length;
+		const res = await r.send('내 번호 01012345678');
+		check('이유 코드를 돌려준다', res?.blocked === 'personal_info');
+		check('★ 화면에 "실패"로 남지 않는다 (다시 보내도 똑같이 막히므로)', r.msgs.length === before && !r.msgs.some((m) => m.body.includes('0101')));
+		t.sendImpl = async (_r, seat, body, cid) => {
+			const x = { ...row(seat, body, cid), reply_to: null };
+			t.server.push(x);
+			return { ok: true, row: x };
+		};
+		check('막힌 뒤에도 다음 메시지는 보내진다', (await r.send('안녕하세요')) === null && r.msgs.at(-1).body === '안녕하세요');
+	}
 } catch (e) {
 	fail++;
 	console.error(e);

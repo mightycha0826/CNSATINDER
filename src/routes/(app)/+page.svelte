@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, pushState as pushHistory, replaceState as replaceHistory } from '$app/navigation';
 	import { page } from '$app/state';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import { Inbox, type InboxRoom } from '$lib/inbox.svelte';
@@ -12,6 +12,7 @@
 	import { scrollBehavior } from '$lib/motion';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
+	import AiChat from '$lib/ai/AiChat.svelte';
 
 	/**
 	 * 홈 = 대화 목록 (인스타 DM 받은편지함).
@@ -34,9 +35,25 @@
 
 	const inbox = new Inbox();
 	const seeker = new Seeker(
-		(roomId) => void goto(`/chat/${roomId}`, { state: { matched: true } }),
+		// AI 대화가 열려 있었으면 그 기록 자리를 대화방으로 바꿔 끼운다 (대화방에서 뒤로 → AI 가 아니라 홈)
+		(roomId) => void goto(`/chat/${roomId}`, { state: { matched: true }, replaceState: !!page.state.ai }),
 		(msg) => toast(msg)
 	);
+
+	// ── AI 대화 상대 — 찾는 동안만. 홈 위에 덮어 띄운다(홈이 살아 있어야 찾기가 계속된다) ──
+	// 얕은 기록 하나를 쌓아서 열고, 뒤로가기(또는 닫기)로 걷어서 닫는다
+	const aiOpen = $derived(!!page.state.ai);
+	function openAi() {
+		pushHistory('', { ...page.state, ai: true });
+	}
+	function closeAi() {
+		if (page.state.ai) history.back();
+	}
+	/** 찾기를 새로 시작 — 전에 열어 둔 AI 기록 표시가 남아 있으면 지운다 (찾기 시작과 동시에 AI 가 튀어나오지 않게) */
+	function startSeek() {
+		if (page.state.ai) replaceHistory('', { ...page.state, ai: false });
+		seeker.start();
+	}
 	const full = $derived(inbox.rooms.length >= maxRooms);
 
 	$effect(() => {
@@ -191,6 +208,11 @@
 				</div>
 				<button class="stop" onclick={() => seeker.cancel()}>그만</button>
 			</div>
+			{#if S.settings?.ai_chat}
+				<button class="ai-btn" onclick={openAi}>
+					<span class="ai-badge" aria-hidden="true">AI</span> 기다리는 동안 AI 와 얘기하기
+				</button>
+			{/if}
 		{:else if profileMissing}
 			<button class="btn" disabled>계정 정보를 불러오지 못함 · 잠시 후 다시 열어 주세요</button>
 		{:else if closed}
@@ -202,10 +224,14 @@
 		{:else if full}
 			<button class="btn" disabled>대화는 동시에 {maxRooms}개까지 할 수 있어요</button>
 		{:else}
-			<button class="btn" onclick={() => seeker.start()}>새 대화 찾기</button>
+			<button class="btn" onclick={startSeek}>새 대화 찾기</button>
 		{/if}
 	</div>
 </div>
+
+{#if aiOpen && seeker.seeking}
+	<AiChat onclose={closeAi} seeking={elapsed} />
+{/if}
 
 {#if askPush}
 	<!-- 처음 한 번 — 알림 권한 안내. 바깥을 눌러 닫지 않는다 (둘 중 하나를 골라야 다시 묻지 않는다) -->
@@ -336,6 +362,30 @@
 		font-size: 14px;
 		font-weight: 600;
 		color: var(--text-2);
+	}
+	.ai-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		width: 100%;
+		min-height: 44px;
+		margin-top: 8px;
+		border-radius: var(--r-sm);
+		background: var(--field);
+		font-size: 14px;
+		font-weight: 600;
+	}
+	.ai-badge {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		background: var(--brand);
+		color: #fff;
+		font-size: 10px;
+		font-weight: 800;
 	}
 	.dots {
 		display: flex;

@@ -2053,5 +2053,174 @@ console.log('\n[64] ★ 메시지 답장 — 같은 방의 사람 메시지만, 
 	check('관리자 대화 열람에 답장 대상', Number(view.messages.find((m) => Number(m.id) === Number(reply.id))?.reply_to) === Number(o1.id));
 }
 
+
+console.log('\n[65] ★ 규칙 필터 — 신상정보 · 금칙어는 보내기 전에 막는다');
+{
+	const rv = async (t) => (await one(`select private.rule_violation($1) v`, [t])).v;
+	const cases = [
+		['010-1234-5678 로 연락해', 'personal_info'], ['공일공 말고 01012345678', 'personal_info'], ['0 1 0 1 2 3 4 5 6 7 8', 'personal_info'],
+		['나 20529 야', 'personal_info'], ['2학년 5반이야', 'personal_info'], ['@silica_gel 팔로우해', 'personal_info'],
+		['인스타 아이디 알려줘', 'personal_info'], ['open.kakao.com/o/abc 들어와', 'personal_info'], ['카톡 추가해줄래', 'personal_info'],
+		['니애미', 'blocked_word'], ['섹 스', 'blocked_word']
+	];
+	for (const [t, want] of cases) check(`막음: "${t}" → ${want}`, (await rv(t)) === want, String(await rv(t)));
+	const okCases = ['15000원 들었어', '2026년에 봐요', '인스타 감성 사진 좋아해요', '온라인 수업 추가됐대', '3명이서 갔어요',
+		'아 시험 망했다 ㅋㅋ', '보지 마세요 스포예요', '10000'];
+	for (const t of okCases) check(`통과: "${t}"`, (await rv(t)) === null, String(await rv(t)));
+
+	const r = await fresh();
+	const seatA = Number(await rpcAs(A, 'my_seat', r));
+	const ins = (body) => rowsAs(A, `insert into public.messages (room_id, sender_seat, body, client_msg_id)
+	                                 values ($1, $2, $3, gen_random_uuid()) returning id`, [r, seatA, body]);
+	await expectError('★ 채팅: 전화번호는 보내지지 않는다', () => ins('내 번호 010 9876 5432'), 'personal_info');
+	await expectError('★ 채팅: 금칙어', () => ins('니 애 미'), 'blocked_word');
+	check('채팅: 평범한 말은 보내진다', (await ins('안녕하세요')).length === 1);
+	check('막힌 메시지는 남지 않는다', (await one(`select count(*)::int n from public.messages where room_id = $1 and body like '%9876%'`, [r])).n === 0);
+
+	await resetLetters();
+	const w = await person('m', 'f');
+	await expectError('★ 편지: 학번', () => postLetter(w, '10101 누군지 맞혀 봐'), 'personal_info');
+	const l = await postLetter(w, '평범한 편지');
+	check('편지: 평범한 글은 올라간다', l.status === 'ok', JSON.stringify(l));
+	await expectError('★ 댓글: SNS', () => postComment(w, l.letter_id, null, '디엠 말고 insta id 줘'), 'personal_info');
+
+	const adm = await person('f', 'm');
+	await db.query(`insert into private.staff (user_id, role) values ($1, 'admin')`, [adm]);
+	const mod = await person('f', 'm');
+	await db.query(`insert into private.staff (user_id, role) values ($1, 'moderator')`, [mod]);
+	await expectError('틀린 정규식은 저장 안 됨 (모든 글이 막히는 사고 방지)', () => svc('admin_set_banned_terms', ['(깨진'], adm), 'bad_pattern');
+	await expectError('금칙어는 관리자만', () => svc('admin_set_banned_terms', ['새금칙어'], mod), 'admin_only');
+	const before = await svc('admin_banned_terms');
+	const saved = await svc('admin_set_banned_terms', [...before, '  바보멍청이 ', '바보멍청이'], adm);
+	check('금칙어 추가 (앞뒤 공백 · 중복 정리)', saved.filter((x) => x === '바보멍청이').length === 1 && saved.length === before.length + 1);
+	check('추가한 금칙어가 바로 적용', (await rv('이 바보멍청이야')) === 'blocked_word');
+	await svc('admin_set_banned_terms', before, adm);
+	check('지우면 바로 풀림', (await rv('이 바보멍청이야')) === null);
+	await expectError('★ 학생은 금칙어 목록을 볼 수 없다', () => rowsAs(A, `select public.admin_banned_terms()`), 'permission denied');
+}
+
+console.log('\n[66] ★ AI 검토 대기열 — 켜져 있을 때만 쌓이고, 걸리면 자동 신고');
+{
+	const q = async () => (await one(`select count(*)::int n from private.mod_queue`)).n;
+	const r0 = await fresh();
+	const s0 = Number(await rpcAs(A, 'my_seat', r0));
+	const say = async (uid, room, seat, body) =>
+		(await rowsAs(uid, `insert into public.messages (room_id, sender_seat, body, client_msg_id)
+		                    values ($1, $2, $3, gen_random_uuid()) returning id`, [room, seat, body]))[0].id;
+	const n0 = await q();
+	await say(A, r0, s0, '꺼져 있을 때');
+	check('AI 검토가 꺼져 있으면 쌓이지 않는다', (await q()) === n0);
+	check('꺼져 있으면 가져갈 것도 없다', (await svc('mod_claim', 5)).length === 0);
+
+	await db.query(`update public.app_settings set ai_moderation = true, ai_mod_daily_cap = 3`);
+	const r = await fresh();
+	const sA = Number(await rpcAs(A, 'my_seat', r));
+	const sB = Number(await rpcAs(B, 'my_seat', r));
+	await say(A, r, sA, '안녕하세요');
+	await say(B, r, sB, '반가워요');
+	const bad = await say(A, r, sA, '너 진짜 못생겼다 학교 나오지 마');
+	check('메시지가 쌓인다 (시스템 안내 제외)', (await q()) === n0 + 3);
+
+	const got = await svc('mod_claim', 5);
+	check('하루 한도(3)까지만 가져간다', got.length === 3, JSON.stringify(got.map((x) => x.id)));
+	const item = got.find((x) => x.text.startsWith('너 진짜'));
+	check('맥락: 앞의 메시지와 누가 말했는지', item?.context?.length === 2 && item.context[0].who === '작성자' && item.context[1].who === '상대', JSON.stringify(item?.context));
+	check('★ 맥락에 uuid · 이름 없음', ![A, B].some((u) => JSON.stringify(got).includes(u)));
+	check('한도가 차면 더 안 준다', (await svc('mod_claim', 5)).length === 0);
+
+	for (const x of got.filter((x) => x !== item)) await svc('mod_verdict', x.id, false, 'none', '');
+	const v = await svc('mod_verdict', item.id, true, 'harassment', '외모 비하');
+	check('판정 저장', v.status === 'ok' && v.flagged === true);
+	check('같은 항목에 두 번 판정 못 함', (await svc('mod_verdict', item.id, true, 'harassment', 'x')).status === 'gone');
+
+	const rep = await one(`select * from private.reports where room_id = $1 and source = 'auto'`, [r]);
+	check('★ 자동 신고: 걸린 사람 · 신고자 없음', rep?.reported_id === A && rep.reporter_id === null && rep.reason === 'harassment', JSON.stringify(rep));
+	check('자동 신고 메모에 이유와 글 앞부분', rep?.note.includes('외모 비하') && rep.note.includes('너 진짜'));
+	const ev = (await db.query(`select sender, body from private.report_evidence where report_id = $1 order by ord`, [rep.id])).rows;
+	check('증거: 대화 사본 (2 = 걸린 사람)', ev.some((e) => e.sender === 2 && e.body.startsWith('너 진짜')) && ev.some((e) => e.sender === 1 && e.body === '반가워요'));
+	const list = await svc('admin_list_reports', 'open', 100);
+	check('운영진 목록에 source = auto', list.find((x) => x.id === rep.id)?.source === 'auto');
+
+	// 자동 신고는 자동 정지 횟수에 안 들어간다
+	await db.query(`update public.app_settings set auto_suspend_reports = 1`);
+	check('★ 자동 신고만으로는 정지되지 않는다', (await one(`select status from public.profiles where id = $1`, [A])).status === 'active');
+	await db.query(`update public.app_settings set auto_suspend_reports = 3`);
+
+	// 한도를 늘려 두 번째 걸림 → 같은 신고에 덧붙인다
+	await db.query(`update public.app_settings set ai_mod_daily_cap = 100`);
+	await say(A, r, sA, '또 나쁜 말');
+	const g2 = await svc('mod_claim', 5);
+	await svc('mod_verdict', g2[0].id, true, 'harassment', '두 번째');
+	check('같은 방 두 번째 걸림은 한 신고에 덧붙인다', (await one(`select count(*)::int n from private.reports where room_id = $1 and source = 'auto'`, [r])).n === 1 &&
+		(await one(`select note from private.reports where id = $1`, [rep.id])).note.includes('두 번째'));
+
+	// 놓아주기 · 위기 신호
+	await say(B, r, sB, '요즘 너무 힘들어서 사라지고 싶어');
+	const g3 = await svc('mod_claim', 5);
+	await svc('mod_release', g3.map((x) => x.id));
+	check('놓아주면 다시 가져갈 수 있다', (await svc('mod_claim', 5)).length === g3.length);
+	const g4 = (await db.query(`select id from private.mod_queue where status = 'working'`)).rows.map((x) => Number(x.id));
+	await svc('mod_verdict', g4[0], true, 'self_harm', '위기 신호');
+	const sh = await one(`select reason, reported_id from private.reports where room_id = $1 and source = 'auto' and reported_id = $2`, [r, B]);
+	check('★ 위기 신호(self_harm) 자동 신고', sh?.reason === 'self_harm');
+	await expectError('학생은 self_harm 사유로 신고할 수 없다', () => rpcAs(A, 'report_partner', r, 'self_harm', ''), 'invalid_reason');
+
+	// 편지 · 댓글
+	await resetLetters();
+	const w = await person('m', 'f');
+	const l = await postLetter(w, '편지 검토');
+	const c = await postComment(w, l.letter_id, null, '댓글 검토');   // 편지에 댓글은 작성자 · 배정된 답장자만
+	check('댓글이 올라감', c.status === 'ok', JSON.stringify(c));
+	const g5 = await svc('mod_claim', 5);
+	const li = g5.find((x) => x.kind === 'letter'), ci = g5.find((x) => x.kind === 'comment');
+	check('편지 · 댓글도 쌓인다 (댓글 맥락 = 편지)', li?.text === '편지 검토' && ci?.text === '댓글 검토' && ci.context[0].who === '편지');
+	await svc('mod_verdict', ci.id, true, 'spam', '도배');
+	const lr = await one(`select * from private.letter_reports where comment_id = $1 and source = 'auto'`, [c.comment_id]);
+	check('★ 댓글 자동 신고: 댓글 쓴 사람 · 신고자 없음 · 증거', lr?.reported_id === w && lr.reporter_id === null &&
+		(await one(`select count(*)::int n from private.letter_report_evidence where report_id = $1`, [lr.id])).n === 2);
+	check('운영진 편지 신고 목록에 source', (await svc('admin_list_letter_reports', 'open', 100)).find((x) => x.id === lr.id)?.source === 'auto');
+	await svc('mod_verdict', li.id, false, 'none', '');
+
+	const u = await svc('admin_ai_usage');
+	check('운영진 사용량 집계', u.mod_checked_today >= 3 && u.mod_flagged_today >= 3, JSON.stringify(u));
+	await expectError('★ 학생은 대기열을 가져갈 수 없다', () => rowsAs(A, `select public.mod_claim(5)`), 'permission denied');
+	await expectError('★ 학생은 판정을 쓸 수 없다', () => rowsAs(A, `select public.mod_verdict(1, false, 'none', '')`), 'permission denied');
+	await db.query(`update public.app_settings set ai_moderation = false`);
+}
+
+console.log('\n[67] ★ AI 대화 상대 — 사람당 · 앱 전체 하루 한도, 시간 · 턴 제한');
+{
+	const start = (uid) => rpcAs(uid, 'ai_chat_start');
+	const u1 = await person('m', 'f'), u2 = await person('f', 'm'), u3 = await person('m', 'm');
+	check('꺼져 있으면 off', (await start(u1)).status === 'off');
+	await db.query(`update public.app_settings set ai_chat = true, ai_chat_per_user = 2, ai_chat_daily_cap = 3, ai_chat_minutes = 10, ai_chat_max_turns = 2`);
+	const c1 = await start(u1);
+	check('시작: id · 끝나는 시각 · 남은 횟수', c1.status === 'ok' && c1.id && c1.max_turns === 2 && c1.left_today === 1, JSON.stringify(c1));
+	check('안 끝난 대화가 있으면 그걸 이어간다 (횟수 안 셈)', (await start(u1)).id === c1.id);
+
+	const turn = (chat, uid, text) => svc('ai_chat_turn', chat, uid, text);
+	check('한 턴', (await turn(c1.id, u1, '안녕')).status === 'ok');
+	check('★ 남의 대화로는 못 보낸다', (await turn(c1.id, u2, '안녕')).status === 'not_found');
+	check('★ AI 에게도 신상은 못 보낸다', (await turn(c1.id, u1, '내 번호 01012345678')).status === 'blocked');
+	check('두 번째 턴', (await turn(c1.id, u1, '뭐해')).turns === 2);
+	check('턴 한도', (await turn(c1.id, u1, '또')).status === 'turns');
+
+	const c2 = await start(u1);
+	check('턴을 다 쓰면 새 대화 (오늘 2번째)', c2.status === 'ok' && c2.id !== c1.id && c2.left_today === 0);
+	await db.query(`update private.ai_chats set expires_at = now() - interval '1 second' where id = $1`, [c2.id]);
+	check('시간이 지나면 끝', (await turn(c2.id, u1, '안녕')).status === 'expired');
+	check('★ 사람당 하루 한도', (await start(u1)).status === 'limit');
+
+	check('다른 사람은 된다 (앱 전체 3번째)', (await start(u2)).status === 'ok');
+	check('★ 앱 전체 하루 한도', (await start(u3)).status === 'full');
+
+	await db.query(`update public.profiles set status = 'suspended' where id = $1`, [u3]);
+	check('정지된 계정은 못 쓴다', (await start(u3)).status === 'restricted');
+	await expectError('★ 학생은 턴을 직접 셀 수 없다 (한도 우회 방지)', () => rowsAs(u1, `select public.ai_chat_turn($1, $2, 'x')`, [c1.id, u1]), 'permission denied');
+	check('★ AI 대화 내용은 DB 에 없다 (몇 번 썼는지만)', (await db.query(`select column_name from information_schema.columns
+		where table_schema = 'private' and table_name = 'ai_chats'`)).rows.every((x) => !/body|text|content|message/.test(x.column_name)));
+	await db.query(`update public.app_settings set ai_chat = false`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

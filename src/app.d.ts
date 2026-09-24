@@ -9,10 +9,13 @@ declare global {
 			guard?: boolean;
 			/** 방금 매칭돼서 들어가는 대화방 — 연결 화면을 한 번 보여 준다 (chat/[id]) */
 			matched?: boolean;
+			/** 홈 위에 AI 대화 상대가 열려 있다 — 뒤로가기로 닫힌다 ((app)/+page.svelte) */
+			ai?: boolean;
 		}
-		/** Cloudflare Workers — 응답 뒤에도 작업(푸시 발송)을 마저 하기 위해 */
+		/** Cloudflare Workers — 응답 뒤에도 작업(푸시 발송)을 마저 하기 위해 · Workers AI 바인딩(wrangler.jsonc "ai") */
 		interface Platform {
 			context?: { waitUntil(p: Promise<unknown>): void };
+			env?: { AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> } };
 		}
 	}
 

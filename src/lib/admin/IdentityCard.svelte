@@ -8,7 +8,7 @@
 	import { confirmed } from './confirm';
 
 	let { form, reportedLabel }: { form: unknown; reportedLabel: string } = $props();
-	const identity = $derived((form as { identity?: { reported: Identity; reporter: Identity } } | null)?.identity);
+	const identity = $derived((form as { identity?: { reported: Identity; reporter: Identity | null } } | null)?.identity);
 
 	const ask = confirmed(() => '두 사람의 학교 이메일을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
 </script>
@@ -23,7 +23,7 @@
 	{#if identity}
 		<dl class="a-dl">
 			{@render row(reportedLabel, identity.reported)}
-			{@render row('신고자', identity.reporter)}
+			{#if identity.reporter}{@render row('신고자', identity.reporter)}{/if}
 		</dl>
 		<p class="a-hint">이 열람은 활동 기록에 남습니다. 학생에게 조치를 전달할 때만 사용하세요.</p>
 	{:else}

@@ -21,6 +21,16 @@
 		{ k: 'auto_suspend_reports', label: '자동 정지 기준', unit: '명', hint: '30일 안에 서로 다른 신고자 수' },
 		{ k: 'max_open_rooms', label: '동시 대화 수', unit: '개', hint: '한 사람이 한꺼번에 열어 둘 수 있는 대화' }
 	] as const;
+
+	// ── Phase 19 — 검열봇 · AI 대화 상대 ──
+	const aiReady = $derived(s.ai_moderation !== undefined && !!data.usage);
+	const AI_FIELDS = [
+		{ k: 'ai_mod_daily_cap', label: 'AI 검토 하루 한도', unit: '건', hint: '글 1건 ≈ 17 Neuron (어림값)' },
+		{ k: 'ai_chat_per_user', label: 'AI 대화 · 사람당', unit: '번/일', hint: '한 학생이 하루에 시작할 수 있는 횟수' },
+		{ k: 'ai_chat_daily_cap', label: 'AI 대화 · 앱 전체', unit: '번/일', hint: '1번(30턴) ≈ 1,600 Neuron (어림값)' },
+		{ k: 'ai_chat_minutes', label: 'AI 대화 시간', unit: '분', hint: '한 번에' },
+		{ k: 'ai_chat_max_turns', label: 'AI 대화 턴', unit: '번', hint: '한 번에 주고받는 최대 횟수' }
+	] as const;
 </script>
 
 <h1 class="a-h1 title">운영 설정</h1>
@@ -62,6 +72,55 @@
 		<p class="muted small">운영 수치는 관리자만 바꿀 수 있어요. (서비스 열고 닫기는 운영진도 가능)</p>
 	{/if}
 </form>
+
+<h2 class="a-h2 sub">검열봇 · AI 대화 상대</h2>
+{#if !aiReady}
+	<p class="muted small">DB 에 Phase 19 를 반영하면 여기서 켤 수 있어요 (schema.sql 다시 실행).</p>
+{:else}
+	<p class="muted small ai-note">
+		신상정보(전화번호·학번·SNS)와 금칙어는 AI 와 상관없이 늘 막힙니다. 아래 AI 기능은 Cloudflare Workers AI 를 쓰고,
+		무료 몫은 하루 10,000 Neuron(매일 오전 9시 초기화) — 두 기능이 나눠 씁니다. 켜기 전에 개인정보 처리방침에 적어 주세요.
+	</p>
+	{#if data.usage}
+		<div class="usage">
+			<span>오늘 AI 검토 <b class="num">{data.usage.mod_checked_today}</b>건</span>
+			<span>자동 감지 <b class="num">{data.usage.mod_flagged_today}</b>건</span>
+			<span>검토 대기 <b class="num">{data.usage.mod_pending}</b>건</span>
+			<span>오늘 AI 대화 <b class="num">{data.usage.ai_chats_today}</b>번</span>
+		</div>
+	{/if}
+	<form method="POST" action="?/ai" use:enhance={() => ({ update }) => update({ reset: false })} class="form">
+		<label class="row">
+			<span class="label">AI 검토 (검열봇 2단)<small>올라간 채팅·편지·댓글을 AI 가 보고, 걸리면 신고함에 '자동 감지'로</small></span>
+			<input type="checkbox" name="ai_moderation" checked={s.ai_moderation} disabled={!isAdmin} />
+		</label>
+		<label class="row">
+			<span class="label">AI 대화 상대<small>상대를 찾는 동안 "AI 와 얘기하기" 버튼</small></span>
+			<input type="checkbox" name="ai_chat" checked={s.ai_chat} disabled={!isAdmin} />
+		</label>
+		{#each AI_FIELDS as f (f.k)}
+			<label class="row">
+				<span class="label">{f.label}<small>{f.hint}</small></span>
+				<span class="val">
+					<input class="field num" type="number" name={f.k} value={s[f.k]} disabled={!isAdmin} />
+					<span class="unit">{f.unit}</span>
+				</span>
+			</label>
+		{/each}
+		{#if isAdmin}<button class="btn save">AI 설정 저장</button>{/if}
+	</form>
+
+	{#if data.terms}
+		<form method="POST" action="?/terms" use:enhance={() => ({ update }) => update({ reset: false })} class="form terms">
+			<label class="label" for="terms">
+				금칙어 ({data.terms.length}개)
+				<small>한 줄에 하나. 이 말이 들어간 채팅·편지·댓글은 보내지지 않아요. 띄어쓰기 우회는 <code>\s*</code> (예: <code>바\s*보</code>)</small>
+			</label>
+			<textarea id="terms" class="field selectable" name="terms" rows="8" disabled={!isAdmin}>{data.terms.join('\n')}</textarea>
+			{#if isAdmin}<button class="btn save">금칙어 저장</button>{/if}
+		</form>
+	{/if}
+{/if}
 
 <style>
 	.title {
@@ -144,6 +203,44 @@
 		padding: 0 24px;
 	}
 	.small {
+		font-size: 12px;
+	}
+	.sub {
+		margin: 32px 0 8px;
+	}
+	.ai-note {
+		max-width: 720px;
+		margin-bottom: 12px;
+	}
+	.usage {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 16px;
+		max-width: 720px;
+		margin-bottom: 8px;
+		padding: 10px 12px;
+		border-radius: var(--r-sm);
+		background: var(--field);
+		font-size: 13px;
+	}
+	.row input[type='checkbox'] {
+		width: 20px;
+		height: 20px;
+	}
+	.terms {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin-top: 20px;
+		padding-top: 12px;
+		border-top: 1px solid var(--line);
+	}
+	.terms textarea {
+		width: 100%;
+		font-family: ui-monospace, monospace;
+		font-size: 13px;
+	}
+	code {
 		font-size: 12px;
 	}
 </style>
