@@ -1,8 +1,9 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { env as pub } from '$env/dynamic/public';
 import { adminRpc, supabaseAdmin } from '$lib/server/supabaseAdmin';
-import { sendPush, type PushSub } from '$lib/server/webpush';
+import { isPushEndpoint, sendPush, type PushSub } from '$lib/server/webpush';
 
 /**
  * POST /api/push   Authorization: Bearer <보낸 사람 access token>
@@ -48,6 +49,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	// 누가 보냈는지는 클라가 아니라 토큰에서 — DB 함수가 "진짜 그 사람의 글·공감인지"를 다시 확인한다
 	const p = await adminRpc<Payload>(kind.rpc, { [kind.param]: body[kind.field], [kind.actor]: who.user.id });
 	if ('skip' in p) return json(p);
+
+	// 알려진 푸시 서버로만 보낸다 (DB 도 같은 목록으로 막는다 — 두 겹). 개발 서버는 테스트용 가짜 푸시 서버를 쓴다
+	p.subs = p.subs.filter((s) => dev || isPushEndpoint(s.endpoint));
+	if (!p.subs.length) return json({ skip: 'no_device' });
 
 	const work = (async () => {
 		// 서비스워커(static/sw.js)가 읽는 모양 — room 이 있으면 채팅방으로, url 이 있으면 그 주소로

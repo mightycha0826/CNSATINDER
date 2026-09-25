@@ -111,6 +111,12 @@ try {
 	);
 	check('★ 공개키로 서명이 검증된다 (푸시 서버가 하는 검사)', ok);
 	check('서명은 r||s 64바이트', unb64u(s).length === 64);
+
+	console.log('\n[보낼 수 있는 주소 — 알려진 푸시 서버만]');
+	const okHosts = ['https://fcm.googleapis.com/fcm/send/x', 'https://web.push.apple.com/abc', 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://wns2-sg2p.notify.windows.com/w/?token=x'];
+	check('구글 · 애플 · 모질라 · 윈도 푸시 서버는 된다', okHosts.every((u) => W.isPushEndpoint(u)));
+	const bad = ['http://fcm.googleapis.com/x', 'https://evil.example/x', 'https://fcm.googleapis.com.evil.example/x', 'https://user:pw@fcm.googleapis.com/x', 'https://fcm.googleapis.com:8443/x', 'https://127.0.0.1/x', 'not a url'];
+	check('★ 그 밖의 주소 · 꾸민 주소 · 포트 · 계정 붙은 주소는 안 된다', bad.every((u) => !W.isPushEndpoint(u)), bad.filter((u) => W.isPushEndpoint(u)).join(' '));
 } catch (e) {
 	fail++;
 	console.error(e);

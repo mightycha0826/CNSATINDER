@@ -1612,7 +1612,10 @@ create or replace function public.save_push_subscription(p_endpoint text, p_p256
 returns void language plpgsql security definer set search_path = public as $fn$
 begin
   if auth.uid() is null then raise exception 'unauthenticated'; end if;
-  if p_endpoint !~ '^https://' or char_length(p_endpoint) > 1000
+  -- ★ 알려진 푸시 서버 주소만 (Phase 22 보안 점검) — 아무 https 주소나 받으면 서버(Worker)가 그 주소로
+  --   요청을 보내게 만들 수 있다. 구글(FCM: 크롬·안드로이드·삼성) · 애플(사파리·아이폰) · 모질라(파이어폭스) · 윈도(엣지)
+  if p_endpoint !~ '^https://(fcm\.googleapis\.com|android\.googleapis\.com|web\.push\.apple\.com|([a-z0-9-]+\.)*push\.services\.mozilla\.com|([a-z0-9-]+\.)*notify\.windows\.com)/'
+     or char_length(p_endpoint) > 1000
      or char_length(coalesce(p_p256dh, '')) not between 80 and 100
      or char_length(coalesce(p_auth, '')) not between 16 and 32 then
     raise exception 'invalid_subscription';
@@ -1621,6 +1624,11 @@ begin
   values (p_endpoint, auth.uid(), p_p256dh, p_auth)
   on conflict (endpoint) do update
      set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth, created_at = now();
+  -- 한 사람 기기 10대까지 — 넘으면 오래된 것부터 지운다 (알림 한 번에 수백 곳으로 보내게 만들지 못하게)
+  delete from public.push_subscriptions
+   where user_id = auth.uid()
+     and endpoint not in (select endpoint from public.push_subscriptions
+                           where user_id = auth.uid() order by created_at desc limit 10);
 end
 $fn$;
 
@@ -3918,3 +3926,37 @@ grant execute on function public.admin_export_messages(uuid, timestamptz, timest
 -- ════════════════════════════════════════════════════════════════════
 alter table public.profiles add column if not exists allow_rematch boolean not null default false;
 grant update (allow_rematch) on public.profiles to authenticated;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 22 — 보안 점검 (SECURITY.md)
+--
+--  · 표 권한 줄이기 — Supabase 는 새 표에 anon · authenticated 권한을 넉넉히 준다. RLS 가 막고 있지만
+--    RLS 를 거치지 않는 권한(TRUNCATE 등)까지 남겨 둘 이유가 없다. 앱이 직접 읽는 것만 남긴다:
+--      profiles = 내 행 읽기(RLS) + 정해진 열 고치기,  app_settings = 읽기,  user_presence = 없음(전부 RPC)
+--  · 트리거 전용 함수는 누구도 직접 부를 수 없게 (트리거로 도는 데는 실행 권한이 필요 없다)
+--  · 바깥 표를 쓰지 않는 함수들의 search_path 고정 (Supabase 점검기 경고)
+--  · 푸시 구독: 알려진 푸시 서버 주소만 · 한 사람 10대까지 (save_push_subscription 에서)
+-- ════════════════════════════════════════════════════════════════════
+revoke all on public.profiles from anon;
+revoke insert, delete, truncate, references, trigger on public.profiles from authenticated;
+revoke all on public.user_presence from anon, authenticated;
+revoke all on public.app_settings from anon;
+revoke insert, update, delete, truncate, references, trigger on public.app_settings from authenticated;
+
+revoke execute on function public.handle_new_user(), public.msg_rate_limit(), public.sync_verified()
+  from public, anon, authenticated;
+revoke execute on function public.random_alias() from public, anon, authenticated;
+
+alter function public.random_alias() set search_path = '';
+alter function private.letter_fmt_ok(jsonb, text) set search_path = '';
+alter function private.letter_alias_candidate() set search_path = '';
+alter function private.nickname_candidate() set search_path = '';
+alter function private.email_student_no(text) set search_path = '';
+alter function private.ai_day_start() set search_path = '';
+alter function private.mod_max_suspend_days() set search_path = '';
+alter function private.csv_cell(text) set search_path = '';
+
+-- 예전 규칙(https 면 무엇이든)으로 저장된 구독 중 알려진 푸시 서버가 아닌 주소는 지운다
+delete from public.push_subscriptions
+ where endpoint !~ '^https://(fcm\.googleapis\.com|android\.googleapis\.com|web\.push\.apple\.com|([a-z0-9-]+\.)*push\.services\.mozilla\.com|([a-z0-9-]+\.)*notify\.windows\.com)/';

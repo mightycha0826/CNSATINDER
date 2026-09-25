@@ -74,6 +74,11 @@ await db.exec(`
 	grant usage on schema auth to anon, authenticated;
 	grant execute on function auth.uid() to anon, authenticated;
 	grant usage on schema public to anon, authenticated, service_role;
+	-- Supabase 기본 권한 그대로: public 에 새로 만든 표 · 함수 · 시퀀스는 anon · authenticated 에게 전부 열린다
+	-- (schema.sql 이 필요한 만큼 직접 닫아야 한다 — 이걸 흉내 내지 않으면 권한 시험이 거짓으로 통과한다)
+	alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+	alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+	alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 `);
 
 /** uid 사용자로 로그인한 것처럼 RLS 를 적용해 실행한다. */
@@ -1228,21 +1233,30 @@ console.log('\n[43] 푸시 구독');
 	const v = await person('f', 'm');
 	const P256 = 'B' + 'x'.repeat(86); // base64url 65바이트 = 87자
 	const AUTH = 'a'.repeat(22);
-	await rpcAs(u, 'save_push_subscription', 'https://push.example/u1', P256, AUTH);
+	await rpcAs(u, 'save_push_subscription', 'https://fcm.googleapis.com/fcm/send/u1', P256, AUTH);
 	check('내 기기를 알림 대상으로 저장', (await cnt('select count(*)::int n from public.push_subscriptions where user_id = $1', [u])) === 1);
 	await expectError('https 가 아닌 주소 거절', () => rpcAs(u, 'save_push_subscription', 'http://x', P256, AUTH), 'invalid_subscription');
-	await expectError('키 길이가 이상하면 거절', () => rpcAs(u, 'save_push_subscription', 'https://push.example/z', 'short', AUTH), 'invalid_subscription');
+	await expectError('키 길이가 이상하면 거절', () => rpcAs(u, 'save_push_subscription', 'https://fcm.googleapis.com/fcm/send/z', 'short', AUTH), 'invalid_subscription');
+	await expectError('★ 알려진 푸시 서버가 아닌 주소는 거절 (서버가 아무 데나 요청을 보내지 않게)', () => rpcAs(u, 'save_push_subscription', 'https://evil.example/hook', P256, AUTH), 'invalid_subscription');
+	await expectError('비슷하게 꾸민 주소도 거절', () => rpcAs(u, 'save_push_subscription', 'https://fcm.googleapis.com.evil.example/x', P256, AUTH), 'invalid_subscription');
+	await rpcAs(u, 'save_push_subscription', 'https://updates.push.services.mozilla.com/wpush/v2/abc', P256, AUTH);
+	await rpcAs(u, 'save_push_subscription', 'https://wns2-sg2p.notify.windows.com/w/?token=abc', P256, AUTH);
+	check('파이어폭스 · 엣지 푸시 주소는 받는다', (await cnt('select count(*)::int n from public.push_subscriptions where user_id = $1', [u])) === 3);
+	for (let i = 0; i < 12; i++) await rpcAs(u, 'save_push_subscription', `https://fcm.googleapis.com/fcm/send/many${i}`, P256, AUTH);
+	check('★ 한 사람 기기는 10대까지 — 넘으면 오래된 것부터 지운다', (await cnt('select count(*)::int n from public.push_subscriptions where user_id = $1', [u])) === 10
+		&& (await cnt(`select count(*)::int n from public.push_subscriptions where endpoint = 'https://fcm.googleapis.com/fcm/send/many11'`)) === 1);
+	await db.query(`delete from public.push_subscriptions where user_id = $1 and endpoint like '%many%'`, [u]);
 	await expectError('★ 구독 목록은 누구도 직접 읽지 못한다 (기기 주소·키)', () => rowsAs(u, 'select * from public.push_subscriptions'), 'permission denied');
 
-	await rpcAs(v, 'save_push_subscription', 'https://push.example/u1', P256, AUTH);
+	await rpcAs(v, 'save_push_subscription', 'https://fcm.googleapis.com/fcm/send/u1', P256, AUTH);
 	check(
 		'같은 기기에서 다른 계정으로 로그인하면 주인이 바뀐다 (이전 계정 알림이 오지 않게)',
-		(await one('select user_id from public.push_subscriptions where endpoint = $1', ['https://push.example/u1'])).user_id === v
+		(await one('select user_id from public.push_subscriptions where endpoint = $1', ['https://fcm.googleapis.com/fcm/send/u1'])).user_id === v
 	);
-	await rpcAs(u, 'delete_push_subscription', 'https://push.example/u1');
-	check('★ 남의 구독은 지울 수 없다', (await cnt('select count(*)::int n from public.push_subscriptions where endpoint = $1', ['https://push.example/u1'])) === 1);
-	await rpcAs(v, 'delete_push_subscription', 'https://push.example/u1');
-	check('내 구독은 지울 수 있다 (알림 끄기·로그아웃)', (await cnt('select count(*)::int n from public.push_subscriptions where endpoint = $1', ['https://push.example/u1'])) === 0);
+	await rpcAs(u, 'delete_push_subscription', 'https://fcm.googleapis.com/fcm/send/u1');
+	check('★ 남의 구독은 지울 수 없다', (await cnt('select count(*)::int n from public.push_subscriptions where endpoint = $1', ['https://fcm.googleapis.com/fcm/send/u1'])) === 1);
+	await rpcAs(v, 'delete_push_subscription', 'https://fcm.googleapis.com/fcm/send/u1');
+	check('내 구독은 지울 수 있다 (알림 끄기·로그아웃)', (await cnt('select count(*)::int n from public.push_subscriptions where endpoint = $1', ['https://fcm.googleapis.com/fcm/send/u1'])) === 0);
 }
 
 console.log('\n[44] ★ 푸시 발송 판단');
@@ -1252,7 +1266,7 @@ console.log('\n[44] ★ 푸시 발송 판단');
 	const t = await person('f', 'm');
 	const z = await person('f', 'm');
 	const P256 = 'B' + 'x'.repeat(86);
-	await rpcAs(t, 'save_push_subscription', 'https://push.example/t1', P256, 'a'.repeat(22));
+	await rpcAs(t, 'save_push_subscription', 'https://web.push.apple.com/t1', P256, 'a'.repeat(22));
 	const r = await pairRoom(s, t);
 	const sSeat = (await rpcAs(s, 'room_snapshot', r)).my_seat;
 	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id in ($1,$2)`, [s, t]);
@@ -1283,7 +1297,7 @@ console.log('\n[44] ★ 푸시 발송 판단');
 	await db.query(`delete from private.push_log where message_id = $1`, [mid3]);
 	check('오래된 메시지로는 보내지 않는다', (await svc('push_payload', mid3, s)).skip === 'stale');
 
-	await svc('push_prune', ['https://push.example/t1']);
+	await svc('push_prune', ['https://web.push.apple.com/t1']);
 	await sendIn(s, r, sSeat, '또');
 	const mid4 = (await one('select max(id)::int m from public.messages where room_id = $1', [r])).m;
 	check('사라진 기기를 지우면 보낼 곳이 없다', (await svc('push_payload', mid4, s)).skip === 'no_device');
@@ -1548,19 +1562,19 @@ console.log('\n[52] ★ 익명편지 — 알림 · 운영자');
 	const r = await person('f', 'm');
 	const z = await person('f', 'f');
 	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id in ($1,$2,$3)`, [w, r, z]);
-	await rpcAs(w, 'save_push_subscription', 'https://push.example/w', 'B' + 'x'.repeat(86), 'a'.repeat(22));
-	await rpcAs(r, 'save_push_subscription', 'https://push.example/r', 'B' + 'y'.repeat(86), 'b'.repeat(22));
+	await rpcAs(w, 'save_push_subscription', 'https://fcm.googleapis.com/fcm/send/w', 'B' + 'x'.repeat(86), 'a'.repeat(22));
+	await rpcAs(r, 'save_push_subscription', 'https://fcm.googleapis.com/fcm/send/r', 'B' + 'y'.repeat(86), 'b'.repeat(22));
 	const a = await postLetter(w, '알림 테스트');
 	const c = await postComment(r, a.letter_id, null, '댓글이에요');
 	await expectError('★ 학생은 편지 알림 함수를 부를 수 없다', () => rowsAs(r, 'select public.letter_notify(1, $1)', [r]), 'permission denied');
 	check('★ 댓글 작성자가 아니면 알림을 못 보낸다', (await svc('letter_notify', c.comment_id, z)).skip === 'not_author');
 	const n1 = await svc('letter_notify', c.comment_id, r);
-	check('최상위 댓글 → 편지 작성자에게', n1.subs?.[0]?.endpoint === 'https://push.example/w' && n1.url === `/letters/${a.letter_id}`);
+	check('최상위 댓글 → 편지 작성자에게', n1.subs?.[0]?.endpoint === 'https://fcm.googleapis.com/fcm/send/w' && n1.url === `/letters/${a.letter_id}`);
 	check('★ 알림에 uuid 가 없다', ![w, r].some((u) => JSON.stringify({ t: n1.title, b: n1.body, u: n1.url }).includes(u)));
 	check('같은 댓글로 두 번 보내지 않는다', (await svc('letter_notify', c.comment_id, r)).skip === 'already');
 	const rep = await postComment(w, a.letter_id, c.comment_id, '고마워요');
 	const n2 = await svc('letter_notify', rep.comment_id, w);
-	check('대댓글 → 부모 댓글 작성자에게', n2.subs?.[0]?.endpoint === 'https://push.example/r' && n2.title === '내 댓글에 답글');
+	check('대댓글 → 부모 댓글 작성자에게', n2.subs?.[0]?.endpoint === 'https://fcm.googleapis.com/fcm/send/r' && n2.title === '내 댓글에 답글');
 	const self = await postComment(w, a.letter_id, null, '내 편지에 내가');
 	check('내 편지에 내가 쓴 댓글은 알림 없음', (await svc('letter_notify', self.comment_id, w)).skip === 'self');
 
@@ -2306,6 +2320,20 @@ console.log('\n[69] ★ 만났던 사람도 다시 만나기 — 둘 다 켰을 
 	await match(p);
 	check('★ 둘 다 켜도 차단한 사이는 안 잡힌다', (await match(q)).status === 'waiting');
 	await db.query('delete from public.blocks where blocker_id = $1 and blocked_id = $2', [q, p]);
+}
+
+console.log('\n[70] ★ 보안 점검 — 표 권한 · 트리거 함수 (Supabase 기본 권한 위에서)');
+{
+	const u = await person('m', 'f');
+	await expectError('★ 로그인 안 한 사람은 profiles 를 못 읽는다', () => rowsAs(null, 'select id from public.profiles'), 'permission denied');
+	await expectError('★ 학생도 user_presence 를 직접 못 읽는다 (접속 여부는 RPC 로만)', () => rowsAs(u, 'select * from public.user_presence'), 'permission denied');
+	await expectError('★ profiles 를 통째로 비울 수 없다 (TRUNCATE 는 RLS 를 거치지 않는다)', () => rowsAs(u, 'truncate public.profiles cascade'), 'permission denied');
+	await expectError('profiles 에 행을 직접 넣을 수 없다', () => rowsAs(u, `insert into public.profiles (id) values (gen_random_uuid())`), 'permission denied');
+	await expectError('app_settings 는 읽기만', () => rowsAs(u, 'update public.app_settings set is_open = false'), 'permission denied');
+	await expectError('★ 트리거 함수는 직접 부를 수 없다', () => rowsAs(u, 'select public.msg_rate_limit()'), 'permission denied');
+	check('내 프로필 읽기 · 정해진 열 고치기는 그대로', (await rowsAs(u, 'select id from public.profiles')).length === 1
+		&& (await rowsAs(u, `update public.profiles set want = 'any' where id = auth.uid() returning id`)).length === 1);
+	check('설정 읽기는 그대로', (await rowsAs(u, 'select is_open from public.app_settings')).length === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

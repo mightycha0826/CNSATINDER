@@ -22,11 +22,14 @@ const SYSTEM = `너는 고등학생들이 쓰는 익명 채팅·편지 앱의 �
 
 const KIND = { message: '채팅 메시지', letter: '익명 편지', comment: '편지 댓글' } as const;
 
+/** 글 안의 <<< · >>> 는 구분선을 흉내 내 [검사할 글] 밖으로 빠져나가려는 것일 수 있다 — 모양만 바꿔 넣는다 */
+const fence = (t: string) => t.replace(/<{3,}/g, '‹‹').replace(/>{3,}/g, '››');
+
 export function moderationPrompt(item: ModItem): AiMessage[] {
-	const ctx = item.context.length ? item.context.map((c) => `${c.who}: ${c.text}`).join('\n') : '(없음)';
+	const ctx = item.context.length ? item.context.map((c) => `${c.who}: ${fence(c.text)}`).join('\n') : '(없음)';
 	return [
 		{ role: 'system', content: SYSTEM },
-		{ role: 'user', content: `종류: ${KIND[item.kind]}\n[앞의 대화]\n${ctx}\n[검사할 글]\n<<<\n${item.text}\n>>>` }
+		{ role: 'user', content: `종류: ${KIND[item.kind]}\n[앞의 대화]\n${ctx}\n[검사할 글]\n<<<\n${fence(item.text)}\n>>>` }
 	];
 }
 

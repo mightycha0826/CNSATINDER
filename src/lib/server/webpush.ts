@@ -10,6 +10,21 @@
  */
 
 export type PushSub = { endpoint: string; p256dh: string; auth: string };
+
+/**
+ * 알려진 브라우저 푸시 서버 주소인가 — DB(save_push_subscription)와 같은 목록.
+ * 구글 FCM(크롬·안드로이드·삼성) · 애플(사파리·아이폰) · 모질라(파이어폭스) · 윈도(엣지).
+ * 발송 직전에도 한 번 더 본다 — 서버가 학생이 적은 아무 주소로나 요청을 보내지 않게.
+ */
+const PUSH_HOST = /^(fcm\.googleapis\.com|android\.googleapis\.com|web\.push\.apple\.com|([a-z0-9-]+\.)*push\.services\.mozilla\.com|([a-z0-9-]+\.)*notify\.windows\.com)$/;
+export function isPushEndpoint(endpoint: string): boolean {
+	try {
+		const u = new URL(endpoint);
+		return u.protocol === 'https:' && !u.username && !u.password && !u.port && PUSH_HOST.test(u.hostname);
+	} catch {
+		return false;
+	}
+}
 export type Vapid = { publicKey: string; privateKey: string; subject: string };
 
 const enc = new TextEncoder();
