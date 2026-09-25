@@ -593,7 +593,20 @@
 					{@const mine = m.sender_seat === room.seat}
 					{@const rx = m.id != null ? summarize(room.reactions[m.id]) : null}
 					{@const dx = swiped?.key === m.client_msg_id ? swiped.dx : 0}
-					<div class="row" class:mine class:gap={p.first || m.reply_to != null} data-mid={m.id}>
+					<!-- 밀어서 답장은 줄 전체에서 — 말풍선 옆 빈자리를 밀어도 된다 -->
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="row"
+						class:mine
+						class:gap={p.first || m.reply_to != null}
+						data-mid={m.id}
+						onpointerdown={(e) => {
+							if (m.id != null && !locked) swipe.down(e, m);
+						}}
+						onpointermove={swipe.move}
+						onpointerup={() => swipe.up()}
+						onpointercancel={swipe.cancel}
+					>
 						<div
 							class="bwrap"
 							class:reacted={!!rx}
@@ -632,21 +645,12 @@
 								class:sending={m.state === 'sending'}
 								class:failed={m.state === 'failed' || m.state === 'rate_limited'}
 								onclick={() => (m.state === 'failed' || m.state === 'rate_limited') && room?.retry(m)}
-								onpointerdown={(e) => {
-									press.down(e, m);
-									if (m.id != null && !locked) swipe.down(e, m);
-								}}
-								onpointermove={(e) => {
-									press.move(e);
-									swipe.move(e);
-								}}
+								onpointerdown={(e) => press.down(e, m)}
+								onpointermove={press.move}
 								onpointerup={() => {
-									if (!swipe.up()) press.up(m); // 밀기였으면 톡으로 세지 않는다
+									if (!swipe.active) press.up(m); // 밀기였으면 톡으로 세지 않는다 (줄의 손 떼기보다 먼저 온다)
 								}}
-								onpointercancel={() => {
-									press.cancel();
-									swipe.cancel();
-								}}
+								onpointercancel={press.cancel}
 								onpointerleave={press.cancel}
 								oncontextmenu={(e) => press.menu(e, m)}
 							>
@@ -955,6 +959,7 @@
 		align-items: center;
 		gap: 6px;
 		margin-top: 2px;
+		touch-action: pan-y; /* 줄 어디서든 옆으로 밀면 답장, 위아래는 스크롤 */
 	}
 	.row.gap {
 		margin-top: 8px;
@@ -1041,9 +1046,20 @@
 		display: flex;
 		flex-direction: column;
 		gap: 1px;
-		padding-left: 10px;
-		border-left: 3px solid var(--accent);
+		position: relative;
+		padding-left: 13px;
 		font-size: 13px;
+	}
+	/* 왼쪽 세로줄 — 설정의 채팅 색상(내 말풍선 색)을 따른다 */
+	.replying-text::before {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 3px;
+		border-radius: 2px;
+		background: var(--bubble-fill);
 	}
 	.replying-text b {
 		font-weight: 600;

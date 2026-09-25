@@ -19,7 +19,7 @@
 		align-items: flex-start;
 		gap: 2px;
 		max-width: 100%;
-		margin-bottom: 2px;
+		margin-bottom: 4px; /* 답장 말풍선과 겹치지 않게 틈을 둔다 */
 		text-align: left;
 	}
 	.quote.mine {
@@ -38,8 +38,7 @@
 		-webkit-box-orient: vertical;
 		overflow: hidden;
 		max-width: 100%;
-		padding: 6px 11px 14px;
-		margin-bottom: -10px; /* 답장 말풍선 뒤로 살짝 겹쳐 "이어진" 느낌 */
+		padding: 6px 11px;
 		border-radius: 14px;
 		background: var(--field);
 		color: var(--text-2);

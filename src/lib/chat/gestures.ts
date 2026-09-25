@@ -121,6 +121,10 @@ export function swipeReply<T>(opts: {
 		},
 		cancel() {
 			reset();
+		},
+		/** 지금 옆으로 미는 중인가 — 말풍선의 손 떼기가 줄(row)의 손 떼기보다 먼저 와서, 톡으로 셀지 여기서 묻는다 */
+		get active() {
+			return !!s?.on;
 		}
 	};
 }

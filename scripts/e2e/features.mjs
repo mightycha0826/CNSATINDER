@@ -32,6 +32,9 @@ try {
 	await quoted.click(); await page.waitForTimeout(250);
 	check('★ 인용 누르면 원래 메시지로 가서 반짝', (await page.locator('.bwrap.flash .bubble').innerText()).includes('실리카겔 좋아하세요?'));
 
+	const qb = await quoted.boundingBox(), bb = await bubble('헐 저도 좋아해요').boundingBox();
+	check('★ 인용 상자와 답장 말풍선이 겹치지 않는다', qb.y + qb.height <= bb.y, JSON.stringify({ quoteBottom: qb.y + qb.height, bubbleTop: bb.y }));
+
 	console.log('[답장 보내기]');
 	await bubble('공연도 가봤어요?').click({ button: 'right' }); await page.waitForTimeout(200);
 	check('고르기 줄에 "답장"', (await page.getByRole('menuitem', { name: '답장' }).count()) === 1);
@@ -42,6 +45,10 @@ try {
 	check('입력창 위 "새벽수달에게 답장" 막대', (await bar.innerText()).includes('새벽수달에게 답장') && (await bar.innerText()).includes('공연도 가봤어요?'));
 	check('입력창에 커서', await page.locator('textarea').evaluate((e) => e === document.activeElement));
 	await page.screenshot({ path: `${SP}/feat-2-replying.png` });
+	await page.evaluate(() => document.documentElement.style.setProperty('--bubble-fill', 'linear-gradient(#3b8af6, #3b8af6)'));
+	const barBg = await page.locator('.replying-text').evaluate((e) => getComputedStyle(e, '::before').backgroundImage);
+	check('답장 막대의 세로줄 = 채팅 색상 (설정에서 고른 색)', barBg.includes('59, 138, 246'), barBg);
+	await page.evaluate(() => document.documentElement.style.removeProperty('--bubble-fill'));
 	await page.locator('.replying-x').click();
 	check('✕ 로 답장 취소', (await page.locator('.replying').count()) === 0);
 	await bubble('공연도 가봤어요?').click({ button: 'right' }); await page.getByRole('menuitem', { name: '답장' }).click();
@@ -89,6 +96,21 @@ try {
 	check('위아래로 움직이면 스크롤로 보고 밀지 않는다', !mid.icon && (await page.locator('.replying').count()) === 0, JSON.stringify(mid));
 	mid = await drag('공연도 가봤어요?', 100, 0, 'mouse'); await lift('공연도 가봤어요?'); await page.waitForTimeout(300);
 	check('마우스 드래그는 글자 고르기 — 밀기 아님', !mid.icon && (await page.locator('.replying').count()) === 0, JSON.stringify(mid));
+	mid = await page.evaluate(async () => {
+		const b = [...document.querySelectorAll('.bubble')].find((x) => x.textContent.includes('공연도 가봤어요?'));
+		const row = b.closest('.row'), r = b.getBoundingClientRect(), rr = row.getBoundingClientRect();
+		const x = r.right + (rr.right - r.right) / 2, y = r.top + r.height / 2; // 말풍선 오른쪽 빈자리
+		const ev = (n, cx) => row.dispatchEvent(new PointerEvent(n, { bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch', isPrimary: true, button: 0, clientX: cx, clientY: y }));
+		ev('pointerdown', x);
+		for (let i = 1; i <= 6; i++) ev('pointermove', x - (100 * i) / 6);
+		await new Promise((res) => requestAnimationFrame(() => res()));
+		const w = b.closest('.bwrap'), out = { hit: document.elementFromPoint(x, y) === row, transform: w.style.transform, icon: !!w.querySelector('.swipe-ic.hit') };
+		ev('pointerup', x - 100);
+		return out;
+	});
+	await page.waitForTimeout(300);
+	check('★ 말풍선 밖 빈자리(그 줄)를 밀어도 답장', mid.hit && /translateX\(-\d/.test(mid.transform) && mid.icon && (await replying()).includes('공연도 가봤어요?'), JSON.stringify(mid) + ' ' + (await replying()));
+	await page.locator('.replying-x').click();
 	check('말풍선: 위아래 스크롤만 브라우저에 맡긴다 (touch-action: pan-y)', (await bubble('공연도 가봤어요?').evaluate((e) => getComputedStyle(e).touchAction)) === 'pan-y');
 
 	console.log('[첫마디 도우미]');
