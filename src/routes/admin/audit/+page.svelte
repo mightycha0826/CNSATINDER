@@ -45,6 +45,10 @@
 		}
 		if (a.action === 'roster_import') return `${d.grade}학년 ${d.count}명`;
 		if (a.action === 'update_banned_terms') return `${d.count}개`;
+		if (a.action === 'export_messages' && d.from && d.to) {
+			const day = (v: unknown) => new Date(String(v)).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' });
+			return `${day(d.from)} ~ ${day(new Date(Date.parse(String(d.to)) - 1))}`;
+		}
 		if (a.action === 'post_notice' || a.action === 'remove_notice') return `"${d.title}"`;
 		if (a.action === 'remove_comment' && d.comment_id) parts.push(`댓글 #${d.comment_id}`);
 		if (d.days) parts.push(`${d.days}일`);

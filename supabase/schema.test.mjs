@@ -2222,5 +2222,48 @@ console.log('\n[67] ★ AI 대화 상대 — 사람당 · 앱 전체 하루 한�
 	await db.query(`update public.app_settings set ai_chat = false`);
 }
 
+
+console.log('\n[68] ★ 대화 백업 (CSV) — 관리자만, 기록 남김, 계정 정보 없음, 엑셀 수식 막음');
+{
+	await db.query(`update public.user_presence set msg_tokens = 12, tokens_at = now()`); // 앞 구역에서 쓴 전송 한도
+	const r = await fresh();
+	const sA = Number(await rpcAs(A, 'my_seat', r));
+	const sB = Number(await rpcAs(B, 'my_seat', r));
+	const say = async (uid, seat, body) =>
+		(await rowsAs(uid, `insert into public.messages (room_id, sender_seat, body, client_msg_id)
+		                    values ($1, $2, $3, gen_random_uuid()) returning id`, [r, seat, body]))[0].id;
+	await say(A, sA, '그냥 "따옴표"랑, 쉼표');
+	await say(B, sB, '=HYPERLINK("http://x","클릭")');
+	await say(A, sA, '줄\n바꿈');
+	const adm = await person('f', 'm');
+	await db.query(`insert into private.staff (user_id, role) values ($1, 'admin')`, [adm]);
+	const mod = await person('f', 'm');
+	await db.query(`insert into private.staff (user_id, role) values ($1, 'moderator')`, [mod]);
+	const from = new Date(Date.now() - 3600_000).toISOString(), to = new Date(Date.now() + 3600_000).toISOString();
+
+	await expectError('운영진(모더레이터)은 못 받는다', () => svc('admin_export_messages', mod, from, to, 0, 5000), 'admin_only');
+	await expectError('★ 학생은 부를 수 없다', () => rowsAs(A, `select public.admin_export_messages($1, now(), now() + interval '1 hour', 0, 10)`, [A]), 'permission denied');
+	await expectError('기간이 거꾸로면 오류', () => svc('admin_export_messages', adm, to, from, 0, 10), 'bad_range');
+
+	const logs0 = (await one(`select count(*)::int n from private.audit_log where action = 'export_messages'`)).n;
+	const out = await svc('admin_export_messages', adm, from, to, 0, 5000);
+	const mine = out.csv.split('\n').filter((l) => l.includes(r));
+	check('이 방 메시지가 다 들어 있다 (시스템 안내 포함)', mine.length >= 4, String(mine.length));
+	check('따옴표 · 쉼표는 CSV 규칙대로', out.csv.includes('"그냥 ""따옴표""랑, 쉼표"'));
+	check('★ 엑셀 수식은 앞에 \' 를 붙여 글자로', out.csv.includes(`"'=HYPERLINK(""http://x"",""클릭"")"`));
+	check('줄바꿈은 칸 안에 그대로', out.csv.includes('"줄\n바꿈"'));
+	const aliases = await one('select alias1, alias2 from public.rooms where id = $1', [r]);
+	check('보낸 사람은 방 안 익명 이름', out.csv.includes(`"${sA === 1 ? aliases.alias1 : aliases.alias2}"`) && out.csv.includes('"시스템 안내"'));
+	check('★ 계정 정보(사용자 id · 이메일)는 없다', ![A, B].some((u) => out.csv.includes(u)) && !out.csv.includes('@cnsa'));
+	check('★ 받을 때 활동 기록', (await one(`select count(*)::int n from private.audit_log where action = 'export_messages'`)).n === logs0 + 1);
+
+	const p1 = await svc('admin_export_messages', adm, from, to, 0, 2);
+	const p2 = await svc('admin_export_messages', adm, from, to, Number(p1.last_id), 2);
+	check('조각으로 나눠 받기 (이어 받는 조각은 겹치지 않음)', p1.count === 2 && p2.count >= 1 && Number(p2.csv.split(',')[0]) > Number(p1.last_id));
+	check('이어 받는 조각은 기록을 또 남기지 않는다', (await one(`select count(*)::int n from private.audit_log where action = 'export_messages'`)).n === logs0 + 2);
+	const none = await svc('admin_export_messages', adm, new Date(Date.now() - 7200_000).toISOString(), new Date(Date.now() - 3600_000 - 1000).toISOString(), 0, 10);
+	check('기간 밖이면 빈 결과', none.count === 0 && none.csv === '');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

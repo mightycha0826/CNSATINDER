@@ -3847,3 +3847,56 @@ end
 $do$;
 revoke all on function public.ai_chat_start() from public, anon;
 grant execute on function public.ai_chat_start() to authenticated;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 20 — 대화 백업 (CSV) — 서버에서 지워지기(방이 닫히고 24시간 뒤, 매일 04:17) 전에 관리자가 내려받는다
+--
+--  · 관리자만. 내려받을 때마다 활동 기록(export_messages)에 기간과 함께 남는다.
+--  · 파일에는 계정 정보(이메일 · 사용자 id)가 없다 — 방 번호 · 방 안 익명 이름 · 시각 · 내용만.
+--    누가 누구였는지는 여전히 운영자 화면에서만, 열람 기록과 함께 (방 번호로 찾아간다).
+--  · 한 번에 최대 10,000줄씩 잘라서 준다 (Workers 의 요청당 CPU 한도 안에서 끝나게). 화면이 이어 붙인다.
+--  · 엑셀 수식 주입 방지: = + - @ 로 시작하는 칸은 앞에 ' 를 붙인다 (학생이 쓴 글이 엑셀에서 실행되지 않게).
+-- ════════════════════════════════════════════════════════════════════
+
+create or replace function private.csv_cell(v text)
+returns text language sql immutable as $fn$
+  select '"' || replace(case when coalesce(v, '') ~ '^[=+\-@\t\r]' then '''' || v else coalesce(v, '') end, '"', '""') || '"';
+$fn$;
+
+create or replace function public.admin_export_messages(
+  p_staff uuid, p_from timestamptz, p_to timestamptz, p_after bigint default 0, p_limit int default 5000)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare v_csv text; v_last bigint; v_n int;
+begin
+  if private.require_staff(p_staff) <> 'admin' then raise exception 'admin_only'; end if;
+  if p_from is null or p_to is null or p_to <= p_from then raise exception 'bad_range'; end if;
+  -- 첫 조각을 받을 때 한 번 기록 (이어 받는 조각마다 남기면 기록이 어지럽다)
+  if coalesce(p_after, 0) = 0 then
+    insert into private.audit_log (staff_id, action, detail)
+    values (p_staff, 'export_messages', jsonb_build_object('from', p_from, 'to', p_to));
+  end if;
+
+  with x as (
+    select m.id, m.room_id, r.status, m.sender_seat,
+           case m.sender_seat when 1 then r.alias1 when 2 then r.alias2 else '시스템 안내' end as alias,
+           m.created_at, m.body, m.reply_to
+      from public.messages m
+      join public.rooms r on r.id = m.room_id
+     where m.id > coalesce(p_after, 0) and m.created_at >= p_from and m.created_at < p_to
+     order by m.id
+     limit least(greatest(coalesce(p_limit, 5000), 1), 10000)
+  )
+  select string_agg(array_to_string(array[
+           x.id::text, x.room_id::text, x.status, x.sender_seat::text, private.csv_cell(x.alias),
+           to_char(x.created_at at time zone 'Asia/Seoul', 'YYYY-MM-DD HH24:MI:SS'),
+           private.csv_cell(x.body), coalesce(x.reply_to::text, '')], ','), E'\n' order by x.id),
+         max(x.id), count(*)
+    into v_csv, v_last, v_n
+    from x;
+  return jsonb_build_object('csv', coalesce(v_csv, ''), 'last_id', v_last, 'count', v_n);
+end
+$fn$;
+revoke all on function private.csv_cell(text) from public, anon, authenticated;
+revoke all on function public.admin_export_messages(uuid, timestamptz, timestamptz, bigint, int) from public, anon, authenticated;
+grant execute on function public.admin_export_messages(uuid, timestamptz, timestamptz, bigint, int) to service_role;

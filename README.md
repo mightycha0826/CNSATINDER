@@ -130,6 +130,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [ ] **Phase 20 적용** — `schema.sql` 을 다시 실행 (대화 백업 `admin_export_messages`). 백업을 쓸 거면 개인정보 처리방침에
+      "지워지기 전 관리자가 파일로 보관할 수 있음"을 적고 학교 승인을 받는다 (학생 화면 문구는 이미 바꿔 둠).
 - [ ] **운영자 점검 반영** — `schema.sql` 을 다시 실행 (신고 처리·글 내리기·운영 설정 RPC 의 역할 검사, 탈퇴 계정 제재 오류).
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
       Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
@@ -271,6 +273,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
         사람당·앱 전체 하루 한도 · 한 번에 N분 · N턴. 대화 내용은 어디에도 저장하지 않는다(횟수만). 위기 신호엔 109 · 1388 안내
       · Workers AI 무료 몫은 하루 10,000 Neuron(UTC 00:00 = 한국 오전 9시 초기화) — 두 기능이 나눠 쓴다. 기본 한도: 검토 250건 · AI 대화 3번
         (어림값: 검토 1건 ≈ 17 Neuron, AI 대화 30턴 ≈ 1,600 Neuron). 한도를 넘기면 검토는 규칙 필터만, AI 대화는 "오늘 끝" 안내
+- [x] **Phase 20 — 대화 백업 (CSV)** — 운영자 "전체 대화" 화면에서 날짜(한국 시간)를 골라 서버에서 지워지기 전 대화를 CSV 로.
+      관리자만 · 받을 때마다 활동 기록(`export_messages`) · 계정 정보 없이 방 번호 · 방 안 익명 이름 · 시각 · 내용만.
+      DB 가 5,000줄씩 CSV 를 만들어 주고 화면이 이어 붙인다 (Workers CPU 한도). 엑셀 수식 주입 방지(= + - @ 앞에 '), 엑셀용 BOM.
+      하루 한 번 받으면 빠짐없이 남는다 (지우기는 방이 닫히고 24시간 뒤, 매일 04:17)
 - [x] **요청 줄이기 (과부하 대비)** — 화면별로 나가는 요청을 실제로 세어 보고(`npm run test:ui -- requests`) 불필요한 것을 뺐다.
       · 앱을 열 때 부팅 요청(ensure_self · profiles · app_settings · my_account)이 두 번씩 나가던 것 → 한 번 (INITIAL_SESSION 중복)
       · 탭을 오갈 때마다 공지를 다시 부르던 것 → 1분 안이면 건너뜀, 주기 확인 1분 → 5분

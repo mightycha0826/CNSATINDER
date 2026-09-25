@@ -286,6 +286,7 @@ export const ACTION_LABEL: Record<string, string> = {
 	remove_comment: '댓글 내림',
 	update_settings: '설정 변경',
 	update_banned_terms: '금칙어 변경',
+	export_messages: '대화 백업 (CSV)',
 	roster_import: '명렬표 반영',
 	post_notice: '공지 올림',
 	remove_notice: '공지 내림'

@@ -33,6 +33,14 @@ const RPC = {
 	}),
 	admin_log_identity_view: (a) => { calls.push(['log', a]); return null; },
 	admin_roster_name: () => null,
+	admin_rooms: () => [],
+	admin_export_messages: (a) => {
+		calls.push(['export', a]);
+		// 5,000줄 조각 두 개 + 마지막 빈 조각을 흉내 — 첫 조각은 꽉 차 있고(다음이 있음), 두 번째는 덜 차 있다
+		if (a.p_after === 0) return { csv: Array.from({ length: 5000 }, (_, i) => `${i + 1},${ROOM},closed,1,"여우",2026-09-24 10:00:00,"안녕 ${i + 1}",`).join('\n'), last_id: 5000, count: 5000 };
+		if (a.p_after === 5000) return { csv: `5001,${ROOM},closed,2,"곰",2026-09-24 10:01:00,"'=1+1",5000`, last_id: 5001, count: 1 };
+		return { csv: '', last_id: null, count: 0 };
+	},
 	admin_get_settings: () => settings,
 	admin_ai_usage: () => ({ mod_checked_today: 12, mod_flagged_today: 2, mod_pending: 3, ai_chats_today: 1, day_start: t }),
 	admin_banned_terms: () => terms,
@@ -125,6 +133,25 @@ try {
 	await page.getByText('올바른 패턴이 아니에요').waitFor();
 	check('틀린 패턴은 안내', (await page.getByText('"(깨진" 는 올바른 패턴이 아니에요').count()) === 1);
 	await page.screenshot({ path: `${OUT}/admin-ai-settings.png`, fullPage: true });
+	console.log('[대화 백업 (CSV)]');
+	await page.goto(U('/admin/rooms'));
+	await page.getByRole('button', { name: 'CSV 내려받기' }).waitFor();
+	await page.waitForLoadState('networkidle');
+	await page.locator('.backup input[type=date]').first().fill('2026-09-24');
+	await page.locator('.backup input[type=date]').last().fill('2026-09-24');
+	const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'CSV 내려받기' }).click()]);
+	const file = await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8');
+	const lines = file.replace(/^\ufeff/, '').trimEnd().split('\n');
+	check('파일 이름에 기간', dl.suggestedFilename() === 'cnsatinder-chats-2026-09-24_2026-09-24.csv', dl.suggestedFilename());
+	check('엑셀용 BOM + 머리줄', file.startsWith('\ufeff메시지번호,대화방'));
+	check('조각을 이어 붙여 전부 (5,001줄)', lines.length === 5002 && lines.at(-1).startsWith('5001,'), String(lines.length));
+	const ex = calls.filter((c) => c[0] === 'export').map((c) => c[1]);
+	check('이어 받기: after 0 → 5000, 덜 찬 조각에서 멈춤', ex.map((x) => x.p_after).join() === '0,5000', JSON.stringify(ex.map((x) => x.p_after)));
+	check('한국 날짜 하루 = UTC 전날 15시 ~ 당일 15시', ex[0].p_from === '2026-09-23T15:00:00.000Z' && ex[0].p_to === '2026-09-24T15:00:00.000Z', JSON.stringify(ex[0]));
+	check('다 받았다는 안내', (await page.locator('.backup [role=status]').innerText()).includes('5,001줄'));
+	const bad = await page.evaluate(async () => (await fetch('/admin/rooms/export?from=x&to=y')).status);
+	check('날짜가 이상하면 400', bad === 400);
+
 	check('페이지 오류 없음', errs.length === 0, errs.join(' | '));
 } catch (e) { fail++; console.error(e); }
 finally {
