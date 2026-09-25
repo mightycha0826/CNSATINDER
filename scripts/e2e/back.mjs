@@ -20,6 +20,9 @@ let notices = [
 let lastSeen = 1;
 const marks = [];
 
+const prof = { id: uid, nickname: '푸른고래', bio: '', interests: [], mbti: null, gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true, allow_rematch: false };
+const patches = [];
+
 const browser = await chromium.launch({ executablePath: CHROME });
 try {
 	const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -35,7 +38,10 @@ try {
 		if (u.pathname === '/rest/v1/rpc/letter_feed') return json({ letters: [], server_now: new Date().toISOString() });
 		if (u.pathname === '/rest/v1/rpc/my_notices') return json({ notices, last_seen: lastSeen });
 		if (u.pathname === '/rest/v1/rpc/mark_notices_seen') { const p = req.postDataJSON().p_id; marks.push(p); lastSeen = Math.max(lastSeen, p); return json(lastSeen); }
-		if (u.pathname === '/rest/v1/profiles') return json({ id: uid, nickname: '푸른고래', bio: '', interests: [], mbti: null, gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true });
+		if (u.pathname === '/rest/v1/profiles') {
+			if (req.method() === 'PATCH') { Object.assign(prof, req.postDataJSON()); patches.push(req.postDataJSON()); return route.fulfill({ status: 204 }); }
+			return json(prof);
+		}
 		if (u.pathname === '/rest/v1/app_settings') return json({ is_open: true, notice: '', room_minutes: 10, extend_minutes: 10, vote_window_sec: 30, join_grace_sec: 30, max_rounds: 99, heartbeat_sec: 30, presence_ttl_sec: 70, msg_max_len: 500, max_open_rooms: 5, letter_max_len: 1000, comment_max_len: 300 });
 		if (u.pathname.startsWith('/rest/v1/rpc/')) return json(null);
 		return json([]);
@@ -122,11 +128,22 @@ try {
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
 	const setHeads = await heads();
-	check('★ 설정 = 채팅 색상 · 알림 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '채팅 색상,알림,계정,개인정보'
+	check('★ 설정 = 채팅 색상 · 알림 · 매칭 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '채팅 색상,알림,매칭,계정,개인정보'
 		&& (await page.getByRole('switch', { name: '새 메시지 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
 		&& (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
 	check('뒤로는 둥근 단추 · 제목 가운데', (await page.locator('button.back').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%'
 		&& Math.abs(await page.locator('.topbar .title').evaluate((e) => { const r = e.getBoundingClientRect(); return r.left + r.width / 2 - innerWidth / 2; })) < 2);
+	const rematch = page.getByRole('switch', { name: '만났던 사람 다시 만나기' });
+	check('매칭: "만났던 사람 다시 만나기" 스위치 — 기본 꺼짐', (await rematch.count()) === 1 && !(await rematch.isChecked()));
+	await rematch.click(); await page.waitForTimeout(400);
+	check('★ 켜면 내 프로필에 저장 (allow_rematch = true) · 스위치 켜짐', JSON.stringify(patches.at(-1)) === '{"allow_rematch":true}' && (await rematch.isChecked()), JSON.stringify(patches));
+	await rematch.click(); await page.waitForTimeout(400);
+	check('다시 끄면 false 로 저장', JSON.stringify(patches.at(-1)) === '{"allow_rematch":false}' && !(await rematch.isChecked()));
+	check('색 후보 5개 — 파랑만 단색, 나머지는 그라데이션', await page.evaluate(() => {
+		const dots = [...document.querySelectorAll('.swatch')].map((l) => ({ n: l.querySelector('input').getAttribute('aria-label'), bg: getComputedStyle(l.querySelector('.dot')).backgroundImage }));
+		const cols = (bg) => new Set(bg.match(/rgb\([^)]*\)/g)).size;
+		return dots.length === 5 && dots.every((d) => (d.n === '파랑' ? cols(d.bg) === 1 : cols(d.bg) >= 2));
+	}));
 	const pwRow = page.getByRole('button', { name: /^비밀번호 (바꾸기|만들기)$/ });
 	await pwRow.click(); await page.waitForTimeout(150);
 	check('비밀번호 줄 → 카드 안에서 펼침 (›가 아래로)', (await pwRow.getAttribute('aria-expanded')) === 'true' && (await page.getByPlaceholder('지금 비밀번호').count()) === 1);

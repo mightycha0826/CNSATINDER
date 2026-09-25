@@ -883,12 +883,18 @@ begin
      and not exists (select 1 from public.blocks b
                       where (b.blocker_id = me and b.blocked_id = c.user_id)
                          or (b.blocker_id = c.user_id and b.blocked_id = me))
-     -- 최근에 대화한 상대 제외
-     and not exists (select 1 from public.pair_history h
-                      where h.user_lo = least(me, c.user_id)
-                        and h.user_hi = greatest(me, c.user_id)
-                        and h.last_matched_at > v_now - make_interval(days => cfg.rematch_cooldown_days))
-   order by c.seeking_since asc,   -- ★ 오래 기다린 사람 먼저 (굶주림 방지)
+     -- 최근에 대화한 상대 제외 — 둘 다 "만났던 사람도 다시 만나기"를 켰으면 예외 (Phase 21, 설정 화면)
+     and ((coalesce(m.allow_rematch, false) and coalesce(p.allow_rematch, false))
+          or not exists (select 1 from public.pair_history h
+                          where h.user_lo = least(me, c.user_id)
+                            and h.user_hi = greatest(me, c.user_id)
+                            and h.last_matched_at > v_now - make_interval(days => cfg.rematch_cooldown_days)))
+   order by -- 다시 만나기를 켰어도 처음 보는 사람이 있으면 그쪽 먼저
+            exists (select 1 from public.pair_history h
+                     where h.user_lo = least(me, c.user_id)
+                       and h.user_hi = greatest(me, c.user_id)
+                       and h.last_matched_at > v_now - make_interval(days => cfg.rematch_cooldown_days)),
+            c.seeking_since asc,   -- ★ 오래 기다린 사람 먼저 (굶주림 방지)
             random()
    limit 1;
 
@@ -3900,3 +3906,15 @@ $fn$;
 revoke all on function private.csv_cell(text) from public, anon, authenticated;
 revoke all on function public.admin_export_messages(uuid, timestamptz, timestamptz, bigint, int) from public, anon, authenticated;
 grant execute on function public.admin_export_messages(uuid, timestamptz, timestamptz, bigint, int) to service_role;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 21 — 만났던 사람도 다시 만나기 (설정 화면 스위치)
+--
+--  · 기본은 꺼짐 — 지금처럼 최근(운영 설정 rematch_cooldown_days, 기본 7일)에 대화한 상대는 다시 잡히지 않는다.
+--  · 둘 다 켰을 때만 다시 잡힌다 (한쪽만 켜면 그대로 제외 — 다시 만나고 싶지 않은 사람의 뜻이 우선).
+--  · 켜도 처음 보는 사람이 기다리고 있으면 그쪽이 먼저. 차단한 사이 · 이미 대화 중인 사이는 여전히 안 잡힌다.
+--  · 본인만 바꾼다 (profiles 의 열 단위 update 권한 + "self update" 정책).
+-- ════════════════════════════════════════════════════════════════════
+alter table public.profiles add column if not exists allow_rematch boolean not null default false;
+grant update (allow_rematch) on public.profiles to authenticated;

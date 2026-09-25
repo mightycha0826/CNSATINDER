@@ -16,6 +16,8 @@ export type Profile = {
 	suspended_until: string | null;
 	verified: boolean;
 	onboarded: boolean;
+	/** 만났던 사람도 다시 만나기 (설정) — 둘 다 켰을 때만 최근 상대와 다시 매칭 (Phase 21) */
+	allow_rematch?: boolean;
 };
 
 export type Settings = {
@@ -159,12 +161,22 @@ async function afterLogin(uid: string) {
 
 export async function loadProfile() {
 	// ★ select('*') 를 쓰지 않는다. 항상 명시 컬럼.
-	const { data } = await supabase
+	const cols = 'id, nickname, bio, interests, mbti, gender, want, status, suspended_until, verified, onboarded';
+	const read = (c: string) => supabase.from('profiles').select(c).eq('id', S.session?.user.id ?? '').maybeSingle();
+	let { data, error } = await read(`${cols}, allow_rematch`);
+	// Phase 21 을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
+	if (error) ({ data } = await read(cols));
+	S.profile = (data as unknown as Profile) ?? null;
+}
+
+/** 만났던 사람도 다시 만나기 (설정 화면 스위치) */
+export async function setAllowRematch(on: boolean) {
+	const { error } = await supabase
 		.from('profiles')
-		.select('id, nickname, bio, interests, mbti, gender, want, status, suspended_until, verified, onboarded')
-		.eq('id', S.session?.user.id ?? '')
-		.maybeSingle();
-	S.profile = (data as Profile) ?? null;
+		.update({ allow_rematch: on })
+		.eq('id', S.session?.user.id ?? '');
+	if (error) throw error;
+	await loadProfile();
 }
 
 const SETTINGS_COLS =

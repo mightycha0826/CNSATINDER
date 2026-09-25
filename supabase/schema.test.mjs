@@ -2265,5 +2265,46 @@ console.log('\n[68] ★ 대화 백업 (CSV) — 관리자만, 기록 남김, 계
 	check('기간 밖이면 빈 결과', none.count === 0 && none.csv === '');
 }
 
+console.log('\n[69] ★ 만났던 사람도 다시 만나기 — 둘 다 켰을 때만');
+{
+	await resetPool();
+	await db.query('update public.user_presence set match_tokens = 99');
+	const p = await person('m', 'f');
+	const q = await person('f', 'm');
+	const recent = () => db.query(`insert into public.pair_history (user_lo, user_hi, last_matched_at)
+	                values (least($1::uuid,$2::uuid), greatest($1::uuid,$2::uuid), now() - interval '1 day')
+	                on conflict (user_lo, user_hi) do update set last_matched_at = excluded.last_matched_at`, [p, q]);
+	await recent();
+	check('기본은 꺼짐', (await one('select allow_rematch from public.profiles where id = $1', [p])).allow_rematch === false);
+
+	await rowsAs(p, 'update public.profiles set allow_rematch = true where id = auth.uid()');
+	check('본인이 켤 수 있다', (await one('select allow_rematch from public.profiles where id = $1', [p])).allow_rematch === true);
+	await rowsAs(p, 'update public.profiles set allow_rematch = true where id = $1', [q]);
+	check('★ 남의 설정은 못 바꾼다', (await one('select allow_rematch from public.profiles where id = $1', [q])).allow_rematch === false);
+	await expectError('status 같은 다른 열은 여전히 못 바꾼다', () => rowsAs(p, `update public.profiles set status = 'active' where id = auth.uid()`), 'permission denied');
+
+	await match(p);
+	check('★ 한쪽만 켜면 최근 상대는 여전히 제외', (await match(q)).status === 'waiting');
+
+	await rowsAs(q, 'update public.profiles set allow_rematch = true where id = auth.uid()');
+	check('★ 둘 다 켜면 최근 상대와도 매칭', (await match(q)).status === 'matched');
+
+	await resetPool();
+	await recent();
+	const fresh = await person('m', 'f');
+	await match(p);
+	await match(fresh);
+	const got = await match(q);
+	const mem = got.status === 'matched' ? await one('select count(*)::int n from public.room_members where room_id = $1 and user_id = $2', [got.room_id, fresh]) : { n: 0 };
+	check('켜도 처음 보는 사람이 기다리면 그쪽 먼저', got.status === 'matched' && mem.n === 1, JSON.stringify(got));
+
+	await resetPool();
+	await recent();
+	await db.query('insert into public.blocks (blocker_id, blocked_id) values ($1,$2) on conflict do nothing', [q, p]);
+	await match(p);
+	check('★ 둘 다 켜도 차단한 사이는 안 잡힌다', (await match(q)).status === 'waiting');
+	await db.query('delete from public.blocks where blocker_id = $1 and blocked_id = $2', [q, p]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -13,6 +13,7 @@
 		errMsg,
 		recentlyVerified,
 		sendOtpToMe,
+		setAllowRematch,
 		setPassword,
 		signOut,
 		toast,
@@ -140,6 +141,24 @@
 		}
 	}
 
+	// ── 매칭 ──
+	let rematchBusy = $state(false);
+	async function toggleRematch(e: Event) {
+		const box = e.currentTarget as HTMLInputElement;
+		const on = box.checked;
+		box.checked = !!S.profile?.allow_rematch; // 저장된 뒤에 바뀐다
+		if (rematchBusy) return;
+		rematchBusy = true;
+		try {
+			await setAllowRematch(on);
+			toast(on ? '만났던 사람도 다시 만날 수 있어요' : '최근에 만난 사람은 다시 만나지 않아요');
+		} catch (err) {
+			toast(errMsg(err));
+		} finally {
+			rematchBusy = false;
+		}
+	}
+
 	async function out() {
 		await signOut();
 		void goto('/login', { replaceState: true });
@@ -203,6 +222,25 @@
 		{:else}
 			앱을 보고 있지 않을 때 새 메시지 · 공감 · 편지 댓글을 알려 줘요.
 		{/if}
+	</p>
+
+	<h2 class="g-head">매칭</h2>
+	<div class="g-card">
+		<label class="g-row">
+			<span>만났던 사람 다시 만나기</span>
+			<input
+				class="switch"
+				type="checkbox"
+				role="switch"
+				checked={!!S.profile?.allow_rematch}
+				disabled={rematchBusy || !S.profile}
+				onchange={toggleRematch}
+			/>
+		</label>
+	</div>
+	<p class="g-foot">
+		끄면 최근에 대화한 사람과는 다시 연결되지 않아요. 켜도 상대도 켜 둔 경우에만 다시 만나고,
+		처음 보는 사람이 기다리고 있으면 그쪽이 먼저예요. 차단한 사람과는 어떤 경우에도 만나지 않아요.
 	</p>
 
 	<h2 class="g-head">계정</h2>
@@ -372,7 +410,7 @@
 	}
 	.swatches {
 		display: grid;
-		grid-template-columns: repeat(6, minmax(0, 1fr)); /* 폰 한 줄에 여섯 개 */
+		grid-template-columns: repeat(5, minmax(0, 1fr)); /* 한 줄에 다섯 개 */
 		padding: 14px 8px;
 	}
 	.swatch {
