@@ -2101,6 +2101,8 @@ console.log('\n[65] ★ 규칙 필터 — 신상정보 · 금칙어는 보내기
 
 console.log('\n[66] ★ AI 검토 대기열 — 켜져 있을 때만 쌓이고, 걸리면 자동 신고');
 {
+	// 앞 구역(규칙 필터)에서 막힌 글도 전송 한도를 쓴다 — 느린 기계(CI)에서 한도가 모자라 실패하지 않게 채워 둔다
+	await db.query(`update public.user_presence set msg_tokens = 12, tokens_at = now()`);
 	const q = async () => (await one(`select count(*)::int n from private.mod_queue`)).n;
 	const r0 = await fresh();
 	const s0 = Number(await rpcAs(A, 'my_seat', r0));
