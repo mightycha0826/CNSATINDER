@@ -16,7 +16,7 @@
 	import MatchScreen from './MatchScreen.svelte';
 	import { replaceState } from '$app/navigation';
 	import { page } from '$app/state';
-	import { pressGestures } from './gestures';
+	import { pressGestures, swipeReply } from './gestures';
 	import { summarize } from './reactions';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
@@ -395,18 +395,24 @@
 	}
 
 	// ── 답장 ─────────────────────────────────────────────────────
-	// 공감 고르기 줄의 "답장" → 입력창 위에 "○○에게 답장" 막대. 보내면 그 메시지를 짚은 답장이 된다.
+	// 공감 고르기 줄의 "답장", 또는 말풍선을 옆으로 밀기 → 입력창 위에 "○○에게 답장" 막대. 보내면 그 메시지를 짚은 답장이 된다.
 	let replyTo = $state<Msg | null>(null);
 	const byId = $derived(new Map((room?.msgs ?? []).filter((m) => m.id != null).map((m) => [m.id!, m])));
 	const whose = (m: Msg) => (m.sender_seat === room?.seat ? '내' : `${room?.snap?.partner_alias ?? '상대'}의`);
 
-	function startReply() {
-		const m = picker ? byId.get(picker.id) : undefined;
+	function startReply(m = picker ? byId.get(picker.id) : undefined) {
 		picker = null;
-		if (!m || locked) return;
+		if (!m || m.id == null || locked) return;
 		replyTo = m;
 		inputEl?.focus();
 	}
+
+	// 밀어서 답장 — 끄는 동안 그 말풍선만 손가락을 따라 옆으로 (놓으면 제자리로 미끄러져 돌아간다)
+	let swiped = $state<{ key: string; dx: number } | null>(null);
+	const swipe = swipeReply<Msg>({
+		onMove: (m, dx) => (swiped = m && dx ? { key: m.client_msg_id, dx } : null),
+		onReply: (m) => startReply(m)
+	});
 	$effect(() => {
 		if (locked) replyTo = null; // 대화가 끝나면 답장 준비도 접는다
 	});
@@ -586,8 +592,29 @@
 				{:else}
 					{@const mine = m.sender_seat === room.seat}
 					{@const rx = m.id != null ? summarize(room.reactions[m.id]) : null}
+					{@const dx = swiped?.key === m.client_msg_id ? swiped.dx : 0}
 					<div class="row" class:mine class:gap={p.first || m.reply_to != null} data-mid={m.id}>
-						<div class="bwrap" class:reacted={!!rx} class:flash={m.id != null && m.id === flashId}>
+						<div
+							class="bwrap"
+							class:reacted={!!rx}
+							class:flash={m.id != null && m.id === flashId}
+							class:swiping={dx !== 0}
+							style:transform={dx ? `translateX(${dx}px)` : null}
+						>
+							{#if dx}
+								<!-- 민 쪽 반대편(드러난 자리)에 답장 화살표 — 끝까지 밀면 진해진다 -->
+								<span
+									class="swipe-ic"
+									class:left={dx > 0}
+									class:hit={Math.abs(dx) >= 64}
+									style:opacity={Math.min(1, Math.abs(dx) / 64)}
+									aria-hidden="true"
+								>
+									<svg viewBox="0 0 24 24" fill="none">
+										<path d="M10 8L5 12l5 4M5.5 12H14a5 5 0 0 1 5 5v1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+									</svg>
+								</span>
+							{/if}
 							{#if m.reply_to != null}
 								{@const orig = byId.get(m.reply_to)}
 								<ReplyQuote
@@ -605,10 +632,21 @@
 								class:sending={m.state === 'sending'}
 								class:failed={m.state === 'failed' || m.state === 'rate_limited'}
 								onclick={() => (m.state === 'failed' || m.state === 'rate_limited') && room?.retry(m)}
-								onpointerdown={(e) => press.down(e, m)}
-								onpointermove={press.move}
-								onpointerup={() => press.up(m)}
-								onpointercancel={press.cancel}
+								onpointerdown={(e) => {
+									press.down(e, m);
+									if (m.id != null && !locked) swipe.down(e, m);
+								}}
+								onpointermove={(e) => {
+									press.move(e);
+									swipe.move(e);
+								}}
+								onpointerup={() => {
+									if (!swipe.up()) press.up(m); // 밀기였으면 톡으로 세지 않는다
+								}}
+								onpointercancel={() => {
+									press.cancel();
+									swipe.cancel();
+								}}
 								onpointerleave={press.cancel}
 								oncontextmenu={(e) => press.menu(e, m)}
 							>
@@ -703,7 +741,7 @@
 		react={picker.react}
 		current={myReaction}
 		onpick={(k) => doReact(picker!.id, k)}
-		onreply={startReply}
+		onreply={() => startReply()}
 		oncopy={copy}
 		onclose={() => (picker = null)}
 	/>
@@ -892,6 +930,7 @@
 	.list {
 		flex: 1;
 		overflow-y: auto;
+		overflow-x: hidden; /* 밀어서 답장 중인 말풍선이 옆으로 삐져나가도 가로 스크롤이 생기지 않게 */
 		overscroll-behavior: contain;
 		padding: 12px var(--pad) 8px;
 		display: flex;
@@ -1031,6 +1070,36 @@
 		position: relative;
 		max-width: 75%;
 		min-width: 0;
+		transition: transform 0.2s ease-out; /* 놓으면 제자리로 */
+	}
+	.bwrap.swiping {
+		transition: none; /* 끄는 동안은 손가락을 바로 따라간다 */
+	}
+	.swipe-ic {
+		position: absolute;
+		top: 50%;
+		left: calc(100% + 10px);
+		display: grid;
+		place-items: center;
+		width: 30px;
+		height: 30px;
+		margin-top: -15px;
+		border-radius: 50%;
+		background: var(--field);
+		color: var(--text-2);
+		transition: transform 0.12s ease-out;
+	}
+	.swipe-ic.left {
+		left: auto;
+		right: calc(100% + 10px);
+	}
+	.swipe-ic.hit {
+		color: var(--text);
+		transform: scale(1.12);
+	}
+	.swipe-ic svg {
+		width: 18px;
+		height: 18px;
 	}
 	.bwrap.reacted {
 		margin-bottom: 14px;
@@ -1041,7 +1110,7 @@
 		-webkit-user-select: none;
 		user-select: none;
 		-webkit-touch-callout: none;
-		touch-action: manipulation;
+		touch-action: pan-y; /* 위아래는 스크롤, 옆으로 밀기는 답장 (두 번 톡 확대도 막힌다) */
 	}
 	/* 마우스가 있는 기기: 길게 누르기 대신 오른쪽 클릭이 고르기라, 드래그로 글자를 골라 복사할 수 있다 */
 	@media (hover: hover) and (pointer: fine) {

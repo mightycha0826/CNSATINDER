@@ -76,7 +76,7 @@
 		if (!codeOk || busy) return;
 		busy = true;
 		try {
-			UI.afterLogin = mode === 'reset' ? '/me#password' : null;
+			UI.afterLogin = mode === 'reset' ? '/settings#password' : null;
 			await verifyOtp(email, code);
 			// 성공하면 루트 레이아웃의 가드가 이동시킨다 (처음이면 온보딩에서 비밀번호를 정한다)
 		} catch (e) {

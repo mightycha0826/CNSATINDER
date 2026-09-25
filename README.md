@@ -170,7 +170,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `src/lib/visible.ts` | `whileVisible` — 화면이 보이는 동안만 주기적으로 새로 읽기 (대화 목록·피드·편지·실시간 현황) |
 | `src/lib/motion.ts` | 기기의 "동작 줄이기" 설정 — JS 스크롤을 부드럽게 할지 (CSS 애니메이션은 `app.css` 에서 한꺼번에 끈다) |
 | `src/lib/time.ts` · `restriction.ts` | 상대 시간·`mm:ss` 표시 / 이용 제한 판정 (학생 앱·운영자 화면 공용) |
-| `src/lib/chat/` | 채팅방 — `ChatView`(화면) · `room.svelte.ts`(상태·동기화) · `ChatIntro`(맨 위 소개) · `PartnerCard`(상대 프로필) · `ReactionPicker`·`ReactionBadge`·`reactions.ts`(공감) · `ReplyQuote`(답장 인용) · `Starters`(첫마디 도우미) · `MatchScreen`(연결 화면) · `gestures.ts`(길게 누르기·두 번 톡) |
+| `src/lib/chat/` | 채팅방 — `ChatView`(화면) · `room.svelte.ts`(상태·동기화) · `ChatIntro`(맨 위 소개) · `PartnerCard`(상대 프로필) · `ReactionPicker`·`ReactionBadge`·`reactions.ts`(공감) · `ReplyQuote`(답장 인용) · `Starters`(첫마디 도우미) · `MatchScreen`(연결 화면) · `gestures.ts`(길게 누르기·두 번 톡·밀어서 답장) |
 | `src/lib/letters/` | 익명편지 |
 | `src/lib/tabBack.svelte.ts` | 탭 첫 화면 뒤로가기 — 익명편지·프로필 → 홈, 홈에서 두 번 누르면 종료 |
 | `src/lib/chatColor.svelte.ts` | 채팅 색상(내 말풍선) — 설정 화면에서 고르고 이 기기에만 저장 |
@@ -255,7 +255,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       자리(seat)마다 하나, 대화 중에만. `messages` 는 그대로 두고 별도 표에 자리로만 남긴다(사용자 식별자 없음).
       취소는 행 삭제가 아니라 emoji = null (Realtime DELETE 는 방 필터·RLS 가 안 걸려서). 관리자 대화 열람에도 보인다.
       상대 메시지에 처음 단 공감은 푸시 알림("❤️ 공감: …") — 메시지 하나 × 사람 하나에 한 번(`private.reaction_push_log`)
-- [x] **Phase 18 — 답장 · 첫마디 · 대화 디자인** — 말풍선 길게 누르기 → "답장". 말풍선 위에 원래 메시지를 흐리게 인용,
+- [x] **Phase 18 — 답장 · 첫마디 · 대화 디자인** — 말풍선 길게 누르기 → "답장", 또는 말풍선을 옆(왼쪽·오른쪽 아무 쪽)으로 밀었다 놓기. 말풍선 위에 원래 메시지를 흐리게 인용,
       누르면 그 메시지로 스크롤 + 반짝. `messages.reply_to` 는 같은 방·시스템 메시지 아닌 것만(`msg_reply_check`), 관리자 열람에도 표시.
       내가 아직 말을 안 했으면 입력창 위에 첫마디 질문 3개(신상 묻는 질문 없음, 겹치는 관심사가 있으면 그 얘기부터, 누르면 채우기만).
       5분 넘게 끊기면 시간 구분선, 매칭 직후 "○○님과 연결됐어요" 화면(1.6초)
@@ -298,7 +298,11 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       공감이라 복사는 고르기 줄의 "복사", 마우스 기기에서는 드래그로. 운영자 화면은 그대로
 - [x] **대화 소개 카드** — 대화 맨 위에 상대의 큰 아바타 · 익명 이름 · MBTI·관심사 한 줄 · "프로필 보기" (인스타 DM 첫 화면)
 - [x] **하단 탭 3개 · 설정 · 아이폰 상태바** — 하단 탭 익명편지(왼쪽) · 채팅(가운데) · 프로필(오른쪽).
-      상단 오른쪽의 프로필 사진 자리에 설정 톱니 → 설정 화면에서 **채팅 색상**(내 말풍선: 기본 · 베리 · 보라 · 파랑 · 초록 · 회색)을
-      고른다. 이 기기에만 저장되고 상대 화면은 그대로. 아이폰 홈 화면 앱(`black-translucent`)에서 머리글이 상태바(시계·배터리)와
-      겹치던 것 → 모든 머리글(`.topbar`)이 `env(safe-area-inset-top)` 만큼 내려온다 (`--safe-top`)
+      상단 오른쪽의 프로필 사진 자리에 설정 톱니. 프로필 = 상대에게 보이는 것(소개 · 관심사 · MBTI)과 이야기하고 싶은 상대,
+      설정 = 채팅 색상 · 새 메시지 알림 · 비밀번호 · 계정 상태 · 개인정보 안내 · 로그아웃.
+      채팅 색상은 내 말풍선 색 6가지(색 동그라미만, 이름은 화면 낭독기에만). 이 기기에만 저장되고 상대 화면은 그대로.
+      아이폰 홈 화면 앱(`black-translucent`)에서 머리글이 상태바(시계·배터리)와 겹치던 것 → 모든 머리글(`.topbar`)이
+      `env(safe-area-inset-top)` 만큼 내려온다 (`--safe-top`). 긴 화면에서 머리글이 눌려 줄던 것도 고침(`flex: none`)
+- [x] **밀어서 답장** — 채팅 말풍선을 손가락으로 옆으로 밀면 따라오고, 드러난 자리에 답장 화살표. 64px 넘게 밀면 진동 한 번,
+      놓으면 그 메시지에 답장. 위아래가 더 크면 스크롤 · 짧게 밀면 취소 · 마우스 드래그는 글자 고르기 그대로(`touch-action: pan-y`)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

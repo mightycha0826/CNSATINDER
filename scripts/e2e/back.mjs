@@ -66,6 +66,10 @@ try {
 	await page.locator('a.tab', { hasText: '프로필' }).click(); await page.waitForURL('**/me'); await page.waitForTimeout(500);
 	check('프로필 탭 → 탭바 그대로 · 프로필 탭 켜짐', (await page.locator('a.tab.on').innerText()).includes('프로필') && (await page.locator('button.back').count()) === 0);
 	check('프로필 탭 전환도 기록을 쌓지 않는다', (await idx()) === 1, String(await idx()));
+	const heads = async () => (await page.locator('.page h2').allInnerTexts()).map((t) => t.replace(/\s+.*/, ''));
+	const meHeads = await heads();
+	check('프로필 = 소개 · 관심사 · MBTI · 상대 (알림 · 비밀번호 · 로그아웃 없음)',
+		meHeads.includes('소개') && !meHeads.some((h) => /알림|비밀번호/.test(h)) && (await page.getByRole('button', { name: '로그아웃' }).count()) === 0, meHeads.join(','));
 	await back(); await page.waitForTimeout(300);
 	check('★ 프로필에서 뒤로 → 채팅 홈', new URL(page.url()).pathname === '/' && (await idx()) === 1, `${page.url()} ${await idx()}`);
 	await logo.click(); await page.waitForTimeout(300);
@@ -113,17 +117,23 @@ try {
 	const before = await fill();
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
-	check('기본 색이 골라져 있다', (await page.locator('.swatch.on').innerText()).includes('기본'));
-	await page.locator('.swatch', { hasText: '파랑' }).click(); await page.waitForTimeout(200);
+	const setHeads = await heads();
+	check('★ 설정 = 채팅 색상 · 알림 · 비밀번호 · 계정 · 로그아웃', ['채팅', '새', '비밀번호'].every((h) => setHeads.includes(h))
+		&& (await page.getByText('학교 인증').count()) === 1 && (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
+	const swatch = (name) => page.locator('.swatch', { has: page.getByRole('radio', { name }) });
+	check('기본 색이 골라져 있다', (await page.getByRole('radio', { name: '기본' }).isChecked()) && (await swatch('기본').getAttribute('class')).includes('on'));
+	check('색 동그라미 아래 글자 없음 (이름은 화면 낭독기에만)', (await page.locator('.swatches').innerText()).trim() === '');
+	await swatch('파랑').click(); await page.waitForTimeout(200);
 	const blue = await fill();
 	check('★ 파랑을 고르면 말풍선 색이 바로 바뀐다', blue !== before && blue.includes('#3b8af6'), blue);
 	const mine = await page.locator('.preview .mine .bubble').first().evaluate((e) => getComputedStyle(e).backgroundImage);
 	check('미리보기 말풍선에도 입혀진다', mine.includes('59, 138, 246'), mine);
 	check('이 기기에 저장', (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === 'ocean');
 	await page.screenshot({ path: `${SP}/settings-color.png` });
+	check('긴 설정 화면에서도 머리글 44px 그대로 (눌려 줄지 않음)', Math.round((await page.locator('.topbar').boundingBox()).height) === 44, String((await page.locator('.topbar').boundingBox()).height));
 	await page.reload(); await page.locator('.swatch.on').waitFor({ timeout: 8000 });
-	check('다시 열어도 그대로', (await fill()).includes('#3b8af6') && (await page.locator('.swatch.on').innerText()).includes('파랑'));
-	await page.locator('.swatch', { hasText: '기본' }).click(); await page.waitForTimeout(200);
+	check('다시 열어도 그대로', (await fill()).includes('#3b8af6') && (await page.getByRole('radio', { name: '파랑' }).isChecked()));
+	await swatch('기본').click(); await page.waitForTimeout(200);
 	check('기본으로 되돌리면 저장값도 지운다', (await fill()) === before && (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === null);
 	check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
 } finally { await browser.close(); }

@@ -92,18 +92,5 @@ export function useTabBack() {
 		onHistory(page.url.pathname, !!page.state.guard);
 	}
 
-	goTab = go;
-	$effect(() => () => {
-		if (goTab === go) goTab = null;
-	});
-
 	return { switchTab };
-}
-
-let goTab: ((href: string) => Promise<void>) | null = null;
-
-/** 탭 첫 화면에서 다른 탭으로 (예: 홈의 "비밀번호를 만들어 두세요" → 프로필). 탭을 누른 것과 똑같이 기록을 바꿔 끼운다 */
-export function openTab(href: string) {
-	if (UI.standalone && goTab) return goTab(href);
-	return goto(href);
 }

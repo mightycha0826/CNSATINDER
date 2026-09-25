@@ -72,8 +72,8 @@ try {
 		await page.getByPlaceholder('인증 코드').fill('12345678');
 		await page.screenshot({ path: `${SP}/login-3-code.png` });
 		await page.getByRole('button', { name: '확인', exact: true }).click();
-		await page.waitForURL('**/me#password', { timeout: 8000 }).catch(() => {});
-		check('★ 비밀번호 찾기 인증 후 → /me#password', page.url().endsWith('/me#password'), page.url());
+		await page.waitForURL('**/settings#password', { timeout: 8000 }).catch(() => {});
+		check('★ 비밀번호 찾기 인증 후 → /settings#password', page.url().endsWith('/settings#password'), page.url());
 		await page.getByText('새 비밀번호를 정해 주세요').waitFor({ timeout: 5000 }).catch(() => {});
 		await page.screenshot({ path: `${SP}/login-4-newpw.png` });
 		check('★ 기존 비밀번호 확인 없이 바로 새 비밀번호 입력', await page.getByText('새 비밀번호를 정해 주세요').isVisible());

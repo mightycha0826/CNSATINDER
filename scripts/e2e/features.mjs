@@ -50,6 +50,47 @@ try {
 	check('★ 보낸 답장에 인용 · 막대 사라짐', (await mine.locator('.quote').innerText()).includes('새벽수달의 메시지에 답장') && (await page.locator('.replying').count()) === 0);
 	await page.screenshot({ path: `${SP}/feat-3-sent.png` });
 
+	console.log('[밀어서 답장]');
+	// 손가락 밀기 — 터치 포인터 이벤트를 말풍선에 직접 보낸다 (down → move 여러 번 → up)
+	const drag = (text, dx, dy = 0, type = 'touch') => page.evaluate(async ([text, dx, dy, type]) => {
+		const el = [...document.querySelectorAll('.bubble')].find((b) => b.textContent.includes(text));
+		const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+		const ev = (n, cx, cy) => el.dispatchEvent(new PointerEvent(n, { bubbles: true, cancelable: true, pointerId: 7, pointerType: type, isPrimary: true, button: 0, clientX: cx, clientY: cy }));
+		ev('pointerdown', x, y);
+		for (let i = 1; i <= 6; i++) ev('pointermove', x + (dx * i) / 6, y + (dy * i) / 6);
+		await new Promise((r) => requestAnimationFrame(() => r())); // 화면이 따라 그려진 뒤에 본다
+		const w = el.closest('.bwrap');
+		return { transform: w.style.transform, icon: !!w.querySelector('.swipe-ic'), hit: !!w.querySelector('.swipe-ic.hit'), left: !!w.querySelector('.swipe-ic.left') };
+	}, [text, dx, dy, type]);
+	const lift = (text) => page.evaluate((text) => {
+		const el = [...document.querySelectorAll('.bubble')].find((b) => b.textContent.includes(text));
+		el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 7, pointerType: 'touch', isPrimary: true, button: 0 }));
+	}, text);
+	const replying = () => page.locator('.replying').innerText().catch(() => '');
+
+	let mid = await drag('공연도 가봤어요?', 100);
+	check('상대 말풍선을 오른쪽으로 끌면 따라온다 + 왼쪽에 답장 화살표', /translateX\(\d/.test(mid.transform) && mid.icon && mid.left && mid.hit, JSON.stringify(mid));
+	await page.screenshot({ path: `${SP}/feat-6-swipe.png` });
+	await lift('공연도 가봤어요?'); await page.waitForTimeout(300);
+	check('★ 놓으면 그 메시지에 답장 준비', (await replying()).includes('새벽수달에게 답장') && (await replying()).includes('공연도 가봤어요?'), await replying());
+	check('말풍선은 제자리로', (await page.locator('.bwrap', { has: bubble('공연도 가봤어요?') }).evaluate((e) => e.style.transform)) === '');
+	check('밀기는 톡으로 세지 않는다 (공감 안 달림)', (await page.locator('.bwrap.reacted', { has: bubble('공연도 가봤어요?') }).count()) === 0);
+	await page.locator('.replying-x').click();
+
+	mid = await drag('아직 못 가봤어요!', -100);
+	check('내 말풍선은 왼쪽으로 밀어도 된다 (화살표는 오른쪽)', /translateX\(-\d/.test(mid.transform) && mid.icon && !mid.left, JSON.stringify(mid));
+	await lift('아직 못 가봤어요!'); await page.waitForTimeout(300);
+	check('★ 내 메시지에도 밀어서 답장', (await replying()).includes('내 메시지에 답장') && (await replying()).includes('아직 못 가봤어요!'), await replying());
+	await page.locator('.replying-x').click();
+
+	await drag('공연도 가봤어요?', 35); await lift('공연도 가봤어요?'); await page.waitForTimeout(300);
+	check('조금만 밀다 놓으면 답장 안 함', (await page.locator('.replying').count()) === 0);
+	mid = await drag('공연도 가봤어요?', 12, 80); await lift('공연도 가봤어요?'); await page.waitForTimeout(300);
+	check('위아래로 움직이면 스크롤로 보고 밀지 않는다', !mid.icon && (await page.locator('.replying').count()) === 0, JSON.stringify(mid));
+	mid = await drag('공연도 가봤어요?', 100, 0, 'mouse'); await lift('공연도 가봤어요?'); await page.waitForTimeout(300);
+	check('마우스 드래그는 글자 고르기 — 밀기 아님', !mid.icon && (await page.locator('.replying').count()) === 0, JSON.stringify(mid));
+	check('말풍선: 위아래 스크롤만 브라우저에 맡긴다 (touch-action: pan-y)', (await bubble('공연도 가봤어요?').evaluate((e) => getComputedStyle(e).touchAction)) === 'pan-y');
+
 	console.log('[첫마디 도우미]');
 	await page.goto(U('/dev/chat?s=fresh'));
 	await page.locator('.starters').waitFor(); await page.waitForTimeout(800);

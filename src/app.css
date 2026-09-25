@@ -233,6 +233,7 @@ a {
 	position: sticky;
 	top: 0;
 	z-index: 10;
+	flex: none; /* 긴 화면(설정 · 프로필)에서 세로 flex 가 머리글을 눌러 줄이지 않게 */
 	display: flex;
 	align-items: center;
 	gap: 10px;
