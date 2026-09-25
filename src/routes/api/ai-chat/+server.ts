@@ -29,7 +29,10 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 		const reply = await runAi(platform?.env?.AI, chatPrompt(turns), { maxTokens: 220, temperature: 0.7, fake: fakeReply });
 		return json({ status: 'ok', reply: tidyReply(reply), turns: t.turns, max_turns: t.max_turns });
 	} catch (e) {
-		if (e instanceof AiUnavailable) return json({ status: 'ai_unavailable' }, { status: 503 });
+		if (e instanceof AiUnavailable) {
+			console.error('[ai-chat] Workers AI 실패:', e.message); // Cloudflare 대시보드 > Workers > 로그에서 보인다
+			return json({ status: 'ai_unavailable' }, { status: 503 });
+		}
 		throw e;
 	}
 };

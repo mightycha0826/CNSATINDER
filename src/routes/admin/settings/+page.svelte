@@ -110,6 +110,28 @@
 		{#if isAdmin}<button class="btn save">AI 설정 저장</button>{/if}
 	</form>
 
+	{#if isAdmin}
+		{@const chk = (form as { aiCheck?: { ok: boolean; binding: boolean; model: string; ms: number; reply?: string; error?: string } } | null)?.aiCheck}
+		<form method="POST" action="?/aiCheck" use:enhance={() => ({ update }) => update({ reset: false })} class="ai-check">
+			<button class="btn-ghost">AI 연결 확인</button>
+			<span class="muted small">짧은 질문 하나를 보내 봐요 (무료 몫을 아주 조금 씀)</span>
+		</form>
+		{#if chk}
+			<div class="ai-result" class:bad={!chk.ok} role="status">
+				{#if chk.ok}
+					<b>연결됨</b> · {chk.model} · {chk.ms}ms · 답: “{chk.reply}”
+				{:else if !chk.binding}
+					<b>AI 연결(바인딩)이 없어요</b> — 배포된 Worker 에 Workers AI 가 붙어 있지 않습니다.
+					Cloudflare 대시보드 → Workers → cnsatinder → 설정 → 바인딩에 <code>AI</code> (Workers AI) 를 추가하거나,
+					<code>wrangler.jsonc</code> 의 <code>"ai"</code> 설정이 들어간 채로 다시 배포해 주세요.
+				{:else}
+					<b>AI 호출 실패</b> · {chk.model} · {chk.ms}ms
+					<code class="selectable">{chk.error}</code>
+				{/if}
+			</div>
+		{/if}
+	{/if}
+
 	{#if data.terms}
 		<form method="POST" action="?/terms" use:enhance={() => ({ update }) => update({ reset: false })} class="form terms">
 			<label class="label" for="terms">
@@ -123,6 +145,35 @@
 {/if}
 
 <style>
+	.ai-check {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 14px;
+		max-width: 720px;
+	}
+	.ai-check .btn-ghost {
+		width: auto;
+		padding: 0 16px;
+	}
+	.ai-result {
+		margin-top: 10px;
+		max-width: 720px;
+		padding: 12px 14px;
+		border: 1px solid var(--line);
+		border-radius: var(--r-sm);
+		font-size: 13px;
+		line-height: 1.6;
+	}
+	.ai-result.bad {
+		border-color: var(--danger);
+	}
+	.ai-result code {
+		display: block;
+		margin-top: 6px;
+		white-space: pre-wrap;
+		word-break: break-all;
+	}
 	.title {
 		margin-bottom: 16px;
 	}

@@ -18,6 +18,7 @@
 		"test:platform": "node --no-warnings scripts/platform.test.mjs",
 		"test:push": "node --no-warnings scripts/webpush.test.mjs",
 		"test:letters": "node scripts/letters-logic.test.mjs",
+		"test:aichat": "node --no-warnings --experimental-strip-types scripts/ai-chat.test.mjs",
 		"test:ui": "node scripts/e2e/run.mjs"
 	},
 	"devDependencies": {

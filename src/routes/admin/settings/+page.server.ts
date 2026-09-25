@@ -1,5 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
+import { checkAi } from '$lib/server/ai';
 import { friendly, isAdmin } from '$lib/server/adminAuth';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -111,6 +112,12 @@ export const actions: Actions = {
 			return friendly(e);
 		}
 		return { done: 'AI 설정 저장 완료' };
+	},
+
+	/** AI 연결 확인 — 짧은 질문 하나를 보내서 되는지, 안 되면 Cloudflare 가 준 오류를 그대로 보여 준다 (관리자만) */
+	aiCheck: async ({ locals, platform }) => {
+		if (!isAdmin(locals)) return fail(403, { error: '관리자만 확인할 수 있어요' });
+		return { aiCheck: await checkAi(platform?.env?.AI) };
 	},
 
 	/** 금칙어 — 한 줄에 하나 (정규식). 통째로 바꾼다 */

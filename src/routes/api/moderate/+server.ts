@@ -29,6 +29,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				raw = await runAi(platform?.env?.AI, moderationPrompt(it), { maxTokens: 80, temperature: 0, fake: fakeVerdict });
 			} catch (e) {
 				if (!(e instanceof AiUnavailable)) throw e;
+				console.error('[moderate] Workers AI 실패:', e.message);
 				// 남은 것은 돌려놓는다 (시도 횟수를 쓰지 않고) — 다음 호출이나 내일
 				await adminRpc('mod_release', { p_ids: items.slice(i).map((x) => x.id) });
 				break;

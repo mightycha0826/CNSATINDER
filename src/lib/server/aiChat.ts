@@ -1,4 +1,4 @@
-import type { AiMessage } from './ai';
+import type { AiMessage } from './aiFold';
 
 /**
  * AI 대화 상대 — 매칭을 기다리는 동안. 프롬프트와 대화 기록 정리.
@@ -26,8 +26,23 @@ export function cleanHistory(raw: unknown): ChatTurn[] | null {
 	return turns.length && turns.at(-1)!.role === 'user' ? turns : null;
 }
 
+/**
+ * 모델에 보낼 대화 — Gemma 의 대화 틀은 "사용자 → AI → 사용자 …" 로 번갈아 가고 사용자로 시작해야 한다.
+ *  · 화면 첫 줄은 AI 의 인사(assistant)라서, 앞쪽의 AI 말은 지시문 뒤에 "먼저 이렇게 인사했다"로 옮긴다
+ *  · 같은 쪽 말이 이어지면(보내기 실패 뒤 다시 보내기 등) 한 말로 합친다
+ */
 export function chatPrompt(turns: ChatTurn[]): AiMessage[] {
-	return [{ role: 'system', content: SYSTEM }, ...turns];
+	const lead: string[] = [];
+	let i = 0;
+	while (i < turns.length && turns[i].role === 'assistant') lead.push(turns[i++].content);
+	const merged: ChatTurn[] = [];
+	for (const t of turns.slice(i)) {
+		const last = merged.at(-1);
+		if (last && last.role === t.role) last.content += `\n${t.content}`;
+		else merged.push({ ...t });
+	}
+	const system = lead.length ? `${SYSTEM}\n\n(대화는 네가 먼저 이렇게 인사하며 시작했다: "${lead.join(' ')}")` : SYSTEM;
+	return [{ role: 'system', content: system }, ...merged];
 }
 
 /** AI 답도 한 번 더 — 전화번호 · @아이디 모양이 섞여 나오면 그 부분을 가린다 */

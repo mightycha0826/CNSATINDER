@@ -191,6 +191,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `npm run test:e2e` | 실서버 Realtime E2E. 일회용 계정 3개 생성→검증→삭제. 서버 키가 앱과 **같은 프로젝트**여야 실행됨 |
 | `npm run test:match` | 실서버 매칭 동시성 스트레스 (기본 20명 동시 폴링 → 중복 배정·선호 위반 검사 → 삭제) |
 | `npm run test:letters` | 익명편지 피드·답장받기 상태 기계 — 가짜 서버로 새로고침·무한스크롤·백그라운드 정지 검증 |
+| `npm run test:aichat` | AI 대화 상대 — 모델에 보내는 대화 모양 (사용자로 시작 · 번갈아 · system 접기), 답 가리기 |
 | `npm run test:toast` | 알림 — Svelte 브라우저 모드로 컴파일해 $state proxy 관련 버그까지 검증 |
 | `npm run test:platform` | 설치 안내 — 실제 UA 로 iOS/안드로이드·카카오톡 등 인앱 브라우저 판별 검증 |
 | `npm run test:push` | 푸시 알림 암호화(RFC 8291)·VAPID 서명(RFC 8292) — 받는 브라우저 입장에서 복호화·검증 |
@@ -308,6 +309,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       줄마다 왼쪽 이름 · 오른쪽 값/›/스위치(알림), 줄 사이 선은 왼쪽을 들여서. 머리글은 선 없이 제목 가운데 · 뒤로는 둥근 단추.
       비밀번호는 줄을 누르면 카드 안에서 펼쳐지고, 로그아웃은 빨간 글자 카드. 프로필은 맨 위 큰 아바타 · 이름,
       상대 고르기는 체크 표시 줄. 공용 스타일은 `app.css` 의 `.grouped` · `.g-card` · `.g-row` · `.switch` (다크 모드 색 포함)
+- [x] **AI 대화 "지금 답할 수 없어요" 대응** — 모델에 보내는 대화가 화면 첫 줄(AI 인사)부터 시작해 사용자 · AI 가 번갈아 가지 않았다.
+      Gemma 대화 틀은 사용자로 시작해 번갈아 가야 하므로, 인사는 지시문 뒤로 옮기고 같은 쪽 말은 합친다(`aiChat.ts` chatPrompt).
+      그래도 거절되면 system 지시문을 첫 사용자 말에 붙여 한 번 더 보낸다(`aiFold.ts`). 실패 이유는 Workers 로그에 남기고,
+      운영 설정의 **"AI 연결 확인"** 버튼(관리자)이 짧은 질문을 보내 연결됨 / 바인딩 없음 / Cloudflare 오류 원문을 보여 준다
 - [x] **Phase 21 — 만났던 사람 다시 만나기** — 설정 > 매칭 스위치 (`profiles.allow_rematch`, 기본 꺼짐).
       꺼져 있으면 지금처럼 최근(`rematch_cooldown_days`, 기본 7일)에 대화한 상대는 다시 안 잡힌다. **둘 다 켰을 때만** 다시 잡히고
       (한쪽이라도 끄면 제외 — 다시 만나기 싫은 쪽의 뜻이 우선), 켜도 처음 보는 사람이 기다리면 그쪽이 먼저. 차단한 사이는 언제나 제외

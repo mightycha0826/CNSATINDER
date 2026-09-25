@@ -1,5 +1,6 @@
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
+import { foldSystem } from './aiFold';
 
 /**
  * Cloudflare Workers AI 호출 (검열봇 · AI 대화 상대 공용). 서버 전용.
@@ -15,12 +16,15 @@ import { env } from '$env/dynamic/private';
  */
 export const AI_MODEL = () => env.AI_MODEL || '@cf/google/gemma-3-12b-it';
 
-export type AiMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+export type { AiMessage } from './aiFold';
+import type { AiMessage } from './aiFold';
 
 export class AiUnavailable extends Error {}
 
 /** wrangler.jsonc 의 "ai" 바인딩 (platform.env.AI) */
 export type AiBinding = { run(model: string, input: Record<string, unknown>): Promise<unknown> };
+
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 300);
 
 export async function runAi(
 	ai: AiBinding | undefined,
@@ -29,12 +33,20 @@ export async function runAi(
 ): Promise<string> {
 	if (dev && env.AI_FAKE === '1') return opts.fake(messages);
 	if (!ai) throw new AiUnavailable('no_binding');
+	const call = (msgs: AiMessage[]) =>
+		ai.run(AI_MODEL(), { messages: msgs, max_tokens: opts.maxTokens, temperature: opts.temperature ?? 0.2 });
 	let out: unknown;
 	try {
-		out = await ai.run(AI_MODEL(), { messages, max_tokens: opts.maxTokens, temperature: opts.temperature ?? 0.2 });
+		out = await call(messages);
 	} catch (e) {
-		// 무료 몫을 다 썼거나(무료 플랜) 모델 오류 — 호출한 쪽이 "나중에"로 처리한다
-		throw new AiUnavailable(e instanceof Error ? e.message : String(e));
+		const folded = foldSystem(messages);
+		if (!folded) throw new AiUnavailable(errText(e));
+		try {
+			out = await call(folded);
+		} catch (e2) {
+			// 무료 몫을 다 썼거나(무료 플랜) 모델 오류 — 호출한 쪽이 "나중에"로 처리한다. 두 번째 오류를 남긴다
+			throw new AiUnavailable(`${errText(e2)} (첫 시도: ${errText(e)})`);
+		}
 	}
 	const text =
 		typeof out === 'string'
@@ -44,4 +56,26 @@ export async function runAi(
 				: ((out as { choices?: { message?: { content?: string } }[] })?.choices?.[0]?.message?.content ?? '');
 	if (!text.trim()) throw new AiUnavailable('empty');
 	return text.trim();
+}
+
+/**
+ * 운영 설정의 "AI 연결 확인" — 짧은 질문 하나로 연결 · 모델 · 무료 몫을 본다. 실패하면 Cloudflare 가 준 오류를 그대로.
+ * (학생 화면에는 이유를 보이지 않고, 여기서만 보여 준다)
+ */
+export async function checkAi(ai: AiBinding | undefined) {
+	const t0 = Date.now();
+	const base = { model: AI_MODEL(), binding: !!ai };
+	try {
+		const reply = await runAi(
+			ai,
+			[
+				{ role: 'system', content: '한국어로 아주 짧게 답한다.' },
+				{ role: 'user', content: '연결 확인이에요. "안녕"이라고만 답해 주세요.' }
+			],
+			{ maxTokens: 20, temperature: 0, fake: () => '안녕 (가짜 AI)' }
+		);
+		return { ...base, ok: true as const, ms: Date.now() - t0, reply: reply.slice(0, 80) };
+	} catch (e) {
+		return { ...base, ok: false as const, ms: Date.now() - t0, error: errText(e) };
+	}
 }

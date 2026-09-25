@@ -121,6 +121,13 @@ try {
 	check('AI 설정 저장 (켜기 · 한도)', p?.ai_moderation === true && p.ai_chat === true && p.ai_chat_daily_cap === 5 && p.ai_mod_daily_cap === 250, JSON.stringify(p));
 	check('AI 저장이 다른 운영 수치를 건드리지 않는다', p && !('room_minutes' in p) && !('notice' in p));
 
+	await page.getByRole('button', { name: 'AI 연결 확인' }).click();
+	const res = page.locator('.ai-result');
+	await res.waitFor({ timeout: 15000 });
+	const rt = await res.innerText();
+	// 개발 서버엔 진짜 Workers AI 가 없다 — 어느 쪽이든 "왜 안 되는지"가 화면에 나와야 한다
+	check('AI 연결 확인 → 결과 (연결됨 / 바인딩 없음 / Cloudflare 오류 그대로)', /연결됨|AI 연결\(바인딩\)이 없어요|AI 호출 실패/.test(rt), rt);
+
 	console.log('[금칙어]');
 	const ta = page.locator('textarea[name=terms]');
 	check('금칙어 목록이 한 줄에 하나', (await ta.inputValue()) === '섹\\s*스\n니\\s*애\\s*미');

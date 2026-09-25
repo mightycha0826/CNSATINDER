@@ -33,6 +33,8 @@ jobs:
         run: npm run test:chat
       - name: 편지 로직
         run: npm run test:letters
+      - name: AI 대화 모양
+        run: npm run test:aichat
       - name: 운영자 세션
         run: npm run test:admin
       - name: 알림(toast)
