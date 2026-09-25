@@ -216,7 +216,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 - `/dev/letters?v=feed|detail|task|new` — 익명편지 화면 미리보기 (가짜 서버, 개발 모드 전용)
 - `/dev/ai?s=ok|limit|full|off` — AI 대화 상대 화면 미리보기 (`&turns=2` 턴 한도, `&short` 20초 뒤 끝, `&down` AI 오류)
 - `AI_FAKE=1 npm run dev` — Workers AI 대신 정해진 답 (검열: 글에 `[flag:harassment]` 가 있으면 걸림 / 대화: "AI 답: …").
-  개발 서버는 원격 바인딩을 붙이지 않는다 — 진짜 AI 는 `npx wrangler login` 뒤 `CF_REMOTE=1 npm run dev`. 모델은 `AI_MODEL` 로 바꿀 수 있다
+  개발 서버는 원격 바인딩을 붙이지 않는다 — 진짜 AI 는 `npx wrangler login` 뒤 `CF_REMOTE=1 npm run dev`. 모델은 `AI_MODEL` 로 맨 앞에 둘 수 있다 (기본: Gemma 4 26B A4B → GLM 4.7 Flash 순서로, 되는 것을 쓴다)
 - `?gate` — 개발 모드에서 PWA 설치 게이트 화면을 강제로 띄운다
   (평소 DEV 에서는 게이트가 꺼져 있다)
 
@@ -273,7 +273,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
         (`private.banned_terms`, 운영 설정에서 관리자가 편집 — 틀린 정규식은 저장 전에 거른다). 채팅·편지·댓글 insert 트리거.
         막힌 채팅은 말풍선을 지우고 글을 입력창에 돌려놓는다
       · 2단 AI 검토 (보낸 뒤): 글이 올라가면 `private.mod_queue` 에 쌓이고, 학생 앱이 `/api/moderate` 를 부르면 서버가 쌓인 순서대로
-        Cloudflare Workers AI(Gemma 3 12B)에 판정을 받는다. 걸리면 신고함에 "자동" 표시로(`source = auto`, 신고자 없음) — 판단은 사람이.
+        Cloudflare Workers AI(Gemma 4 26B A4B, 안 되면 GLM 4.7 Flash)에 판정을 받는다. 걸리면 신고함에 "자동" 표시로(`source = auto`, 신고자 없음) — 판단은 사람이.
         위기 신호(자해·자살)도 분류한다. 자동 신고는 자동 정지 횟수에 세지 않는다. 하루 한도(`ai_mod_daily_cap`)
       · AI 대화 상대: 상대를 찾는 동안 홈에서 "AI 와 얘기하기". 늘 "AI" 표시, 신상정보는 AI 에게도 못 보냄(같은 규칙 필터),
         사람당·앱 전체 하루 한도 · 한 번에 N분 · N턴. 대화 내용은 어디에도 저장하지 않는다(횟수만). 위기 신호엔 109 · 1388 안내
@@ -309,6 +309,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       줄마다 왼쪽 이름 · 오른쪽 값/›/스위치(알림), 줄 사이 선은 왼쪽을 들여서. 머리글은 선 없이 제목 가운데 · 뒤로는 둥근 단추.
       비밀번호는 줄을 누르면 카드 안에서 펼쳐지고, 로그아웃은 빨간 글자 카드. 프로필은 맨 위 큰 아바타 · 이름,
       상대 고르기는 체크 표시 줄. 공용 스타일은 `app.css` 의 `.grouped` · `.g-card` · `.g-row` · `.switch` (다크 모드 색 포함)
+- [x] **AI 모델 교체 (Gemma 3 → Gemma 4)** — "AI 연결 확인"에서 `5018: This account is not allowed to access @cf/google/gemma-3-12b-it`.
+      Cloudflare 가 2026-05 에 Gemma 3 12B 폐기를 공지하고 대체로 Gemma 4 26B A4B · GLM 4.7 Flash 를 권했다.
+      기본 모델을 Gemma 4 로(생각하기 끔 — 켜면 답 글자 수를 생각에 쓴다), 그게 막혀 있으면 GLM 4.7 Flash 로 자동으로 넘어간다
+      (`lib/server/aiFold.ts` callModels, 된 모델은 기억). 권한 · 폐기 오류는 system 접기 없이 바로 다음 모델로
 - [x] **AI 대화 "지금 답할 수 없어요" 대응** — 모델에 보내는 대화가 화면 첫 줄(AI 인사)부터 시작해 사용자 · AI 가 번갈아 가지 않았다.
       Gemma 대화 틀은 사용자로 시작해 번갈아 가야 하므로, 인사는 지시문 뒤로 옮기고 같은 쪽 말은 합친다(`aiChat.ts` chatPrompt).
       그래도 거절되면 system 지시문을 첫 사용자 말에 붙여 한 번 더 보낸다(`aiFold.ts`). 실패 이유는 Workers 로그에 남기고,
