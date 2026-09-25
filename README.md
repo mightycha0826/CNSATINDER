@@ -115,24 +115,27 @@ npm run dev
       (실측: 동시 60명 중 50명 성공, 0.35초 간격 60명은 전원 성공). 막히면 "몇 초 뒤 다시"로 안내된다.
 - [x] **인증 코드 8자리 + 10분 만료** — 코드 확인 한도를 올린 만큼 찍어 맞히기 방어를 보완 (2026-09-21 완료).
 - [x] **계정 선점 방지** — 이메일 확인 전 계정의 비밀번호를 DB 트리거가 지운다 (실서버에서 공격 재현 → 차단 확인).
-- [ ] **Phase 8 적용** — `schema.sql` 을 SQL Editor 에서 다시 실행 (익명 이름·프로필·여러 대화). 안 하면 새 화면이 프로필을 못 읽는다.
-- [ ] **Phase 11 적용** — `schema.sql` 을 다시 실행 (관리자 권한 확장 RPC). 안 하면 사용자·전체 대화 화면이 오류.
-- [ ] **Phase 10 적용** — `schema.sql` 을 다시 실행 (익명편지 테이블·RPC). 안 하면 익명편지 탭이 비어 보인다.
-- [ ] **Phase 12 적용** — `schema.sql` 을 다시 실행 (학번-이름 명렬표 RPC). 이어서
+- [x] **Phase 8 ~ 20 · 운영자 점검 DB 반영** — 2026-09-25 Supabase 커넥터로 실DB(LOVE)에 16~20 패치를 적용하고
+      최신 `schema.sql` 의 함수·열·트리거가 모두 있는지 대조했다 (8~15 · 운영자 점검은 이미 들어가 있었음, 명렬표 1,093명).
+      AI 검토 · AI 대화는 여전히 꺼진 상태 — 켜기 전 아래 Phase 19 안내대로.
+- [x] **Phase 8 적용** — `schema.sql` 을 SQL Editor 에서 다시 실행 (익명 이름·프로필·여러 대화). 안 하면 새 화면이 프로필을 못 읽는다.
+- [x] **Phase 11 적용** — `schema.sql` 을 다시 실행 (관리자 권한 확장 RPC). 안 하면 사용자·전체 대화 화면이 오류.
+- [x] **Phase 10 적용** — `schema.sql` 을 다시 실행 (익명편지 테이블·RPC). 안 하면 익명편지 탭이 비어 보인다.
+- [x] **Phase 12 적용** — `schema.sql` 을 다시 실행 (학번-이름 명렬표 RPC). 이어서
       `node scripts/import-roster.mjs <1~3학년 합친 CSV>` 로 명단 반영.
-- [ ] **Phase 13 적용** — `schema.sql` 을 다시 실행 (실시간 현황 RPC). 안 하면 `/admin/live` 가 오류.
-- [ ] **Phase 14 적용** — `schema.sql` 을 다시 실행 (편지 서식 `letters.fmt`·`post_letter(text, jsonb)`). 안 하면 편지 올리기가 실패한다.
-- [ ] **Phase 15 적용** — `schema.sql` 을 다시 실행 (편지 하트 `private.letter_likes`·`set_letter_like`). 안 하면 편지 목록·상세가 오류.
-- [ ] **Phase 16 적용** — `schema.sql` 을 다시 실행 (공지사항 `private.notices`·`my_notices`). 안 하면 종 아이콘에 점이 뜨지 않고 `/admin/notices` 가 오류.
-- [ ] **Phase 17 적용** — `schema.sql` 을 다시 실행 (메시지 공감 `public.message_reactions`·`react_message`·공감 알림 `reaction_push_payload`, Realtime 발행 포함).
-- [ ] **Phase 18 적용** — `schema.sql` 을 다시 실행 (답장 `messages.reply_to`·`msg_reply_check`). 안 해도 채팅은 되고 답장만 안 된다.
-- [ ] **Phase 19 적용** — `schema.sql` 을 다시 실행 (검열봇 규칙 필터 · AI 검토 대기열 · AI 대화 한도). 실행하는 즉시 신상정보·금칙어 차단이
+- [x] **Phase 13 적용** — `schema.sql` 을 다시 실행 (실시간 현황 RPC). 안 하면 `/admin/live` 가 오류.
+- [x] **Phase 14 적용** — `schema.sql` 을 다시 실행 (편지 서식 `letters.fmt`·`post_letter(text, jsonb)`). 안 하면 편지 올리기가 실패한다.
+- [x] **Phase 15 적용** — `schema.sql` 을 다시 실행 (편지 하트 `private.letter_likes`·`set_letter_like`). 안 하면 편지 목록·상세가 오류.
+- [x] **Phase 16 적용** — `schema.sql` 을 다시 실행 (공지사항 `private.notices`·`my_notices`). 안 하면 종 아이콘에 점이 뜨지 않고 `/admin/notices` 가 오류.
+- [x] **Phase 17 적용** — `schema.sql` 을 다시 실행 (메시지 공감 `public.message_reactions`·`react_message`·공감 알림 `reaction_push_payload`, Realtime 발행 포함).
+- [x] **Phase 18 적용** — `schema.sql` 을 다시 실행 (답장 `messages.reply_to`·`msg_reply_check`). 안 해도 채팅은 되고 답장만 안 된다.
+- [x] **Phase 19 적용** — `schema.sql` 을 다시 실행 (검열봇 규칙 필터 · AI 검토 대기열 · AI 대화 한도). 실행하는 즉시 신상정보·금칙어 차단이
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
-- [ ] **Phase 20 적용** — `schema.sql` 을 다시 실행 (대화 백업 `admin_export_messages`). 백업을 쓸 거면 개인정보 처리방침에
+- [x] **Phase 20 적용** — `schema.sql` 을 다시 실행 (대화 백업 `admin_export_messages`). 백업을 쓸 거면 개인정보 처리방침에
       "지워지기 전 관리자가 파일로 보관할 수 있음"을 적고 학교 승인을 받는다 (학생 화면 문구는 이미 바꿔 둠).
-- [ ] **운영자 점검 반영** — `schema.sql` 을 다시 실행 (신고 처리·글 내리기·운영 설정 RPC 의 역할 검사, 탈퇴 계정 제재 오류).
+- [x] **운영자 점검 반영** — `schema.sql` 을 다시 실행 (신고 처리·글 내리기·운영 설정 RPC 의 역할 검사, 탈퇴 계정 제재 오류).
 - [ ] **비밀번호 규칙** — Authentication > Providers > Email: Minimum password length **8**,
       Password requirements **Letters and digits**. (앱도 같은 규칙을 검사하지만 서버 설정이 권위)
 - [ ] **푸시 알림 키** — `.env` 의 `PUBLIC_VAPID_KEY`·`VAPID_PRIVATE_KEY`(Secret)·`VAPID_SUBJECT` 를 Cloudflare Variables and Secrets 에도.
@@ -160,7 +163,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | 위치 | 내용 |
 |---|---|
 | `src/lib/state.svelte.ts` | 학생 앱 전역 상태 · 로그인 · 접속 신호 · 에러 문구 |
-| `src/lib/ui/` | 학생 앱 공용 화면 조각 — `Sheet`(아래 시트) · `ReportPicker`(신고 사유) · `BackButton` · `TopbarMe`(공지 종 + 프로필) · `Avatar` · `PasswordFields` |
+| `src/lib/ui/` | 학생 앱 공용 화면 조각 — `Sheet`(아래 시트) · `ReportPicker`(신고 사유) · `BackButton` · `TopbarMe`(공지 종 + 설정 톱니) · `Avatar` · `PasswordFields` |
 | `src/lib/notices.svelte.ts` | 공지사항 목록 · 안 본 공지(빨간 점) · 본 것으로 저장 |
 | `src/lib/pollSeeker.svelte.ts` | "찾는 중" 폴링 상태 기계 — 채팅 `Seeker` 와 편지 `ReplySeeker` 가 물려받는다 |
 | `src/lib/nav.ts` | 앱 안의 "뒤로" — 기록을 쌓지 않고 돌아가기(`goBack`), 대화 끝나고 홈에서 바로 찾기(`backToSeek`) |
@@ -169,7 +172,8 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `src/lib/time.ts` · `restriction.ts` | 상대 시간·`mm:ss` 표시 / 이용 제한 판정 (학생 앱·운영자 화면 공용) |
 | `src/lib/chat/` | 채팅방 — `ChatView`(화면) · `room.svelte.ts`(상태·동기화) · `ChatIntro`(맨 위 소개) · `PartnerCard`(상대 프로필) · `ReactionPicker`·`ReactionBadge`·`reactions.ts`(공감) · `ReplyQuote`(답장 인용) · `Starters`(첫마디 도우미) · `MatchScreen`(연결 화면) · `gestures.ts`(길게 누르기·두 번 톡) |
 | `src/lib/letters/` | 익명편지 |
-| `src/lib/tabBack.svelte.ts` | 탭 첫 화면 뒤로가기 — 익명편지 → 홈, 홈에서 두 번 누르면 종료 |
+| `src/lib/tabBack.svelte.ts` | 탭 첫 화면 뒤로가기 — 익명편지·프로필 → 홈, 홈에서 두 번 누르면 종료 |
+| `src/lib/chatColor.svelte.ts` | 채팅 색상(내 말풍선) — 설정 화면에서 고르고 이 기기에만 저장 |
 | `src/lib/admin/` | 운영자 화면 공용 조각 — 신고 상세 카드(`ReportHeader` · `ReportedCard` · `ReporterCard` · `IdentityCard`), `AccountStatus`, `FormMsg`, `SanctionForm` |
 | `src/lib/server/` | 서버 전용 — 운영자 세션·권한, `reports.ts`(채팅·편지 신고 공용 로드·액션), 푸시 (`/api/push` 는 요청 키 → DB 판단 함수 표, 받을 기기는 DB `private.push_target`), `ai.ts`(Workers AI 호출) · `moderation.ts`(검열 판정 프롬프트) · `aiChat.ts`(AI 대화 프롬프트) |
 | `src/lib/ai/` · `src/lib/moderation.ts` | AI 대화 상대 화면(`AiChat`, 홈 위에 덮어 띄움) · 글을 올린 뒤 검열봇 부르기(`/api/moderate`) |
@@ -286,11 +290,15 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       · 검열봇 호출은 20초에 한 번, "가져갈 게 없음"이면 2분 쉼 · 대화 목록 안전망 20초 → 30초 · 편지 상세 30초 → 45초
       · 사진 업로드 · 웹폰트가 없고, 큰 편집기(Tiptap)는 편지 쓰기 화면에서만 불러온다
 - [x] **뒤로가기 (설치된 앱)** — 홈(채팅)에서 뒤로 → "뒤로가기를 한 번 더 누르면 종료됩니다", 2초 안에 또 누르면 앱 종료.
-      익명편지 탭에서 뒤로 → 채팅 홈. 탭 첫 화면에 얕은 기록(`pushState` guard)을 하나 쌓아 두고 그게 걷히는 순간을 잡는다
+      익명편지·프로필 탭에서 뒤로 → 채팅 홈. 탭 첫 화면에 얕은 기록(`pushState` guard)을 하나 쌓아 두고 그게 걷히는 순간을 잡는다
       (`(app)/+layout.svelte`). 홈이 기록 맨 아래여야 하므로 탭 전환은 기록을 바꿔 끼우고, 다른 화면에서 홈으로는
       뒤로 간다(`lib/nav.ts` goBack). 상단 로고 = 홈 링크
 - [x] **드래그 복사 제한** — 학생 앱의 버튼·안내 문구·제목은 드래그·길게 눌러도 선택되지 않는다(`app.css` 의 `body:not(.admin)`).
       사람이 쓴 글(채팅·편지·댓글·공지·홈 배너·상대 소개)과 입력칸만 `.selectable` 로 예외. 채팅 말풍선은 폰에서 길게 누르기가
       공감이라 복사는 고르기 줄의 "복사", 마우스 기기에서는 드래그로. 운영자 화면은 그대로
 - [x] **대화 소개 카드** — 대화 맨 위에 상대의 큰 아바타 · 익명 이름 · MBTI·관심사 한 줄 · "프로필 보기" (인스타 DM 첫 화면)
+- [x] **하단 탭 3개 · 설정 · 아이폰 상태바** — 하단 탭 익명편지(왼쪽) · 채팅(가운데) · 프로필(오른쪽).
+      상단 오른쪽의 프로필 사진 자리에 설정 톱니 → 설정 화면에서 **채팅 색상**(내 말풍선: 기본 · 베리 · 보라 · 파랑 · 초록 · 회색)을
+      고른다. 이 기기에만 저장되고 상대 화면은 그대로. 아이폰 홈 화면 앱(`black-translucent`)에서 머리글이 상태바(시계·배터리)와
+      겹치던 것 → 모든 머리글(`.topbar`)이 `env(safe-area-inset-top)` 만큼 내려온다 (`--safe-top`)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

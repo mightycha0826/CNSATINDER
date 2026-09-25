@@ -60,9 +60,14 @@ try {
 	await page.mouse.move(lb.x + 3, lb.y + lb.height / 2); await page.mouse.down();
 	await page.mouse.move(lb.x + lb.width - 3, lb.y + lb.height / 2, { steps: 6 }); await page.mouse.up();
 	check('로고를 드래그해도 글자가 잡히지 않는다', (await page.evaluate(() => getSelection().toString())) === '');
-	await page.locator('button.me').click(); await page.waitForURL('**/me');
-	await page.locator('button.back').click(); await page.waitForURL(`${BASE}/`); await page.waitForTimeout(500);
-	check('내 프로필 → 뒤로 → 홈이 기록 맨 아래 그대로', (await idx()) === 1, String(await idx()));
+	check('하단 탭 3개 — 익명편지 · 채팅 · 프로필 순서', (await page.locator('a.tab').allInnerTexts()).map((t) => t.trim()).join(',') === '익명편지,채팅,프로필',
+		(await page.locator('a.tab').allInnerTexts()).join(','));
+	check('상단 오른쪽 = 공지 종 + 설정 톱니 (프로필 사진 없음)', (await page.locator('button.settings').count()) === 1 && (await page.locator('button.me').count()) === 0);
+	await page.locator('a.tab', { hasText: '프로필' }).click(); await page.waitForURL('**/me'); await page.waitForTimeout(500);
+	check('프로필 탭 → 탭바 그대로 · 프로필 탭 켜짐', (await page.locator('a.tab.on').innerText()).includes('프로필') && (await page.locator('button.back').count()) === 0);
+	check('프로필 탭 전환도 기록을 쌓지 않는다', (await idx()) === 1, String(await idx()));
+	await back(); await page.waitForTimeout(300);
+	check('★ 프로필에서 뒤로 → 채팅 홈', new URL(page.url()).pathname === '/' && (await idx()) === 1, `${page.url()} ${await idx()}`);
 	await logo.click(); await page.waitForTimeout(300);
 	check('홈에서 로고 누르기 → 홈 그대로', new URL(page.url()).pathname === '/');
 
@@ -93,6 +98,33 @@ try {
 	await page.locator('button.bell').click(); await page.waitForURL('**/notices'); await page.waitForTimeout(300);
 	await back();
 	check('휴대폰 뒤로가기로 돌아와도 같음 (안내 없이 홈)', new URL(page.url()).pathname === '/' && (await idx()) === 1);
+
+	console.log('[아이폰 상태바]');
+	// 홈 화면 앱(black-translucent)은 화면이 상태바 밑까지 올라간다 — 안전영역 47px 을 흉내 내서 머리글이 그만큼 내려오는지
+	await page.evaluate(() => document.documentElement.style.setProperty('--safe-top', '47px')); await page.waitForTimeout(100);
+	const tb = await page.locator('.topbar').first().boundingBox();
+	const lg = await page.locator('a.logo').boundingBox();
+	check('★ 머리글 = 상태바 47 + 44, 로고는 상태바 아래', Math.round(tb.height) === 91 && lg.y >= 47, `${tb.height} ${lg.y}`);
+	await page.evaluate(() => document.documentElement.style.removeProperty('--safe-top'));
+	check('안전영역이 없으면 44 그대로', Math.round((await page.locator('.topbar').first().boundingBox()).height) === 44);
+
+	console.log('[설정 · 채팅 색상]');
+	const fill = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bubble-fill').trim());
+	const before = await fill();
+	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
+	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
+	check('기본 색이 골라져 있다', (await page.locator('.swatch.on').innerText()).includes('기본'));
+	await page.locator('.swatch', { hasText: '파랑' }).click(); await page.waitForTimeout(200);
+	const blue = await fill();
+	check('★ 파랑을 고르면 말풍선 색이 바로 바뀐다', blue !== before && blue.includes('#3b8af6'), blue);
+	const mine = await page.locator('.preview .mine .bubble').first().evaluate((e) => getComputedStyle(e).backgroundImage);
+	check('미리보기 말풍선에도 입혀진다', mine.includes('59, 138, 246'), mine);
+	check('이 기기에 저장', (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === 'ocean');
+	await page.screenshot({ path: `${SP}/settings-color.png` });
+	await page.reload(); await page.locator('.swatch.on').waitFor({ timeout: 8000 });
+	check('다시 열어도 그대로', (await fill()).includes('#3b8af6') && (await page.locator('.swatch.on').innerText()).includes('파랑'));
+	await page.locator('.swatch', { hasText: '기본' }).click(); await page.waitForTimeout(200);
+	check('기본으로 되돌리면 저장값도 지운다', (await fill()) === before && (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === null);
 	check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
 } finally { await browser.close(); }
 console.log(`\n${pass} passed, ${fail} failed`);

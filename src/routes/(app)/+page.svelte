@@ -10,6 +10,7 @@
 	import { isRestricted } from '$lib/restriction';
 	import { mmss } from '$lib/time';
 	import { scrollBehavior } from '$lib/motion';
+	import { openTab } from '$lib/tabBack.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import AiChat from '$lib/ai/AiChat.svelte';
@@ -134,7 +135,7 @@
 
 <div class="page home">
 	{#if S.hasPassword === false}
-		<button class="nudge" onclick={() => goto('/me#password')}>
+		<button class="nudge" onclick={() => openTab('/me#password')}>
 			<strong>비밀번호를 만들어 두세요</strong>
 			<span>다음부터 인증 코드 없이 바로 로그인할 수 있어요 ›</span>
 		</button>

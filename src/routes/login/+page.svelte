@@ -189,7 +189,7 @@
 	.login {
 		justify-content: center;
 		gap: 14px;
-		padding-top: 24px;
+		padding-top: calc(24px + var(--safe-top));
 		padding-bottom: 40px;
 	}
 	.appicon {

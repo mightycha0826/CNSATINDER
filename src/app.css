@@ -32,6 +32,8 @@
 	--r-bubble: 22px;
 	--pad: 16px;
 	--header-h: 44px;
+	/* 아이폰 상태바(시계·배터리) 높이 — 홈 화면 앱은 black-translucent 라 화면이 상태바 밑까지 올라간다 */
+	--safe-top: env(safe-area-inset-top, 0px);
 	--tabbar-h: 54px;
 
 	--sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Apple SD Gothic Neo',
@@ -226,7 +228,7 @@ a {
 	border-color: var(--text-2);
 }
 
-/* 화면 상단 헤더 — 44px + hairline */
+/* 화면 상단 헤더 — 44px + hairline. 위쪽 안전영역만큼 더 높이고 그만큼 내용을 내린다 (상태바와 겹치지 않게) */
 .topbar {
 	position: sticky;
 	top: 0;
@@ -234,8 +236,8 @@ a {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	height: var(--header-h);
-	padding: 0 var(--pad);
+	height: calc(var(--header-h) + var(--safe-top));
+	padding: var(--safe-top) var(--pad) 0;
 	background: var(--bg);
 	border-bottom: 1px solid var(--line);
 }

@@ -54,8 +54,8 @@ try {
 
 	console.log('[홈]');
 	const box = async (sel) => page.locator(sel).first().boundingBox();
-	const b = await box('button.bell'), me = await box('button.me');
-	check('종은 프로필 왼쪽', b && me && b.x + b.width <= me.x, JSON.stringify({ b, me }));
+	const b = await box('button.bell'), me = await box('button.settings');
+	check('종은 설정 톱니 왼쪽', b && me && b.x + b.width <= me.x, JSON.stringify({ b, me }));
 	check('★ 안 본 공지 → 종 오른쪽 위 빨간 점', (await page.locator('button.bell .dot').count()) === 1);
 	const dot = await box('button.bell .dot');
 	check('점 위치: 종의 오른쪽 위', dot && dot.x + dot.width / 2 > b.x + b.width / 2 && dot.y + dot.height / 2 < b.y + b.height / 2, JSON.stringify({ dot, b }));

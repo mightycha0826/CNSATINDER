@@ -192,7 +192,7 @@
 	}
 	.bar {
 		position: sticky;
-		top: 0;
+		top: calc(var(--header-h) + var(--safe-top)); /* 스크롤해도 머리글 바로 아래에 붙는다 */
 		z-index: 2;
 		display: flex;
 		align-items: center;

@@ -5,8 +5,8 @@ import { UI, toast } from './state.svelte';
 import { scrollBehavior } from './motion';
 
 /**
- * 탭 첫 화면(채팅 홈 · 익명편지)의 뒤로가기 — 설치된 앱에서 인스타처럼:
- *   익명편지 탭에서 뒤로 → 채팅 홈, 홈에서 뒤로 → "한 번 더 누르면 종료" 안내, 2초 안에 또 누르면 앱이 닫힌다.
+ * 탭 첫 화면(익명편지 · 채팅 홈 · 프로필)의 뒤로가기 — 설치된 앱에서 인스타처럼:
+ *   익명편지·프로필 탭에서 뒤로 → 채팅 홈, 홈에서 뒤로 → "한 번 더 누르면 종료" 안내, 2초 안에 또 누르면 앱이 닫힌다.
  *
  * 방법: 탭 첫 화면에 들어오면 같은 주소로 얕은 기록(guard)을 하나 쌓는다. 뒤로가기는 그 guard 만 걷어내고
  * 화면은 그대로 — 같은 탭에서 guard 가 사라지는 순간을 잡아 안내를 띄운다. 안내 뒤 2초 동안은 guard 를 다시 쌓지 않으므로
@@ -16,7 +16,7 @@ import { scrollBehavior } from './motion';
  *
  * 컴포넌트 초기화 중에 부른다 ((app)/+layout.svelte). 탭 링크의 onclick 에 쓸 switchTab 을 돌려준다.
  */
-const ROOTS = ['/', '/letters'];
+const ROOTS = ['/', '/letters', '/me'];
 const EXIT_MS = 2000;
 
 export function useTabBack() {
@@ -52,8 +52,8 @@ export function useTabBack() {
 		// 같은 탭에서 guard 만 사라졌다 = 뒤로가기 (탭 전환은 switching 으로 따로 막는다)
 		if (armedAt !== p) return arm(p); // 처음 들어왔다
 		armedAt = null;
-		if (p === '/letters') {
-			void goto('/', { replaceState: true }); // 익명편지 탭에서 뒤로 → 채팅 홈
+		if (p !== '/') {
+			void goto('/', { replaceState: true }); // 익명편지·프로필 탭에서 뒤로 → 채팅 홈
 			return;
 		}
 		toast('뒤로가기를 한 번 더 누르면 종료됩니다', EXIT_MS);
@@ -65,10 +65,14 @@ export function useTabBack() {
 	}
 
 	/** 탭 전환 — 기록을 쌓지 않고 바꿔 끼운다 (탭끼리 오간 기록이 홈 아래에 남지 않게) */
-	async function switchTab(e: MouseEvent, href: string) {
+	function switchTab(e: MouseEvent, href: string) {
 		if (!UI.standalone) return; // 브라우저는 평소처럼 링크
 		e.preventDefault();
-		if (page.url.pathname === href) {
+		void go(href);
+	}
+
+	async function go(href: string) {
+		if (page.url.pathname === new URL(href, location.href).pathname) {
 			window.scrollTo({ top: 0, behavior: scrollBehavior() });
 			return;
 		}
@@ -88,5 +92,18 @@ export function useTabBack() {
 		onHistory(page.url.pathname, !!page.state.guard);
 	}
 
+	goTab = go;
+	$effect(() => () => {
+		if (goTab === go) goTab = null;
+	});
+
 	return { switchTab };
+}
+
+let goTab: ((href: string) => Promise<void>) | null = null;
+
+/** 탭 첫 화면에서 다른 탭으로 (예: 홈의 "비밀번호를 만들어 두세요" → 프로필). 탭을 누른 것과 똑같이 기록을 바꿔 끼운다 */
+export function openTab(href: string) {
+	if (UI.standalone && goTab) return goTab(href);
+	return goto(href);
 }

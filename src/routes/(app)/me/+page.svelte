@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import Avatar from '$lib/ui/Avatar.svelte';
-	import BackButton from '$lib/ui/BackButton.svelte';
+	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import PasswordFields from '$lib/ui/PasswordFields.svelte';
 	import { supabase } from '$lib/supabase';
 	import { disablePush, enablePush, pushEnabled, pushState, type PushState } from '$lib/push';
@@ -20,7 +20,7 @@
 	} from '$lib/state.svelte';
 
 	/**
-	 * 내 프로필 · 설정.
+	 * 내 프로필 (하단 탭 오른쪽) — 상대에게 보이는 소개 · 알림 · 비밀번호 · 로그아웃.
 	 * 익명 이름은 고정. 대화 상대에게 보이는 건 이름 + 소개 + 관심사 + MBTI 뿐이다.
 	 */
 
@@ -222,8 +222,8 @@
 </script>
 
 <div class="topbar">
-	<BackButton href="/" history />
 	<span class="title">내 프로필</span>
+	<TopbarMe />
 </div>
 
 <div class="page me">
@@ -396,7 +396,7 @@
 	.me {
 		gap: 28px;
 		padding-top: 20px;
-		padding-bottom: calc(24px + env(safe-area-inset-bottom));
+		padding-bottom: 24px; /* 아래쪽 안전영역은 탭바가 맡는다 */
 	}
 	section {
 		display: flex;
