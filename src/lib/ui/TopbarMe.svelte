@@ -11,8 +11,9 @@
 	import Avatar from './Avatar.svelte';
 
 	$effect(() => {
-		void loadNotices();
-		return whileVisible(() => void loadNotices(), 300_000);
+		void loadNotices(); // 탭을 오가며 다시 그려질 때 — 1분 안이면 건너뛴다
+		// 5분마다 · 앱으로 돌아올 때는 꼭 새로 (그사이 올라온 공지에 바로 점이 뜨게)
+		return whileVisible(() => void loadNotices(true), 300_000);
 	});
 
 	const fresh = $derived(NOTICES.loaded && hasNewNotice());
