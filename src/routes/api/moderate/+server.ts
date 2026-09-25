@@ -15,8 +15,11 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const uid = await userFromBearer(request).catch(() => null);
 	if (!uid) return json({ error: 'unauthorized' }, { status: 401 });
 
+	// 가져가는 것까지는 기다린다 — 몇 개를 가져갔는지(0 = 쌓인 게 없거나 오늘 한도 끝)를 앱이 보고 부르는 간격을 늘린다
+	const items = await adminRpc<ModItem[]>('mod_claim', { p_n: 5 });
+	if (!items.length) return json({ claimed: 0 });
+
 	const work = (async () => {
-		const items = await adminRpc<ModItem[]>('mod_claim', { p_n: 3 });
 		let checked = 0;
 		let flagged = 0;
 		for (let i = 0; i < items.length; i++) {
@@ -43,7 +46,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	// Workers: 응답을 먼저 돌려주고 검토는 뒤에서 마저 한다
 	if (platform?.context?.waitUntil) {
 		platform.context.waitUntil(work.catch(() => {}));
-		return json({ queued: true });
+		return json({ claimed: items.length });
 	}
-	return json(await work.catch(() => ({ checked: 0, flagged: 0 })));
+	return json({ claimed: items.length, ...(await work.catch(() => ({ checked: 0, flagged: 0 }))) });
 };

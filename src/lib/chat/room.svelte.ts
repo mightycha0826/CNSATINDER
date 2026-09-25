@@ -23,7 +23,7 @@ const BG_RECREATE_MS = 10_000;
  * 소켓이 멀쩡히 연결된 채로 메시지 하나가 조용히 빠질 수 있고, 그러면 재연결 전까지 안 보인다.
  * 실서버 E2E 에서 10건 중 1건이 2초 안에 오지 않은 적이 있어서 추가했다.
  */
-const SAFETY_SYNC_MS = 30_000;
+const SAFETY_SYNC_MS = 45_000;
 
 /**
  * 대화방 하나의 상태 전부.
@@ -92,7 +92,7 @@ export class ChatRoom {
 		window.addEventListener('online', this.#onOnline);
 		this.#safetyTimer = setInterval(() => {
 			// 연결돼 있고 화면을 보고 있을 때만 — 백그라운드는 복귀 시 resync 가 처리한다
-			if (this.connected && !this.closed && document.visibilityState === 'visible') void this.resync();
+			if (this.connected && !this.closed && document.visibilityState === 'visible') void this.#lightSync();
 		}, this.#safetyMs);
 	}
 
@@ -197,6 +197,21 @@ export class ChatRoom {
 			if (this.#disposed || this.closed) return;
 			for (const r of await this.#t.fetchRecent(this.roomId, 50)) this.upsert(r, 'sent');
 		}, TAIL_SWEEP_DELAY_MS);
+	}
+
+	/**
+	 * 주기 안전망 — 연결이 멀쩡한 동안 조용히 빠진 것만 메운다: 방 상태(만료·연장) + 새 메시지. 요청 2개.
+	 * 공감 전체 목록과 tail sweep(커밋 순서 역전 보정)은 재연결·화면 복귀 때의 resync 에서만 — 그때가 실제로 빠질 수 있는 때다.
+	 * (예전엔 45초가 아니라 30초마다 4개씩 보냈다)
+	 */
+	async #lightSync() {
+		try {
+			this.#absorb(await this.#t.closeIfExpired(this.roomId));
+		} catch {
+			return;
+		}
+		if (this.closed) return;
+		for (const r of await this.#t.fetchAfter(this.roomId, this.#maxId)) this.upsert(r, 'sent');
 	}
 
 	#absorb(s: RoomSnap) {

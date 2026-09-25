@@ -46,10 +46,18 @@ const REACTION_COLS = 'message_id, room_id, seat, emoji';
 export class SupabaseTransport implements ChatTransport {
 	#ch: RealtimeChannel | null = null;
 	#disposed = false;
+	/**
+	 * 상대가 지금 이 방 화면에 있는지 (presence). 있으면 푸시 알림 요청(/api/push)을 아예 보내지 않는다 —
+	 * 서버도 "앱을 보고 있음"이면 어차피 안 보내지만, 요청 자체가 Workers 무료 한도(하루 10만)를 쓴다.
+	 */
+	#partnerHere = false;
+	#seat: 1 | 2 = 1;
 
 	connect(roomId: string, seat: 1 | 2, h: TransportHandlers) {
 		this.disconnect();
 		this.#disposed = false;
+		this.#seat = seat;
+		this.#partnerHere = false;
 
 		const ch = supabase.channel(`room:${roomId}`, {
 			config: {
@@ -90,11 +98,11 @@ export class SupabaseTransport implements ChatTransport {
 				if (s === 1 || s === 2) h.onTyping(s);
 			})
 			.on('presence', { event: 'sync' }, () => {
-				h.onPresence(
-					Object.keys(ch.presenceState())
-						.map(Number)
-						.filter((n) => n === 1 || n === 2)
-				);
+				const seats = Object.keys(ch.presenceState())
+					.map(Number)
+					.filter((n) => n === 1 || n === 2);
+				this.#partnerHere = seats.some((s) => s !== this.#seat);
+				h.onPresence(seats);
 			})
 			.subscribe(async (status, err) => {
 				if (this.#disposed) return;
@@ -112,6 +120,7 @@ export class SupabaseTransport implements ChatTransport {
 
 	disconnect() {
 		this.#disposed = true;
+		this.#partnerHere = false; // 연결이 끊기면 모른다 — 알림은 보내는 쪽으로
 		if (this.#ch) {
 			// 방이 닫히면 즉시 해제 — 붙들고 있으면 Realtime 동시 연결 한도를 태운다
 			void supabase.removeChannel(this.#ch);
@@ -126,7 +135,7 @@ export class SupabaseTransport implements ChatTransport {
 			const { data, error } = await withMsgCols((cols) => supabase.from('messages').insert(row).select(cols).single());
 			if (!error) {
 				const sent = data as unknown as MsgRow; // 열 목록이 문자열 변수라 supabase 타입 추론이 안 된다
-				notifySent(sent.id); // 상대가 앱을 안 보고 있으면 푸시 알림
+				if (!this.#partnerHere) notifySent(sent.id); // 상대가 이 방에 없으면 — 보낼지는 서버가 한 번 더 판단
 				requestModeration(); // 검열봇 2단 (AI 검토가 켜져 있을 때만)
 				return { ok: true, row: sent };
 			}
@@ -221,7 +230,7 @@ export class SupabaseTransport implements ChatTransport {
 			if (error) return 'network';
 			const status = (data as { status: ReactResult }).status;
 			// 공감을 달았을 때만 (취소는 알리지 않는다). 보낼지 말지는 서버가 정한다.
-			if (status === 'ok' && emoji) notifyReaction(messageId);
+			if (status === 'ok' && emoji && !this.#partnerHere) notifyReaction(messageId);
 			return status;
 		} catch {
 			return 'network';

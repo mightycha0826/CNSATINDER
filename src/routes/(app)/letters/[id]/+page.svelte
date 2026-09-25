@@ -50,7 +50,7 @@
 		loading = true;
 		data = null;
 		void load();
-		return whileVisible(() => void load(), 30_000);
+		return whileVisible(() => void load(), 45_000); // 새 댓글은 푸시 알림으로도 오므로 목록(45초)과 같게
 	});
 
 	const letter = $derived(data?.letter ?? null);

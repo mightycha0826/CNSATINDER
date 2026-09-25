@@ -1,7 +1,8 @@
 <script lang="ts">
 	/**
 	 * 상단 바 오른쪽 — 공지 종 + 내 프로필. 홈(채팅)과 익명편지가 같이 쓴다.
-	 * 안 본 공지가 있으면 종 오른쪽 위에 빨간 점. 화면이 보이는 동안 1분마다 새 공지를 확인한다.
+	 * 안 본 공지가 있으면 종 오른쪽 위에 빨간 점. 화면이 보이는 동안 5분마다, 앱으로 돌아올 때 새 공지를 확인한다.
+	 * 탭을 오가도 1분 안이면 다시 부르지 않는다 (loadNotices). 공지는 드물게 바뀌므로 자주 물을 이유가 없다.
 	 */
 	import { goto } from '$app/navigation';
 	import { NOTICES, hasNewNotice, loadNotices } from '$lib/notices.svelte';
@@ -11,7 +12,7 @@
 
 	$effect(() => {
 		void loadNotices();
-		return whileVisible(() => void loadNotices(), 60_000);
+		return whileVisible(() => void loadNotices(), 300_000);
 	});
 
 	const fresh = $derived(NOTICES.loaded && hasNewNotice());

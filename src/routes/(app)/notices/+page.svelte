@@ -18,7 +18,7 @@
 			if (NOTICES.loaded) seenBefore = NOTICES.lastSeen;
 		});
 		void (async () => {
-			await loadNotices();
+			await loadNotices(true);
 			seenBefore ??= NOTICES.lastSeen;
 			await markNoticesSeen();
 		})();

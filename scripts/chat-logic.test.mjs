@@ -67,7 +67,7 @@ try {
 			snap: snap(),
 			handlers: null,
 			sendImpl: null,
-			calls: { snapshot: 0, fetchAfter: 0, fetchRecent: 0 },
+			calls: { snapshot: 0, fetchAfter: 0, fetchRecent: 0, fetchReactions: 0 },
 			connect(_r, _s, h) {
 				t.handlers = h;
 			},
@@ -112,6 +112,7 @@ try {
 				return t.reactImpl ? t.reactImpl(id, emoji) : 'ok';
 			},
 			async fetchReactions() {
+				t.calls.fetchReactions++;
 				return t.reactionRows.filter((x) => x.emoji);
 			}
 		};
@@ -368,6 +369,8 @@ try {
 		check('처음엔 화면에 없다', !r.msgs.some((m) => m.body === '떨어진 메시지'));
 		await sleep(350);
 		check('★ 안전망 동기화가 재연결 없이도 채운다', r.msgs.some((m) => m.body === '떨어진 메시지'));
+		check('★ 주기 안전망은 가볍게 — 공감 전체 목록 · tail sweep 은 안 부른다', t.calls.fetchReactions <= 1 && t.calls.fetchRecent <= 1,
+			JSON.stringify(t.calls));
 		r.dispose();
 		const n = t.calls.snapshot;
 		await sleep(450);
@@ -482,6 +485,15 @@ try {
 			return { ok: true, row: x };
 		};
 		check('막힌 뒤에도 다음 메시지는 보내진다', (await r.send('안녕하세요')) === null && r.msgs.at(-1).body === '안녕하세요');
+	}
+	console.log('\n[18] 찾는 중 폴링 — 오래 기다릴수록 천천히, 서버 풀 TTL(15초) 안쪽');
+	{
+		const { waitingPollMs } = await vite.ssrLoadModule('/src/lib/seeker.svelte.ts');
+		check('처음 30초는 서버 간격 그대로', waitingPollMs(4000, 10_000) === 4000);
+		check('30초 넘으면 8초', waitingPollMs(4000, 45_000) === 8000);
+		check('2분 넘으면 10초', waitingPollMs(4000, 150_000) === 10_000);
+		check('서버 간격이 더 길면 그걸 따른다', waitingPollMs(12_000, 150_000) === 12_000);
+		check('★ 늘 풀 TTL 15초보다 짧다 (지터 0.6초 포함)', [0, 45_000, 999_999].every((w) => waitingPollMs(4000, w) + 600 < 15_000));
 	}
 } catch (e) {
 	fail++;

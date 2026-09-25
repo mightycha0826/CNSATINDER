@@ -19,7 +19,7 @@ export type InboxRoom = {
 	unread: number;
 };
 
-const POLL_MS = 20_000;
+const POLL_MS = 30_000;
 const DEBOUNCE_MS = 300;
 
 /**
@@ -28,7 +28,7 @@ const DEBOUNCE_MS = 300;
  * 실시간: 열린 방들의 새 메시지·방 상태 변화를 채널 하나로 받는다 (filter room_id=in.(…)).
  *   행 내용은 쓰지 않고 "바뀌었다"는 신호로만 쓴다 — 목록은 언제나 my_rooms() 한 번으로 다시 그린다.
  *   (미리보기·안 읽은 수·온라인 표시를 한 곳에서 계산하기 위해)
- * 안전망: 20초마다 다시 읽는다. Realtime 은 전달을 보장하지 않고, 상대 온라인 표시는 이벤트가 없다.
+ * 안전망: 30초마다 다시 읽는다. Realtime 은 전달을 보장하지 않고, 상대 온라인 표시는 이벤트가 없다.
  */
 export class Inbox {
 	rooms = $state<InboxRoom[]>([]);

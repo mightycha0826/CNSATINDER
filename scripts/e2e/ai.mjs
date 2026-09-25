@@ -123,14 +123,14 @@ try {
 	// Workers(와 개발 서버)에서는 응답을 먼저 주고 뒤에서 검토한다 — 판정 호출이 올 때까지 기다린다
 	const verdictsNow = () => rpcCalls.slice(before).filter((c) => c[0] === 'mod_verdict').map((c) => c[1]);
 	for (let i = 0; i < 40 && verdictsNow().length < 2; i++) await new Promise((r) => setTimeout(r, 100));
-	check('대기열을 검토한다 (응답은 바로)', m.status === 200 && (mj.queued === true || mj.checked === 2) && verdictsNow().length === 2, JSON.stringify(mj));
+	check('대기열을 검토한다 (가져간 수를 바로 알려 준다)', m.status === 200 && mj.claimed === 2 && verdictsNow().length === 2, JSON.stringify(mj));
 	const verdicts = verdictsNow();
 	check('판정 저장: 걸린 것만 flag', verdicts.find((v) => v.p_id === 1)?.p_flag === false && verdicts.find((v) => v.p_id === 2)?.p_flag === true && verdicts.find((v) => v.p_id === 2)?.p_category === 'harassment', JSON.stringify(verdicts));
 	check('잘못된 토큰 → 401', (await post('/api/moderate', {}, 'bad')).status === 401);
 	const b2 = rpcCalls.length;
-	await post('/api/moderate', {});
+	const empty = await (await post('/api/moderate', {})).json();
 	await new Promise((r) => setTimeout(r, 500));
-	check('대기열이 비면 판정도 없다', rpcCalls.slice(b2).filter((c) => c[0] === 'mod_verdict').length === 0);
+	check('대기열이 비면 claimed 0 (앱이 부르는 간격을 늘린다) · 판정 없음', empty.claimed === 0 && rpcCalls.slice(b2).filter((c) => c[0] === 'mod_verdict').length === 0, JSON.stringify(empty));
 } catch (e) { fail++; console.error(e); }
 finally {
 	await browser.close();

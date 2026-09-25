@@ -124,7 +124,7 @@ export async function init() {
 		data: { session }
 	} = await supabase.auth.getSession();
 	S.session = session;
-	if (session) await afterLogin();
+	if (session) await afterLogin(session.user.id);
 	S.booted = true;
 
 	supabase.auth.onAuthStateChange((event, sess) => {
@@ -132,15 +132,23 @@ export async function init() {
 		if (event === 'SIGNED_OUT') {
 			S.profile = null;
 			S.hasPassword = null;
+			loadedFor = null;
 		} else if (sess && event !== 'TOKEN_REFRESHED') {
-			void afterLogin();
+			// 등록하자마자 INITIAL_SESSION 이 오고, 탭으로 돌아올 때 SIGNED_IN 이 다시 오기도 한다 —
+			// 같은 계정이면 위에서 이미 불러왔으니 건너뛴다 (예전엔 앱을 열 때마다 부팅 요청이 두 번씩 나갔다)
+			void afterLogin(sess.user.id);
 		}
 	});
 
 	startHeartbeat();
 }
 
-async function afterLogin() {
+/** 부팅 요청을 이미 보낸 계정 — 같은 계정으로 또 오면 건너뛴다 */
+let loadedFor: string | null = null;
+
+async function afterLogin(uid: string) {
+	if (loadedFor === uid) return;
+	loadedFor = uid;
 	// 트리거가 못 만든 경우를 대비한 폴백 (gyeol ensureProfile 패턴). 익명 이름도 여기서 보장된다.
 	await supabase.rpc('ensure_self');
 	await Promise.all([loadProfile(), loadSettings(), loadAccount()]);

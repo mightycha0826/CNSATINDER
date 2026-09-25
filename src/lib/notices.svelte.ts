@@ -15,7 +15,14 @@ export const NOTICES = $state({
 /** 아직 안 본 공지가 있는가 (= 빨간 점) */
 export const hasNewNotice = () => (NOTICES.list[0]?.id ?? 0) > NOTICES.lastSeen;
 
-export async function loadNotices() {
+/** 마지막으로 불러온 시각 — 탭을 오갈 때마다(종이 다시 그려질 때마다) 새로 부르지 않게 */
+let lastLoad = 0;
+const FRESH_MS = 60_000;
+
+/** force = 공지 화면처럼 지금 꼭 최신이어야 할 때 */
+export async function loadNotices(force = false) {
+	if (!force && NOTICES.loaded && Date.now() - lastLoad < FRESH_MS) return;
+	lastLoad = Date.now();
 	const { data, error } = await supabase.rpc('my_notices');
 	const d = data as { notices?: Notice[]; last_seen?: number } | null;
 	// 모양이 다르면(아직 schema.sql 을 반영하지 않은 DB 등) 조용히 넘어간다 — 종만 점 없이 보인다

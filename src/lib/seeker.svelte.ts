@@ -10,6 +10,18 @@ type MatchRes =
 	| { status: 'service_closed'; notice?: string };
 
 /**
+ * 기다린 시간만큼 천천히 묻는다 — 처음 30초는 서버가 정한 간격(기본 4초), 그 뒤 8초, 2분 넘으면 10초.
+ * 새 사람이 들어오면 그 사람의 첫 요청이 풀에 있는 나를 바로 잡아가므로, 내가 천천히 물어도 늦어지는 건
+ * "잡혔다는 걸 알아채는 시간"뿐이다. ★ 서버 풀에서 빠지는 시간(seek_ttl_sec 기본 15초)보다 짧게 둔다.
+ * 기다리는 사람 한 명당 1분에 15번 → 6~7번.
+ */
+export function waitingPollMs(base: number, waitedMs: number): number {
+	if (waitedMs > 120_000) return Math.max(base, 10_000);
+	if (waitedMs > 30_000) return Math.max(base, 8_000);
+	return base;
+}
+
+/**
  * 상대 찾기.
  *
  * request_match() 한 번이 '나 아직 찾는 중' 갱신 + 매칭 시도 + 누가 나를 이미 잡아갔는지 확인을 모두 한다.
@@ -45,7 +57,7 @@ export class Seeker extends PollSeeker<MatchRes> {
 				return;
 			case 'waiting':
 				this.reason = res.reason;
-				return this.schedule(res.poll_ms ?? 4000, 600);
+				return this.schedule(waitingPollMs(res.poll_ms ?? 4000, Date.now() - this.since), 600);
 			case 'busy':
 			case 'retry':
 				// 다른 사람의 매칭이 락을 잡고 있다 — 곧바로 다시
