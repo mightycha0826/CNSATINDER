@@ -6,6 +6,7 @@
 
 	/**
 	 * 내 프로필 (하단 탭 오른쪽) — 상대에게 보이는 소개 · 관심사 · MBTI, 이야기하고 싶은 상대.
+	 * 설정 화면과 같은 아이폰 설정식 디자인 (app.css .g-*): 맨 위 큰 아바타 · 이름, 그 아래 둥근 카드들.
 	 * 알림 · 비밀번호 · 계정 · 개인정보 안내 · 로그아웃은 설정(/settings)에.
 	 * 익명 이름은 고정. 대화 상대에게 보이는 건 이름 + 소개 + 관심사 + MBTI 뿐이다.
 	 */
@@ -94,159 +95,163 @@
 
 </script>
 
-<div class="topbar">
+<div class="topbar ios">
 	<span class="title">내 프로필</span>
 	<TopbarMe />
 </div>
 
-<div class="page me">
+<div class="page grouped me">
 	{#if S.profile?.nickname}
 		<section class="who">
-			<Avatar name={S.profile.nickname} size={64} online />
-			<div>
-				<p class="nick">{S.profile.nickname}</p>
-				<p class="muted small">대화 상대에게는 이 이름으로만 보여요 · 바꿀 수 없어요</p>
-			</div>
+			<Avatar name={S.profile.nickname} size={84} online />
+			<p class="nick">{S.profile.nickname}</p>
+			<p class="muted small">대화 상대에게는 이 이름으로만 보여요 · 바꿀 수 없어요</p>
 		</section>
 	{/if}
 
-	<section>
-		<h2>소개</h2>
+	<h2 class="g-head" id="bio-h">소개</h2>
+	<div class="g-card bio">
 		<textarea
-			class="field area"
+			class="area"
 			bind:value={bio}
 			maxlength="60"
 			rows="2"
+			aria-labelledby="bio-h"
 			placeholder="한 줄로 나를 소개해 주세요 (예: 밴드 음악 좋아해요)"
 		></textarea>
 		<span class="count muted num">{bio.trim().length}/60</span>
+	</div>
 
-		<h2 class="sub">관심사 <span class="muted">{interests.length}/5</span></h2>
-		<div class="tags">
-			{#each interests as t, i (t)}
-				<button class="tag" onclick={() => interests.splice(i, 1)} aria-label="{t} 지우기">
-					{t} <span aria-hidden="true">×</span>
-				</button>
-			{/each}
-			{#if interests.length < 5}
-				<input
-					class="tag-input"
-					bind:value={tagDraft}
-					maxlength="12"
-					placeholder="+ 추가"
-					onkeydown={onTagKey}
-					onblur={addTag}
-				/>
-			{/if}
-		</div>
+	<h2 class="g-head">관심사 <span class="num">{interests.length}/5</span></h2>
+	<div class="g-card tags">
+		{#each interests as t, i (t)}
+			<button class="tag" onclick={() => interests.splice(i, 1)} aria-label="{t} 지우기">
+				{t} <span aria-hidden="true">×</span>
+			</button>
+		{/each}
+		{#if interests.length < 5}
+			<input
+				class="tag-input"
+				bind:value={tagDraft}
+				maxlength="12"
+				placeholder="+ 추가"
+				aria-label="관심사 추가"
+				onkeydown={onTagKey}
+				onblur={addTag}
+			/>
+		{/if}
+	</div>
 
-		<h2 class="sub">MBTI</h2>
-		<div class="mbti">
-			<button class="chip" class:on={mbti === null} onclick={() => (mbti = null)}>안 적을래요</button>
-			{#each MBTIS as m (m)}
-				<button class="chip" class:on={mbti === m} onclick={() => (mbti = m)}>{m}</button>
-			{/each}
-		</div>
+	<h2 class="g-head">MBTI</h2>
+	<div class="g-card mbti">
+		<button class="chip none" class:on={mbti === null} onclick={() => (mbti = null)}>안 적을래요</button>
+		{#each MBTIS as m (m)}
+			<button class="chip" class:on={mbti === m} onclick={() => (mbti = m)}>{m}</button>
+		{/each}
+	</div>
+	<p class="g-foot">학번·반·전화번호·SNS 아이디처럼 나를 알 수 있는 내용은 적을 수 없어요.</p>
 
-		<p class="warn muted">
-			학번·반·전화번호·SNS 아이디처럼 나를 알 수 있는 내용은 적을 수 없어요.
-		</p>
-		<button class="btn" onclick={saveInfo} disabled={!dirty || busy}>
-			{busy ? '저장 중…' : '저장'}
-		</button>
-	</section>
+	<button class="btn save" onclick={saveInfo} disabled={!dirty || busy}>
+		{busy ? '저장 중…' : dirty ? '저장' : '저장됨'}
+	</button>
 
-	<section>
-		<h2>이런 사람과 이야기할래요</h2>
-		<div class="opts">
-			{#each WANTS as w (w.v)}
-				<button class="opt" class:on={S.profile?.want === w.v} onclick={() => setWant(w.v)}>
-					{w.label}
-				</button>
-			{/each}
-		</div>
-	</section>
-
+	<h2 class="g-head" id="want-h">이런 사람과 이야기할래요</h2>
+	<div class="g-card" role="radiogroup" aria-labelledby="want-h">
+		{#each WANTS as w (w.v)}
+			{@const on = S.profile?.want === w.v}
+			<button class="g-row" role="radio" aria-checked={on} onclick={() => setWant(w.v)}>
+				<span>{w.label}</span>
+				{#if on}
+					<svg class="g-check" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+						<path d="M3 9.5l4 4 8-9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+					</svg>
+				{/if}
+			</button>
+		{/each}
+	</div>
+	<p class="g-foot">매칭할 때 이 조건에 맞는 사람을 찾아요.</p>
 </div>
 
 <style>
 	.me {
-		gap: 28px;
-		padding-top: 20px;
-		padding-bottom: 24px; /* 아래쪽 안전영역은 탭바가 맡는다 */
-	}
-	section {
-		display: flex;
-		flex-direction: column;
-		gap: 10px;
-	}
-	h2 {
-		margin: 0;
-		font-size: 15px;
-		font-weight: 600;
-	}
-	h2.sub {
-		margin-top: 8px;
-	}
-	h2 span {
-		font-weight: 400;
-		font-size: 13px;
+		padding-bottom: 32px; /* 아래쪽 안전영역은 탭바가 맡는다 */
 	}
 	.small {
 		margin: 0;
-		font-size: 12px;
+		font-size: 13px;
 	}
 
+	/* 맨 위 — 아이폰 설정의 계정 머리처럼 가운데 큰 아바타 */
 	.who {
-		flex-direction: row;
+		display: flex;
+		flex-direction: column;
 		align-items: center;
-		gap: 14px;
+		gap: 6px;
+		padding: 12px 16px 4px;
+		text-align: center;
 	}
 	.who p {
 		margin: 0;
 	}
 	.nick {
-		font-size: 20px;
+		margin-top: 6px !important;
+		font-size: 24px;
 		font-weight: 700;
 		letter-spacing: -0.02em;
 	}
 
+	.g-head span {
+		font-weight: 400;
+	}
+
+	.bio {
+		display: flex;
+		flex-direction: column;
+		padding: 12px 16px 10px;
+	}
 	.area {
-		height: auto;
-		padding: 10px 12px;
+		width: 100%;
+		padding: 0;
+		border: 0;
+		outline: none;
 		resize: none;
+		background: none;
+		font-size: 16px;
 		line-height: 1.5;
+	}
+	.area::placeholder {
+		color: var(--text-2);
 	}
 	.count {
 		align-self: flex-end;
-		margin-top: -6px;
 		font-size: 12px;
 	}
 
 	.tags {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
+		gap: 8px;
+		padding: 14px 16px;
 	}
 	.tag {
-		height: 32px;
-		padding: 0 12px;
+		height: 34px;
+		padding: 0 14px;
 		border-radius: 999px;
 		background: var(--field);
-		font-size: 13px;
+		font-size: 14px;
 	}
 	.tag span {
 		color: var(--text-2);
 		margin-left: 2px;
 	}
 	.tag-input {
-		width: 96px;
-		height: 32px;
-		padding: 0 12px;
-		border: 1px dashed var(--line);
+		width: 100px;
+		height: 34px;
+		padding: 0 14px;
+		border: 1px dashed var(--cell-line);
 		border-radius: 999px;
 		background: none;
-		font-size: 13px;
+		font-size: 14px;
 		outline: none;
 	}
 	.tag-input:focus {
@@ -255,49 +260,31 @@
 	}
 
 	.mbti {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 6px;
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 8px;
+		padding: 14px 16px;
 	}
 	.chip {
-		height: 32px;
-		padding: 0 10px;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		font-size: 13px;
+		height: 36px;
+		border-radius: 12px;
+		background: var(--field);
+		font-size: 14px;
+		font-weight: 500;
+	}
+	.chip.none {
+		grid-column: 1 / -1;
 	}
 	.chip.on {
-		border-color: var(--text);
 		background: var(--text);
 		color: var(--bg);
 		font-weight: 600;
 	}
 
-	.warn {
-		margin: 2px 0 0;
-		font-size: 12px;
-		line-height: 1.6;
+	.save {
+		margin-top: 18px;
+		height: 50px;
+		border-radius: 16px;
+		font-size: 16px;
 	}
-
-	.opts {
-		display: flex;
-		gap: 8px;
-	}
-	.opt {
-		flex: 1;
-		height: 44px;
-		border: 1px solid var(--line);
-		border-radius: var(--r-sm);
-		font-size: 15px;
-		font-weight: 500;
-		background: var(--bg);
-	}
-	/* 선택은 흑백 반전 — 그라디언트는 주 버튼에만 */
-	.opt.on {
-		border-color: var(--text);
-		background: var(--text);
-		color: var(--bg);
-		font-weight: 600;
-	}
-
 </style>

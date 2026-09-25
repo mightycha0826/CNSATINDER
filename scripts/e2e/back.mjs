@@ -66,10 +66,14 @@ try {
 	await page.locator('a.tab', { hasText: '프로필' }).click(); await page.waitForURL('**/me'); await page.waitForTimeout(500);
 	check('프로필 탭 → 탭바 그대로 · 프로필 탭 켜짐', (await page.locator('a.tab.on').innerText()).includes('프로필') && (await page.locator('button.back').count()) === 0);
 	check('프로필 탭 전환도 기록을 쌓지 않는다', (await idx()) === 1, String(await idx()));
-	const heads = async () => (await page.locator('.page h2').allInnerTexts()).map((t) => t.replace(/\s+.*/, ''));
+	const heads = async () => (await page.locator('.g-head').allInnerTexts()).map((t) => t.replace(/\s+\d.*$/, ''));
 	const meHeads = await heads();
 	check('프로필 = 소개 · 관심사 · MBTI · 상대 (알림 · 비밀번호 · 로그아웃 없음)',
-		meHeads.includes('소개') && !meHeads.some((h) => /알림|비밀번호/.test(h)) && (await page.getByRole('button', { name: '로그아웃' }).count()) === 0, meHeads.join(','));
+		meHeads.join(',') === '소개,관심사,MBTI,이런 사람과 이야기할래요' && (await page.getByRole('button', { name: '로그아웃' }).count()) === 0, meHeads.join(','));
+	check('프로필: 설정식 — 회색 바탕 위 둥근 카드', (await page.locator('.page.grouped').evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgb(242, 242, 247)'
+		&& (await page.locator('.g-card').first().evaluate((e) => getComputedStyle(e).borderTopLeftRadius)) === '22px');
+	check('상대 고르기 = 체크 표시 줄 (지금 고른 것 하나)', (await page.getByRole('radio', { checked: true }).count()) === 1);
+	await page.screenshot({ path: `${SP}/profile.png`, fullPage: true });
 	await back(); await page.waitForTimeout(300);
 	check('★ 프로필에서 뒤로 → 채팅 홈', new URL(page.url()).pathname === '/' && (await idx()) === 1, `${page.url()} ${await idx()}`);
 	await logo.click(); await page.waitForTimeout(300);
@@ -118,8 +122,20 @@ try {
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
 	const setHeads = await heads();
-	check('★ 설정 = 채팅 색상 · 알림 · 비밀번호 · 계정 · 로그아웃', ['채팅', '새', '비밀번호'].every((h) => setHeads.includes(h))
-		&& (await page.getByText('학교 인증').count()) === 1 && (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
+	check('★ 설정 = 채팅 색상 · 알림 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '채팅 색상,알림,계정,개인정보'
+		&& (await page.getByRole('switch', { name: '새 메시지 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
+		&& (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
+	check('뒤로는 둥근 단추 · 제목 가운데', (await page.locator('button.back').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%'
+		&& Math.abs(await page.locator('.topbar .title').evaluate((e) => { const r = e.getBoundingClientRect(); return r.left + r.width / 2 - innerWidth / 2; })) < 2);
+	const pwRow = page.getByRole('button', { name: /^비밀번호 (바꾸기|만들기)$/ });
+	await pwRow.click(); await page.waitForTimeout(150);
+	check('비밀번호 줄 → 카드 안에서 펼침 (›가 아래로)', (await pwRow.getAttribute('aria-expanded')) === 'true' && (await page.getByPlaceholder('지금 비밀번호').count()) === 1);
+	await pwRow.click(); await page.waitForTimeout(150);
+	check('다시 누르면 접힘', (await pwRow.getAttribute('aria-expanded')) === 'false' && (await page.getByPlaceholder('지금 비밀번호').count()) === 0);
+	await page.screenshot({ path: `${SP}/settings.png`, fullPage: true });
+	await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(150);
+	await page.screenshot({ path: `${SP}/settings-dark.png`, fullPage: true });
+	await page.emulateMedia({ colorScheme: 'light' });
 	const swatch = (name) => page.locator('.swatch', { has: page.getByRole('radio', { name }) });
 	check('기본 색이 골라져 있다', (await page.getByRole('radio', { name: '기본' }).isChecked()) && (await swatch('기본').getAttribute('class')).includes('on'));
 	check('색 동그라미 아래 글자 없음 (이름은 화면 낭독기에만)', (await page.locator('.swatches').innerText()).trim() === '');
@@ -130,7 +146,7 @@ try {
 	check('미리보기 말풍선에도 입혀진다', mine.includes('59, 138, 246'), mine);
 	check('이 기기에 저장', (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === 'ocean');
 	await page.screenshot({ path: `${SP}/settings-color.png` });
-	check('긴 설정 화면에서도 머리글 44px 그대로 (눌려 줄지 않음)', Math.round((await page.locator('.topbar').boundingBox()).height) === 44, String((await page.locator('.topbar').boundingBox()).height));
+	check('긴 설정 화면에서도 머리글 52px 그대로 (눌려 줄지 않음)', Math.round((await page.locator('.topbar').boundingBox()).height) === 52, String((await page.locator('.topbar').boundingBox()).height));
 	await page.reload(); await page.locator('.swatch.on').waitFor({ timeout: 8000 });
 	check('다시 열어도 그대로', (await fill()).includes('#3b8af6') && (await page.getByRole('radio', { name: '파랑' }).isChecked()));
 	await swatch('기본').click(); await page.waitForTimeout(200);
