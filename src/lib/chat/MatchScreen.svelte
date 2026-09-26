@@ -18,7 +18,7 @@
 <div class="match" role="status" aria-live="polite" onclick={ondone}>
 	<div class="ring"><Avatar name={alias} size={96} /></div>
 	<p class="title"><b>{alias}</b>님과 연결됐어요</p>
-	<p class="sub num">{minutes}:00 · 둘 다 원하면 이어져요</p>
+	<p class="sub num">{minutes}:00</p>
 </div>
 
 <style>

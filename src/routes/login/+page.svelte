@@ -134,13 +134,6 @@
 	{:else if !sent}
 		<section>
 			<h2>{mode === 'signup' ? '처음 가입' : '비밀번호 찾기'}</h2>
-			<p class="lead muted">
-				{#if mode === 'signup'}
-					학교 이메일로 본인 확인만 하면 끝. 이름은 어디에도 남지 않아요.
-				{:else}
-					학교 메일로 인증 코드를 보내요. 확인이 끝나면 새 비밀번호를 정할 수 있어요.
-				{/if}
-			</p>
 			{@render emailField(onSend)}
 			<button class="btn" onclick={onSend} disabled={!localOk || busy}>
 				{busy ? '보내는 중…' : '인증 코드 받기'}
@@ -149,11 +142,10 @@
 		<button class="btn-text back" onclick={() => go('login')}>로그인으로 돌아가기</button>
 	{:else}
 		<p class="lead muted">
-			<strong>{email}</strong> 으로<br />인증 코드 발송 완료.
-			{#if mode === 'reset'}<br />(가입된 계정일 때만 메일이 가요){/if}
+			<strong>{email}</strong> 으로<br />인증 코드를 보냈어요.
 		</p>
 		<p class="spam muted">
-			메일이 안 보이면 <strong>스팸함</strong>을 확인해 주세요. (발신자: <strong>CNSATINDER</strong>)
+			안 보이면 <strong>스팸함</strong>을 확인해 주세요.
 		</p>
 
 		<input
@@ -180,9 +172,6 @@
 		<button class="btn-text back" onclick={() => go('login')}>로그인으로 돌아가기</button>
 	{/if}
 
-	<p class="terms muted">
-		계속하면 <strong>이름·학번·SNS를 묻지도 말하지도 않기</strong> 규칙에 동의하는 것으로 봅니다.
-	</p>
 </div>
 
 <style>
@@ -288,13 +277,4 @@
 		align-items: center;
 	}
 
-	.terms {
-		margin: 12px 0 0;
-		font-size: 12px;
-		line-height: 1.6;
-	}
-	.terms strong {
-		color: var(--text-2);
-		font-weight: 600;
-	}
 </style>

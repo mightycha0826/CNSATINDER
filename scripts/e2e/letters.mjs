@@ -136,8 +136,7 @@ try {
 	await page.locator('.person').first().click(); await page.waitForURL('**/letters/new');
 	check('편지 쓰기: 받는 사람 이름 · 학년', (await page.locator('.to').innerText()).includes('박받음') && (await page.locator('.to').innerText()).includes('2학년'));
 	check('비어 있으면 못 보낸다', await page.getByRole('button', { name: '보내기' }).isDisabled());
-	check('★ 편지지: To. 받는 사람 · From. 익명', (await page.locator('.letter-paper .lp-to').innerText()).startsWith('To. 박받음') && (await page.locator('.letter-paper .lp-from').innerText()).startsWith('From. 익명')
-		&& (await page.locator('.foot').innerText()).includes('가명'));
+	check('★ 편지지: To. 받는 사람 · From. 익명', (await page.locator('.letter-paper .lp-to').innerText()).startsWith('To. 박받음') && (await page.locator('.letter-paper .lp-from').innerText()) === 'From. 익명');
 	check('서식 도구 막대 (굵게 · 형광펜 · 글자색 · 크기 · 정렬)', await page.getByRole('toolbar', { name: '서식' }).isVisible()
 		&& (await page.getByRole('toolbar', { name: '서식' }).getByRole('button').count()) >= 10);
 	const editor = page.getByRole('textbox', { name: '편지 내용' });
@@ -235,11 +234,11 @@ try {
 	await page.getByRole('button', { name: '메뉴' }).click(); await page.waitForTimeout(300);
 	check('메뉴: 신고 · 차단 · 나가기 · 취소', (await page.locator('.sheet .item').allInnerTexts()).join(',') === '신고하기,차단하기,나가기,취소');
 	await page.locator('.sheet .item', { hasText: '나가기' }).click(); await page.waitForTimeout(200);
-	check('받은 편지에서 나가면 "목록에서 사라지고 · 다시 보낼 수 없어요" 안내', (await page.locator('.sheet .warn').innerText()).includes('목록에서 사라지고') && (await page.locator('.sheet .warn').innerText()).includes('다시 편지를 보낼 수 없어요'));
+	check('받은 편지에서 나가면 "목록에서 사라져요 · 다시 보낼 수 없어요"', (await page.locator('.sheet .warn').innerText()).includes('목록에서 사라져요') && (await page.locator('.sheet .warn').innerText()).includes('다시 편지를 보낼 수 없어요'));
 	await page.locator('.sheet .item', { hasText: '취소' }).click(); await page.waitForTimeout(300);
 	await page.getByRole('button', { name: '메뉴' }).click(); await page.waitForTimeout(200);
 	await page.locator('.sheet .item', { hasText: '신고하기' }).click(); await page.waitForTimeout(300);
-	check('신고 시트: 사유 7개 · 운영진이 보낸 사람을 확인한다는 안내', (await page.locator('.reason').count()) === 7 && (await page.locator('.report .warn').innerText()).includes('누가 보냈는지 확인'));
+	check('신고 시트: 사유 7개 · 짧은 안내', (await page.locator('.reason').count()) === 7 && (await page.locator('.report .warn').innerText()) === '신고하면 자동으로 차단돼요.');
 	await page.screenshot({ path: `${SP}/letters-5-report.png` });
 	await page.locator('.reason', { hasText: '욕설' }).click();
 	await page.locator('.sheet .item.danger', { hasText: '신고하기' }).click();
@@ -288,7 +287,7 @@ try {
 	check('★ 끄면 letters_open = false 로 저장', JSON.stringify(w.patches.at(-1)) === '{"letters_open":false}' && !(await sw.isChecked()));
 	check('설정에 내 이름 · 학년', (await page.locator('.g-row', { hasText: '이름' }).innerText()).includes('김보냄 · 1학년'));
 	await page.locator('a.legal-row', { hasText: '개인정보 처리방침' }).click(); await page.waitForURL('**/settings/privacy'); await page.locator('article h1').waitFor();
-	check('개인정보 처리방침: 익명편지에서 이름으로 검색될 수 있음', (await page.locator('.intro').innerText()).includes('이름과 학년으로 검색'));
+	check('개인정보 처리방침: 편지 받기를 켜면 이름 · 학년으로 검색됨', (await page.locator('article').innerText()).includes('검색에 이름 · 학년'));
 	check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
 
 	console.log('[명단에 없는 학생 — 이름 적기]');

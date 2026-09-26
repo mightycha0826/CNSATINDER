@@ -74,9 +74,6 @@
 			{/snippet}
 		</LetterEditor>
 		<div class="foot">
-			<span class="muted">
-				{t.role === 'received' ? '상대는 이미 내 이름을 알아요 · 상대 이름은 끝까지 가명이에요' : '받는 사람에게는 가명으로 보여요'}
-			</span>
 			<span class="num" class:over={len > MAX}>{len > MAX ? `${len - MAX}자 넘음 · ` : ''}{len}/{MAX}</span>
 		</div>
 	</div>

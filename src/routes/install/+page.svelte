@@ -57,10 +57,6 @@
 	{#if env.inApp}
 		<!-- 카카오톡·인스타 등 앱 안 브라우저 — 여기엔 '홈 화면에 추가'가 없다 -->
 		<h1>{browserName}에서 열어 주세요</h1>
-		<p class="muted lead">
-			{IN_APP_NAME[env.inApp]} 안에서 연 화면에서는 앱을 설치할 수 없어요.<br />
-			{browserName}로 연 다음 설치해 주세요.
-		</p>
 
 		{#if external}
 			<a class="btn" href={external}>{browserName}로 열기</a>
@@ -80,10 +76,6 @@
 		<p class="url muted">{appUrl}</p>
 	{:else if ios}
 		<h1>앱을 설치해야 시작할 수 있어요</h1>
-		<p class="muted lead">
-			CNSATINDER는 홈 화면에 추가한 뒤 아이콘으로 들어와야 동작합니다.<br />브라우저 탭에서는 대화가
-			열리지 않아요.
-		</p>
 
 		{#if env.browser === 'safari'}
 			<ol class="steps">
@@ -108,18 +100,11 @@
 				</li>
 				<li>홈 화면에 생긴 <strong>CNSATINDER</strong> 아이콘으로 들어오세요</li>
 			</ol>
-			<p class="muted note">
-				메뉴에 <strong>홈 화면에 추가</strong>가 없으면 iOS 버전이 오래돼서일 수 있어요. 링크를 복사해
-				<strong>Safari</strong>에서 열어 주세요.
-			</p>
+			<p class="muted note"><strong>홈 화면에 추가</strong>가 없으면 <strong>Safari</strong>에서 열어 주세요.</p>
 			<button class="btn-ghost" onclick={copyLink}>링크 복사하기</button>
 		{/if}
 	{:else}
 		<h1>앱을 설치해야 시작할 수 있어요</h1>
-		<p class="muted lead">
-			CNSATINDER는 홈 화면에 설치한 뒤 아이콘으로 들어와야 동작합니다.<br />브라우저 탭에서는 대화가
-			열리지 않아요.
-		</p>
 
 		{#if UI.installEvt}
 			<button class="btn" onclick={onInstall} disabled={installing}>
@@ -159,11 +144,6 @@
 		font-weight: 700;
 		letter-spacing: -0.02em;
 		margin: 0;
-	}
-	.lead {
-		margin: 0;
-		line-height: 1.7;
-		font-size: 14px;
 	}
 	.note {
 		margin: 0;

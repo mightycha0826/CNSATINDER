@@ -149,7 +149,6 @@
 			<button class="chip" class:on={mbti === m} onclick={() => (mbti = m)}>{m}</button>
 		{/each}
 	</div>
-	<p class="g-foot">학번·반·전화번호·SNS 아이디처럼 나를 알 수 있는 내용은 적을 수 없어요.</p>
 
 	<button class="btn save" onclick={saveInfo} disabled={!dirty || busy}>
 		{busy ? '저장 중…' : dirty ? '저장' : '저장됨'}
@@ -169,7 +168,6 @@
 			</button>
 		{/each}
 	</div>
-	<p class="g-foot">매칭할 때 이 조건에 맞는 사람을 찾아요.</p>
 </div>
 
 <style>

@@ -63,19 +63,13 @@
 				<p class="lp-to to">To. {to.name}{#if to.grade}<small>{to.grade}학년</small>{/if}</p>
 			{/snippet}
 			{#snippet after()}
-				<p class="lp-from">From. 익명<small>보내면 가명이 붙어요</small></p>
+				<p class="lp-from">From. 익명</p>
 			{/snippet}
 		</LetterEditor>
 
 		<div class="foot">
-			<span class="muted">받는 사람에게는 내 이름 대신 가명으로 보여요</span>
 			<span class="num" class:over={len > MAX}>{len > MAX ? `${len - MAX}자 넘음 · ` : ''}{len}/{MAX}</span>
 		</div>
-		<ul class="rules muted">
-			<li>받는 사람은 편지로 답장하거나 채팅으로 이어갈 수 있어요. 답이 오기 전에는 3통까지 보낼 수 있고, 받는 사람은 언제든 나가거나 신고할 수 있어요.</li>
-			<li>괴롭힘으로 신고되면 운영진은 누가 보냈는지 확인할 수 있어요 (확인할 때마다 기록이 남아요).</li>
-			<li>전화번호 · 학번 · SNS 아이디는 적을 수 없어요.</li>
-		</ul>
 	</div>
 {/if}
 
@@ -99,11 +93,5 @@
 	}
 	.over {
 		color: var(--danger);
-	}
-	.rules {
-		margin: 0;
-		padding-left: 18px;
-		font-size: 12px;
-		line-height: 1.7;
 	}
 </style>

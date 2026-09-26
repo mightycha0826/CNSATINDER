@@ -56,26 +56,18 @@
 				<p class="nick">{S.profile.nickname}</p>
 			</div>
 		</section>
-		<p class="hint muted nick-hint">대화 상대에게는 이 이름으로만 보여요. 바꿀 수 없어요.</p>
 	{/if}
 
 	{#if S.me}
 		<section>
 			<h2>내 이름</h2>
 			<p class="name">{S.me.name}{#if S.me.grade}<span class="muted"> · {S.me.grade}학년</span>{/if}</p>
-			<p class="hint muted">
-				학교 명단에서 가져왔어요. 익명편지에서 친구들이 이 이름으로 나를 찾아 편지를 보낼 수 있어요
-				(설정에서 끌 수 있어요). <strong>채팅에서는 보이지 않아요.</strong>
-			</p>
 		</section>
 	{:else if needName}
 		<section>
 			<h2>내 이름</h2>
 			<input class="field" bind:value={nameDraft} maxlength="20" placeholder="실명" autocomplete="name" aria-label="내 이름" />
-			<p class="hint muted">
-				학교 명단에서 찾지 못했어요. 실명을 적어 주세요 — <strong>한 번 적으면 바꿀 수 없어요.</strong>
-				익명편지에서 이 이름으로 찾아져요. 채팅에서는 보이지 않아요.
-			</p>
+			<p class="hint muted">실명을 적어 주세요. <strong>바꿀 수 없어요.</strong></p>
 		</section>
 	{/if}
 
@@ -83,7 +75,6 @@
 		<section>
 			<h2>비밀번호 만들기</h2>
 			<PasswordFields bind:value={password} bind:valid={passwordOk} />
-			<p class="hint muted">다음부터는 학교 이메일과 이 비밀번호로 바로 들어와요.</p>
 		</section>
 	{/if}
 
@@ -103,7 +94,6 @@
 			<button class="opt" class:on={want === 'f'} onclick={() => (want = 'f')}>여자</button>
 			<button class="opt" class:on={want === 'any'} onclick={() => (want = 'any')}>상관없어요</button>
 		</div>
-		<p class="hint muted">서로의 조건이 맞을 때만 연결돼요. 설정에서 언제든 바꿀 수 있어요.</p>
 	</section>
 	{/if}
 
@@ -216,8 +206,5 @@
 		font-size: 20px;
 		font-weight: 700;
 		letter-spacing: -0.02em;
-	}
-	.nick-hint {
-		margin-top: -16px;
 	}
 </style>

@@ -187,11 +187,6 @@
 		<div class="hero">
 			<div class="big num">{minutes}:00</div>
 			<h1>모르는 사람과 {minutes}분</h1>
-			<p class="muted">
-				이름도, 학번도 묻지 않아요.<br />
-				{minutes}분이 지나면 둘 다 원할 때만 이어집니다.<br />
-				대화는 동시에 {maxRooms}개까지 할 수 있어요.
-			</p>
 		</div>
 	{/if}
 
@@ -268,11 +263,7 @@
 					/>
 				</svg>
 			</div>
-			<h2 id="push-title">새 메시지가 오면 알려 드릴까요?</h2>
-			<p class="muted">
-				앱을 닫아 두어도 상대가 보낸 메시지를 놓치지 않아요.<br />
-				알림에는 상대의 익명 이름과 메시지만 보여요.
-			</p>
+			<h2 id="push-title">새 메시지 알림을 받을까요?</h2>
 			<button class="btn" onclick={allowPush}>알림 받기</button>
 			<button class="later" onclick={doneAsking}>나중에</button>
 		</div>
@@ -291,11 +282,6 @@
 	}
 	.ask h2 {
 		font-size: 18px;
-	}
-	.ask p {
-		margin: 0 0 8px;
-		font-size: 13px;
-		line-height: 1.6;
 	}
 	.bell {
 		display: grid;
@@ -555,10 +541,5 @@
 		font-size: 18px;
 		font-weight: 700;
 		letter-spacing: -0.02em;
-	}
-	.hero p {
-		margin: 0;
-		font-size: 14px;
-		line-height: 1.7;
 	}
 </style>

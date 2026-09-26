@@ -113,10 +113,6 @@
 			{/if}
 		</section>
 	{:else}
-		<p class="hint muted">
-			찾은 사람에게 편지를 보내면, 받는 사람에게는 내 이름 대신 <b>가명</b>이 보여요.
-			받은 편지도 누가 보냈는지 알 수 없어요.
-		</p>
 
 		<div class="tabs" role="tablist">
 			<button role="tab" class:on={tab === 'received'} aria-selected={tab === 'received'} onclick={() => (LIST.tab = 'received')}>
@@ -208,15 +204,6 @@
 	}
 	.search input::placeholder {
 		color: var(--text-2);
-	}
-	.hint {
-		margin: 14px 2px 4px;
-		font-size: 13px;
-		line-height: 1.6;
-	}
-	.hint b {
-		color: var(--text);
-		font-weight: 600;
 	}
 	.empty {
 		margin: 32px 0;

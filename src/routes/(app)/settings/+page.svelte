@@ -243,7 +243,6 @@
 			{/each}
 		</div>
 	</div>
-	<p class="g-foot">버튼 · 로고 · 내 말풍선 등 앱 전체의 색이에요. 이 기기에서만 바뀌고, 상대 화면은 그대로예요.</p>
 
 	<h2 class="g-head">알림</h2>
 	<div class="g-card">
@@ -262,15 +261,11 @@
 			/>
 		</label>
 	</div>
-	<p class="g-foot">
-		{#if pushPerm === 'unsupported'}
-			이 기기에서는 알림을 받을 수 없어요. (아이폰은 iOS 16.4 이상, 홈 화면에 설치한 앱에서만)
-		{:else if pushPerm === 'denied'}
-			알림이 차단되어 있어요. 휴대폰 설정 → 알림 → CNSATINDER 에서 허용해 주세요.
-		{:else}
-			앱을 보고 있지 않을 때 새 메시지 · 공감 · 편지 댓글을 알려 줘요.
-		{/if}
-	</p>
+	{#if pushPerm === 'unsupported'}
+		<p class="g-foot">이 기기에서는 알림을 받을 수 없어요.</p>
+	{:else if pushPerm === 'denied'}
+		<p class="g-foot">휴대폰 설정에서 알림을 허용해 주세요.</p>
+	{/if}
 
 	<h2 class="g-head">매칭</h2>
 	<div class="g-card">
@@ -286,10 +281,6 @@
 			/>
 		</label>
 	</div>
-	<p class="g-foot">
-		끄면 최근에 대화한 사람과는 다시 연결되지 않아요. 켜도 상대도 켜 둔 경우에만 다시 만나고,
-		처음 보는 사람이 기다리고 있으면 그쪽이 먼저예요. 차단한 사람과는 어떤 경우에도 만나지 않아요.
-	</p>
 
 	<h2 class="g-head">편지</h2>
 	<div class="g-card">
@@ -305,10 +296,6 @@
 			/>
 		</label>
 	</div>
-	<p class="g-foot">
-		켜 두면 다른 학생이 내 이름으로 찾아 익명 편지를 보낼 수 있어요. 끄면 검색에 나오지 않고 새 편지를 받지 않아요
-		(이미 주고받던 편지는 그대로예요). 불편한 편지는 편지 화면에서 나가기 · 차단 · 신고할 수 있어요.
-	</p>
 
 	<h2 class="g-head">계정</h2>
 	<div class="g-card" id="password">
@@ -385,7 +372,6 @@
 			<span class="g-val" class:bad={S.profile?.status !== 'active'}>{S.profile?.status === 'active' ? '정상' : '제한됨'}</span>
 		</div>
 	</div>
-	<p class="g-foot">학교 이메일 앞부분과 비밀번호로 로그인해요. {S.hasPassword ? '' : '비밀번호가 아직 없어요.'}</p>
 
 	<h2 class="g-head">약관 및 정책</h2>
 	<div class="g-card">

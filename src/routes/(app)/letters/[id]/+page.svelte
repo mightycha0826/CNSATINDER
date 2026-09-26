@@ -186,11 +186,6 @@
 		{:else if !t}
 			<p class="empty muted">불러오는 중…</p>
 		{:else}
-			<p class="intro muted">
-				{t.role === 'received'
-					? '이 편지를 보낸 사람은 익명이에요. 불편하면 언제든 나가거나 신고할 수 있어요.'
-					: `${t.title}님에게는 내 이름 대신 가명이 보여요.`}
-			</p>
 			{#each t.messages as m, i (m.id)}
 				{@const turn = i > 0 && t.messages[i - 1].mine !== m.mine}
 				{#if m.letter}
@@ -218,13 +213,12 @@
 		<!-- 편지 모드 — 받은 사람이 고른다: 편지로 답장 / 채팅으로 -->
 		<div class="choose">
 			{#if myTurn}
-				<p class="muted hint">편지로 답장하거나, 채팅으로 이어갈 수 있어요</p>
 				<div class="btns">
 					<button class="btn" onclick={() => goto(`/letters/${t!.id}/write`)}>편지로 답장하기</button>
 					<button class="btn ghost" onclick={chat} disabled={switching}>채팅하기</button>
 				</div>
 			{:else}
-				<p class="muted hint">답장을 기다리고 있어요 · 상대가 편지로 답하거나 채팅을 열 수 있어요</p>
+				<p class="muted hint">답장을 기다리고 있어요</p>
 				{#if !t.wait_reply}
 					<button class="more-letter" onclick={() => goto(`/letters/${t!.id}/write`)}>한 통 더 쓰기</button>
 				{/if}
@@ -368,14 +362,6 @@
 	.empty {
 		margin: auto;
 		font-size: 14px;
-	}
-	.intro {
-		align-self: center;
-		max-width: 300px;
-		margin: 4px 0 16px;
-		font-size: 12px;
-		line-height: 1.6;
-		text-align: center;
 	}
 	.row {
 		display: flex;

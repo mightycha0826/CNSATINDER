@@ -183,10 +183,10 @@ try {
 	check('★ 약관 및 정책 = 이용약관 · 개인정보 처리방침 · 운영정책 (각각 한 줄 설명)', (await legal.count()) === 3
 		&& (await legal.locator('.legal-text > span').allInnerTexts()).join(',') === '이용약관,개인정보 처리방침,운영정책'
 		&& (await legal.locator('small').allInnerTexts()).every((t) => t.length > 0));
-	for (const [label, path, must] of [['이용약관', 'terms', '@cnsa.hs.kr'], ['개인정보 처리방침', 'privacy', '24시간 뒤'], ['운영정책', 'policy', '신고와 차단']]) {
+	for (const [label, path, must] of [['이용약관', 'terms', '@cnsa.hs.kr'], ['개인정보 처리방침', 'privacy', '24시간 뒤'], ['운영정책', 'policy', '자동으로 차단']]) {
 		await page.locator('a.legal-row', { hasText: label }).click(); await page.waitForURL(`**/settings/${path}`); await page.locator('article h1').waitFor();
 		const txt = await page.locator('article').innerText();
-		check(`★ ${label} 페이지 (제목 · 시행일 · 내용)`, (await page.locator('article h1').innerText()) === label && txt.includes('시행일') && txt.includes(must) && (await page.locator('article section').count()) >= 4);
+		check(`★ ${label} 페이지 (제목 · 시행일 · 내용)`, (await page.locator('article h1').innerText()) === label && txt.includes('시행일') && txt.includes(must) && (await page.locator('article section').count()) >= 3 && txt.length < 600, String(txt.length));
 		if (path === 'privacy') await page.screenshot({ path: `${SP}/legal-privacy.png` });
 		await page.locator('button.back').click(); await page.waitForURL(/\/settings$/); await page.locator('a.legal-row').first().waitFor();
 	}

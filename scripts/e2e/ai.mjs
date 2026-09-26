@@ -46,7 +46,7 @@ try {
 	check('AI 라는 표시 (머리글 · 안내)', (await page.locator('.ai .tag').innerText()).trim() === 'AI' && (await page.locator('.ai header').innerText()).includes('사람이 아니에요'));
 	check('찾는 중 표시', (await page.locator('.seeking').innerText()).includes('상대를 찾는 중'));
 	check('첫 인사는 AI 가 먼저', (await bubbles())[0]?.includes('저는 CNSATINDER 의 AI'));
-	check('저장되지 않는다는 안내', (await page.locator('.fine').innerText()).includes('저장되지 않아요'));
+	check('AI 라는 안내 한 줄', (await page.locator('.fine').innerText()).includes('틀린 말'));
 	await page.locator('textarea').fill('안녕 반가워');
 	await page.keyboard.press('Enter');
 	check('답 기다리는 동안 입력 중 표시', (await page.locator('.ai .typing').count()) === 1);

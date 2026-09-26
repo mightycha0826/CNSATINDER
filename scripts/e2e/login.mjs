@@ -63,7 +63,7 @@ try {
 		await page.getByRole('button', { name: '인증 코드 받기' }).click();
 		await page.getByPlaceholder('인증 코드').waitFor();
 		check('★ 비밀번호 찾기는 새 계정을 만들지 않는다 (create_user=false)', log.otp.at(-1)?.create_user === false, JSON.stringify(log.otp.at(-1)));
-		check('★ 없는 계정이어도 똑같이 "발송" 화면 (가입 여부 비노출)', await page.getByText('인증 코드 발송 완료').isVisible());
+		check('★ 없는 계정이어도 똑같이 "발송" 화면 (가입 여부 비노출)', await page.getByText('인증 코드를 보냈어요').isVisible());
 
 		await page.getByRole('button', { name: '로그인으로 돌아가기' }).click();
 		await page.getByRole('button', { name: '비밀번호를 잊었어요' }).click();

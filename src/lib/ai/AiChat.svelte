@@ -201,7 +201,7 @@
 				<button class="send" onclick={send} disabled={!draft.trim() || sending}>보내기</button>
 			</div>
 			<p class="fine muted">
-				AI 는 틀린 말을 할 수 있어요 · 대화 내용은 저장되지 않아요{#if chat} · <span class="num">{turns}/{chat.maxTurns}</span>{/if}
+				AI 는 틀린 말을 할 수 있어요{#if chat} · <span class="num">{turns}/{chat.maxTurns}</span>{/if}
 			</p>
 		</div>
 	{:else if phase === 'ended'}

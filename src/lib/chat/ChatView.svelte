@@ -684,14 +684,13 @@
 				<div class="sys">
 					{room.snap?.partner_joined
 						? '상대가 들어와 있어요. 곧 시작해요'
-						: '상대가 들어오기를 기다리고 있어요. 둘 다 들어오면 시간이 흐르기 시작해요'}
+						: '상대를 기다리는 중'}
 				</div>
 			{/if}
 
 			{#if closed}
 				<div class="ended">
 					<p>{endedText}</p>
-					<p class="muted small">이 대화는 이 화면을 떠나면 다시 볼 수 없어요.</p>
 					<button class="btn" onclick={backToSeek}>새 대화 찾기</button>
 					<button class="btn-ghost" onclick={() => goBack('/')}>대화 목록</button>
 					{#if !room.reported}
@@ -763,14 +762,11 @@
 			<button class="item" onclick={() => openSheet('leave')}>대화 나가기</button>
 			<button class="item" onclick={() => (sheet = null)}>취소</button>
 		{:else if sheet === 'leave'}
-			<p class="warn">나가면 이 대화는 두 사람 모두에게서 끝나고<br />다시 볼 수 없어요.</p>
+			<p class="warn">나가면 대화가 끝나요.</p>
 			<button class="item danger" onclick={leave}>나가기</button>
 			<button class="item" onclick={() => (sheet = null)}>취소</button>
 		{:else if sheet === 'block'}
-			<p class="warn">
-				차단하면 대화가 바로 끝나고 <strong>다시는 이 사람과 연결되지 않아요.</strong><br />
-				상대에게는 차단했다는 사실이 알려지지 않아요.
-			</p>
+			<p class="warn">차단하면 다시 연결되지 않아요.</p>
 			<button class="item danger" onclick={block} disabled={acting}>차단하기</button>
 			<button class="item" onclick={() => (sheet = null)}>취소</button>
 		{:else if sheet === 'report'}
@@ -778,7 +774,7 @@
 				bind:reason={reportReason}
 				bind:note={reportNote}
 				title="무엇이 문제였나요?"
-				intro="신고하면 대화가 끝나고 자동으로 차단돼요. 대화 내용은 운영진만 확인하고, 상대는 누가 신고했는지 알 수 없어요."
+				intro="신고하면 자동으로 차단돼요."
 			/>
 			<button class="item danger" onclick={report} disabled={!reportReason || acting}>
 				{acting ? '신고하는 중…' : '신고하기'}
@@ -1202,11 +1198,6 @@
 		margin: 0;
 		font-size: 14px;
 		font-weight: 600;
-	}
-	.ended .small {
-		font-size: 12px;
-		font-weight: 400;
-		margin-bottom: 8px;
 	}
 
 	/* ── 입력창 ── */
