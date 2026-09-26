@@ -143,6 +143,49 @@ try {
 	check('누르면 바로 닫힘', (await page.locator('.match').count()) === 0);
 	await page.goto(U('/dev/chat?s=chat')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(300);
 	check('평소에 들어가면 안 뜸', (await page.locator('.match').count()) === 0);
+
+	console.log('[메시지 삭제]');
+	await page.goto(U('/dev/chat?s=chat')); await bubble('아직이요').waitFor(); await page.waitForTimeout(300);
+	await bubble('안녕하세요!').click({ button: 'right' }); await page.waitForTimeout(200);
+	check('상대 말에는 "삭제" 없음', (await page.getByRole('menuitem', { name: '삭제' }).count()) === 0);
+	await page.keyboard.press('Escape'); await page.waitForTimeout(150);
+	await bubble('아직이요').click({ button: 'right' }); await page.waitForTimeout(200);
+	check('내 말에는 "삭제"', (await page.getByRole('menuitem', { name: '삭제' }).count()) === 1);
+	await page.getByRole('menuitem', { name: '삭제' }).click(); await page.waitForTimeout(400);
+	check('★ 지우면 "삭제했습니다" 알림', await page.getByText('삭제했습니다').isVisible());
+	const gone = page.locator('.bubble.deleted');
+	check('★ 말풍선은 "삭제된 메시지입니다" (흐리게)', (await gone.count()) === 1 && (await gone.innerText()).includes('삭제된 메시지입니다') && !(await page.locator('.list').innerText()).includes('아직이요'));
+	await page.screenshot({ path: `${SP}/feat-7-deleted.png` });
+	await gone.click({ button: 'right' }); await page.waitForTimeout(200);
+	check('지운 말은 다시 메뉴가 안 뜬다', (await page.locator('.rx-pick').count()) === 0);
+
+	console.log('[둘 다 볼 때만 시간]');
+	await page.goto(U('/dev/chat?s=paused')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(300);
+	const t1 = await page.locator('.timer').innerText();
+	await page.waitForTimeout(2200);
+	const t2 = await page.locator('.timer').innerText();
+	check('★ 멈춘 동안 시간이 줄지 않는다 (5:00 그대로 · 멈춤 표시)', t1 === t2 && t1.includes('5:00') && (await page.locator('.timer .pause-ic').count()) === 1 && (await page.locator('.paused-bar').isVisible()), `${t1} → ${t2}`);
+	await page.screenshot({ path: `${SP}/feat-8-paused.png` });
+	await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+	await page.waitForTimeout(200);
+	await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
+	await page.waitForTimeout(200);
+	const views = await page.evaluate(() => window.__views ?? []);
+	check('★ 앱을 내리면 "안 봄", 돌아오면 "봄"을 서버에 알린다', JSON.stringify(views.slice(-2)) === '[false,true]', JSON.stringify(views));
+	await page.goto(U('/dev/chat?s=chat')); await bubble('안녕하세요!').waitFor();
+	const a1 = await page.locator('.timer').innerText(); await page.waitForTimeout(2200);
+	check('둘 다 보고 있으면 평소처럼 흐른다', a1 !== (await page.locator('.timer').innerText()) && (await page.locator('.timer .pause-ic').count()) === 0);
+
+	console.log('[연장 힌트]');
+	await page.goto(U('/dev/chat?s=hints')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(300);
+	check('★ 공개된 상대 힌트: 학년 · 성씨', (await page.locator('.hint-chip').allInnerTexts()).map((x) => x.replace(/\s+/g, '')).join(',') === '학년2학년,성씨김씨', JSON.stringify(await page.locator('.hint-chip').allInnerTexts()));
+	check('연장 배너: "연장하면 서로의 동아리 공개" · 내 동아리 적는 칸', (await page.locator('.extend').innerText()).includes('서로의 동아리 공개') && (await page.getByRole('textbox', { name: '내 동아리' }).count()) === 1);
+	await page.screenshot({ path: `${SP}/feat-9-hints.png` });
+	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
+	check('★ 동아리를 안 적으면 연장이 안 된다', (await page.evaluate(() => (window.__votes ?? []).length)) === 0 && (await page.getByText('동아리을(를) 적어 주세요').isVisible()));
+	await page.getByRole('textbox', { name: '내 동아리' }).fill('밴드부');
+	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
+	check('★ 적고 연장하면 그 값과 함께 투표', JSON.stringify(await page.evaluate(() => window.__votes)) === '[{"agree":true,"hint":"밴드부"}]', JSON.stringify(await page.evaluate(() => window.__votes)));
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
 } finally { await browser.close(); vite.kill(); try { execSync("pkill -f 'vite dev --port 5192'"); } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`);

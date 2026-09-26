@@ -24,6 +24,8 @@ const BG_RECREATE_MS = 10_000;
  * 실서버 E2E 에서 10건 중 1건이 2초 안에 오지 않은 적이 있어서 추가했다.
  */
 const SAFETY_SYNC_MS = 45_000;
+/** "보고 있음" 신호 간격 — 서버는 25초 동안 보고 있는 것으로 친다 (Phase 28) */
+const VIEW_PING_MS = 10_000;
 
 /**
  * 대화방 하나의 상태 전부.
@@ -94,9 +96,25 @@ export class ChatRoom {
 			// 연결돼 있고 화면을 보고 있을 때만 — 백그라운드는 복귀 시 resync 가 처리한다
 			if (this.connected && !this.closed && document.visibilityState === 'visible') void this.#lightSync();
 		}, this.#safetyMs);
+		// "보고 있음" 신호 — 둘 다 이 화면을 보고 있을 때만 시간이 흐른다 (Phase 28)
+		this.#viewTimer = setInterval(() => {
+			if (!this.closed && document.visibilityState === 'visible') void this.#view(true);
+		}, VIEW_PING_MS);
+	}
+
+	#viewTimer: ReturnType<typeof setInterval> | null = null;
+	async #view(on: boolean) {
+		try {
+			const s = await this.#t.view?.(this.roomId, on);
+			if (s && !this.#disposed) this.#absorb(s);
+		} catch {
+			/* Phase 28 전 DB · 네트워크 — 시간은 예전처럼 흐른다 */
+		}
 	}
 
 	dispose() {
+		if (!this.#disposed && !this.closed) void this.#t.view?.(this.roomId, false).catch(() => {}); // 떠났다 → 상대 쪽 시간도 멈춘다
+		if (this.#viewTimer) clearInterval(this.#viewTimer);
 		this.#disposed = true;
 		this.#t.disconnect();
 		if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
@@ -160,8 +178,10 @@ export class ChatRoom {
 	#visibility() {
 		if (document.visibilityState !== 'visible') {
 			this.#hiddenAt = Date.now();
+			if (!this.closed) void this.#view(false); // 앱을 내렸다 → 시간 멈춤
 			return;
 		}
+		if (!this.closed) void this.#view(true);
 		if (this.#hiddenAt && Date.now() - this.#hiddenAt > BG_RECREATE_MS) this.#reconnectNow();
 		else void this.resync();
 	}
@@ -230,9 +250,15 @@ export class ChatRoom {
 			s.partner_vote = null;
 		}
 		if (wasPending && r.status === 'active') s.partner_joined = true;
+		// 새 라운드(힌트 공개) · 시간이 멈추거나 다시 흐름 — 행에는 남은 시간 · 힌트가 없으니 스냅샷을 다시 받는다
+		const paused = r.paused_left != null || Number.isNaN(Date.parse(r.expires_at));
+		if (r.round !== s.round || paused || !!s.paused !== paused) void this.#lightSync();
 		s.status = r.status;
 		s.round = r.round;
-		s.expires_at = r.expires_at;
+		if (!paused) {
+			s.expires_at = r.expires_at;
+			s.paused = false;
+		}
 		s.close_reason = r.close_reason;
 		s.their_read_id = s.my_seat === 1 ? r.read2 : r.read1;
 		if (r.status === 'closed') this.#t.disconnect();
@@ -248,17 +274,30 @@ export class ChatRoom {
 	// ── 타임박스 ─────────────────────────────────────────────────
 	voting = $state(false);
 
-	async vote(agree: boolean): Promise<VoteResult | null> {
+	/** hint = 동아리 · 디플로마 차례에 연장하면서 적은 내 값 */
+	async vote(agree: boolean, hint: string | null = null): Promise<VoteResult | null> {
 		if (!this.snap || this.voting) return null;
 		this.voting = true;
 		try {
-			const { result, snap } = await this.#t.vote(this.roomId, agree);
+			const { result, snap } = await this.#t.vote(this.roomId, agree, hint);
 			this.#absorb(snap);
 			return result;
 		} catch {
 			return null;
 		} finally {
 			this.voting = false;
+		}
+	}
+
+	/** 내가 보낸 메시지 지우기 — 서버가 지우면 바로 화면에도 (상대에게는 실시간 UPDATE 로) */
+	async deleteMessage(m: Msg): Promise<'ok' | 'closed' | 'not_found' | null> {
+		if (m.id == null) return null;
+		try {
+			const r = await this.#t.deleteMessage(m.id);
+			if (r === 'ok') this.upsert({ client_msg_id: m.client_msg_id, deleted_at: new Date(this.serverNow()).toISOString(), body: '삭제된 메시지입니다' }, 'sent');
+			return r;
+		} catch {
+			return null;
 		}
 	}
 
@@ -325,6 +364,11 @@ export class ChatRoom {
 			if (row.id != null) prev.id = row.id;
 			if (row.created_at) prev.created_at = row.created_at;
 			prev.state = prev.id != null ? 'sent' : state;
+			// 보낸 사람이 지웠다 (실시간 UPDATE · 다시 읽기) — 되살리지는 않는다
+			if (row.deleted_at && !prev.deleted_at) {
+				prev.deleted_at = row.deleted_at;
+				prev.body = row.body ?? prev.body;
+			}
 		} else {
 			const m: Msg = {
 				id: row.id ?? null,
@@ -334,6 +378,7 @@ export class ChatRoom {
 				client_msg_id: row.client_msg_id,
 				created_at: row.created_at ?? new Date(this.serverNow()).toISOString(),
 				reply_to: row.reply_to ?? null,
+				deleted_at: row.deleted_at ?? null,
 				state: row.id != null ? 'sent' : state
 			};
 			this.msgs.push(m);

@@ -3,7 +3,7 @@
 	 * 개발 전용 — 대화방 화면 미리보기. Supabase 없이 가짜 전송 계층으로 상태를 재현한다.
 	 * 연장 배너처럼 실계정으로는 8분 넘게 기다려야 보이는 화면을 바로 확인하기 위한 것.
 	 *
-	 *   /dev/chat?s=chat | fresh | vote | waiting | pending | ended   (&sheet=menu|report|block|profile 로 시트 열기, &matched 로 연결 화면, &incoming 으로 상대 새 메시지)
+	 *   /dev/chat?s=chat | fresh | vote | waiting | pending | ended | paused | hints   (&sheet=menu|report|block|profile 로 시트 열기, &matched 로 연결 화면, &incoming 으로 상대 새 메시지)
 	 *
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
@@ -44,7 +44,23 @@
 		vote: { expires_at: sec(72), partner_vote: true },
 		waiting: { expires_at: sec(48), my_vote: true },
 		pending: { status: 'pending', expires_at: sec(47), partner_joined: false, their_read_id: null },
-		ended: { status: 'closed', close_reason: 'expired', expires_at: sec(-1) }
+		ended: { status: 'closed', close_reason: 'expired', expires_at: sec(-1) },
+		// 상대가 화면을 안 보고 있어 시간이 멈춤 (Phase 28) — 남은 5:00 그대로
+		paused: { paused: true, expires_at: sec(300) },
+		// 두 번 연장해 학년 · 성씨가 공개됐고, 다음(동아리)은 연장할 때 직접 적는 차례
+		hints: {
+			round: 3,
+			expires_at: sec(70),
+			partner_hints: [
+				{ kind: 'grade', label: '학년', value: '2학년' },
+				{ kind: 'surname', label: '성씨', value: '김씨' }
+			],
+			my_hints: [
+				{ kind: 'grade', label: '학년', value: '1학년' },
+				{ kind: 'surname', label: '성씨', value: '박씨' }
+			],
+			next_hint: { kind: 'club', label: '동아리', typed: true }
+		}
 	};
 
 	let id = 0;
@@ -133,7 +149,11 @@
 		async closeIfExpired() {
 			return this.#s();
 		}
-		async vote(_r: string, agree: boolean) {
+		votes: { agree: boolean; hint: string | null }[] = [];
+		async vote(_r: string, agree: boolean, hint: string | null = null) {
+			this.votes.push({ agree, hint });
+			(window as unknown as { __votes: unknown }).__votes = this.votes;
+			if (agree && this.snap.next_hint?.typed && !hint?.trim()) return { result: 'need_hint' as const, snap: this.#s() };
 			this.snap = agree
 				? { ...this.snap, my_vote: true }
 				: { ...this.snap, status: 'closed', close_reason: 'declined' };
@@ -152,6 +172,20 @@
 			return this.#s();
 		}
 		async markRead() {}
+		views: boolean[] = [];
+		async view(_r: string, on: boolean) {
+			this.views.push(on);
+			(window as unknown as { __views: unknown }).__views = this.views;
+			return this.#s();
+		}
+		async deleteMessage(id: number) {
+			if (this.snap.status === 'closed') return 'closed' as const;
+			const row = this.rows.find((x) => x.id === id);
+			if (!row || row.sender_seat !== 1) return 'not_found' as const;
+			Object.assign(row, { body: '삭제된 메시지입니다', deleted_at: new Date().toISOString() });
+			setTimeout(() => this.h?.onMessage({ ...row }), 80); // 실시간 UPDATE 에코
+			return 'ok' as const;
+		}
 		// 공감 — 상대가 내 메시지 하나에 ❤️ 를 달아 둔 상태로 시작. 내 공감은 실시간처럼 조금 뒤 에코된다.
 		reactions: ReactionRow[] = this.rows
 			.filter((x) => x.sender_seat === 1 && x.body.startsWith('실리카겔'))

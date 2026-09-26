@@ -8,6 +8,8 @@ export type MsgRow = {
 	created_at: string;
 	/** 답장 대상 (같은 방의 메시지 id) — Phase 18. 예전 행·가짜 전송에서는 없을 수 있다 */
 	reply_to?: number | null;
+	/** 보낸 사람이 지웠다 (Phase 28) — body 는 "삭제된 메시지입니다" */
+	deleted_at?: string | null;
 };
 
 export type MsgState = 'sending' | 'sent' | 'failed' | 'rate_limited';
@@ -26,7 +28,12 @@ export type RoomRow = {
 	alias2: string;
 	read1: number | null;
 	read2: number | null;
+	/** 멈춰 있으면 남은 시간 (Phase 28) — 그동안 expires_at 은 'infinity' */
+	paused_left?: string | null;
 };
+
+/** 연장할 때마다 서로 하나씩 공개되는 힌트 (Phase 28) */
+export type Hint = { kind: 'grade' | 'surname' | 'club' | 'diploma'; label: string; value: string };
 
 /** room_snapshot() RPC 응답 — 클라가 방에 대해 아는 모든 것. */
 export type RoomSnap = {
@@ -51,12 +58,18 @@ export type RoomSnap = {
 	their_read_id: number | null;
 	close_reason: string | null;
 	server_now: string;
+	/** 한쪽이라도 대화 화면을 안 보고 있어 시간이 멈춤 (Phase 28 전 DB 면 없다) — expires_at - server_now = 남은 시간 */
+	paused?: boolean;
+	/** 지금까지 공개된 상대 · 내 힌트, 다음 연장 때 공개될 힌트 (typed = 연장할 때 직접 적는다) */
+	partner_hints?: Hint[];
+	my_hints?: Hint[];
+	next_hint?: { kind: Hint['kind']; label: string; typed: boolean } | null;
 };
 
 /** extension_votes 행 — seat 만 있고 사용자 식별자는 없다 */
 export type VoteRow = { room_id: string; round: number; seat: 1 | 2; agree: boolean };
 
-export type VoteResult = 'waiting' | 'extended' | 'declined' | 'expired' | 'closed' | 'too_early' | 'max_rounds';
+export type VoteResult = 'waiting' | 'extended' | 'declined' | 'expired' | 'closed' | 'too_early' | 'max_rounds' | 'need_hint';
 
 /** 대화 상대의 기본 정보 — partner_profile(room) 응답. ★ uuid·성별·선호는 없다. */
 export type PartnerProfile = {

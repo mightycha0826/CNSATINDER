@@ -80,8 +80,9 @@
 	const elapsed = $derived(seeker.seeking ? mmss(Math.floor((S.now - seeker.since) / 1000)) : '');
 
 	function remain(r: InboxRoom) {
-		const ms = Math.max(0, Date.parse(r.expires_at) - (S.now + inbox.skew));
-		return { text: mmss(Math.ceil(ms / 1000)), urgent: ms <= 60_000 };
+		// 멈춘 방은 불러온 때의 남은 시간 그대로 (둘 다 대화 화면을 볼 때만 흐른다)
+		const ms = Math.max(0, Date.parse(r.expires_at) - (r.paused ? inbox.serverAt : S.now + inbox.skew));
+		return { text: mmss(Math.ceil(ms / 1000)), urgent: !r.paused && ms <= 60_000 };
 	}
 
 	// ── 알림 권한 — 처음 한 번 묻는다 ──
@@ -171,7 +172,7 @@
 						</span>
 						<span class="right">
 							{#if r.status === 'active'}
-								<span class="time num" class:urgent={t.urgent}>{t.text}</span>
+								<span class="time num" class:urgent={t.urgent} class:paused={r.paused}>{t.text}</span>
 							{/if}
 							{#if r.unread > 0}
 								<span class="badge num">{r.unread > 99 ? '99+' : r.unread}</span>
@@ -489,6 +490,9 @@
 	.time {
 		font-size: 12px;
 		color: var(--text-2);
+	}
+	.time.paused {
+		opacity: 0.5;
 	}
 	.time.urgent {
 		color: var(--danger);

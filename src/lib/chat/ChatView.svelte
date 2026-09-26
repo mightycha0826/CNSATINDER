@@ -53,10 +53,16 @@
 
 	// ── 시간 ─────────────────────────────────────────────────────
 	// 클라 시계 대신 서버 시계 기준 (skew 보정). 판정은 서버가 한다 — 여기는 표시용.
+	// 한쪽이라도 대화 화면을 안 보고 있으면 시간이 멈춘다 (Phase 28) — 멈춘 동안은 남은 시간 그대로
+	const paused = $derived(!!room?.snap?.paused && room.snap.status === 'active');
 	const remainMs = $derived(
-		room?.snap ? Math.max(0, Date.parse(room.snap.expires_at) - room.serverNow(S.now)) : 0
+		!room?.snap
+			? 0
+			: paused
+				? Math.max(0, Date.parse(room.snap.expires_at) - Date.parse(room.snap.server_now))
+				: Math.max(0, Date.parse(room.snap.expires_at) - room.serverNow(S.now))
 	);
-	const timeUp = $derived(!!room?.snap && room.snap.status !== 'closed' && remainMs <= 0);
+	const timeUp = $derived(!!room?.snap && room.snap.status !== 'closed' && !paused && remainMs <= 0);
 	const mmss = $derived(fmtClock(Math.ceil(remainMs / 1000), true));
 	const urgent = $derived(remainMs > 0 && remainMs <= 60_000);
 	const closed = $derived(room?.closed ?? false);
@@ -77,15 +83,23 @@
 	const voteOpen = $derived(
 		!!snap &&
 			snap.status === 'active' &&
+			!paused &&
 			remainMs > 0 &&
 			remainMs <= snap.vote_window_sec * 1000 &&
 			canExtendMore
 	);
 
+	// 연장할 때마다 서로 힌트 하나 (학년 → 성씨 → 동아리 → 디플로마). 동아리 · 디플로마는 연장하면서 직접 적는다
+	const nextHint = $derived(snap?.next_hint ?? null);
+	const partnerHints = $derived(snap?.partner_hints ?? []);
+	let hintDraft = $state('');
 	async function vote(agree: boolean) {
 		if (!room) return;
-		const r = await room.vote(agree);
-		if (r === 'too_early') toast('연장은 마감 직전부터 가능해요');
+		const typed = agree && !!nextHint?.typed;
+		if (typed && !hintDraft.trim()) return toast(`${nextHint!.label}을(를) 적어 주세요`);
+		const r = await room.vote(agree, typed ? hintDraft.trim() : null);
+		if (r === 'need_hint') toast(`${nextHint?.label ?? '힌트'}을(를) 다시 적어 주세요`);
+		else if (r === 'too_early') toast('연장은 마감 직전부터 가능해요');
 		else if (r === 'max_rounds') toast('더 이상 연장할 수 없어요');
 		else if (r === null) toast('연결을 확인해 주세요');
 	}
@@ -349,8 +363,8 @@
 	// ── 공감 ─────────────────────────────────────────────────────
 	// 두 번 톡 = ❤️ (다시 두 번 톡이면 취소), 길게 누르기(데스크톱은 오른쪽 클릭) = 공감 고르기 + 복사.
 	// 말풍선은 글자 선택을 막는다 — 길게 누르면 iOS 가 글자를 잡아 버려서. 대신 고르기 줄에 "복사".
-	const canReact = (m: Msg) => !locked && m.id != null && m.sender_seat !== 0 && m.state === 'sent';
-	type Picker = { id: number; body: string; react: boolean; top: number; left: number | null; right: number | null };
+	const canReact = (m: Msg) => !locked && m.id != null && m.sender_seat !== 0 && m.state === 'sent' && !m.deleted_at;
+	type Picker = { id: number; body: string; react: boolean; del: boolean; top: number; left: number | null; right: number | null };
 	let picker = $state<Picker | null>(null);
 	const PICK_H = 48;
 
@@ -367,13 +381,15 @@
 			id: m.id,
 			body: m.body,
 			react: canReact(m),
+			// 내가 보낸 말은 대화가 끝나기 전까지 지울 수 있다 (Phase 28)
+			del: mineSide && !m.deleted_at && m.state === 'sent' && !closed,
 			top,
 			left: mineSide ? null : Math.max(8, r.left),
 			right: mineSide ? Math.max(8, window.innerWidth - r.right) : null
 		};
 	}
 	function openPicker(m: Msg, bubble: Element | null) {
-		if (m.id == null || !bubble) return;
+		if (m.id == null || !bubble || m.deleted_at) return;
 		pickerAnchor = { m, el: bubble };
 		placePicker(m, bubble);
 		navigator.vibrate?.(10);
@@ -454,6 +470,16 @@
 		setTimeout(() => flashId === id && (flashId = null), 1200);
 	}
 
+	async function del() {
+		const m = picker ? byId.get(picker.id) : undefined;
+		picker = null;
+		if (!m || !room) return;
+		const r = await room.deleteMessage(m);
+		if (r === 'ok') toast('삭제했습니다');
+		else if (r === 'closed') toast('끝난 대화는 지울 수 없어요');
+		else toast('지우지 못했어요');
+	}
+
 	async function copy() {
 		const text = picker?.body ?? '';
 		picker = null;
@@ -522,7 +548,9 @@
 				</span>
 			</button>
 			{#if !closed}
-				<span class="timer num" class:urgent class:dim={pending}>{mmss}</span>
+				<span class="timer num" class:urgent={urgent && !paused} class:dim={pending || paused} aria-label={paused ? `멈춤 ${mmss}` : mmss}
+					>{#if paused}<svg class="pause-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>{/if}{mmss}</span
+				>
 				<button class="more" onclick={() => openSheet('menu')} aria-label="메뉴">
 					<svg viewBox="0 0 24 24" aria-hidden="true">
 						<circle cx="5" cy="12" r="1.6" fill="currentColor" />
@@ -533,6 +561,15 @@
 			{/if}
 		{/if}
 	</header>
+
+	{#if partnerHints.length && !closed}
+		<div class="hints" aria-label="공개된 힌트">
+			{#each partnerHints as h (h.kind)}<span class="hint-chip"><small>{h.label}</small>{h.value}</span>{/each}
+		</div>
+	{/if}
+	{#if paused && !pending && !closed}
+		<div class="paused-bar">둘 다 보고 있을 때만 시간이 흘러요</div>
+	{/if}
 
 	{#if partnerGone && !voteOpen}
 		<div class="extend">
@@ -557,11 +594,16 @@
 					<strong>{snap.extend_minutes}분 더 얘기할까요?</strong>
 					{#if snap.partner_vote === true}
 						<span class="want">상대가 연장을 원해요</span>
+					{:else if nextHint}
+						<span>연장하면 서로의 {nextHint.label} 공개</span>
 					{:else}
 						<span>둘 다 원해야 이어져요</span>
 					{/if}
 				{/if}
 			</div>
+			{#if snap.my_vote !== true && nextHint?.typed}
+				<input class="hint-in" bind:value={hintDraft} maxlength="20" placeholder="내 {nextHint.label}" aria-label="내 {nextHint.label}" />
+			{/if}
 			{#if snap.my_vote !== true}
 				<div class="acts">
 					<button class="no" onclick={() => vote(false)} disabled={room?.voting}>그만하기</button>
@@ -643,6 +685,7 @@
 								class:first={p.first}
 								class:last={p.last}
 								class:sending={m.state === 'sending'}
+								class:deleted={!!m.deleted_at}
 								class:failed={m.state === 'failed' || m.state === 'rate_limited'}
 								onclick={() => (m.state === 'failed' || m.state === 'rate_limited') && room?.retry(m)}
 								onpointerdown={(e) => press.down(e, m)}
@@ -746,6 +789,7 @@
 		onpick={(k) => doReact(picker!.id, k)}
 		onreply={() => startReply()}
 		oncopy={copy}
+		ondelete={picker.del ? del : undefined}
 		onclose={() => (picker = null)}
 	/>
 {/if}
@@ -839,6 +883,58 @@
 		font-size: 15px;
 		font-weight: 600;
 	}
+	.timer .pause-ic {
+		width: 12px;
+		height: 12px;
+		margin-right: 3px;
+		vertical-align: -1px;
+	}
+	.hints {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		padding: 8px var(--pad);
+		border-bottom: 1px solid var(--line);
+	}
+	.hint-chip {
+		display: inline-flex;
+		align-items: baseline;
+		gap: 5px;
+		padding: 4px 10px;
+		border-radius: 999px;
+		background: var(--field);
+		font-size: 13px;
+		font-weight: 600;
+	}
+	.hint-chip small {
+		font-size: 11px;
+		font-weight: 500;
+		color: var(--text-2);
+	}
+	.paused-bar {
+		padding: 6px var(--pad);
+		border-bottom: 1px solid var(--line);
+		color: var(--text-2);
+		font-size: 12px;
+		text-align: center;
+	}
+	/* 동아리 · 디플로마 적는 칸 — 배너 아래 한 줄 전체 */
+	.hint-in {
+		order: 3;
+		flex-basis: 100%;
+		width: 100%;
+		margin-top: -2px;
+		padding: 9px 12px;
+		border: 1px solid var(--line);
+		border-radius: 10px;
+		background: var(--bg);
+		color: var(--text);
+		font-size: 14px;
+	}
+	.bubble.deleted {
+		font-style: italic;
+		opacity: 0.55;
+	}
 	.timer.urgent {
 		color: var(--danger);
 	}
@@ -860,6 +956,7 @@
 	/* ── 연장 배너 ── */
 	.extend {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: 12px;
 		padding: 10px var(--pad);

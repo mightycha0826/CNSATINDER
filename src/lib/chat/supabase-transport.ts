@@ -20,19 +20,21 @@ import type {
 // ★ select('*') 금지 — 항상 명시 컬럼
 const BASE_COLS = 'id, room_id, sender_seat, body, client_msg_id, created_at';
 /**
- * reply_to(답장, Phase 18)는 schema.sql 을 반영하기 전 DB 에는 없다. 그 상태로 앱이 먼저 배포돼도
- * 채팅 전체가 멈추지 않게, "없는 열" 오류가 한 번 나면 이 기기에서는 옛 열만 쓴다 (답장 표시만 빠진다).
+ * 나중에 생긴 열 — reply_to(답장, Phase 18) · deleted_at(삭제, Phase 28)은 schema.sql 을 반영하기 전 DB 에는 없다.
+ * 그 상태로 앱이 먼저 배포돼도 채팅 전체가 멈추지 않게, "없는 열" 오류가 나면 이 기기에서는 그 열을 빼고 쓴다.
  */
-let hasReplyCol = true;
-const msgCols = () => (hasReplyCol ? `${BASE_COLS}, reply_to` : BASE_COLS);
-const missingReplyCol = (e: { message?: string } | null) => !!e && hasReplyCol && /reply_to/.test(e.message ?? '');
+const optCols = new Set(['reply_to', 'deleted_at']);
+const msgCols = () => [BASE_COLS, ...optCols].join(', ');
+const missingCol = (e: { message?: string } | null) => [...optCols].find((c) => !!e && new RegExp(c).test(e.message ?? ''));
 
-/** 메시지 조회·저장 — reply_to 열이 없는 DB 면 한 번 더 옛 열로 */
+/** 메시지 조회·저장 — 없는 열이 있는 DB 면 그 열을 빼고 다시 */
 async function withMsgCols<T extends { error: { message?: string } | null }>(run: (cols: string) => PromiseLike<T>): Promise<T> {
-	const r = await run(msgCols());
-	if (!missingReplyCol(r.error)) return r;
-	hasReplyCol = false;
-	return run(msgCols());
+	let r = await run(msgCols());
+	for (let c = missingCol(r.error); c; c = missingCol(r.error)) {
+		optCols.delete(c);
+		r = await run(msgCols());
+	}
+	return r;
 }
 const REACTION_COLS = 'message_id, room_id, seat, emoji';
 
@@ -69,8 +71,11 @@ export class SupabaseTransport implements ChatTransport {
 
 		ch.on(
 			'postgres_changes',
-			{ event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
-			(p) => h.onMessage(p.new as MsgRow)
+			// INSERT = 새 메시지, UPDATE = 보낸 사람이 지움 (Phase 28)
+			{ event: '*', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
+			(p) => {
+				if (p.new && 'client_msg_id' in p.new) h.onMessage(p.new as MsgRow);
+			}
 		)
 			.on(
 				'postgres_changes',
@@ -202,10 +207,22 @@ export class SupabaseTransport implements ChatTransport {
 		return this.#rpcSnap('leave_room', { p_room: roomId, p_skip: skip });
 	}
 
-	async vote(roomId: string, agree: boolean) {
-		const { data, error } = await supabase.rpc('vote_extension', { p_room: roomId, p_agree: agree });
+	async vote(roomId: string, agree: boolean, hint: string | null = null) {
+		// 힌트는 적을 차례일 때만 보낸다 (Phase 28 전 DB 에는 p_hint 가 없다)
+		const args = hint ? { p_room: roomId, p_agree: agree, p_hint: hint } : { p_room: roomId, p_agree: agree };
+		const { data, error } = await supabase.rpc('vote_extension', args);
 		if (error) throw error;
 		return data as { result: VoteResult; snap: RoomSnap };
+	}
+
+	view(roomId: string, on: boolean) {
+		return this.#rpcSnap('room_view', { p_room: roomId, p_on: on });
+	}
+
+	async deleteMessage(messageId: number) {
+		const { data, error } = await supabase.rpc('delete_message', { p_msg: messageId });
+		if (error) throw error;
+		return (data as { status: 'ok' | 'closed' | 'not_found' }).status;
 	}
 
 	async report(roomId: string, reason: ReportReason, note: string) {

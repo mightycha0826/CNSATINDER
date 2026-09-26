@@ -5068,3 +5068,456 @@ begin
   end loop;
 end
 $do$;
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 28 — 랜덤 채팅: 메시지 삭제 · 둘 다 볼 때만 흐르는 시간 · 연장 힌트
+--
+--  1) 메시지 삭제 — 내가 보낸 말만, 대화가 끝나기 전까지. 둘 다에게 "삭제된 메시지입니다"로 보인다.
+--     원문은 private.deleted_messages 에 남겨 신고 증거로만 쓴다 (학생은 읽을 수 없다). 방이 지워질 때 같이 지워진다.
+--  2) 시간 — 둘 다 대화 화면을 보고 있을 때만 줄어든다. 화면을 보고 있는 동안 앱이 10초마다 room_view 를 부르고
+--     (room_members.viewing_until), 한쪽이라도 끊기면 남은 시간을 rooms.paused_left 에 얼려 둔다 (그동안 expires_at = infinity
+--     → "아직 안 끝남"으로 보이는 기존 판정이 그대로 맞는다). 둘 다 돌아오면 expires_at = now() + paused_left.
+--     하루 넘게 멈춰 있던 대화는 스위퍼가 닫는다 (동시 대화 칸을 계속 차지하지 않게).
+--  3) 연장 힌트 — 연장할 때마다 서로 하나씩: 학년 → 성씨 → 동아리 → 디플로마.
+--     학년 · 성씨는 학교 명단에서, 동아리 · 디플로마는 그 차례에 "연장"을 누를 때 직접 적는다 (방마다 따로, private.room_hints).
+-- ════════════════════════════════════════════════════════════════════
+
+-- ── 1) 메시지 삭제 ──
+alter table public.messages add column if not exists deleted_at timestamptz;
+create table if not exists private.deleted_messages (
+  message_id bigint primary key references public.messages(id) on delete cascade,
+  body       text not null,
+  deleted_at timestamptz not null default now()
+);
+alter table private.deleted_messages enable row level security;
+
+create or replace function public.delete_message(p_msg bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare m public.messages%rowtype; s smallint;
+begin
+  if auth.uid() is null then raise exception 'unauthenticated'; end if;
+  select * into m from public.messages where id = p_msg for update;
+  if not found then return jsonb_build_object('status', 'not_found'); end if;
+  s := public.my_seat(m.room_id);
+  if s is null or m.sender_seat <> s then return jsonb_build_object('status', 'not_found'); end if;
+  if m.deleted_at is not null then return jsonb_build_object('status', 'ok'); end if;
+  if (select status from public.rooms where id = m.room_id) = 'closed' then
+    return jsonb_build_object('status', 'closed');
+  end if;
+  insert into private.deleted_messages (message_id, body) values (m.id, m.body) on conflict do nothing;
+  update public.messages set body = '삭제된 메시지입니다', deleted_at = now() where id = p_msg;
+  return jsonb_build_object('status', 'ok');
+end
+$fn$;
+
+-- 신고 증거에는 지운 말의 원문을 ("[삭제함] …")
+create or replace function public.report_partner(p_room uuid, p_reason text, p_note text default '')
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  me       uuid := auth.uid();
+  cfg      public.app_settings%rowtype;
+  s        smallint;
+  v_other  uuid;
+  v_report uuid;
+  v_n      int;
+begin
+  s := public.my_seat(p_room);
+  if s is null then raise exception 'not_member'; end if;
+  if p_reason not in ('harassment','sexual','spam','personal_info','hate','impersonation','other') then
+    raise exception 'invalid_reason';
+  end if;
+  select * into cfg from public.app_settings where id;
+  select user_id into v_other from public.room_members where room_id = p_room and seat <> s;
+
+  if exists (select 1 from private.reports where room_id = p_room and reporter_id = me) then
+    return jsonb_build_object('status', 'already', 'snap', public.room_snapshot(p_room));
+  end if;
+
+  insert into private.reports (room_id, reporter_id, reported_id, reason, note)
+  values (p_room, me, v_other, p_reason, left(coalesce(p_note, ''), 1000))
+  returning id into v_report;
+
+  insert into private.report_evidence (report_id, ord, sender, body, sent_at)
+  select v_report, row_number() over (order by m.id),
+         case when m.sender_seat = 0 then 0 when m.sender_seat = s then 1 else 2 end,
+         case when d.body is not null then '[삭제함] ' || d.body else m.body end, m.created_at
+    from public.messages m left join private.deleted_messages d on d.message_id = m.id
+   where m.room_id = p_room;
+
+  insert into public.blocks (blocker_id, blocked_id) values (me, v_other) on conflict do nothing;
+  perform public.close_room(p_room, 'reported');
+
+  select count(distinct reporter_id) into v_n
+    from private.reports
+   where reported_id = v_other and status <> 'dismissed' and created_at > now() - interval '30 days';
+  if v_n >= cfg.auto_suspend_reports then
+    update public.profiles set status = 'suspended' where id = v_other and status = 'active';
+    if found then
+      insert into private.audit_log (staff_id, action, target_user, report_id, detail)
+      values (null, 'auto_suspend', v_other, v_report, jsonb_build_object('distinct_reporters', v_n));
+      perform public.close_room(rm.room_id, 'admin')
+         from public.room_members rm where rm.user_id = v_other and rm.open;
+    end if;
+  end if;
+
+  return jsonb_build_object('status', 'ok', 'snap', public.room_snapshot(p_room));
+end
+$fn$;
+
+create or replace function private.auto_report_message(p_msg bigint, p_reason text, p_why text)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare m public.messages%rowtype; v_sender uuid; v_report uuid; v_line text; v_body text;
+begin
+  select * into m from public.messages where id = p_msg;
+  if not found then return; end if;
+  select user_id into v_sender from public.room_members where room_id = m.room_id and seat = m.sender_seat;
+  if v_sender is null then return; end if;
+  v_body := coalesce((select body from private.deleted_messages where message_id = m.id), m.body);
+  v_line := '[자동 감지] "' || left(v_body, 60) || '" — ' || left(coalesce(p_why, ''), 200);
+
+  select id into v_report from private.reports
+   where room_id = m.room_id and source = 'auto' and reported_id = v_sender and status in ('open','reviewing')
+   limit 1;
+  if v_report is null then
+    insert into private.reports (room_id, reporter_id, reported_id, reason, note, source)
+    values (m.room_id, null, v_sender, p_reason, v_line, 'auto')
+    returning id into v_report;
+  else
+    update private.reports set note = left(note || E'\n' || v_line, 1000) where id = v_report;
+    delete from private.report_evidence where report_id = v_report;
+  end if;
+
+  insert into private.report_evidence (report_id, ord, sender, body, sent_at)
+  select v_report, row_number() over (order by x.id),
+         case when x.sender_seat = 0 then 0 when x.sender_seat = m.sender_seat then 2 else 1 end,
+         case when d.body is not null then '[삭제함] ' || d.body else x.body end, x.created_at
+    from public.messages x left join private.deleted_messages d on d.message_id = x.id
+   where x.room_id = m.room_id and x.id <= m.id;
+end
+$fn$;
+revoke all on function private.auto_report_message(bigint, text, text) from public, anon, authenticated;
+
+-- ── 2) 둘 다 볼 때만 흐르는 시간 ──
+alter table public.room_members add column if not exists viewing_until timestamptz;
+alter table public.rooms add column if not exists paused_left  interval;
+alter table public.rooms add column if not exists paused_since timestamptz;
+
+-- 화면에 보여 줄 마감 — 멈춰 있으면 "지금 + 남은 시간" (바뀌지 않는 남은 시간을 그대로 보이게)
+create or replace function private.room_deadline(p_expires timestamptz, p_left interval)
+returns timestamptz language sql stable set search_path = '' as $fn$
+  select case when p_left is not null then now() + p_left else p_expires end;
+$fn$;
+
+-- 방 시계 맞추기 — 둘 다 보고 있으면 흐르게, 아니면 멈추게
+create or replace function private.room_clock(p_room uuid)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare r public.rooms%rowtype; v_n int; v_stop timestamptz; v_left interval;
+begin
+  select * into r from public.rooms where id = p_room for update;
+  if not found or r.status <> 'active' then return; end if;
+  select count(*) filter (where viewing_until > now()), min(coalesce(viewing_until, now() - interval '90 seconds'))
+    into v_n, v_stop
+    from public.room_members where room_id = p_room;
+  if v_n = 2 then
+    if r.paused_left is not null then
+      update public.rooms set expires_at = now() + r.paused_left, paused_left = null, paused_since = null where id = p_room;
+    end if;
+  elsif r.paused_left is null and r.expires_at > now() then
+    -- 먼저 떠난 쪽이 마지막으로 보고 있던 때부터 멈춘다 (앱이 갑자기 꺼져도 90초 넘게는 흐르지 않게)
+    v_stop := least(now(), greatest(v_stop, now() - interval '90 seconds', r.armed_at));
+    v_left := r.expires_at - v_stop;
+    if v_left > interval '0' then
+      update public.rooms set paused_left = v_left, paused_since = now(), expires_at = 'infinity' where id = p_room;
+    end if;
+  end if;
+end
+$fn$;
+revoke all on function private.room_clock(uuid) from public, anon, authenticated;
+
+-- 대화 화면을 보고 있다(p_on) / 떠났다 — 앱이 화면을 보는 동안 10초마다 부른다
+create or replace function public.room_view(p_room uuid, p_on boolean default true)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+begin
+  if public.my_seat(p_room) is null then raise exception 'not_member'; end if;
+  update public.room_members
+     set viewing_until = case when p_on then now() + interval '25 seconds' else now() end
+   where room_id = p_room and user_id = auth.uid();
+  perform private.room_clock(p_room);
+  return public.room_snapshot(p_room);
+end
+$fn$;
+
+-- 입장 확인 — 화면을 연 것이므로 "보고 있음"도 같이
+create or replace function public.ack_room(p_room uuid)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  r   public.rooms%rowtype;
+  cfg public.app_settings%rowtype;
+  v_joined int;
+begin
+  if public.my_seat(p_room) is null then raise exception 'not_member'; end if;
+  select * into cfg from public.app_settings where id;
+  select * into r from public.rooms where id = p_room for update;
+
+  if r.status = 'pending' and now() >= r.expires_at then
+    perform public.close_room(p_room, 'no_show');
+    return public.room_snapshot(p_room);
+  end if;
+
+  update public.room_members set joined_at = coalesce(joined_at, now()), viewing_until = now() + interval '25 seconds'
+   where room_id = p_room and user_id = auth.uid();
+
+  if r.status = 'pending' then
+    select count(*) into v_joined from public.room_members
+     where room_id = p_room and joined_at is not null;
+    if v_joined = 2 then
+      update public.rooms
+         set status = 'active', armed_at = now(),
+             expires_at = now() + make_interval(mins => cfg.room_minutes)
+       where id = p_room;
+      insert into public.pair_history (user_lo, user_hi)
+      select least(a.user_id, b.user_id), greatest(a.user_id, b.user_id)
+        from public.room_members a join public.room_members b
+          on a.room_id = b.room_id and a.seat = 1 and b.seat = 2
+       where a.room_id = p_room
+      on conflict (user_lo, user_hi) do update
+         set last_matched_at = now(), times = public.pair_history.times + 1;
+      insert into public.messages (room_id, sender_seat, body, client_msg_id)
+      values (p_room, 0,
+              cfg.room_minutes || '분 동안 이야기할 수 있어요. 둘 다 대화를 보고 있을 때만 시간이 흘러요.',
+              gen_random_uuid());
+    end if;
+  end if;
+  perform private.room_clock(p_room);
+  return public.room_snapshot(p_room);
+end
+$fn$;
+
+-- ── 3) 연장 힌트 ──
+create table if not exists private.room_hints (
+  room_id uuid not null references public.rooms(id) on delete cascade,
+  seat    smallint not null check (seat in (1, 2)),
+  kind    text not null check (kind in ('club', 'diploma')),
+  value   text not null check (char_length(value) between 1 and 20),
+  primary key (room_id, seat, kind)
+);
+alter table private.room_hints enable row level security;
+
+-- 연장 1번째 → 학년, 2번째 → 성씨, 3번째 → 동아리, 4번째 → 디플로마
+create or replace function private.hint_kind(p_n int)
+returns text language sql immutable set search_path = '' as $fn$
+  select (array['grade', 'surname', 'club', 'diploma'])[p_n];
+$fn$;
+create or replace function private.hint_label(p_kind text)
+returns text language sql immutable set search_path = '' as $fn$
+  select case p_kind when 'grade' then '학년' when 'surname' then '성씨' when 'club' then '동아리' when 'diploma' then '디플로마' end;
+$fn$;
+
+-- 한 사람의 공개된 힌트들 (연장한 만큼)
+create or replace function private.room_hints_of(p_room uuid, p_seat smallint, p_count int)
+returns jsonb language plpgsql stable security definer set search_path = public, private as $fn$
+declare v_user uuid; v_name text; v_grade smallint; k text; v text; out jsonb := '[]'::jsonb;
+begin
+  select user_id into v_user from public.room_members where room_id = p_room and seat = p_seat;
+  select name, grade into v_name, v_grade from private.person(v_user);
+  for i in 1 .. least(greatest(p_count, 0), 4) loop
+    k := private.hint_kind(i);
+    v := case k
+           when 'grade' then case when v_grade is not null then v_grade || '학년' end
+           when 'surname' then case when v_name is not null then left(v_name, 1) || '씨' end
+           else (select h.value from private.room_hints h where h.room_id = p_room and h.seat = p_seat and h.kind = k)
+         end;
+    out := out || jsonb_build_array(jsonb_build_object('kind', k, 'label', private.hint_label(k), 'value', coalesce(v, '비공개')));
+  end loop;
+  return out;
+end
+$fn$;
+revoke all on function private.room_hints_of(uuid, smallint, int) from public, anon, authenticated;
+
+-- 방 스냅샷 — 멈춤 · 힌트까지
+create or replace function public.room_snapshot(p_room uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare
+  r   public.rooms%rowtype;
+  cfg public.app_settings%rowtype;
+  s   smallint;
+  v_my boolean; v_their boolean; v_joined boolean; v_online boolean; v_next text;
+begin
+  s := public.my_seat(p_room);
+  if s is null then raise exception 'not_member'; end if;
+  select * into r   from public.rooms where id = p_room;
+  select * into cfg from public.app_settings where id;
+
+  select agree into v_my    from public.extension_votes where room_id = p_room and round = r.round and seat = s;
+  select agree into v_their from public.extension_votes where room_id = p_room and round = r.round and seat <> s;
+  select joined_at is not null into v_joined
+    from public.room_members where room_id = p_room and seat <> s;
+  select coalesce(up.online_until > now(), false) into v_online
+    from public.room_members rm join public.user_presence up on up.user_id = rm.user_id
+   where rm.room_id = p_room and rm.seat <> s;
+  v_next := private.hint_kind(r.round);
+
+  return jsonb_build_object(
+    'room_id',         r.id,
+    'status',          r.status,
+    'my_seat',         s,
+    'my_alias',        case when s = 1 then r.alias1 else r.alias2 end,
+    'partner_alias',   case when s = 1 then r.alias2 else r.alias1 end,
+    'expires_at',      private.room_deadline(r.expires_at, r.paused_left),
+    'paused',          r.paused_left is not null,
+    'round',           r.round,
+    'max_rounds',      cfg.max_rounds,
+    'extend_minutes',  cfg.extend_minutes,
+    'vote_window_sec', cfg.vote_window_sec,
+    'my_vote',         v_my,
+    'partner_vote',    v_their,
+    'partner_joined',  coalesce(v_joined, false),
+    'partner_online',  coalesce(v_online, false),
+    'their_read_id',   case when s = 1 then r.read2 else r.read1 end,
+    'close_reason',    r.close_reason,
+    'partner_hints',   private.room_hints_of(p_room, (3 - s)::smallint, r.round - 1),
+    'my_hints',        private.room_hints_of(p_room, s, r.round - 1),
+    'next_hint',       case when v_next is not null then jsonb_build_object(
+                         'kind', v_next, 'label', private.hint_label(v_next), 'typed', v_next in ('club', 'diploma')) end,
+    'server_now',      now());
+end
+$fn$;
+
+-- 연장 투표 — 동아리 · 디플로마 차례면 "연장"을 누를 때 내 값을 같이 (p_hint)
+drop function if exists public.vote_extension(uuid, boolean);
+create or replace function public.vote_extension(p_room uuid, p_agree boolean, p_hint text default null)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  r   public.rooms%rowtype;
+  cfg public.app_settings%rowtype;
+  s   smallint;
+  v_yes int; v_no int; v_kind text; v_hint text;
+begin
+  s := public.my_seat(p_room);
+  if s is null then raise exception 'not_member'; end if;
+  select * into cfg from public.app_settings where id;
+  select * into r from public.rooms where id = p_room for update;
+
+  if r.status <> 'active' then
+    return jsonb_build_object('result', 'closed', 'snap', public.room_snapshot(p_room));
+  end if;
+  if now() >= r.expires_at then
+    perform public.close_room(p_room, 'expired');
+    return jsonb_build_object('result', 'expired', 'snap', public.room_snapshot(p_room));
+  end if;
+  if now() < r.expires_at - make_interval(secs => cfg.vote_window_sec) then   -- 멈춰 있으면(infinity) 여기서 막힌다
+    return jsonb_build_object('result', 'too_early', 'snap', public.room_snapshot(p_room));
+  end if;
+  if cfg.max_rounds > 0 and r.round >= cfg.max_rounds then
+    return jsonb_build_object('result', 'max_rounds', 'snap', public.room_snapshot(p_room));
+  end if;
+
+  v_kind := private.hint_kind(r.round);
+  if p_agree and v_kind in ('club', 'diploma') then
+    v_hint := btrim(coalesce(p_hint, ''));
+    if char_length(v_hint) not between 1 and 20 or private.rule_violation(v_hint) is not null then
+      return jsonb_build_object('result', 'need_hint', 'snap', public.room_snapshot(p_room));
+    end if;
+    insert into private.room_hints (room_id, seat, kind, value) values (p_room, s, v_kind, v_hint)
+    on conflict (room_id, seat, kind) do update set value = excluded.value;
+  end if;
+
+  insert into public.extension_votes (room_id, round, seat, agree)
+  values (p_room, r.round, s, p_agree)
+  on conflict (room_id, round, seat)
+    do update set agree = excluded.agree, created_at = now();
+
+  select count(*) filter (where agree), count(*) filter (where not agree)
+    into v_yes, v_no
+    from public.extension_votes where room_id = p_room and round = r.round;
+
+  if v_no > 0 then
+    perform public.close_room(p_room, 'declined');
+    return jsonb_build_object('result', 'declined', 'snap', public.room_snapshot(p_room));
+  elsif v_yes = 2 then
+    update public.rooms
+       set expires_at = r.expires_at + make_interval(mins => cfg.extend_minutes),
+           round      = r.round + 1
+     where id = p_room;
+    insert into public.messages (room_id, sender_seat, body, client_msg_id)
+    values (p_room, 0, cfg.extend_minutes || '분 연장됨.'
+                       || case when v_kind is not null then ' 서로의 ' || private.hint_label(v_kind) || ' 공개!' else '' end,
+            gen_random_uuid());
+    return jsonb_build_object('result', 'extended', 'snap', public.room_snapshot(p_room));
+  end if;
+  return jsonb_build_object('result', 'waiting', 'snap', public.room_snapshot(p_room));
+end
+$fn$;
+
+-- 대화 목록 — 멈춘 방은 남은 시간 그대로 + paused
+create or replace function public.my_rooms()
+returns jsonb language sql security definer set search_path = public, private stable as $fn$
+  select jsonb_build_object(
+    'rooms', coalesce(jsonb_agg(to_jsonb(x) - 'sort_at' order by x.sort_at desc), '[]'::jsonb),
+    'server_now', now())
+  from (
+    select r.id as room_id, r.status, rm.seat as my_seat,
+           case when rm.seat = 1 then r.alias2 else r.alias1 end as partner_alias,
+           private.room_deadline(r.expires_at, r.paused_left) as expires_at, r.round,
+           r.paused_left is not null as paused,
+           rm.joined_at is not null as joined,
+           coalesce(up.online_until > now(), false) as partner_online,
+           lm.body as last_body, lm.sender_seat as last_seat, lm.created_at as last_at,
+           (select count(*) from public.messages m
+             where m.room_id = r.id and m.sender_seat not in (0, rm.seat)
+               and m.id > coalesce(case when rm.seat = 1 then r.read1 else r.read2 end, 0))::int as unread,
+           coalesce(lm.created_at, r.created_at) as sort_at
+      from public.room_members rm
+      join public.rooms r on r.id = rm.room_id
+      join public.room_members o on o.room_id = r.id and o.seat <> rm.seat
+      left join public.user_presence up on up.user_id = o.user_id
+      left join lateral (select body, sender_seat, created_at from public.messages
+                          where room_id = r.id order by id desc limit 1) lm on true
+     where rm.user_id = auth.uid() and rm.open
+       and r.status <> 'closed' and now() < r.expires_at
+  ) x;
+$fn$;
+
+-- 스위퍼 — 보던 사람이 떠난 방은 멈추고, 하루 넘게 멈춰 있던 방은 닫는다. 만료는 전과 같이.
+create or replace function public.sweep_rooms()
+returns int language plpgsql security definer set search_path = public, private as $fn$
+declare n int := 0; v record;
+begin
+  for v in select r.id from public.rooms r
+            where r.status = 'active' and r.paused_left is null and r.expires_at > now()
+              and exists (select 1 from public.room_members m
+                           where m.room_id = r.id and (m.viewing_until is null or m.viewing_until <= now()))
+            limit 500
+  loop
+    perform private.room_clock(v.id);
+  end loop;
+  for v in select id from public.rooms
+            where status = 'active' and paused_since < now() - interval '1 day'
+            limit 500 for update skip locked
+  loop
+    perform public.close_room(v.id, 'expired');
+    n := n + 1;
+  end loop;
+  for v in select id, status from public.rooms
+            where status <> 'closed' and now() >= expires_at
+            order by expires_at limit 500
+            for update skip locked
+  loop
+    perform public.close_room(v.id, case when v.status = 'pending' then 'no_show' else 'expired' end);
+    n := n + 1;
+  end loop;
+  return n;
+end
+$fn$;
+revoke all on function public.sweep_rooms() from public, anon, authenticated;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['delete_message(bigint)', 'room_view(uuid, boolean)', 'vote_extension(uuid, boolean, text)']
+  loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end
+$do$;

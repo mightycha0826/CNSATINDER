@@ -2586,5 +2586,89 @@ console.log('\n[75] 이름 편지 — 편지로 답장 · 채팅하기 (Phase 27
 	check('예전 줄기: 첫 말은 편지 · 채팅처럼 주고받았으면 채팅 모드', ot.mode === 'chat' && ot.messages[0].letter === true && ot.messages[1].letter === false, JSON.stringify(ot.messages));
 }
 
+console.log('\n[76] 랜덤 채팅 — 메시지 삭제 · 둘 다 볼 때만 흐르는 시간 · 연장 힌트 (Phase 28)');
+{
+	await resetPool();
+	let no = 21200;
+	const named = async (name, grade) => {
+		const n = ++no;
+		if (name) await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name, grade = excluded.grade', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set onboarded=true where id=$1', [id]);
+		await rpcAs(id, 'ensure_self');
+		return { id, email: `${n}@cnsa.hs.kr` };
+	};
+	const A = await named('김철수', 2), B = await named('박영희', 1);
+	const open = async () => (await one(`select private.dev_open_room($1, $2, 10) as id`, [A.email, B.email])).id;
+
+	console.log('  [삭제]');
+	let room = await open();
+	const sent = await rowsAs(A.id, `insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, 1, '비밀 이야기', gen_random_uuid()) returning id`, [room]);
+	const mid = sent[0].id;
+	check('남의 말은 지울 수 없다', (await rpcAs(B.id, 'delete_message', mid)).status === 'not_found');
+	check('★ 내 말 지우기', (await rpcAs(A.id, 'delete_message', mid)).status === 'ok');
+	const seenB = (await rowsAs(B.id, 'select body, deleted_at from public.messages where id = $1', [mid]))[0];
+	check('★ 상대에게도 "삭제된 메시지입니다" (원문은 학생이 읽을 수 없음)', seenB.body === '삭제된 메시지입니다' && seenB.deleted_at != null);
+	await expectError('원문 보관함은 학생이 못 읽는다', () => rowsAs(B.id, 'select * from private.deleted_messages'), 'permission denied');
+	check('다시 지워도 그대로', (await rpcAs(A.id, 'delete_message', mid)).status === 'ok');
+	await rpcAs(B.id, 'report_partner', room, 'harassment', '');
+	const ev = await db.query(`select e.body from private.report_evidence e join private.reports r on r.id = e.report_id where r.room_id = $1 order by e.ord`, [room]);
+	check('★ 신고 증거에는 원문 ("[삭제함] …")', ev.rows.some((x) => x.body === '[삭제함] 비밀 이야기'), JSON.stringify(ev.rows));
+	const sent2 = await one(`insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, 1, '끝난 뒤', gen_random_uuid()) returning id`, [room]).catch(() => null);
+	check('끝난 대화의 말은 지울 수 없다', !sent2 || (await rpcAs(A.id, 'delete_message', sent2.id)).status === 'closed');
+	await db.query('delete from public.blocks');
+
+	console.log('  [시간]');
+	room = await open();
+	const left0 = await one(`select expires_at - now() as l from public.rooms where id = $1`, [room]);
+	let snap = await rpcAs(A.id, 'room_view', room, true);
+	check('★ 한쪽만 보고 있으면 시간이 멈춘다', snap.paused === true && (await one(`select paused_left is not null as p, expires_at = 'infinity' as inf from public.rooms where id = $1`, [room])).inf === true);
+	check('멈춘 동안에도 대화는 열려 있다 (쓸 수 있음)', (await rowsAs(A.id, `select public.room_is_writable($1) w`, [room]))[0].w === true);
+	check('멈춘 동안 연장 투표는 안 된다', (await rpcAs(A.id, 'vote_extension', room, true)).result === 'too_early');
+	const listed = (await rpcAs(A.id, 'my_rooms')).rooms.find((r) => r.room_id === room);
+	check('대화 목록: 멈춤 표시 · 남은 시간은 보통 시각으로', listed?.paused === true && !Number.isNaN(Date.parse(listed.expires_at)), JSON.stringify(listed));
+	await db.query(`update public.rooms set paused_left = interval '7 minutes' where id = $1`, [room]);
+	snap = await rpcAs(B.id, 'room_view', room, true);
+	const rr = await one(`select paused_left, round(extract(epoch from expires_at - now())) as sec from public.rooms where id = $1`, [room]);
+	check('★ 둘 다 보면 멈춘 곳부터 다시 흐른다', snap.paused === false && rr.paused_left == null && rr.sec >= 418 && rr.sec <= 420, JSON.stringify(rr));
+	snap = await rpcAs(B.id, 'room_view', room, false);
+	check('★ 한쪽이 떠나면 바로 멈춘다', snap.paused === true);
+	await rpcAs(B.id, 'room_view', room, true);
+	await db.query(`update public.room_members set viewing_until = now() - interval '5 seconds' where room_id = $1 and seat = 2`, [room]);
+	await svc('sweep_rooms').catch(async () => db.query('select public.sweep_rooms()'));
+	check('앱이 갑자기 꺼져도 스위퍼가 멈춘다', (await one(`select paused_left is not null as p from public.rooms where id = $1`, [room])).p === true);
+	await db.query(`update public.rooms set paused_since = now() - interval '2 days' where id = $1`, [room]);
+	await db.query('select public.sweep_rooms()');
+	check('하루 넘게 멈춰 있던 대화는 닫힌다', (await one(`select status from public.rooms where id = $1`, [room])).status === 'closed');
+	void left0;
+
+	console.log('  [연장 힌트]');
+	room = await open();
+	await rpcAs(A.id, 'room_view', room, true); await rpcAs(B.id, 'room_view', room, true);
+	const toWindow = () => db.query(`update public.rooms set expires_at = now() + interval '20 seconds' where id = $1`, [room]);
+	await toWindow();
+	snap = await rpcAs(A.id, 'room_snapshot', room);
+	check('처음엔 공개된 힌트 없음 · 다음 힌트 = 학년', snap.partner_hints.length === 0 && snap.next_hint?.kind === 'grade' && snap.next_hint.typed === false);
+	await rpcAs(A.id, 'vote_extension', room, true);
+	let v = await rpcAs(B.id, 'vote_extension', room, true);
+	check('★ 1번째 연장 → 서로의 학년', v.result === 'extended' && JSON.stringify(v.snap.partner_hints) === JSON.stringify([{ kind: 'grade', label: '학년', value: '2학년' }]), JSON.stringify(v.snap.partner_hints));
+	check('내 쪽 공개 힌트도 안다', (await rpcAs(A.id, 'room_snapshot', room)).my_hints[0].value === '2학년' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[0].value === '1학년');
+	check('연장 안내 메시지에 힌트 이름', (await one(`select body from public.messages where room_id = $1 and sender_seat = 0 order by id desc limit 1`, [room])).body.includes('학년 공개'));
+	await toWindow();
+	await rpcAs(A.id, 'vote_extension', room, true); v = await rpcAs(B.id, 'vote_extension', room, true);
+	check('★ 2번째 연장 → 성씨 (명단 이름 첫 글자)', v.snap.partner_hints[1]?.value === '김씨' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[1].value === '박씨');
+	await toWindow();
+	snap = await rpcAs(A.id, 'room_snapshot', room);
+	check('3번째는 동아리 — 직접 적는 차례', snap.next_hint?.kind === 'club' && snap.next_hint.typed === true);
+	check('★ 동아리를 안 적으면 연장할 수 없다', (await rpcAs(A.id, 'vote_extension', room, true)).result === 'need_hint');
+	check('신상정보가 들어간 힌트는 안 된다', (await rpcAs(A.id, 'vote_extension', room, true, '010-1234-5678')).result === 'need_hint');
+	await rpcAs(A.id, 'vote_extension', room, true, '밴드부'); v = await rpcAs(B.id, 'vote_extension', room, true, '방송부');
+	check('★ 3번째 연장 → 서로가 적은 동아리', v.result === 'extended' && v.snap.partner_hints[2]?.value === '밴드부' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[2].value === '방송부');
+	await toWindow();
+	await rpcAs(A.id, 'vote_extension', room, true, 'IB'); v = await rpcAs(B.id, 'vote_extension', room, true, '과학');
+	check('4번째 → 디플로마, 그 뒤로는 힌트 없음', v.snap.partner_hints.length === 4 && v.snap.partner_hints[3].value === 'IB' && v.snap.next_hint === null);
+	await expectError('힌트 보관함은 학생이 못 읽는다', () => rowsAs(A.id, 'select * from private.room_hints'), 'permission denied');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

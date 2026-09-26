@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * 공감 고르기 줄 — 말풍선 위(자리가 없으면 아래)에 뜬다. 바깥을 누르거나 Esc 로 닫힌다.
-	 * react = false 면(끝난 대화 · 시스템 안내) "복사"만. 대화 중에는 "답장"도.
+	 * react = false 면(끝난 대화 · 시스템 안내) "복사"만. 대화 중에는 "답장"도. ondelete 가 있으면(내 말) "삭제"도.
 	 */
 	import { REACTIONS, type ReactionKey } from './types';
 
@@ -12,6 +12,7 @@
 		onpick,
 		onreply,
 		oncopy,
+		ondelete,
 		onclose
 	}: {
 		at: { top: number; left: number | null; right: number | null };
@@ -20,6 +21,7 @@
 		onpick: (k: ReactionKey) => void;
 		onreply: () => void;
 		oncopy: () => void;
+		ondelete?: () => void;
 		onclose: () => void;
 	} = $props();
 </script>
@@ -45,6 +47,7 @@
 		<button class="copy" role="menuitem" onclick={onreply}>답장</button>
 	{/if}
 	<button class="copy" role="menuitem" onclick={oncopy}>복사</button>
+	{#if ondelete}<button class="copy del" role="menuitem" onclick={ondelete}>삭제</button>{/if}
 </div>
 
 <style>
@@ -102,5 +105,8 @@
 		font-size: 14px;
 		font-weight: 600;
 		color: var(--text-2);
+	}
+	.del {
+		color: var(--danger);
 	}
 </style>

@@ -10,6 +10,8 @@ export type InboxRoom = {
 	partner_alias: string;
 	expires_at: string;
 	round: number;
+	/** 한쪽이라도 대화 화면을 안 봐서 시간이 멈춤 (Phase 28) — 남은 시간 = expires_at - server_now */
+	paused?: boolean;
 	/** 내가 이 방 화면을 한 번이라도 열었는지 — 아니면 "새 대화" */
 	joined: boolean;
 	partner_online: boolean;
@@ -35,6 +37,8 @@ export class Inbox {
 	loaded = $state(false);
 	/** serverNow - clientNow (ms) — 남은 시간 표시용 */
 	skew = $state(0);
+	/** 마지막으로 불러온 서버 시각 (ms) — 멈춘 방의 남은 시간 계산용 */
+	serverAt = $state(0);
 
 	#ch: RealtimeChannel | null = null;
 	#ids = '';
@@ -62,6 +66,7 @@ export class Inbox {
 		if (this.#stopped || error || !data) return;
 		const res = data as { rooms: InboxRoom[]; server_now: string };
 		this.skew = Date.parse(res.server_now) - Date.now();
+		this.serverAt = Date.parse(res.server_now);
 		this.rooms = res.rooms;
 		this.loaded = true;
 		this.#resubscribe(res.rooms.map((r) => r.room_id));
