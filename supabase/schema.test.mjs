@@ -2409,7 +2409,8 @@ console.log('\n[71] ★ 이름 편지 — 학생을 찾아 익명으로 보내�
 	await db.query(`insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://web.push.apple.com/dmE', 'k', 'x')`, [E]);
 	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id = $1`, [E]);
 	const pl = await svc('dm_push_payload', t2.msg_id, A);
-	check('★ 새 편지 알림: "익명의 편지" · 보낸 사람 정보 없음', pl.title === '익명의 편지가 도착했어요' && pl.url === `/letters/${t2.thread_id}` && !JSON.stringify(pl).includes('김보냄'), JSON.stringify(pl));
+	const aliasE = (await rpcAs(E, 'dm_inbox')).threads.find((t) => t.id === t2.thread_id).title;
+	check('★ 새 편지 알림: 제목 = 가명만 ("익명 · " 없이) · 보낸 사람 정보 없음', pl.title === aliasE && !pl.title.includes('익명') && pl.url === `/letters/${t2.thread_id}` && !JSON.stringify(pl).includes('김보냄'), JSON.stringify(pl));
 	check('남이 쓴 말로는 알림을 못 보낸다', (await svc('dm_push_payload', t2.msg_id, B)).skip === 'not_author');
 
 	console.log('  [끝내기 · 차단 · 신고]');
@@ -2478,6 +2479,45 @@ console.log('\n[72] 이름 편지 서식 — 편지 쓰기 편집기 (Phase 24)'
 	const lr = await rpcAs(B, 'dm_report', r.thread_id, 'spam', '');
 	await db.query(`update private.dm_msgs set status = 'removed' where thread_id = $1`, [r.thread_id]);
 	check('내려진 말은 서식도 안 보인다', lr.status === 'ok' && (await rpcAs(A, 'dm_thread', r.thread_id)).messages.every((m) => m.body === null && m.fmt === null));
+}
+
+console.log('\n[73] 이름 편지 — 나가면 내 목록에서 지우기 (Phase 25)');
+{
+	await resetPool();
+	await db.query(`update public.user_presence set letter_tokens = 3, letter_at = now(), comment_tokens = 10, comment_at = now()`);
+	let no = 20900;
+	const named = async (name, grade) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name, grade = excluded.grade', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set gender=$2, want=$3, onboarded=true where id=$1', [id, 'm', 'f']);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const A = await named('나감보냄', 1), B = await named('나감받음', 2), C = await named('나감셋', 2);
+	const ids = async (u) => (await rpcAs(u, 'dm_inbox')).threads.map((t) => t.id);
+	const t1 = await rpcAs(A, 'dm_send', B, '첫 편지');
+	check('★ 보낸 사람이 나가면 내 목록에서 사라진다', (await rpcAs(A, 'dm_close', t1.thread_id)).status === 'ok' && !(await ids(A)).includes(t1.thread_id)
+		&& (await rpcAs(A, 'dm_thread', t1.thread_id)).status === 'not_found');
+	const bSide = (await rpcAs(B, 'dm_inbox')).threads.find((t) => t.id === t1.thread_id);
+	check('상대 목록에는 "끝남"으로 남는다', bSide?.status === 'closed' && (await rpcAs(B, 'dm_thread', t1.thread_id)).closed_by === 'sender');
+	const t2 = await rpcAs(A, 'dm_send', B, '다시 보내는 편지');
+	const aList = (await rpcAs(A, 'dm_inbox')).threads;
+	check('★ 끝낸 뒤 같은 사람에게 다시 보내도 내 목록엔 하나만', t2.status === 'ok' && t2.thread_id !== t1.thread_id && aList.length === 1 && aList[0].id === t2.thread_id, JSON.stringify(aList));
+	const bList = (await rpcAs(B, 'dm_inbox')).threads;
+	check('받는 쪽: 새 편지는 새 가명 (같은 사람인지 모름)', bList.length === 2 && bList[0].title !== bList[1].title, JSON.stringify(bList));
+	check('받는 사람도 끝난 편지에서 나가면 사라진다', (await rpcAs(B, 'dm_close', t1.thread_id)).status === 'ok' && !(await ids(B)).includes(t1.thread_id) && (await ids(B)).includes(t2.thread_id));
+	check('★ 받는 사람이 나가도 "다시 못 보냄" 규칙은 그대로', (await rpcAs(B, 'dm_close', t2.thread_id)).status === 'ok' && (await rpcAs(A, 'dm_send', B, '또')).status === 'not_available');
+	check('보낸 쪽엔 "끝남"으로 남는다 (받는 사람이 끝냄)', (await rpcAs(A, 'dm_inbox')).threads.find((t) => t.id === t2.thread_id)?.status === 'closed');
+	const t3 = await rpcAs(A, 'dm_send', C, '셋에게');
+	check('차단하면 내 목록에서 사라진다', (await rpcAs(C, 'dm_block', t3.thread_id)).status === 'ok' && !(await ids(C)).includes(t3.thread_id));
+	await db.query('delete from public.blocks where blocker_id = $1', [C]);
+	await db.query(`update public.user_presence set letter_tokens = 3, letter_at = now() where user_id = $1`, [C]);
+	const t4 = await rpcAs(C, 'dm_send', A, '반대로');
+	const r4 = await rpcAs(A, 'dm_report', t4.thread_id, 'spam', '');
+	check('★ 신고하면 내 목록에서 사라지고 증거는 남는다', r4.status === 'ok' && !(await ids(A)).includes(t4.thread_id)
+		&& (await cnt(`select count(*)::int n from private.letter_report_evidence e join private.letter_reports r on r.id = e.report_id where r.target_type = 'dm' and r.letter_id = $1`, [t4.thread_id])) === 1);
+	check('나간 편지도 표에는 남는다 (운영자 확인용)', (await cnt('select count(*)::int n from private.dm_threads where id = any($1)', [[t1.thread_id, t2.thread_id, t3.thread_id, t4.thread_id]])) === 4);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

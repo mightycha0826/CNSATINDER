@@ -13,10 +13,13 @@
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import AiChat from '$lib/ai/AiChat.svelte';
+	import RoomMenu from '$lib/chat/RoomMenu.svelte';
+	import { longpress } from '$lib/longpress';
 
 	/**
 	 * 홈 = 대화 목록 (인스타 DM 받은편지함).
 	 * 위에는 새 상대 찾기, 아래에는 지금 열려 있는 대화들. 여러 대화를 동시에 이어갈 수 있다.
+	 * 대화 줄을 길게 누르면(마우스는 오른쪽 클릭) 신고 · 차단 · 나가기 (RoomMenu).
 	 */
 
 	const closed = $derived(S.settings ? !S.settings.is_open : false);
@@ -55,6 +58,7 @@
 		seeker.start();
 	}
 	const full = $derived(inbox.rooms.length >= maxRooms);
+	let menuFor = $state<InboxRoom | null>(null);
 
 	$effect(() => {
 		inbox.start();
@@ -155,7 +159,11 @@
 				{@const t = remain(r)}
 				<li>
 					<!-- 아직 안 열어 본 새 대화(상대가 나를 잡아감)면 연결 화면부터 -->
-					<button class="room" onclick={() => goto(`/chat/${r.room_id}`, { state: { matched: !r.joined } })}>
+					<button
+						class="room"
+						onclick={() => goto(`/chat/${r.room_id}`, { state: { matched: !r.joined } })}
+						use:longpress={() => (menuFor = r)}
+					>
 						<Avatar name={r.partner_alias} size={52} online={r.partner_online} />
 						<span class="mid">
 							<span class="name" class:bold={r.unread > 0 || !r.joined}>{r.partner_alias}</span>
@@ -231,6 +239,18 @@
 
 {#if aiOpen && seeker.seeking}
 	<AiChat onclose={closeAi} seeking={elapsed} />
+{/if}
+
+{#if menuFor}
+	<RoomMenu
+		roomId={menuFor.room_id}
+		alias={menuFor.partner_alias}
+		onclose={() => (menuFor = null)}
+		ondone={() => {
+			menuFor = null;
+			void inbox.load();
+		}}
+	/>
 {/if}
 
 {#if askPush}

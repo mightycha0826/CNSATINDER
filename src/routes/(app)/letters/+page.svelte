@@ -1,7 +1,8 @@
 <script lang="ts">
 	/**
 	 * 익명편지 탭 (Phase 23 이름 편지) — 위: 학생 찾기, 아래: 받은 편지 · 보낸 편지.
-	 * 찾은 학생을 누르면 편지 쓰기로. 받은 편지에서 보낸 사람은 익명 이름으로만 보인다.
+	 * 찾은 학생을 누르면 편지 쓰기로. 받은 편지에서 보낸 사람은 가명으로만 보인다.
+	 * 편지 줄을 길게 누르면(마우스는 오른쪽 클릭) 신고 · 차단 · 나가기 (LetterMenu).
 	 */
 	import { goto } from '$app/navigation';
 	import Avatar from '$lib/ui/Avatar.svelte';
@@ -11,6 +12,8 @@
 	import { whileVisible } from '$lib/visible';
 	import { fetchInbox, searchPeople, type DmItem, type DmPerson } from '$lib/letters/api';
 	import { DM, countUnread } from '$lib/letters/unread.svelte';
+	import LetterMenu from '$lib/letters/LetterMenu.svelte';
+	import { longpress } from '$lib/longpress';
 
 	// ── 찾기 ──
 	let q = $state('');
@@ -64,6 +67,8 @@
 	});
 
 	const list = $derived(items.filter((i) => i.role === tab));
+	// 길게 누른 편지 — 메뉴를 띄운다. 나가기 · 차단 · 신고를 하면 목록에서 사라지므로 다시 읽는다
+	let menuFor = $state<DmItem | null>(null);
 	const unreadOf = (r: 'received' | 'sent') => items.filter((i) => i.role === r).reduce((n, i) => n + i.unread, 0);
 	const gradeText = (g: number | null) => (g ? `${g}학년` : '');
 </script>
@@ -108,7 +113,7 @@
 		</section>
 	{:else}
 		<p class="hint muted">
-			찾은 사람에게 편지를 보내면, 받는 사람에게는 내 이름 대신 <b>익명 이름</b>이 보여요.
+			찾은 사람에게 편지를 보내면, 받는 사람에게는 내 이름 대신 <b>가명</b>이 보여요.
 			받은 편지도 누가 보냈는지 알 수 없어요.
 		</p>
 
@@ -131,7 +136,7 @@
 			<ul class="threads">
 				{#each list as t (t.id)}
 					<li>
-						<button class="thread" class:unread={t.unread > 0} onclick={() => goto(`/letters/${t.id}`)}>
+						<button class="thread" class:unread={t.unread > 0} onclick={() => goto(`/letters/${t.id}`)} use:longpress={() => (menuFor = t)}>
 							{#if t.role === 'received'}
 								<span class="anon" aria-hidden="true">?</span>
 							{:else}
@@ -139,7 +144,7 @@
 							{/if}
 							<span class="body">
 								<span class="line1">
-									<b>{t.role === 'received' ? `익명 · ${t.title}` : t.title}</b>
+									<b>{t.title}</b>
 									{#if t.role === 'sent' && t.grade}<small class="muted">{t.grade}학년</small>{/if}
 									{#if t.status === 'closed'}<small class="muted ended">끝남</small>{/if}
 								</span>
@@ -156,6 +161,20 @@
 		{/if}
 	{/if}
 </div>
+
+{#if menuFor}
+	<LetterMenu
+		thread={menuFor}
+		title={menuFor.title}
+		onclose={() => (menuFor = null)}
+		ondone={() => {
+			const id = menuFor?.id;
+			menuFor = null;
+			items = items.filter((i) => i.id !== id); // 바로 지우고, 서버 목록으로 맞춘다
+			void load();
+		}}
+	/>
+{/if}
 
 <style>
 	.letters {

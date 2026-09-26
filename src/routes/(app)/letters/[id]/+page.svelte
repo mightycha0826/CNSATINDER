@@ -1,8 +1,8 @@
 <script lang="ts">
 	/**
 	 * 편지 한 줄기 — 보낸 사람과 받는 사람이 주고받는다 (채팅처럼 말풍선).
-	 * 받은 편지: 상대 = "익명 · ○○ ○○" (누군지 알 수 없다) / 보낸 편지: 상대 = 이름 · 학년.
-	 * 메뉴: 그만 주고받기 · 차단 · 신고. 받는 사람이 끝내면 그 사람은 다시 편지를 보낼 수 없다.
+	 * 받은 편지: 상대 = 가명 "○○ ○○" (누군지 알 수 없다) / 보낸 편지: 상대 = 이름 · 학년.
+	 * 메뉴(LetterMenu): 신고 · 차단 · 나가기 — 하고 나면 내 목록에서 사라진다. 받는 사람이 나가면 그 사람은 다시 편지를 보낼 수 없다.
 	 * 화면이 보이는 동안 15초마다 새 말을 확인한다 (새 말 알림은 푸시로).
 	 * 키보드가 올라오면 화면을 보이는 영역(visualViewport)에 맞추고 최근 말이 그대로 보이게 한다 (채팅 화면과 같은 방식).
 	 */
@@ -10,15 +10,13 @@
 	import { page } from '$app/state';
 	import { goBack } from '$lib/nav';
 	import BackButton from '$lib/ui/BackButton.svelte';
-	import ReportPicker from '$lib/ui/ReportPicker.svelte';
 	import RichText from '$lib/letters/RichText.svelte';
-	import Sheet from '$lib/ui/Sheet.svelte';
-	import type { ReportReason } from '$lib/chat/types';
+	import LetterMenu from '$lib/letters/LetterMenu.svelte';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import { agoText } from '$lib/time';
 	import { whileVisible } from '$lib/visible';
 	import { scrollBehavior } from '$lib/motion';
-	import { blockThread, closeThread, fetchThread, replyLetter, reportThread, sendError, type DmThread } from '$lib/letters/api';
+	import { fetchThread, replyLetter, sendError, type DmThread } from '$lib/letters/api';
 	import { refreshUnread } from '$lib/letters/unread.svelte';
 
 	const id = $derived(Number(page.params.id));
@@ -91,12 +89,12 @@
 	});
 
 	const open = $derived(t?.thread_status === 'open');
-	const heading = $derived(t ? (t.role === 'received' ? `익명 · ${t.title}` : t.title) : '');
+	const heading = $derived(t?.title ?? '');
 	const endedText = $derived.by(() => {
 		if (!t || open) return '';
 		if (t.closed_by === 'staff') return '운영진이 내린 편지예요';
 		const me = t.role === 'sent' ? 'sender' : 'recipient';
-		return t.closed_by === me ? '내가 끝낸 편지예요' : '상대가 편지를 끝냈어요';
+		return t.closed_by === me ? '내가 끝낸 편지예요' : '상대가 편지에서 나갔어요';
 	});
 
 	// ── 쓰기 ──
@@ -127,26 +125,8 @@
 		}
 	}
 
-	// ── 메뉴 ──
-	let sheet = $state<null | 'menu' | 'close' | 'block' | 'report'>(null);
-	let reason = $state<ReportReason | null>(null);
-	let note = $state('');
-	let acting = $state(false);
-	async function act(fn: () => Promise<unknown>, done: string, leave = false) {
-		if (acting || !t) return;
-		acting = true;
-		try {
-			await fn();
-			toast(done);
-			sheet = null;
-			if (leave) goBack('/letters');
-			else await load();
-		} catch (e) {
-			toast(errMsg(e));
-		} finally {
-			acting = false;
-		}
-	}
+	// ── 메뉴 ── 신고 · 차단 · 나가기 (LetterMenu). 하고 나면 이 편지는 내 목록에서 사라지므로 목록으로 돌아간다
+	let menu = $state(false);
 </script>
 
 <div class="detail" class:keyboard style:height={vvH ? `${vvH}px` : null} style:--vv-top={`${vvTop}px`}>
@@ -160,7 +140,7 @@
 					<small class="muted">{t.role === 'received' ? '누가 보냈는지 알 수 없어요' : t.grade ? `${t.grade}학년 · 나는 익명` : '나는 익명'}</small>
 				</span>
 			</span>
-			<button class="more" onclick={() => (sheet = 'menu')} aria-label="메뉴">
+			<button class="more" onclick={() => (menu = true)} aria-label="메뉴">
 				<svg viewBox="0 0 24 24" aria-hidden="true">
 					<circle cx="5" cy="12" r="1.6" fill="currentColor" />
 					<circle cx="12" cy="12" r="1.6" fill="currentColor" />
@@ -210,47 +190,16 @@
 	{/if}
 </div>
 
-{#if sheet && t}
-	<Sheet onclose={() => (sheet = null)}>
-		{#if sheet === 'menu'}
-			{#if open}<button class="item" onclick={() => (sheet = 'close')}>그만 주고받기</button>{/if}
-			<button class="item danger" onclick={() => (sheet = 'block')}>차단하기</button>
-			<button class="item danger" onclick={() => (sheet = 'report')}>신고하기</button>
-			<button class="item" onclick={() => (sheet = null)}>취소</button>
-		{:else if sheet === 'close'}
-			<p class="warn">
-				더 이상 주고받지 않아요.
-				{#if t.role === 'received'}<strong>이 사람은 나에게 다시 편지를 보낼 수 없어요.</strong>{/if}
-			</p>
-			<button class="item danger" onclick={() => act(() => closeThread(t!.id), '편지를 끝냈어요')} disabled={acting}>끝내기</button>
-			<button class="item" onclick={() => (sheet = null)}>취소</button>
-		{:else if sheet === 'block'}
-			<p class="warn">
-				차단하면 서로 검색 · 편지가 안 되고, <strong>채팅에서도 다시 연결되지 않아요.</strong><br />상대에게는 알려지지 않아요.
-			</p>
-			<button class="item danger" onclick={() => act(() => blockThread(t!.id), '차단했어요', true)} disabled={acting}>차단하기</button>
-			<button class="item" onclick={() => (sheet = null)}>취소</button>
-		{:else if sheet === 'report'}
-			<ReportPicker
-				bind:reason
-				bind:note
-				title="무엇이 문제인가요?"
-				intro="신고하면 자동으로 차단되고 편지가 끝나요. 운영진은 누가 보냈는지 확인해서 조치할 수 있어요. 상대는 누가 신고했는지 알 수 없어요."
-			/>
-			<button
-				class="item danger"
-				onclick={() =>
-					act(async () => {
-						const r = await reportThread(t!.id, reason!, note.trim());
-						if (r.status === 'already') throw new Error('이미 신고한 편지예요');
-					}, '신고했어요', true)}
-				disabled={!reason || acting}
-			>
-				{acting ? '신고하는 중…' : '신고하기'}
-			</button>
-			<button class="item" onclick={() => (sheet = null)}>취소</button>
-		{/if}
-	</Sheet>
+{#if menu && t}
+	<LetterMenu
+		thread={t}
+		onclose={() => (menu = false)}
+		ondone={() => {
+			menu = false;
+			void refreshUnread();
+			goBack('/letters');
+		}}
+	/>
 {/if}
 
 <style>

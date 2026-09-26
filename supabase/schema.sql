@@ -4660,3 +4660,181 @@ begin
     'server_now', now());
 end
 $fn$;
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 25 — 이름 편지: 나가면 내 목록에서 지우기 · 가명만
+--
+--  · 끝내기(나가기) · 차단 · 신고를 하면 그 편지가 "내" 목록에서 사라진다 (상대 목록에는 "끝남"으로 남고, 상대도 나가면 사라진다).
+--    표에서 지우지는 않는다 — "받는 사람이 끝내면 다시 못 보냄" 규칙 · 신고 증거 · 운영자 확인에 필요하다.
+--  · 그래서 끝낸 뒤 같은 사람에게 새로 보내도 목록에 같은 이름이 둘 뜨지 않는다.
+--  · 받는 사람 쪽 이름 · 알림 제목은 "익명 · ○○" 대신 가명(○○)만.
+-- ════════════════════════════════════════════════════════════════════
+alter table private.dm_threads add column if not exists sender_hidden    boolean not null default false;
+alter table private.dm_threads add column if not exists recipient_hidden boolean not null default false;
+-- 이미 끝낸 편지는 끝낸 사람 목록에서 지운다 (Phase 25 전에 끝낸 것)
+update private.dm_threads set sender_hidden = true    where closed_by = 'sender'    and not sender_hidden;
+update private.dm_threads set recipient_hidden = true where closed_by = 'recipient' and not recipient_hidden;
+
+-- 끝내고(열려 있으면) 내 목록에서 지운다 — 나가기 · 차단 · 신고 공통
+create or replace function private.dm_leave(p_thread bigint, p_role text)
+returns void language sql security definer set search_path = '' as $fn$
+  update private.dm_threads
+     set status    = case when status = 'open' then 'closed' else status end,
+         closed_by = case when status = 'open' then p_role else closed_by end,
+         sender_hidden    = sender_hidden or p_role = 'sender',
+         recipient_hidden = recipient_hidden or p_role = 'recipient'
+   where id = p_thread;
+$fn$;
+revoke all on function private.dm_leave(bigint, text) from public, anon, authenticated;
+
+-- 나가기 (둘 다 가능) — 끝내고 내 목록에서 지운다. 받는 사람이 나가면 그 보낸 사람은 다시 편지를 보낼 수 없다.
+create or replace function public.dm_close(p_thread bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); role text;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  role := private.dm_role(p_thread, me);
+  if role is null then return jsonb_build_object('status', 'not_found'); end if;
+  perform private.dm_leave(p_thread, role);
+  return jsonb_build_object('status', 'ok');
+end
+$fn$;
+
+create or replace function public.dm_block(p_thread bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); t private.dm_threads%rowtype; other uuid; role text;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select * into t from private.dm_threads where id = p_thread;
+  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
+  if role is null then return jsonb_build_object('status', 'not_found'); end if;
+  other := case when role = 'sender' then t.recipient_id else t.sender_id end;
+  insert into public.blocks (blocker_id, blocked_id) values (me, other) on conflict do nothing;
+  perform private.dm_leave(p_thread, role);
+  return jsonb_build_object('status', 'ok');
+end
+$fn$;
+
+create or replace function public.dm_report(p_thread bigint, p_reason text, p_note text default '')
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; other uuid; v_report uuid;
+        cfg public.app_settings%rowtype; v_n int;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if p_reason not in ('harassment','sexual','spam','personal_info','hate','impersonation','other') then
+    raise exception 'invalid_reason';
+  end if;
+  select * into t from private.dm_threads where id = p_thread;
+  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
+  if role is null then return jsonb_build_object('status', 'not_found'); end if;
+  other := case when role = 'sender' then t.recipient_id else t.sender_id end;
+  if exists (select 1 from private.letter_reports where target_type = 'dm' and letter_id = p_thread and reporter_id = me and comment_id is null) then
+    return jsonb_build_object('status', 'already');
+  end if;
+  insert into private.letter_reports (target_type, letter_id, comment_id, reporter_id, reported_id, reason, note)
+  values ('dm', p_thread, null, me, other, p_reason, left(coalesce(p_note, ''), 1000))
+  returning id into v_report;
+  perform private.dm_copy_evidence(v_report, p_thread);
+  -- 신고하면 차단 + 끝내고 내 목록에서 지운다 (증거는 위에서 복사해 뒀다)
+  insert into public.blocks (blocker_id, blocked_id) values (me, other) on conflict do nothing;
+  perform private.dm_leave(p_thread, role);
+
+  -- 자동 정지 — 편지 신고와 같이 센다
+  select * into cfg from public.app_settings where id;
+  select count(distinct reporter_id) into v_n from private.letter_reports
+   where reported_id = other and status <> 'dismissed' and created_at > now() - interval '30 days';
+  if v_n >= cfg.letter_auto_suspend_reports then
+    update public.profiles set status = 'suspended' where id = other and status = 'active';
+    if found then
+      insert into private.audit_log (staff_id, action, target_user, report_id, detail)
+      values (null, 'auto_suspend_letters', other, v_report, jsonb_build_object('distinct_reporters', v_n));
+      perform public.close_room(rm.room_id, 'admin') from public.room_members rm where rm.user_id = other and rm.open;
+    end if;
+  end if;
+  return jsonb_build_object('status', 'ok');
+end
+$fn$;
+
+-- 받은 · 보낸 편지 목록 — 내가 나간 편지는 빼고. 받는 사람에게 보낸 사람은 가명뿐.
+create or replace function public.dm_inbox()
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  return jsonb_build_object('threads', coalesce((
+    select jsonb_agg(x order by x.last_at desc) from (
+      select t.id, t.status, t.last_at,
+             case when t.sender_id = me then 'sent' else 'received' end as role,
+             case when t.sender_id = me then (select name from private.person(t.recipient_id)) else t.sender_alias end as title,
+             case when t.sender_id = me then (select grade from private.person(t.recipient_id)) end as grade,
+             (select left(m.body, 80) from private.dm_msgs m where m.thread_id = t.id and m.status = 'visible' order by m.id desc limit 1) as last_body,
+             (select count(*) from private.dm_msgs m
+               where m.thread_id = t.id and m.status = 'visible'
+                 and m.from_sender = (t.sender_id <> me)
+                 and m.id > case when t.sender_id = me then t.sender_read else t.recipient_read end)::int as unread
+        from private.dm_threads t
+       where ((t.sender_id = me and not t.sender_hidden) or (t.recipient_id = me and not t.recipient_hidden))
+         and t.status <> 'removed'
+       order by t.last_at desc limit 100) x), '[]'::jsonb),
+    'server_now', now());
+end
+$fn$;
+
+-- 편지 한 줄기 — 내가 나간 편지는 없는 것으로
+create or replace function public.dm_thread(p_thread bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; last bigint;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select * into t from private.dm_threads where id = p_thread;
+  role := case when t.sender_id = me and not t.sender_hidden then 'sender'
+               when t.recipient_id = me and not t.recipient_hidden then 'recipient' end;
+  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
+  select max(id) into last from private.dm_msgs where thread_id = p_thread;
+  if role = 'sender' then update private.dm_threads set sender_read = greatest(sender_read, coalesce(last, 0)) where id = p_thread;
+  else update private.dm_threads set recipient_read = greatest(recipient_read, coalesce(last, 0)) where id = p_thread; end if;
+  return jsonb_build_object(
+    'status', 'ok', 'id', t.id, 'role', case when role = 'sender' then 'sent' else 'received' end,
+    'title', case when role = 'sender' then (select name from private.person(t.recipient_id)) else t.sender_alias end,
+    'grade', case when role = 'sender' then (select grade from private.person(t.recipient_id)) end,
+    'thread_status', t.status, 'closed_by', t.closed_by,
+    'wait_reply', t.status = 'open' and private.dm_streak(p_thread, role = 'sender') >= 3,
+    'messages', coalesce((select jsonb_agg(jsonb_build_object(
+                   'id', m.id, 'mine', m.from_sender = (role = 'sender'),
+                   'body', case when m.status = 'visible' then m.body end,
+                   'fmt', case when m.status = 'visible' then m.fmt end,
+                   'removed', m.status = 'removed',
+                   'created_at', m.created_at) order by m.id)
+                 from private.dm_msgs m where m.thread_id = p_thread), '[]'::jsonb),
+    'server_now', now());
+end
+$fn$;
+
+-- 푸시 — 받는 사람에게는 가명만 제목으로 ("익명 · " 없이). 보낸 사람 쪽에는 받는 사람 이름.
+create or replace function public.dm_push_payload(p_msg bigint, p_actor uuid)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare m private.dm_msgs%rowtype; t private.dm_threads%rowtype; v_to uuid; v_subs jsonb;
+begin
+  select * into m from private.dm_msgs where id = p_msg;
+  if not found or m.status <> 'visible' then return jsonb_build_object('skip', 'no_message'); end if;
+  select * into t from private.dm_threads where id = m.thread_id;
+  if (case when m.from_sender then t.sender_id else t.recipient_id end) is distinct from p_actor then
+    return jsonb_build_object('skip', 'not_author');
+  end if;
+  if m.created_at < now() - interval '2 minutes' then return jsonb_build_object('skip', 'stale'); end if;
+  if t.status <> 'open' then return jsonb_build_object('skip', 'closed'); end if;
+  insert into private.dm_push_log (msg_id) values (p_msg) on conflict do nothing;
+  if not found then return jsonb_build_object('skip', 'already'); end if;
+  v_to := case when m.from_sender then t.recipient_id else t.sender_id end;
+  v_subs := private.push_target(v_to);
+  if v_subs ? 'skip' then return v_subs; end if;
+  -- ★ 받는 사람 쪽 알림에 보낸 사람 정보 없음 (가명만)
+  return jsonb_build_object(
+    'title', case when m.from_sender then t.sender_alias
+                  else (select name from private.person(t.recipient_id)) || '님의 답장' end,
+    'body',  left(m.body, 100),
+    'url',   '/letters/' || t.id,
+    'tag',   'dm-' || t.id,
+    'subs',  v_subs -> 'subs');
+end
+$fn$;

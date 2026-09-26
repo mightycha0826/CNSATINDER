@@ -134,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 25 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (편지 나가기 · `dm_threads.sender_hidden/recipient_hidden` · 가명 알림).
+      이미 끝낸 편지는 끝낸 사람 목록에서 숨김 처리됨.
 - [x] **Phase 24 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (이름 편지 서식 `dm_msgs.fmt` · `dm_send(uuid, text, jsonb)`).
       안 하면 편지 보내기가 실패한다.
 - [x] **Phase 23 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (이름 편지 · 이름 확인). 새 DB 는 `schema.sql` 을 다시 실행.
@@ -353,4 +355,8 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 - [x] **테마 색상** — 설정의 "채팅 색상"을 "테마 색상"으로. 고른 색이 말풍선만이 아니라 앱 전체 포인트 색
       (`--g-*`→로고 `--brand`, 채운 버튼 `--accent-fill`, 글자·아이콘 `--accent`, 내 말풍선 `--bubble-fill`)을 바꾼다. 미리보기 대화는 그대로.
       저장 키(`chat-color-v1`)는 그대로라 이미 고른 색은 유지
+- [x] **Phase 25 — 편지 나가기 · 길게 누르기 메뉴 · 가명** — 편지에서 나가기 · 차단 · 신고를 하면 그 편지가 내 목록에서 사라진다
+      (표에는 남음 — "다시 못 보냄" 규칙 · 신고 증거용). 끝낸 뒤 같은 사람에게 다시 보내도 목록에 같은 이름이 둘 뜨지 않는다.
+      편지 목록 · 대화 목록에서 줄을 길게 누르면(마우스는 오른쪽 클릭) 신고 · 차단 · 나가기 (`lib/longpress.ts`, `LetterMenu`, `RoomMenu`).
+      받는 쪽 목록 · 편지 화면 · 알림 제목은 "익명 · ○○" 대신 가명(○○)만
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

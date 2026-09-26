@@ -25,14 +25,15 @@ function world({ named = true } = {}) {
 			{ id: 7, role: 'received', title: '푸른 우표', grade: null, status: 'open', last_at: ago(5), unread: 2,
 				msgs: [{ id: 70, mine: false, body: '안녕! 너 그림 진짜 잘 그리더라', created_at: ago(8) }, { id: 71, mine: false, body: '나중에 알려 줄게 ㅎㅎ', created_at: ago(5) }] }
 		],
+		rooms: [{ room_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', status: 'active', my_seat: 1, partner_alias: '새벽수달', expires_at: new Date(Date.now() + 600_000).toISOString(), round: 1, joined: true, partner_online: false, last_body: '안녕', last_seat: 2, last_at: ago(1), unread: 0 }],
 		wait: false
 	};
 	return w;
 }
-const inbox = (w) => ({ threads: w.threads.map(({ msgs, ...t }) => ({ ...t, last_body: msgs.at(-1)?.body ?? null })), server_now: new Date().toISOString() });
+const inbox = (w) => ({ threads: w.threads.filter((t) => !t.hidden).map(({ msgs, hidden, ...t }) => ({ ...t, last_body: msgs.at(-1)?.body ?? null })), server_now: new Date().toISOString() });
 const thread = (w, id) => {
 	const t = w.threads.find((x) => x.id === id);
-	if (!t) return { status: 'not_found' };
+	if (!t || t.hidden) return { status: 'not_found' };
 	t.unread = 0;
 	return { status: 'ok', id: t.id, role: t.role, title: t.title, grade: t.grade, thread_status: t.status, closed_by: t.status === 'closed' ? (t.role === 'received' ? 'recipient' : 'sender') : null,
 		wait_reply: w.wait, messages: t.msgs.map((m) => ({ ...m, removed: false })), server_now: new Date().toISOString() };
@@ -53,7 +54,8 @@ async function openApp(browser, w) {
 		if (u.pathname.startsWith('/auth/v1/')) return json({});
 		if (rpc === 'my_account') return json(w.account);
 		if (rpc === 'set_my_name') { w.account = { ...w.account, name: a.p_name, name_source: 'self' }; return json({ status: 'ok' }); }
-		if (rpc === 'my_rooms') return json({ rooms: [], server_now: new Date().toISOString() });
+		if (rpc === 'my_rooms') return json({ rooms: w.rooms, server_now: new Date().toISOString() });
+		if (rpc === 'leave_room' || rpc === 'block_partner' || rpc === 'report_partner') { w.rooms = w.rooms.filter((r) => r.room_id !== a.p_room); return json({ snap: {}, status: 'ok' }); }
 		if (rpc === 'my_notices') return json({ notices: [], last_seen: 0 });
 		if (rpc === 'dm_inbox') return json(inbox(w));
 		if (rpc === 'dm_search') {
@@ -74,7 +76,7 @@ async function openApp(browser, w) {
 			return json({ status: 'ok', msg_id: mid });
 		}
 		if (rpc === 'dm_close' || rpc === 'dm_block' || rpc === 'dm_report') {
-			const t = w.threads.find((x) => x.id === a.p_thread); if (t) t.status = 'closed';
+			const t = w.threads.find((x) => x.id === a.p_thread); if (t) { t.status = 'closed'; t.hidden = true; } // 나가면 내 목록에서 사라진다 (Phase 25)
 			return json({ status: 'ok' });
 		}
 		if (u.pathname === '/rest/v1/profiles') {
@@ -107,7 +109,7 @@ try {
 	await page.locator('a.tab', { hasText: '익명편지' }).click(); await page.waitForURL('**/letters');
 	await page.locator('.thread').first().waitFor();
 	const row = page.locator('.thread').first();
-	check('★ 받은 편지: 보낸 사람은 "익명 · 익명 이름" · ? 아바타', (await row.locator('.line1 b').innerText()) === '익명 · 푸른 우표' && (await row.locator('.anon').count()) === 1);
+	check('★ 받은 편지: 보낸 사람은 가명만 ("익명 · " 없이) · ? 아바타', (await row.locator('.line1 b').innerText()) === '푸른 우표' && (await row.locator('.anon').count()) === 1);
 	check('안 읽은 수 · 미리보기', (await row.locator('.badge').innerText()) === '2' && (await row.locator('.line2').innerText()).includes('나중에 알려 줄게'));
 	await page.screenshot({ path: `${SP}/letters-1-inbox.png` });
 
@@ -155,7 +157,7 @@ try {
 
 	console.log('[받은 편지 열기 · 답장]');
 	await page.goto(`${BASE}/letters/7`); await page.locator('.bubble').first().waitFor(); await page.waitForTimeout(300);
-	check('★ 받은 편지: "익명 · 푸른 우표" · 누가 보냈는지 알 수 없다는 안내', (await page.locator('.names b').innerText()) === '익명 · 푸른 우표' && (await page.locator('.names small').innerText()).includes('알 수 없어요'));
+	check('★ 받은 편지: 가명 "푸른 우표" · 누가 보냈는지 알 수 없다는 안내', (await page.locator('.names b').innerText()) === '푸른 우표' && (await page.locator('.names small').innerText()).includes('알 수 없어요'));
 	check('편지 글은 선택 · 복사 가능', await page.locator('.bubble').first().evaluate((e) => getComputedStyle(e).userSelect !== 'none'));
 	await page.getByRole('textbox', { name: '답장' }).fill('누구야?? 고마워');
 	await page.getByRole('button', { name: '보내기' }).click(); await page.waitForTimeout(500);
@@ -185,9 +187,9 @@ try {
 
 	console.log('[메뉴 · 신고]');
 	await page.getByRole('button', { name: '메뉴' }).click(); await page.waitForTimeout(300);
-	check('메뉴: 그만 주고받기 · 차단 · 신고 · 취소', (await page.locator('.sheet .item').allInnerTexts()).join(',') === '그만 주고받기,차단하기,신고하기,취소');
-	await page.locator('.sheet .item', { hasText: '그만 주고받기' }).click(); await page.waitForTimeout(200);
-	check('받은 편지를 끝내면 "다시 보낼 수 없어요" 안내', (await page.locator('.sheet .warn').innerText()).includes('다시 편지를 보낼 수 없어요'));
+	check('메뉴: 신고 · 차단 · 나가기 · 취소', (await page.locator('.sheet .item').allInnerTexts()).join(',') === '신고하기,차단하기,나가기,취소');
+	await page.locator('.sheet .item', { hasText: '나가기' }).click(); await page.waitForTimeout(200);
+	check('받은 편지에서 나가면 "목록에서 사라지고 · 다시 보낼 수 없어요" 안내', (await page.locator('.sheet .warn').innerText()).includes('목록에서 사라지고') && (await page.locator('.sheet .warn').innerText()).includes('다시 편지를 보낼 수 없어요'));
 	await page.locator('.sheet .item', { hasText: '취소' }).click(); await page.waitForTimeout(300);
 	await page.getByRole('button', { name: '메뉴' }).click(); await page.waitForTimeout(200);
 	await page.locator('.sheet .item', { hasText: '신고하기' }).click(); await page.waitForTimeout(300);
@@ -197,6 +199,35 @@ try {
 	await page.locator('.sheet .item.danger', { hasText: '신고하기' }).click();
 	await page.waitForFunction(() => location.pathname !== '/letters/7'); await page.waitForTimeout(300);
 	check('★ 신고 → 편지 id · 사유로 신고하고 편지 화면을 나간다', JSON.stringify(called(w, 'dm_report').at(-1)?.[1]) === JSON.stringify({ p_thread: 7, p_reason: 'harassment', p_note: '' }), page.url());
+
+	console.log('[목록에서 길게 누르기 · 나가기]');
+	await page.goto(`${BASE}/letters`); await page.waitForTimeout(800);
+	check('★ 신고한 편지는 내 목록에서 사라진다', !(await page.locator('.thread .line1 b').allInnerTexts()).includes('푸른 우표'));
+	await page.locator('.tabs button', { hasText: '보낸 편지' }).click(); await page.waitForTimeout(200);
+	const sentRow = page.locator('.thread').first();
+	const sentTitle = await sentRow.locator('.line1 b').innerText();
+	const box = await sentRow.boundingBox();
+	const at = { clientX: box.x + 60, clientY: box.y + box.height / 2, pointerType: 'touch', button: 0, isPrimary: true, pointerId: 5 };
+	await sentRow.dispatchEvent('pointerdown', at); await page.waitForTimeout(650);
+	await sentRow.dispatchEvent('pointerup', at); await sentRow.dispatchEvent('click'); await page.waitForTimeout(300);
+	check('★ 편지 줄을 길게 누르면 메뉴 (화면은 넘어가지 않는다)', new URL(page.url()).pathname === '/letters' && (await page.locator('.sheet .item').allInnerTexts()).join(',') === '신고하기,차단하기,나가기,취소'
+		&& (await page.locator('.sheet .who').innerText()) === sentTitle);
+	await page.screenshot({ path: `${SP}/letters-7-longpress.png` });
+	await page.locator('.sheet .item', { hasText: '나가기' }).click(); await page.waitForTimeout(200);
+	check('보낸 편지에서 나가기 안내에는 "다시 못 보냄" 없음', !(await page.locator('.sheet .warn').innerText()).includes('다시 편지를 보낼 수 없어요'));
+	await page.locator('.sheet .item.danger', { hasText: '나가기' }).click(); await page.waitForTimeout(600);
+	check('★ 나가면 목록에서 바로 사라진다', called(w, 'dm_close').length === 1 && (await page.locator('.thread').count()) === 0 && (await page.locator('.sheet').count()) === 0);
+	await page.locator('.tabs button', { hasText: '받은 편지' }).click();
+
+	console.log('[대화 목록에서 길게 누르기]');
+	await page.goto(`${BASE}/`); await page.locator('button.room').first().waitFor({ timeout: 8000 });
+	await page.locator('button.room').first().click({ button: 'right' }); await page.waitForTimeout(300);
+	check('★ 대화 줄 오른쪽 클릭(길게 누르기) → 신고 · 차단 · 나가기', new URL(page.url()).pathname === '/' && (await page.locator('.sheet .item').allInnerTexts()).join(',') === '신고하기,차단하기,대화 나가기,취소'
+		&& (await page.locator('.sheet .who').innerText()) === '새벽수달');
+	await page.screenshot({ path: `${SP}/home-longpress.png` });
+	await page.locator('.sheet .item', { hasText: '차단하기' }).click(); await page.waitForTimeout(200);
+	await page.locator('.sheet .item.danger', { hasText: '차단하기' }).click(); await page.waitForTimeout(800);
+	check('★ 차단 → 그 방으로 block_partner · 목록에서 사라짐', called(w, 'block_partner').at(-1)?.[1]?.p_room === 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' && (await page.locator('button.room').count()) === 0);
 
 	console.log('[새로고침한 편지 쓰기]');
 	await page.goto(`${BASE}/letters/new`); await page.waitForTimeout(1200);
