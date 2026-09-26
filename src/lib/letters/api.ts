@@ -34,6 +34,8 @@ export type DmThread = {
 	grade: number | null;
 	thread_status: 'open' | 'closed';
 	closed_by: 'sender' | 'recipient' | 'staff' | null;
+	/** 상대가 어디까지 읽었는지 (dm_msgs.id) — Phase 26 전 DB 면 없다 */
+	their_read?: number;
 	/** 답 없이 3개를 보냈다 — 상대가 답할 때까지 못 쓴다 */
 	wait_reply: boolean;
 	messages: DmMsg[];

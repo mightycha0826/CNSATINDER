@@ -4838,3 +4838,38 @@ begin
     'subs',  v_subs -> 'subs');
 end
 $fn$;
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 26 — 이름 편지: 읽음 표시
+--  말마다 시간을 달지 않고 가장 최근 말 아래 한 줄만 — 그 말이 내 것이고 상대가 읽었으면 "읽음".
+-- ════════════════════════════════════════════════════════════════════
+-- 편지 한 줄기 — 상대가 어디까지 읽었는지(their_read)도 — 가장 최근 말 아래 "읽음" 표시용 (채팅의 their_read_id 와 같다)
+create or replace function public.dm_thread(p_thread bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; last bigint;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select * into t from private.dm_threads where id = p_thread;
+  role := case when t.sender_id = me and not t.sender_hidden then 'sender'
+               when t.recipient_id = me and not t.recipient_hidden then 'recipient' end;
+  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
+  select max(id) into last from private.dm_msgs where thread_id = p_thread;
+  if role = 'sender' then update private.dm_threads set sender_read = greatest(sender_read, coalesce(last, 0)) where id = p_thread;
+  else update private.dm_threads set recipient_read = greatest(recipient_read, coalesce(last, 0)) where id = p_thread; end if;
+  return jsonb_build_object(
+    'status', 'ok', 'id', t.id, 'role', case when role = 'sender' then 'sent' else 'received' end,
+    'title', case when role = 'sender' then (select name from private.person(t.recipient_id)) else t.sender_alias end,
+    'grade', case when role = 'sender' then (select grade from private.person(t.recipient_id)) end,
+    'thread_status', t.status, 'closed_by', t.closed_by,
+    'their_read', case when role = 'sender' then t.recipient_read else t.sender_read end,
+    'wait_reply', t.status = 'open' and private.dm_streak(p_thread, role = 'sender') >= 3,
+    'messages', coalesce((select jsonb_agg(jsonb_build_object(
+                   'id', m.id, 'mine', m.from_sender = (role = 'sender'),
+                   'body', case when m.status = 'visible' then m.body end,
+                   'fmt', case when m.status = 'visible' then m.fmt end,
+                   'removed', m.status = 'removed',
+                   'created_at', m.created_at) order by m.id)
+                 from private.dm_msgs m where m.thread_id = p_thread), '[]'::jsonb),
+    'server_now', now());
+end
+$fn$;

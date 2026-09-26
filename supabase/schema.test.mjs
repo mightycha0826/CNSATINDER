@@ -2520,5 +2520,27 @@ console.log('\n[73] 이름 편지 — 나가면 내 목록에서 지우기 (Phas
 	check('나간 편지도 표에는 남는다 (운영자 확인용)', (await cnt('select count(*)::int n from private.dm_threads where id = any($1)', [[t1.thread_id, t2.thread_id, t3.thread_id, t4.thread_id]])) === 4);
 }
 
+console.log('\n[74] 이름 편지 — 읽음 (Phase 26)');
+{
+	await resetPool();
+	await db.query(`update public.user_presence set letter_tokens = 3, letter_at = now(), comment_tokens = 10, comment_at = now()`);
+	let no = 21000;
+	const named = async (name, grade) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name, grade = excluded.grade', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set gender=$2, want=$3, onboarded=true where id=$1', [id, 'm', 'f']);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const A = await named('읽음보냄', 1), B = await named('읽음받음', 2);
+	const s1 = await rpcAs(A, 'dm_send', B, '읽었어?');
+	check('상대가 안 열어 봤으면 읽음 전', (await rpcAs(A, 'dm_thread', s1.thread_id)).their_read < s1.msg_id);
+	await rpcAs(B, 'dm_thread', s1.thread_id);
+	check('★ 상대가 열어 보면 내 말까지 읽음', (await rpcAs(A, 'dm_thread', s1.thread_id)).their_read >= s1.msg_id);
+	const r1 = await rpcAs(B, 'dm_reply', s1.thread_id, '응');
+	check('받는 쪽도: 보낸 사람이 아직 안 봤으면 읽음 전', (await rpcAs(B, 'dm_thread', s1.thread_id)).their_read < r1.msg_id);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -134,6 +134,7 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 26 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (편지 읽음 `dm_thread.their_read`). 안 해도 편지는 되고 "읽음"만 안 뜬다.
 - [x] **Phase 25 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (편지 나가기 · `dm_threads.sender_hidden/recipient_hidden` · 가명 알림).
       이미 끝낸 편지는 끝낸 사람 목록에서 숨김 처리됨.
 - [x] **Phase 24 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (이름 편지 서식 `dm_msgs.fmt` · `dm_send(uuid, text, jsonb)`).
@@ -359,4 +360,6 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       (표에는 남음 — "다시 못 보냄" 규칙 · 신고 증거용). 끝낸 뒤 같은 사람에게 다시 보내도 목록에 같은 이름이 둘 뜨지 않는다.
       편지 목록 · 대화 목록에서 줄을 길게 누르면(마우스는 오른쪽 클릭) 신고 · 차단 · 나가기 (`lib/longpress.ts`, `LetterMenu`, `RoomMenu`).
       받는 쪽 목록 · 편지 화면 · 알림 제목은 "익명 · ○○" 대신 가명(○○)만
+- [x] **Phase 26 — 편지 읽음 · 시간 한 줄** — 편지 화면에서 말마다 달던 시간을 없애고, 가장 최근 말 아래에만 한 줄
+      ("방금" / 내 말이고 상대가 읽었으면 "읽음 · 방금"). 같은 쪽이 연달아 보낸 말은 붙이고, 말하는 쪽이 바뀔 때만 띄운다
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

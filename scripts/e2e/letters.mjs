@@ -36,7 +36,7 @@ const thread = (w, id) => {
 	if (!t || t.hidden) return { status: 'not_found' };
 	t.unread = 0;
 	return { status: 'ok', id: t.id, role: t.role, title: t.title, grade: t.grade, thread_status: t.status, closed_by: t.status === 'closed' ? (t.role === 'received' ? 'recipient' : 'sender') : null,
-		wait_reply: w.wait, messages: t.msgs.map((m) => ({ ...m, removed: false })), server_now: new Date().toISOString() };
+		wait_reply: w.wait, their_read: t.theirRead ?? 0, messages: t.msgs.map((m) => ({ ...m, removed: false })), server_now: new Date().toISOString() };
 };
 
 async function openApp(browser, w) {
@@ -162,6 +162,11 @@ try {
 	await page.getByRole('textbox', { name: '답장' }).fill('누구야?? 고마워');
 	await page.getByRole('button', { name: '보내기' }).click(); await page.waitForTimeout(500);
 	check('답장', called(w, 'dm_reply').at(-1)?.[1]?.p_body === '누구야?? 고마워' && (await page.locator('.row.mine .bubble').last().innerText()).includes('고마워'));
+	check('★ 시간은 가장 최근 말 아래 한 줄만 (말마다 X)', (await page.locator('.when').count()) === 1
+		&& (await page.locator('.when').innerText()) === '방금' && (await page.locator('.when').getAttribute('class')).includes('mine'), await page.locator('.when').allInnerTexts().then((x) => x.join('|')));
+	w.threads.find((x) => x.id === 7).theirRead = 10_000;
+	await page.reload(); await page.locator('.when').waitFor(); await page.waitForTimeout(300);
+	check('★ 상대가 읽었으면 "읽음 · 방금"', (await page.locator('.when').innerText()) === '읽음 · 방금', await page.locator('.when').innerText());
 	await page.screenshot({ path: `${SP}/letters-4-thread.png` });
 
 	// 키보드: 안드로이드(resizes-content)는 키보드가 올라오면 화면 높이 자체가 줄어든다 — 창 높이를 줄여 흉내

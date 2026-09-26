@@ -90,6 +90,9 @@
 
 	const open = $derived(t?.thread_status === 'open');
 	const heading = $derived(t?.title ?? '');
+	// 말마다 시간을 달지 않고 가장 최근 말 아래 한 줄만 — 내 말이고 상대가 읽었으면 "읽음 · 3분 전"
+	const last = $derived(t?.messages.at(-1));
+	const lastSeen = $derived(!!last?.mine && (t?.their_read ?? 0) >= last.id);
 	const endedText = $derived.by(() => {
 		if (!t || open) return '';
 		if (t.closed_by === 'staff') return '운영진이 내린 편지예요';
@@ -158,11 +161,12 @@
 		{:else}
 			<p class="intro muted">
 				{t.role === 'received'
-					? '이 편지를 보낸 사람은 익명이에요. 불편하면 언제든 끝내거나 신고할 수 있어요.'
+					? '이 편지를 보낸 사람은 익명이에요. 불편하면 언제든 나가거나 신고할 수 있어요.'
 					: `${t.title}님에게는 내 이름 대신 익명 이름이 보여요.`}
 			</p>
-			{#each t.messages as m (m.id)}
-				<div class="row" class:mine={m.mine}>
+			{#each t.messages as m, i (m.id)}
+				<!-- 말하는 쪽이 바뀔 때만 크게 띄운다 (같은 쪽 연달아는 붙여서) -->
+				<div class="row" class:mine={m.mine} class:turn={i > 0 && t.messages[i - 1].mine !== m.mine}>
 					<div class="bubble selectable" class:removed={m.removed}>
 						<span class="sr-only">{m.mine ? '나' : heading}: </span>{#if m.removed}운영진이 내린 말이에요{:else if m.fmt}<RichText
 								body={m.body ?? ''}
@@ -170,8 +174,10 @@
 							/>{:else}{m.body}{/if}
 					</div>
 				</div>
-				<div class="when num" class:mine={m.mine}>{agoText(m.created_at, S.now + skew)}</div>
 			{/each}
+			{#if last}
+				<div class="when num" class:mine={last.mine}>{lastSeen ? '읽음 · ' : ''}{agoText(last.created_at, S.now + skew)}</div>
+			{/if}
 			{#if !open}<p class="ended">{endedText}</p>{/if}
 		{/if}
 	</div>
@@ -289,7 +295,10 @@
 	}
 	.row {
 		display: flex;
-		margin-top: 8px;
+		margin-top: 4px;
+	}
+	.row.turn {
+		margin-top: 14px;
 	}
 	.row.mine {
 		justify-content: flex-end;
@@ -313,7 +322,7 @@
 		opacity: 0.6;
 	}
 	.when {
-		margin: 3px 6px 0;
+		margin: 4px 6px 0;
 		font-size: 11px;
 		color: var(--text-2);
 	}
