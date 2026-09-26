@@ -2,11 +2,14 @@
 	/**
 	 * 편지 쓰기 — 익명편지 탭에서 찾은 학생에게. 받는 사람은 검색에서 고른 값(page.state.to)으로만 온다.
 	 * 새로고침하면 사라지므로 다시 찾게 한다. 받는 사람에게 내 이름은 보이지 않는다.
+	 * 서식 편집기(굵게 · 형광펜 · 글자색 · 크기 · 정렬) — 본문은 순수 텍스트, 서식은 fmt 로 따로 보낸다.
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
+	import LetterEditor from '$lib/letters/LetterEditor.svelte';
+	import type { LetterFmt } from '$lib/letters/rich';
 	import { errMsg, toast } from '$lib/state.svelte';
 	import { sendError, sendLetter } from '$lib/letters/api';
 
@@ -17,15 +20,17 @@
 
 	const MAX = 1000;
 	let body = $state('');
+	let fmt = $state<LetterFmt | null>(null);
 	let busy = $state(false);
-	const len = $derived(body.trim().length);
+	// 서버와 같은 셈 — 편집기가 앞뒤 공백을 잘라 둔 본문의 글자(code point) 수, 줄바꿈도 한 글자
+	const len = $derived(Array.from(body).length);
 	const ready = $derived(!!to && len > 0 && len <= MAX && !busy);
 
 	async function send() {
 		if (!ready || !to) return;
 		busy = true;
 		try {
-			const r = await sendLetter(to.id, body.trim());
+			const r = await sendLetter(to.id, body, fmt);
 			const err = sendError(r);
 			if (err) {
 				toast(err);
@@ -59,17 +64,11 @@
 			{#if to.grade}<span class="muted">{to.grade}학년</span>{/if}
 		</div>
 
-		<textarea
-			class="body selectable"
-			bind:value={body}
-			maxlength={MAX + 100}
-			placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.\n내 이름은 보이지 않아요.`}
-			aria-label="편지 내용"
-		></textarea>
+		<LetterEditor bind:body bind:fmt placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.\n내 이름은 보이지 않아요.`} />
 
 		<div class="foot">
 			<span class="muted">받는 사람에게는 익명 이름으로 보여요</span>
-			<span class="num" class:over={len > MAX}>{len}/{MAX}</span>
+			<span class="num" class:over={len > MAX}>{len > MAX ? `${len - MAX}자 넘음 · ` : ''}{len}/{MAX}</span>
 		</div>
 		<ul class="rules muted">
 			<li>상대가 답하기 전에는 3개까지 보낼 수 있어요. 받는 사람은 언제든 대화를 끝내거나 신고할 수 있어요.</li>
@@ -85,7 +84,7 @@
 		font-size: 15px;
 	}
 	.compose {
-		gap: 12px;
+		gap: 10px;
 		padding-top: 14px;
 		padding-bottom: calc(24px + env(safe-area-inset-bottom));
 	}
@@ -93,26 +92,12 @@
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding-bottom: 12px;
-		border-bottom: 1px solid var(--line);
+		padding-bottom: 4px;
 		font-size: 15px;
 	}
 	.to .label {
 		font-size: 13px;
 		margin-right: 4px;
-	}
-	.body {
-		min-height: 220px;
-		padding: 0;
-		border: 0;
-		outline: none;
-		resize: none;
-		background: none;
-		font-size: 16px;
-		line-height: 1.6;
-	}
-	.body::placeholder {
-		color: var(--text-2);
 	}
 	.foot {
 		display: flex;

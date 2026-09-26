@@ -134,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 24 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (이름 편지 서식 `dm_msgs.fmt` · `dm_send(uuid, text, jsonb)`).
+      안 하면 편지 보내기가 실패한다.
 - [x] **Phase 23 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (이름 편지 · 이름 확인). 새 DB 는 `schema.sql` 을 다시 실행.
       안 하면 익명편지 탭의 검색·목록이 오류.
 - [x] **Phase 22 적용** — 2026-09-25 Supabase 커넥터로 실DB 에 적용 (보안 점검). 남은 일: 대시보드에서 유출 비밀번호 차단 켜기 (`SECURITY.md`).
@@ -176,7 +178,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `src/lib/motion.ts` | 기기의 "동작 줄이기" 설정 — JS 스크롤을 부드럽게 할지 (CSS 애니메이션은 `app.css` 에서 한꺼번에 끈다) |
 | `src/lib/time.ts` · `restriction.ts` | 상대 시간·`mm:ss` 표시 / 이용 제한 판정 (학생 앱·운영자 화면 공용) |
 | `src/lib/chat/` | 채팅방 — `ChatView`(화면) · `room.svelte.ts`(상태·동기화) · `ChatIntro`(맨 위 소개) · `PartnerCard`(상대 프로필) · `ReactionPicker`·`ReactionBadge`·`reactions.ts`(공감) · `ReplyQuote`(답장 인용) · `Starters`(첫마디 도우미) · `MatchScreen`(연결 화면) · `gestures.ts`(길게 누르기·두 번 톡·밀어서 답장) |
-| `src/lib/letters/` | 이름 편지 — `api.ts`(검색·받은/보낸 편지·보내기·끝내기·차단·신고 RPC), `unread.svelte.ts`(탭 빨간 점) |
+| `src/lib/letters/` | 이름 편지 — `api.ts`(검색·받은/보낸 편지·보내기·끝내기·차단·신고 RPC), `unread.svelte.ts`(탭 빨간 점), `LetterEditor.svelte`(서식 편집기) · `rich.ts` · `RichText.svelte`(서식 그리기) |
 | `src/lib/tabBack.svelte.ts` | 탭 첫 화면 뒤로가기 — 익명편지·프로필 → 홈, 홈에서 두 번 누르면 종료 |
 | `src/lib/chatColor.svelte.ts` | 채팅 색상(내 말풍선) — 설정 화면에서 고르고 이 기기에만 저장 |
 | `src/lib/admin/` | 운영자 화면 공용 조각 — 신고 상세 카드(`ReportHeader` · `ReportedCard` · `ReporterCard` · `IdentityCard`), `AccountStatus`, `FormMsg`, `SanctionForm` |
@@ -336,4 +338,6 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       괴롭힘 막기: 새 편지 하루 몇 통(편지 버킷) · 답 없이 3개까지 · 받는 사람이 끝내면 그 사람은 다시 못 보냄 · 차단(채팅과 공유) ·
       신고 = 자동 차단 + 끝내기 + 누적 정지 · 규칙 필터 · AI 검토. 운영자는 신고된 편지의 보낸 사람을 확인하고(기록 남음) 내릴 수 있다.
       새 편지·답장은 푸시 알림, 익명편지 탭에 안 읽은 빨간 점. 옛 공개 피드·편집기·하트 화면은 뺐다 (데이터는 DB 에 그대로)
+- [x] **Phase 24 — 편지 쓰기 편집기** — 새 편지를 쓸 때 서식 도구 막대 (굵게 · 기울임 · 밑줄 · 취소선 · 형광펜 5색 · 글자색 6색 · 크기 · 정렬 · 되돌리기, Tiptap).
+      Phase 14 와 같은 방식 — 본문은 순수 텍스트, 서식은 `dm_msgs.fmt` 에 범위 목록으로, DB 가 `letter_fmt_ok` 로 검사. 받는 쪽 말풍선도 표로만 그린다(HTML 없음). 답장은 글자만
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

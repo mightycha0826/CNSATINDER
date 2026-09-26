@@ -2,6 +2,7 @@ import { supabase } from '../supabase';
 import { requestModeration } from '../moderation';
 import { notifyDm } from '../push';
 import { waitText } from '../time';
+import type { LetterFmt } from './rich';
 
 /**
  * 이름 편지 (Phase 23) — 학생을 이름으로 찾아 익명으로 편지를 보내고, 둘이 주고받는다.
@@ -23,7 +24,8 @@ export type DmItem = {
 	unread: number;
 };
 
-export type DmMsg = { id: number; mine: boolean; body: string | null; removed: boolean; created_at: string };
+/** fmt = 서식 (편지 쓰기 편집기로 쓴 새 편지만, 답장은 null) */
+export type DmMsg = { id: number; mine: boolean; body: string | null; fmt?: LetterFmt | null; removed: boolean; created_at: string };
 export type DmThread = {
 	status: 'ok';
 	id: number;
@@ -64,8 +66,9 @@ function afterSend(r: SendResult) {
 	requestModeration();
 }
 
-export async function sendLetter(to: string, body: string) {
-	const r = await rpc<SendResult>('dm_send', { p_to: to, p_body: body });
+/** body 는 앞뒤 공백을 잘라서 — 서식 위치가 본문 기준이라 서버가 자른 것과 같아야 한다 */
+export async function sendLetter(to: string, body: string, fmt: LetterFmt | null = null) {
+	const r = await rpc<SendResult>('dm_send', { p_to: to, p_body: body, p_fmt: fmt });
 	afterSend(r);
 	return r;
 }

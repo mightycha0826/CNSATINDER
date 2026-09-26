@@ -62,7 +62,7 @@ async function openApp(browser, w) {
 		}
 		if (rpc === 'dm_send') {
 			const id = 100 + w.threads.length;
-			w.threads.unshift({ id, role: 'sent', title: '박받음', grade: 2, status: 'open', last_at: new Date().toISOString(), unread: 0, msgs: [{ id: id * 10, mine: true, body: a.p_body, created_at: new Date().toISOString() }] });
+			w.threads.unshift({ id, role: 'sent', title: '박받음', grade: 2, status: 'open', last_at: new Date().toISOString(), unread: 0, msgs: [{ id: id * 10, mine: true, body: a.p_body, fmt: a.p_fmt ?? null, created_at: new Date().toISOString() }] });
 			return json({ status: 'ok', thread_id: id, msg_id: id * 10 });
 		}
 		if (rpc === 'dm_thread') return json(thread(w, a.p_thread));
@@ -123,17 +123,35 @@ try {
 	check('편지 쓰기: 받는 사람 이름 · 학년', (await page.locator('.to').innerText()).includes('박받음') && (await page.locator('.to').innerText()).includes('2학년'));
 	check('비어 있으면 못 보낸다', await page.getByRole('button', { name: '보내기' }).isDisabled());
 	check('"내 이름은 보이지 않아요" 안내', (await page.locator('.foot').innerText()).includes('익명 이름'));
-	await page.getByRole('textbox', { name: '편지 내용' }).fill('안녕 박받음! 오늘 발표 멋있었어');
+	check('서식 도구 막대 (굵게 · 형광펜 · 글자색 · 크기 · 정렬)', await page.getByRole('toolbar', { name: '서식' }).isVisible()
+		&& (await page.getByRole('toolbar', { name: '서식' }).getByRole('button').count()) >= 10);
+	const editor = page.getByRole('textbox', { name: '편지 내용' });
+	await editor.fill('안녕 박받음! 오늘 발표 멋있었어');
+	// "발표" 만 골라 굵게 + 형광펜
+	await editor.evaluate((el) => {
+		const node = el.querySelector('p').firstChild, i = node.textContent.indexOf('발표');
+		const r = document.createRange(); r.setStart(node, i); r.setEnd(node, i + 2);
+		const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+	});
+	await page.waitForTimeout(100);
+	await page.getByRole('button', { name: '굵게' }).click();
+	await page.getByRole('button', { name: '형광펜', exact: true }).click();
+	await page.getByRole('button', { name: '형광펜 노랑' }).click();
+	await page.waitForTimeout(100);
 	await page.screenshot({ path: `${SP}/letters-3-compose.png` });
 	await page.getByRole('button', { name: '보내기' }).click();
 	await page.waitForURL(/\/letters\/\d+$/);
 	const sent = called(w, 'dm_send').at(-1)?.[1];
 	check('★ 고른 사람(계정 id)에게 보낸다', sent?.p_to === 'u-b' && sent?.p_body === '안녕 박받음! 오늘 발표 멋있었어', JSON.stringify(sent));
+	check('★ 서식은 본문과 따로 — "발표"(11~13) 굵게 · 노랑 형광펜', JSON.stringify(sent?.p_fmt?.m?.slice().sort()) === JSON.stringify([[11, 13, 'b'], [11, 13, 'h:yellow']]), JSON.stringify(sent?.p_fmt));
 	await page.waitForTimeout(2000); // AI 검토 요청은 1.5초 모아서
 	check('보낸 뒤 알림 · AI 검토 요청', w.calls.some((c) => c[0] === 'api' && c[1] === '/api/push' && c[2]?.dm_msg_id) && w.calls.some((c) => c[0] === 'api' && c[1] === '/api/moderate'));
 	await page.locator('.row.mine .bubble').first().waitFor();
 	check('보낸 편지 화면: 받는 사람 이름 · "나는 익명"', (await page.locator('.names b').innerText()) === '박받음' && (await page.locator('.names small').innerText()).includes('나는 익명'));
 	check('내 편지는 오른쪽 말풍선', (await page.locator('.row.mine .bubble').innerText()).includes('발표 멋있었어'));
+	await page.screenshot({ path: `${SP}/letters-3b-sent.png` });
+	check('★ 받은 쪽 화면에도 서식 그대로 (HTML 없이 표로)', (await page.locator('.row.mine .bubble .rt-b').innerText()) === '발표'
+		&& (await page.locator('.row.mine .bubble .rt-b').getAttribute('style'))?.includes('background-color'));
 
 	console.log('[받은 편지 열기 · 답장]');
 	await page.goto(`${BASE}/letters/7`); await page.locator('.bubble').first().waitFor(); await page.waitForTimeout(300);

@@ -49,6 +49,7 @@ CNSATINDER 는 한 학교 학생들이 쓰는 익명 채팅 · 익명편지 앱�
 | 끊기 | 받는 사람이 "그만 주고받기"를 누르면 그 보낸 사람은 **다시는** 그 사람에게 편지를 못 보냄. 차단은 채팅과 공유 | `dm_send` · `dm_block` |
 | 신고 | 신고 = 자동 차단 + 끝내기 + 증거 사본 + 누적 신고 자동 정지. 규칙 필터 · AI 검토도 편지에 적용 | `dm_report` · `private.auto_report_dm` |
 | 운영진 | 신고된 편지의 보낸 사람 확인(관리자, 기록 먼저) · 편지 내리기(기록) | `admin_remove_dm` · `revealIdentity` |
+| 서식 | 편지 쓰기 편집기의 서식은 본문과 따로 범위 목록(`fmt`)으로만 저장 — 종류 · 색 · 크기는 정해진 표에서만, DB 가 검사하고 화면도 HTML 없이 그린다 (Phase 24) | `private.letter_fmt_ok` · `RichText.svelte` |
 | 안 되는 이유 숨김 | 받기 끔 · 차단 · 끝냄은 전부 "지금 보낼 수 없어요" 하나로 — 상대가 나를 차단했는지 알 수 없음 | `dm_send` `not_available` |
 
 ### 3. 운영자 화면 (`/admin`)
@@ -65,10 +66,10 @@ CNSATINDER 는 한 학교 학생들이 쓰는 익명 채팅 · 익명편지 앱�
 ### 4. 웹 · 브라우저
 - **CSP**: 스크립트는 SvelteKit nonce 로만, 연결은 우리 사이트와 `*.supabase.co` 로만, `frame-ancestors 'none'`,
   `object-src 'none'`, `base-uri 'self'`, `form-action 'self'` (`vite.config.ts`).
-  스타일만 `unsafe-inline` 허용(Svelte 전환 효과).
+  스타일만 `unsafe-inline` 허용(Svelte 전환 효과 · 편지 편집기).
 - 헤더: `X-Frame-Options: DENY` · `nosniff` · `Referrer-Policy` · `Permissions-Policy`(카메라 · 마이크 · 위치 끔).
 - XSS: 코드 어디에도 `{@html}` · `innerHTML` 이 없습니다 — 사람이 쓴 글은 전부 Svelte 가 이스케이프합니다.
-  옛 공개 편지 서식(운영자 화면에서만 보임)은 정해진 색 · 크기 표에서만 그리고(`src/lib/letters/rich.ts`), DB 도 서식 모양을 검사합니다(`private.letter_fmt_ok`).
+  편지 서식은 정해진 색 · 크기 표에서만 그리고(`src/lib/letters/rich.ts`), DB 도 서식 모양을 검사합니다(`private.letter_fmt_ok`).
 - CSRF: SvelteKit 기본 출처 검사 + 운영자 쿠키 `SameSite=Strict`.
 - 서비스워커는 같은 출처 주소만 열고, 운영자 화면은 캐시하지 않습니다 (`static/sw.js`).
 

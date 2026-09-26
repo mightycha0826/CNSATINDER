@@ -2447,5 +2447,38 @@ console.log('\n[71] ★ 이름 편지 — 학생을 찾아 익명으로 보내�
 	await db.query(`update public.app_settings set ai_moderation = false`);
 }
 
+console.log('\n[72] 이름 편지 서식 — 편지 쓰기 편집기 (Phase 24)');
+{
+	await resetPool();
+	await db.query(`update public.user_presence set letter_tokens = 3, letter_at = now(), comment_tokens = 10, comment_at = now()`);
+	let no = 20800;
+	const named = async (name, grade) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name, grade = excluded.grade', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set gender=$2, want=$3, onboarded=true where id=$1', [id, 'm', 'f']);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const A = await named('서식보냄', 1), B = await named('서식받음', 2), C = await named('서식셋', 2);
+	check('옛 두 인자 dm_send 는 없다 (헷갈리지 않게)', (await cnt(`select count(*)::int n from pg_proc where proname = 'dm_send'`)) === 1);
+	const fmt = { m: [[0, 2, 'b'], [3, 5, 'h:yellow'], [3, 5, 'c:red']], a: [[1, 'center']] };
+	const r = await rpcAs(A, 'dm_send', B, '안녕 친구\n가운데', JSON.stringify(fmt));
+	check('★ 서식과 함께 보낸다', r.status === 'ok', JSON.stringify(r));
+	const tb = await rpcAs(B, 'dm_thread', r.thread_id);
+	check('★ 받는 사람에게 본문 · 서식 그대로', tb.messages[0].body === '안녕 친구\n가운데' && JSON.stringify(tb.messages[0].fmt?.m) === JSON.stringify(fmt.m) && JSON.stringify(tb.messages[0].fmt?.a) === JSON.stringify(fmt.a), JSON.stringify(tb.messages[0]));
+	check('서식 없이도 보낸다 (두 인자 호출)', (await rpcAs(A, 'dm_send', B, '두 번째')).status === 'ok'
+		&& (await rpcAs(B, 'dm_thread', r.thread_id)).messages[1].fmt === null);
+	check('빈 서식({})은 없음으로', (await rpcAs(A, 'dm_send', B, '세 번째', '{}')).status === 'ok'
+		&& (await rpcAs(B, 'dm_thread', r.thread_id)).messages[2].fmt === null);
+	check('★ 표에 없는 서식은 거절', (await rpcAs(A, 'dm_send', C, '안녕하세요', JSON.stringify({ m: [[0, 2, 'c:#000']] }))).status === 'bad_text');
+	check('본문 밖을 가리키는 서식은 거절', (await rpcAs(A, 'dm_send', C, '안녕', JSON.stringify({ m: [[0, 9, 'b']] }))).status === 'bad_text');
+	check('앞뒤 공백이 남은 본문 + 서식은 거절 (위치가 어긋남)', (await rpcAs(A, 'dm_send', C, ' 안녕 ', JSON.stringify({ m: [[0, 2, 'b']] }))).status === 'bad_text');
+	check('거절된 것은 저장되지 않는다', !(await rpcAs(C, 'dm_inbox')).threads.length);
+	const lr = await rpcAs(B, 'dm_report', r.thread_id, 'spam', '');
+	await db.query(`update private.dm_msgs set status = 'removed' where thread_id = $1`, [r.thread_id]);
+	check('내려진 말은 서식도 안 보인다', lr.status === 'ok' && (await rpcAs(A, 'dm_thread', r.thread_id)).messages.every((m) => m.body === null && m.fmt === null));
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -10,6 +10,7 @@
 	import { goBack } from '$lib/nav';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import ReportPicker from '$lib/ui/ReportPicker.svelte';
+	import RichText from '$lib/letters/RichText.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import type { ReportReason } from '$lib/chat/types';
 	import { S, errMsg, toast } from '$lib/state.svelte';
@@ -146,7 +147,10 @@
 			{#each t.messages as m (m.id)}
 				<div class="row" class:mine={m.mine}>
 					<div class="bubble selectable" class:removed={m.removed}>
-						<span class="sr-only">{m.mine ? '나' : heading}: </span>{m.removed ? '운영진이 내린 말이에요' : m.body}
+						<span class="sr-only">{m.mine ? '나' : heading}: </span>{#if m.removed}운영진이 내린 말이에요{:else if m.fmt}<RichText
+								body={m.body ?? ''}
+								fmt={m.fmt}
+							/>{:else}{m.body}{/if}
 					</div>
 				</div>
 				<div class="when num" class:mine={m.mine}>{agoText(m.created_at, S.now + skew)}</div>
