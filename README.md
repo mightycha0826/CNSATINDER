@@ -19,9 +19,10 @@
 7. **상대 정보는 room_id 로만 묻는다.** 상대 프로필(`partner_profile`)·대화 목록(`my_rooms`)은
    같은 방 멤버에게만, uuid 없이 돌려준다. 익명 이름은 계정에 고정이므로(재회 시 알아볼 수 있음)
    소개·관심사에 학번·전화번호·@아이디는 서버가 거절한다.
-8. **익명편지 본문은 공개, 신원 연결 고리는 비공개.** `letters`/`letter_comments` 는 누구나 읽지만 식별 컬럼이 없고,
-   실제 계정은 `letter_participants`(자기 행만 읽힘)에만 있다. 편지 이름은 "편지 1개 × 계정 1개"마다 새로 뽑고
-   (공백이 들어간 "형용사 명사" — 채팅 닉네임 공간과 겹치지 않음), 계정 고정 닉네임은 쓰지 않는다.
+8. **이름 편지는 받는 사람만 이름이 보이고, 보낸 사람은 익명.** (Phase 23) 이름은 명렬표에서 자동으로 붙어 학생이 고칠 수 없고
+   (명렬표에 없는 학생만 한 번 적는다 — 명렬표 이름은 쓸 수 없음), 검색에는 이름·학년만 나온다 (설정 > 편지 받기 끄면 안 나옴).
+   편지 표 `private.dm_threads`/`dm_msgs` 는 RPC 로만 읽히고, 받는 사람에게 보낸 사람은 편지마다 새로 뽑은 익명 이름뿐이다.
+   옛 공개 편지(`letters`/`letter_comments`)는 DB 에 남아 있지만 화면에서는 내렸다.
 9. **학생끼리의 익명성은 구조로, 관리자 열람은 기록으로.** 관리자(admin)는 대화 내용·편지 작성자·이메일을 볼 수 있지만
    전부 service_role 전용 `admin_*` RPC 를 거치고 `private.audit_log` 에 남는다. 학생 쪽 RPC·RLS 경계(1~8)는 그대로다.
 
@@ -133,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 23 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (이름 편지 · 이름 확인). 새 DB 는 `schema.sql` 을 다시 실행.
+      안 하면 익명편지 탭의 검색·목록이 오류.
 - [x] **Phase 22 적용** — 2026-09-25 Supabase 커넥터로 실DB 에 적용 (보안 점검). 남은 일: 대시보드에서 유출 비밀번호 차단 켜기 (`SECURITY.md`).
 - [x] **Phase 21 적용** — 2026-09-25 Supabase 커넥터로 실DB 에 적용 (`profiles.allow_rematch` · `request_match`). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 20 적용** — `schema.sql` 을 다시 실행 (대화 백업 `admin_export_messages`). 백업을 쓸 거면 개인정보 처리방침에
@@ -167,13 +170,13 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `src/lib/state.svelte.ts` | 학생 앱 전역 상태 · 로그인 · 접속 신호 · 에러 문구 |
 | `src/lib/ui/` | 학생 앱 공용 화면 조각 — `Sheet`(아래 시트) · `ReportPicker`(신고 사유) · `BackButton` · `TopbarMe`(공지 종 + 설정 톱니) · `Avatar` · `PasswordFields` |
 | `src/lib/notices.svelte.ts` | 공지사항 목록 · 안 본 공지(빨간 점) · 본 것으로 저장 |
-| `src/lib/pollSeeker.svelte.ts` | "찾는 중" 폴링 상태 기계 — 채팅 `Seeker` 와 편지 `ReplySeeker` 가 물려받는다 |
+| `src/lib/pollSeeker.svelte.ts` | "찾는 중" 폴링 상태 기계 — 채팅 `Seeker` 가 물려받는다 |
 | `src/lib/nav.ts` | 앱 안의 "뒤로" — 기록을 쌓지 않고 돌아가기(`goBack`), 대화 끝나고 홈에서 바로 찾기(`backToSeek`) |
 | `src/lib/visible.ts` | `whileVisible` — 화면이 보이는 동안만 주기적으로 새로 읽기 (대화 목록·피드·편지·실시간 현황) |
 | `src/lib/motion.ts` | 기기의 "동작 줄이기" 설정 — JS 스크롤을 부드럽게 할지 (CSS 애니메이션은 `app.css` 에서 한꺼번에 끈다) |
 | `src/lib/time.ts` · `restriction.ts` | 상대 시간·`mm:ss` 표시 / 이용 제한 판정 (학생 앱·운영자 화면 공용) |
 | `src/lib/chat/` | 채팅방 — `ChatView`(화면) · `room.svelte.ts`(상태·동기화) · `ChatIntro`(맨 위 소개) · `PartnerCard`(상대 프로필) · `ReactionPicker`·`ReactionBadge`·`reactions.ts`(공감) · `ReplyQuote`(답장 인용) · `Starters`(첫마디 도우미) · `MatchScreen`(연결 화면) · `gestures.ts`(길게 누르기·두 번 톡·밀어서 답장) |
-| `src/lib/letters/` | 익명편지 |
+| `src/lib/letters/` | 이름 편지 — `api.ts`(검색·받은/보낸 편지·보내기·끝내기·차단·신고 RPC), `unread.svelte.ts`(탭 빨간 점) |
 | `src/lib/tabBack.svelte.ts` | 탭 첫 화면 뒤로가기 — 익명편지·프로필 → 홈, 홈에서 두 번 누르면 종료 |
 | `src/lib/chatColor.svelte.ts` | 채팅 색상(내 말풍선) — 설정 화면에서 고르고 이 기기에만 저장 |
 | `src/lib/admin/` | 운영자 화면 공용 조각 — 신고 상세 카드(`ReportHeader` · `ReportedCard` · `ReporterCard` · `IdentityCard`), `AccountStatus`, `FormMsg`, `SanctionForm` |
@@ -191,7 +194,6 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `npm run test:chat` | 채팅 클라이언트 로직 — 가짜 전송 계층으로 경쟁 상황 재현 |
 | `npm run test:e2e` | 실서버 Realtime E2E. 일회용 계정 3개 생성→검증→삭제. 서버 키가 앱과 **같은 프로젝트**여야 실행됨 |
 | `npm run test:match` | 실서버 매칭 동시성 스트레스 (기본 20명 동시 폴링 → 중복 배정·선호 위반 검사 → 삭제) |
-| `npm run test:letters` | 익명편지 피드·답장받기 상태 기계 — 가짜 서버로 새로고침·무한스크롤·백그라운드 정지 검증 |
 | `npm run test:aichat` | AI 대화 상대 — 모델에 보내는 대화 모양 (사용자로 시작 · 번갈아 · system 접기), 답 가리기 |
 | `npm run test:toast` | 알림 — Svelte 브라우저 모드로 컴파일해 $state proxy 관련 버그까지 검증 |
 | `npm run test:platform` | 설치 안내 — 실제 UA 로 iOS/안드로이드·카카오톡 등 인앱 브라우저 판별 검증 |
@@ -199,7 +201,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `node scripts/vapid-keys.mjs` | 푸시 알림용 VAPID 키를 만들어 `.env` 에 추가 (이미 있으면 그대로) |
 | `node scripts/import-roster.mjs <csv> [--dry-run]` | 학번-이름 명렬표를 DB 에 반영 (관리자 화면의 이메일 확인 옆 이름 표시용) |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
-| `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 18묶음 — `scripts/e2e/`. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `cnsatinder-e2e/` |
+| `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 20묶음 — `scripts/e2e/`. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `cnsatinder-e2e/` |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.*`(png/webp/jpg 아무거나) (헤드리스 Chrome 사용) |
 
 > **자동 검사 (GitHub Actions, `.github/workflows/ci.yml`)** — main 에 푸시할 때마다 타입 검사 · 단위 테스트 전부 ·
@@ -214,7 +216,6 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 
 - `/dev/chat?s=chat|fresh|vote|waiting|pending|ended` — 대화방 화면 미리보기 (Supabase 불필요, 개발 모드 전용).
   `&matched` 연결 화면, `&incoming` 상대 새 메시지, `&sheet=menu|report|block|profile` 시트
-- `/dev/letters?v=feed|detail|task|new` — 익명편지 화면 미리보기 (가짜 서버, 개발 모드 전용)
 - `/dev/ai?s=ok|limit|full|off` — AI 대화 상대 화면 미리보기 (`&turns=2` 턴 한도, `&short` 20초 뒤 끝, `&down` AI 오류)
 - `AI_FAKE=1 npm run dev` — Workers AI 대신 정해진 답 (검열: 글에 `[flag:harassment]` 가 있으면 걸림 / 대화: "AI 답: …").
   개발 서버는 원격 바인딩을 붙이지 않는다 — 진짜 AI 는 `npx wrangler login` 뒤 `CF_REMOTE=1 npm run dev`. 모델은 `AI_MODEL` 로 맨 앞에 둘 수 있다 (기본: Gemma 4 26B A4B → GLM 4.7 Flash 순서로, 되는 것을 쓴다)
@@ -330,4 +331,9 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       세로줄은 설정의 채팅 색상(`--bubble-fill`)을 따른다
 - [x] **밀어서 답장** — 채팅 말풍선(또는 그 줄의 빈자리)을 손가락으로 옆으로 밀면 따라오고, 드러난 자리에 답장 화살표. 64px 넘게 밀면 진동 한 번,
       놓으면 그 메시지에 답장. 위아래가 더 크면 스크롤 · 짧게 밀면 취소 · 마우스 드래그는 글자 고르기 그대로(`touch-action: pan-y`)
+- [x] **Phase 23 — 이름 편지 (익명편지 리뉴얼)** — 학생 검색 → 그 학생에게 편지 → 둘이 주고받기. 받는 사람은 이름이 보이고
+      보낸 사람은 익명 이름. 처음 가입할 때 이름 확인 (명렬표에서 자동, 없으면 한 번 입력 · `private.self_names`), 설정 > 편지 받기(기본 켜짐).
+      괴롭힘 막기: 새 편지 하루 몇 통(편지 버킷) · 답 없이 3개까지 · 받는 사람이 끝내면 그 사람은 다시 못 보냄 · 차단(채팅과 공유) ·
+      신고 = 자동 차단 + 끝내기 + 누적 정지 · 규칙 필터 · AI 검토. 운영자는 신고된 편지의 보낸 사람을 확인하고(기록 남음) 내릴 수 있다.
+      새 편지·답장은 푸시 알림, 익명편지 탭에 안 읽은 빨간 점. 옛 공개 피드·편집기·하트 화면은 뺐다 (데이터는 DB 에 그대로)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

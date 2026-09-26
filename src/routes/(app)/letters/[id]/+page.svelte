@@ -1,97 +1,80 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	/**
+	 * 편지 한 줄기 — 보낸 사람과 받는 사람이 주고받는다 (채팅처럼 말풍선).
+	 * 받은 편지: 상대 = "익명 · ○○ ○○" (누군지 알 수 없다) / 보낸 편지: 상대 = 이름 · 학년.
+	 * 메뉴: 그만 주고받기 · 차단 · 신고. 받는 사람이 끝내면 그 사람은 다시 편지를 보낼 수 없다.
+	 * 화면이 보이는 동안 15초마다 새 말을 확인한다 (새 말 알림은 푸시로).
+	 */
+	import { tick } from 'svelte';
 	import { page } from '$app/state';
-	import Avatar from '$lib/ui/Avatar.svelte';
-	import {
-		blockLetterAuthor,
-		deleteMyComment,
-		deleteMyLetter,
-		fetchLetter,
-		postComment,
-		reportLetter,
-		threadComments
-	} from '$lib/letters/api';
-	import type { CommentRow, LetterDetail, ReportReason } from '$lib/letters/types';
-	import RichText from '$lib/letters/RichText.svelte';
-	import LikeButton from '$lib/letters/LikeButton.svelte';
+	import { goBack } from '$lib/nav';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import ReportPicker from '$lib/ui/ReportPicker.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
-	import { whileVisible } from '$lib/visible';
+	import type { ReportReason } from '$lib/chat/types';
 	import { S, errMsg, toast } from '$lib/state.svelte';
-	import { ago, waitText } from '$lib/time';
+	import { agoText } from '$lib/time';
+	import { whileVisible } from '$lib/visible';
+	import { scrollBehavior } from '$lib/motion';
+	import { blockThread, closeThread, fetchThread, replyLetter, reportThread, sendError, type DmThread } from '$lib/letters/api';
+	import { refreshUnread } from '$lib/letters/unread.svelte';
 
-	/**
-	 * 편지 한 통 — 본문 + 댓글(최상위) + 대댓글(한 단계).
-	 * 지정 답장자로 배정된 사람의 첫 최상위 댓글이 "답장"으로 표시된다.
-	 * 이름은 이 편지 안에서만 쓰는 임시 이름 — 다른 편지에서는 같은 사람도 다른 이름이다.
-	 */
 	const id = $derived(Number(page.params.id));
+	let t = $state<DmThread | null>(null);
+	let gone = $state(false);
+	let skew = $state(0);
+	let listEl: HTMLDivElement | undefined = $state();
 
-	let data = $state<LetterDetail | null>(null);
-	let loading = $state(true);
-	let skew = 0;
-
-	async function load() {
+	async function load(scroll = false) {
 		try {
-			const d = await fetchLetter(id);
-			skew = Date.parse(d.server_now) - Date.now();
-			data = d;
-		} catch {
-			if (!data) toast('편지를 불러오지 못함');
-		} finally {
-			loading = false;
+			const r = await fetchThread(id);
+			if (r.status !== 'ok') {
+				gone = true;
+				return;
+			}
+			const grew = !t || r.messages.length !== t.messages.length;
+			t = r;
+			skew = Date.parse(r.server_now) - Date.now();
+			void refreshUnread(); // 열면 읽음 — 탭의 빨간 점도 맞춘다
+			if (scroll || grew) {
+				await tick();
+				listEl?.scrollTo({ top: listEl.scrollHeight, behavior: scroll ? 'auto' : scrollBehavior() });
+			}
+		} catch (e) {
+			toast(errMsg(e));
 		}
 	}
-
-	// 열어 둔 동안 30초마다 새 댓글 확인 (편지는 실시간이 아니어도 된다)
 	$effect(() => {
 		void id;
-		loading = true;
-		data = null;
-		void load();
-		return whileVisible(() => void load(), 45_000); // 새 댓글은 푸시 알림으로도 오므로 목록(45초)과 같게
+		t = null;
+		gone = false;
+		void load(true);
+		return whileVisible(() => void load(), 15_000);
 	});
 
-	const letter = $derived(data?.letter ?? null);
-	const threads = $derived(threadComments(data?.comments ?? []));
-	const serverNow = $derived(S.now + skew);
-	const myTurn = $derived(!!letter?.assigned_to_me && letter.reply_status === 'assigned');
-	const hoursLeft = $derived(
-		letter?.task_expires_at ? Math.max(0, Math.ceil((Date.parse(letter.task_expires_at) - serverNow) / 3_600_000)) : 0
-	);
+	const open = $derived(t?.thread_status === 'open');
+	const heading = $derived(t ? (t.role === 'received' ? `익명 · ${t.title}` : t.title) : '');
+	const endedText = $derived.by(() => {
+		if (!t || open) return '';
+		if (t.closed_by === 'staff') return '운영진이 내린 편지예요';
+		const me = t.role === 'sent' ? 'sender' : 'recipient';
+		return t.closed_by === me ? '내가 끝낸 편지예요' : '상대가 편지를 끝냈어요';
+	});
 
-	// ── 작성 ──
+	// ── 쓰기 ──
 	let draft = $state('');
-	let replyTo = $state<CommentRow | null>(null);
 	let sending = $state(false);
-	let input: HTMLTextAreaElement | undefined = $state();
-	const max = $derived(S.settings?.comment_max_len ?? 300);
-
-	function startReply(c: CommentRow) {
-		replyTo = c;
-		input?.focus();
-	}
-
-	async function submit() {
+	async function send() {
 		const body = draft.trim();
-		if (!body || sending || !letter) return;
-		if (body.length > max) return toast(`${max}자까지 쓸 수 있어요`);
+		if (!body || sending || !t) return;
+		if (body.length > 1000) return toast('1000자까지 보낼 수 있어요');
 		sending = true;
 		try {
-			const r = await postComment(letter.id, replyTo?.id ?? null, body, crypto.randomUUID());
-			if (r.status === 'ok' || r.status === 'duplicate') {
-				if (r.status === 'ok' && r.designated) toast('답장 완료');
-				draft = '';
-				replyTo = null;
-				await load();
-			} else if (r.status === 'rate_limited') toast(`너무 빨리 쓰고 있어요 · ${waitText(r.retry_after_ms)}`);
-			else if (r.status === 'max_depth_exceeded') toast('답글에는 답글을 달 수 없어요');
-			else if (r.status === 'parent_missing') {
-				toast('지워진 댓글이라 답글을 달 수 없어요');
-				replyTo = null;
-			} else if (r.status === 'closed') toast('볼 수 없는 편지');
-			else toast('지금은 댓글을 쓸 수 없어요');
+			const r = await replyLetter(t.id, body);
+			const err = sendError(r);
+			if (err) toast(err);
+			else draft = '';
+			await load(true);
 		} catch (e) {
 			toast(errMsg(e));
 		} finally {
@@ -99,270 +82,129 @@
 		}
 	}
 	function onKey(e: KeyboardEvent) {
-		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+		// 편지는 여러 줄로 쓰는 일이 많아서 Enter 는 줄바꿈 — 보내기는 버튼으로
+		if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
 			e.preventDefault();
-			void submit();
+			void send();
 		}
 	}
-	$effect(() => {
-		void draft;
-		if (!input) return;
-		input.style.height = 'auto';
-		input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-	});
 
-	// ── 메뉴 · 신고 · 차단 · 삭제 ──
-	type Target = { commentId: number | null; mine: boolean; alias: string };
-	let sheet = $state<null | 'menu' | 'report' | 'block' | 'delete'>(null);
-	let target = $state<Target | null>(null);
+	// ── 메뉴 ──
+	let sheet = $state<null | 'menu' | 'close' | 'block' | 'report'>(null);
 	let reason = $state<ReportReason | null>(null);
 	let note = $state('');
 	let acting = $state(false);
-
-	function openMenu(t: Target) {
-		target = t;
-		reason = null;
-		note = '';
-		sheet = 'menu';
-	}
-
-	async function doReport() {
-		if (!letter || !target || !reason || acting) return;
+	async function act(fn: () => Promise<unknown>, done: string, leave = false) {
+		if (acting || !t) return;
 		acting = true;
 		try {
-			const r = await reportLetter(letter.id, target.commentId, reason, note.trim());
-			toast(r.status === 'already' ? '이미 신고한 글' : '신고 접수 · 운영진이 확인할게요');
+			await fn();
+			toast(done);
 			sheet = null;
-			if (target.commentId == null) void goto('/letters', { replaceState: true });
+			if (leave) goBack('/letters');
 			else await load();
 		} catch (e) {
 			toast(errMsg(e));
 		} finally {
 			acting = false;
 		}
-	}
-
-	async function doBlock() {
-		if (!letter || !target || acting) return;
-		acting = true;
-		try {
-			await blockLetterAuthor(letter.id, target.commentId);
-			toast('차단 완료 · 이 사람의 글은 더 보이지 않아요');
-			sheet = null;
-			if (target.commentId == null) void goto('/letters', { replaceState: true });
-			else await load();
-		} catch (e) {
-			toast(errMsg(e));
-		} finally {
-			acting = false;
-		}
-	}
-
-	async function doDelete() {
-		if (!letter || !target || acting) return;
-		acting = true;
-		try {
-			if (target.commentId == null) {
-				await deleteMyLetter(letter.id);
-				toast('편지 삭제됨');
-				void goto('/letters', { replaceState: true });
-			} else {
-				await deleteMyComment(target.commentId);
-				toast('댓글 삭제됨');
-				await load();
-			}
-			sheet = null;
-		} catch (e) {
-			toast(errMsg(e));
-		} finally {
-			acting = false;
-		}
-	}
-
-	function hiddenText(c: CommentRow) {
-		return c.hidden === 'removed' ? '삭제된 댓글' : '볼 수 없는 댓글';
 	}
 </script>
 
-{#snippet dotsIcon()}
-	<svg viewBox="0 0 24 24" aria-hidden="true">
-		<circle cx="5" cy="12" r="1.6" fill="currentColor" />
-		<circle cx="12" cy="12" r="1.6" fill="currentColor" />
-		<circle cx="19" cy="12" r="1.6" fill="currentColor" />
-	</svg>
-{/snippet}
-
-{#snippet comment(c: CommentRow, reply: boolean)}
-	<div class="c" class:reply class:designated={c.is_designated}>
-		{#if c.hidden}
-			<div class="c-hidden muted">{hiddenText(c)}</div>
-		{:else}
-			<Avatar name={c.author_alias ?? '?'} size={reply ? 24 : 30} />
-			<div class="c-main">
-				<div class="c-head">
-					<span class="c-name">{c.author_alias}</span>
-					{#if c.is_op}<span class="badge">작성자</span>{/if}
-					{#if c.is_designated}<span class="badge accent">답장</span>{/if}
-					{#if c.is_mine}<span class="badge">나</span>{/if}
-				</div>
-				<p class="c-body selectable">{c.body}</p>
-				<div class="c-foot muted">
-					<span>{ago(c.created_at, serverNow)}</span>
-					{#if !reply}<button onclick={() => startReply(c)}>답글 달기</button>{/if}
-				</div>
-			</div>
-			<button
-				class="c-more"
-				aria-label="댓글 메뉴"
-				onclick={() => openMenu({ commentId: c.id, mine: c.is_mine, alias: c.author_alias ?? '' })}
-			>
-				{@render dotsIcon()}
-			</button>
-		{/if}
-	</div>
-{/snippet}
-
 <div class="detail">
-	<div class="topbar">
+	<header class="topbar">
 		<BackButton href="/letters" history />
-		<span class="title">편지</span>
-		{#if letter}
-			<button
-				class="more"
-				aria-label="편지 메뉴"
-				onclick={() => openMenu({ commentId: null, mine: letter.is_mine, alias: letter.author_alias })}
-			>
-				{@render dotsIcon()}
+		{#if t}
+			<span class="who">
+				{#if t.role === 'received'}<span class="anon" aria-hidden="true">?</span>{/if}
+				<span class="names">
+					<b>{heading}</b>
+					<small class="muted">{t.role === 'received' ? '누가 보냈는지 알 수 없어요' : t.grade ? `${t.grade}학년 · 나는 익명` : '나는 익명'}</small>
+				</span>
+			</span>
+			<button class="more" onclick={() => (sheet = 'menu')} aria-label="메뉴">
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<circle cx="5" cy="12" r="1.6" fill="currentColor" />
+					<circle cx="12" cy="12" r="1.6" fill="currentColor" />
+					<circle cx="19" cy="12" r="1.6" fill="currentColor" />
+				</svg>
 			</button>
 		{/if}
-	</div>
+	</header>
 
-	<div class="scroll">
-		{#if loading && !data}
-			<p class="state muted">불러오는 중…</p>
-		{:else if !letter}
-			<div class="state">
-				<p>볼 수 없는 편지</p>
-				<p class="muted small">지워졌거나 차단 관계인 사람의 편지</p>
-				<button class="btn-ghost" onclick={() => goto('/letters', { replaceState: true })}>피드로</button>
-			</div>
+	<div class="list" bind:this={listEl} role="region" aria-label="편지 내용">
+		{#if gone}
+			<p class="empty muted">편지를 찾을 수 없어요.</p>
+		{:else if !t}
+			<p class="empty muted">불러오는 중…</p>
 		{:else}
-			<article class="letter">
-				<div class="who">
-					<Avatar name={letter.author_alias} size={36} />
-					<div class="names">
-						<span class="alias">{letter.author_alias}</span>
-						<span class="muted small">{ago(letter.created_at, serverNow)}{letter.is_mine ? ' · 내 편지' : ''}</span>
+			<p class="intro muted">
+				{t.role === 'received'
+					? '이 편지를 보낸 사람은 익명이에요. 불편하면 언제든 끝내거나 신고할 수 있어요.'
+					: `${t.title}님에게는 내 이름 대신 익명 이름이 보여요.`}
+			</p>
+			{#each t.messages as m (m.id)}
+				<div class="row" class:mine={m.mine}>
+					<div class="bubble selectable" class:removed={m.removed}>
+						<span class="sr-only">{m.mine ? '나' : heading}: </span>{m.removed ? '운영진이 내린 말이에요' : m.body}
 					</div>
 				</div>
-				<div class="body selectable"><RichText body={letter.body} fmt={letter.fmt} /></div>
-				<div class="acts muted">
-					<LikeButton
-						id={letter.id}
-						liked={letter.liked}
-						count={letter.like_count}
-						onchange={(v, n) => {
-							if (!data?.letter) return;
-							data.letter.liked = v;
-							data.letter.like_count = n;
-						}}
-					/>
-				</div>
-				<div class="status muted">
-					{#if letter.reply_status === 'replied'}
-						답장 도착 · 댓글 {data?.comments.filter((c) => !c.hidden).length ?? 0}
-					{:else if myTurn}
-						<span class="accent">내가 답장할 차례</span>
-					{:else if letter.reply_status === 'assigned'}
-						누군가 답장을 쓰는 중
-					{:else}
-						답장해 줄 사람을 기다리는 중
-					{/if}
-				</div>
-			</article>
-
-			{#if myTurn}
-				<div class="turn">
-					<strong>이 편지의 답장자로 배정됨</strong>
-					<span>{hoursLeft}시간 안에 아래에 답장을 남겨 주세요. 첫 댓글이 답장으로 표시돼요.</span>
-				</div>
-			{/if}
-
-			<section class="comments">
-				{#if !threads.length}
-					<p class="none muted">아직 댓글이 없어요</p>
-				{/if}
-				{#each threads as t (t.id)}
-					{@render comment(t, false)}
-					{#each t.replies as r (r.id)}
-						{@render comment(r, true)}
-					{/each}
-				{/each}
-			</section>
+				<div class="when num" class:mine={m.mine}>{agoText(m.created_at, S.now + skew)}</div>
+			{/each}
+			{#if !open}<p class="ended">{endedText}</p>{/if}
 		{/if}
 	</div>
 
-	{#if letter}
+	{#if t && open}
 		<div class="composer">
-			{#if replyTo}
-				<div class="replying muted">
-					<span><strong>{replyTo.author_alias}</strong> 님에게 답글</span>
-					<button onclick={() => (replyTo = null)} aria-label="답글 취소">취소</button>
+			{#if t.wait_reply}
+				<p class="wait muted">상대가 답하기 전에는 3개까지 보낼 수 있어요</p>
+			{:else}
+				<div class="pill">
+					<textarea bind:value={draft} rows="1" maxlength="1100" placeholder="답장 쓰기…" onkeydown={onKey} aria-label="답장"></textarea>
+					<button class="send" onclick={send} disabled={!draft.trim() || sending}>보내기</button>
 				</div>
 			{/if}
-			<div class="pill">
-				<textarea
-					bind:this={input}
-					bind:value={draft}
-					rows="1"
-					maxlength={max}
-					placeholder={replyTo ? '답글 달기…' : myTurn ? '답장 쓰기…' : '댓글 달기…'}
-					onkeydown={onKey}
-				></textarea>
-				<button class="send" onclick={submit} disabled={!draft.trim() || sending}>게시</button>
-			</div>
-			<p class="as muted">
-				{data?.my_alias ? `이 편지에서 내 이름: ${data.my_alias}` : '댓글을 달면 이 편지에서만 쓰는 새 이름이 붙어요'}
-			</p>
 		</div>
 	{/if}
 </div>
 
-{#if sheet && target}
+{#if sheet && t}
 	<Sheet onclose={() => (sheet = null)}>
 		{#if sheet === 'menu'}
-			{#if target.mine}
-				<button class="item danger" onclick={() => (sheet = 'delete')}>
-					{target.commentId == null ? '편지 삭제' : '댓글 삭제'}
-				</button>
-			{:else}
-				<button class="item danger" onclick={() => (sheet = 'report')}>신고하기</button>
-				<button class="item danger" onclick={() => (sheet = 'block')}>차단하기</button>
-			{/if}
+			{#if open}<button class="item" onclick={() => (sheet = 'close')}>그만 주고받기</button>{/if}
+			<button class="item danger" onclick={() => (sheet = 'block')}>차단하기</button>
+			<button class="item danger" onclick={() => (sheet = 'report')}>신고하기</button>
 			<button class="item" onclick={() => (sheet = null)}>취소</button>
-		{:else if sheet === 'delete'}
+		{:else if sheet === 'close'}
 			<p class="warn">
-				{target.commentId == null
-					? '편지와 거기 달린 댓글이 모두 보이지 않게 돼요.'
-					: '이 댓글이 보이지 않게 돼요. 달린 답글은 그대로 남아요.'}
+				더 이상 주고받지 않아요.
+				{#if t.role === 'received'}<strong>이 사람은 나에게 다시 편지를 보낼 수 없어요.</strong>{/if}
 			</p>
-			<button class="item danger" onclick={doDelete} disabled={acting}>삭제</button>
+			<button class="item danger" onclick={() => act(() => closeThread(t!.id), '편지를 끝냈어요')} disabled={acting}>끝내기</button>
 			<button class="item" onclick={() => (sheet = null)}>취소</button>
 		{:else if sheet === 'block'}
 			<p class="warn">
-				차단하면 이 사람의 편지·댓글이 더 보이지 않고, <strong>채팅에서도 다시 연결되지 않아요.</strong><br />
-				상대에게는 알려지지 않아요.
+				차단하면 서로 검색 · 편지가 안 되고, <strong>채팅에서도 다시 연결되지 않아요.</strong><br />상대에게는 알려지지 않아요.
 			</p>
-			<button class="item danger" onclick={doBlock} disabled={acting}>차단하기</button>
+			<button class="item danger" onclick={() => act(() => blockThread(t!.id), '차단했어요', true)} disabled={acting}>차단하기</button>
 			<button class="item" onclick={() => (sheet = null)}>취소</button>
 		{:else if sheet === 'report'}
 			<ReportPicker
 				bind:reason
 				bind:note
 				title="무엇이 문제인가요?"
-				intro="신고하면 자동으로 차단돼요. 내용은 운영진만 확인하고, 상대는 누가 신고했는지 알 수 없어요."
+				intro="신고하면 자동으로 차단되고 편지가 끝나요. 운영진은 누가 보냈는지 확인해서 조치할 수 있어요. 상대는 누가 신고했는지 알 수 없어요."
 			/>
-			<button class="item danger" onclick={doReport} disabled={!reason || acting}>
+			<button
+				class="item danger"
+				onclick={() =>
+					act(async () => {
+						const r = await reportThread(t!.id, reason!, note.trim());
+						if (r.status === 'already') throw new Error('이미 신고한 편지예요');
+					}, '신고했어요', true)}
+				disabled={!reason || acting}
+			>
 				{acting ? '신고하는 중…' : '신고하기'}
 			</button>
 			<button class="item" onclick={() => (sheet = null)}>취소</button>
@@ -376,193 +218,124 @@
 		flex-direction: column;
 		height: 100dvh;
 	}
+	.who {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.anon {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		border-radius: 50%;
+		background: var(--bubble-fill);
+		color: #fff;
+		font-weight: 800;
+	}
+	.names {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		line-height: 1.2;
+	}
+	.names b {
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		font-size: 15px;
+		font-weight: 600;
+	}
+	.names small {
+		font-size: 12px;
+	}
 	.more {
+		flex: none;
 		display: grid;
 		place-items: center;
 		width: 28px;
 		height: 28px;
-		margin-left: auto;
 	}
 	.more svg {
 		width: 22px;
 		height: 22px;
 	}
 
-	.scroll {
+	.list {
 		flex: 1;
 		overflow-y: auto;
 		overscroll-behavior: contain;
-	}
-	.state {
+		padding: 12px var(--pad) 8px;
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		gap: 8px;
-		margin: 48px var(--pad);
+	}
+	.empty {
+		margin: auto;
+		font-size: 14px;
+	}
+	.intro {
+		align-self: center;
+		max-width: 300px;
+		margin: 4px 0 16px;
+		font-size: 12px;
+		line-height: 1.6;
 		text-align: center;
 	}
-	.state p {
-		margin: 0;
-	}
-	.small {
-		font-size: 12px;
-	}
-
-	.letter {
+	.row {
 		display: flex;
-		flex-direction: column;
-		gap: 12px;
-		padding: 16px var(--pad);
-		border-bottom: 1px solid var(--line);
+		margin-top: 8px;
 	}
-	.who {
-		display: flex;
-		align-items: center;
-		gap: 10px;
+	.row.mine {
+		justify-content: flex-end;
 	}
-	.names {
-		display: flex;
-		flex-direction: column;
-		line-height: 1.3;
-	}
-	.alias {
-		font-weight: 700;
+	.bubble {
+		max-width: 78%;
+		padding: 9px 14px;
+		border-radius: var(--r-bubble);
+		background: var(--field);
 		font-size: 15px;
-	}
-	.body {
-		margin: 0;
-		font-size: 16px;
-		line-height: 1.75;
+		line-height: 1.45;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 	}
-	.acts {
-		display: flex;
-		align-items: center;
-		margin: -4px 0 -6px;
-	}
-	.status {
-		font-size: 12px;
-	}
-	.accent {
-		color: var(--accent);
-		font-weight: 600;
-	}
-
-	.turn {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		margin: 12px var(--pad) 0;
-		padding: 12px 14px;
-		border-radius: var(--r-sm);
-		background: var(--accent-fill);
+	.mine .bubble {
+		background: var(--bubble-fill);
 		color: var(--on-accent);
-		font-size: 14px;
 	}
-	.turn span {
-		font-size: 12px;
-		opacity: 0.92;
+	.bubble.removed {
+		font-style: italic;
+		opacity: 0.6;
 	}
-
-	.comments {
-		padding: 8px 0 16px;
+	.when {
+		margin: 3px 6px 0;
+		font-size: 11px;
+		color: var(--text-2);
 	}
-	.none {
-		margin: 24px var(--pad);
-		text-align: center;
-		font-size: 13px;
+	.when.mine {
+		text-align: right;
 	}
-	.c {
-		display: flex;
-		align-items: flex-start;
-		gap: 10px;
-		padding: 10px var(--pad);
-	}
-	.c.reply {
-		padding-left: calc(var(--pad) + 40px);
-	}
-	.c.designated {
-		background: var(--surface);
-	}
-	.c-hidden {
-		font-size: 13px;
-		padding: 4px 0;
-	}
-	.c-main {
-		flex: 1;
-		min-width: 0;
-	}
-	.c-head {
-		display: flex;
-		align-items: center;
-		gap: 6px;
-		flex-wrap: wrap;
-	}
-	.c-name {
-		font-size: 13px;
-		font-weight: 700;
-	}
-	.badge {
-		padding: 0 6px;
+	.ended {
+		align-self: center;
+		margin: 16px 0;
+		padding: 6px 12px;
 		border-radius: 999px;
 		background: var(--field);
-		font-size: 10px;
-		font-weight: 700;
-		line-height: 16px;
-	}
-	.badge.accent {
-		background: var(--accent-fill);
-		color: var(--on-accent);
-	}
-	.c-body {
-		margin: 2px 0 0;
-		font-size: 14px;
-		line-height: 1.55;
-		white-space: pre-wrap;
-		overflow-wrap: anywhere;
-	}
-	.c-foot {
-		display: flex;
-		gap: 12px;
-		margin-top: 4px;
-		font-size: 12px;
-	}
-	.c-foot button {
-		font-weight: 600;
 		color: var(--text-2);
-	}
-	.c-more {
-		flex: none;
-		width: 24px;
-		height: 24px;
-		display: grid;
-		place-items: center;
-		color: var(--text-2);
-	}
-	.c-more svg {
-		width: 16px;
-		height: 16px;
+		font-size: 13px;
 	}
 
-	/* 입력창 — 대화방과 같은 pill */
 	.composer {
 		padding: 8px var(--pad) calc(8px + env(safe-area-inset-bottom));
 		border-top: 1px solid var(--line);
 		background: var(--bg);
 	}
-	.replying {
-		display: flex;
-		justify-content: space-between;
-		margin-bottom: 6px;
-		font-size: 12px;
-	}
-	.replying strong {
-		color: var(--text);
-	}
-	.replying button {
-		font-weight: 600;
-		color: var(--text-2);
+	.wait {
+		margin: 6px 0;
+		text-align: center;
+		font-size: 13px;
 	}
 	.pill {
 		display: flex;
@@ -584,6 +357,7 @@
 		font-size: 15px;
 		line-height: 1.38;
 		max-height: 120px;
+		field-sizing: content;
 	}
 	.pill textarea::placeholder {
 		color: var(--text-2);
@@ -593,13 +367,10 @@
 		padding: 6px 6px 7px;
 		color: var(--accent);
 		font-weight: 600;
+		font-size: 15px;
 	}
 	.send:disabled {
 		color: var(--text-2);
 		opacity: 0.6;
-	}
-	.as {
-		margin: 4px 4px 0;
-		font-size: 11px;
 	}
 </style>

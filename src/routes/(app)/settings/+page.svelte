@@ -15,12 +15,14 @@
 		sendOtpToMe,
 		setAllowRematch,
 		setPassword,
+		loadProfile,
 		signOut,
 		toast,
 		verifyCurrentPassword,
 		verifyOtpForMe
 	} from '$lib/state.svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
+	import { setLettersOpen } from '$lib/letters/api';
 	import Chevron from '$lib/ui/Chevron.svelte';
 	import PasswordFields from '$lib/ui/PasswordFields.svelte';
 
@@ -159,6 +161,25 @@
 		}
 	}
 
+	// ── 편지 받기 (Phase 23) ──
+	let lettersBusy = $state(false);
+	async function toggleLetters(e: Event) {
+		const box = e.currentTarget as HTMLInputElement;
+		const on = box.checked;
+		box.checked = S.profile?.letters_open !== false; // 저장된 뒤에 바뀐다
+		if (lettersBusy || !S.session) return;
+		lettersBusy = true;
+		try {
+			await setLettersOpen(on, S.session.user.id);
+			await loadProfile();
+			toast(on ? '이름으로 찾아서 편지를 보낼 수 있어요' : '이제 검색에 나오지 않고 새 편지를 받지 않아요');
+		} catch (err) {
+			toast(errMsg(err));
+		} finally {
+			lettersBusy = false;
+		}
+	}
+
 	async function out() {
 		await signOut();
 		void goto('/login', { replaceState: true });
@@ -243,6 +264,25 @@
 		처음 보는 사람이 기다리고 있으면 그쪽이 먼저예요. 차단한 사람과는 어떤 경우에도 만나지 않아요.
 	</p>
 
+	<h2 class="g-head">편지</h2>
+	<div class="g-card">
+		<label class="g-row">
+			<span>편지 받기</span>
+			<input
+				class="switch"
+				type="checkbox"
+				role="switch"
+				checked={S.profile?.letters_open !== false}
+				disabled={lettersBusy || !S.profile || S.profile.letters_open === undefined}
+				onchange={toggleLetters}
+			/>
+		</label>
+	</div>
+	<p class="g-foot">
+		켜 두면 다른 학생이 내 이름으로 찾아 익명 편지를 보낼 수 있어요. 끄면 검색에 나오지 않고 새 편지를 받지 않아요
+		(이미 주고받던 편지는 그대로예요). 불편한 편지는 편지 화면에서 끝내기 · 차단 · 신고할 수 있어요.
+	</p>
+
 	<h2 class="g-head">계정</h2>
 	<div class="g-card" id="password">
 		<button class="g-row" onclick={togglePw} aria-expanded={pwStep !== 'idle'}>
@@ -303,6 +343,12 @@
 				{/if}
 			</div>
 		{/if}
+		{#if S.me}
+			<div class="g-row">
+				<span>이름</span>
+				<span class="g-val">{S.me.name}{S.me.grade ? ` · ${S.me.grade}학년` : ''}</span>
+			</div>
+		{/if}
 		<div class="g-row">
 			<span>학교 인증</span>
 			<span class="g-val">{S.profile?.verified ? '완료' : '미완료'}</span>
@@ -317,12 +363,13 @@
 	<h2 class="g-head">개인정보</h2>
 	<div class="g-card">
 		<p class="privacy">
-			이 앱은 이름·학번을 저장하지 않습니다. 다른 학생에게는 내 계정이 절대 드러나지 않고,
-			편지는 편지마다 다른 임시 이름이라 내 글끼리도 이어지지 않습니다.
-			다만 안전한 운영을 위해 관리자는 대화 내용, 편지·댓글 작성자, 학교 이메일을 확인할 수 있으며,
+			채팅에서는 이름 · 학번이 다른 학생에게 드러나지 않습니다 (계정마다 정해진 익명 이름만 보임).
+			익명편지에서는 학교 명단의 내 이름과 학년으로 검색될 수 있고(위 "편지 받기"로 끌 수 있음),
+			내가 보낸 편지는 받는 사람에게 편지마다 다른 익명 이름으로만 보입니다.
+			다만 안전한 운영을 위해 관리자는 대화 내용, 편지를 보낸 사람, 학교 이메일을 확인할 수 있으며,
 			모든 열람은 기록으로 남습니다. 대화 내용은 방이 닫히고 24시간 뒤 서버에서 지워지지만,
 			그 전에 관리자가 운영을 위해 파일로 보관할 수 있습니다 (계정 정보 없이 익명 이름과 내용만, 보관할 때마다 기록이 남음).
-			익명편지는 내가 지우거나 운영진이 내리기 전까지 남습니다.
+			편지는 운영진이 내리기 전까지 남습니다.
 		</p>
 	</div>
 

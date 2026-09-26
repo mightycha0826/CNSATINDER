@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { ACTION_LABEL, CLOSE_LABEL, REASON_LABEL, STATUS_LABEL, fmtTime, type UserLetterRow } from '$lib/adminTypes';
+	import { ACTION_LABEL, CLOSE_LABEL, REASON_LABEL, STATUS_LABEL, fmtTime, type UserLetterRow, TARGET_LABEL } from '$lib/adminTypes';
 	import AccountStatus from '$lib/admin/AccountStatus.svelte';
 	import FormMsg from '$lib/admin/FormMsg.svelte';
 	import SanctionForm from '$lib/admin/SanctionForm.svelte';
@@ -83,7 +83,7 @@
 					{#each d.letter_reports as r (r.id)}
 						<li>
 							<a href="/admin/letters/{r.id}">
-								{fmtTime(r.created_at)} · {r.target_type === 'letter' ? '편지' : '댓글'} · {REASON_LABEL[r.reason] ?? r.reason}
+								{fmtTime(r.created_at)} · {TARGET_LABEL[r.target_type] ?? r.target_type} · {REASON_LABEL[r.reason] ?? r.reason}
 							</a>
 							<span class="st st-{r.status}">{STATUS_LABEL[r.status]}</span>
 						</li>

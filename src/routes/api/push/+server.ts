@@ -10,6 +10,7 @@ import { isPushEndpoint, sendPush, type PushSub } from '$lib/server/webpush';
  *   { message_id }         채팅 메시지를 보낸 직후
  *   { letter_comment_id }  익명편지에 댓글을 단 직후
  *   { reaction_message_id } 채팅 메시지에 공감을 단 직후
+ *   { dm_msg_id }          이름 편지를 보내거나 답장한 직후
  *
  *   ① 토큰으로 보낸 사람을 확인 (클라가 주장하는 id 를 믿지 않는다)
  *   ② DB 함수가 "진짜 그 사람이 쓴 글인지 · 받는 사람이 앱을 안 보고 있는지 · 처음인지" 판단하고
@@ -27,7 +28,8 @@ const isId = (v: unknown): v is number => typeof v === 'number' && Number.isSafe
 const KINDS = [
 	{ field: 'message_id', rpc: 'push_payload', param: 'p_message', actor: 'p_sender' },
 	{ field: 'letter_comment_id', rpc: 'letter_notify', param: 'p_comment', actor: 'p_actor' },
-	{ field: 'reaction_message_id', rpc: 'reaction_push_payload', param: 'p_message', actor: 'p_actor' }
+	{ field: 'reaction_message_id', rpc: 'reaction_push_payload', param: 'p_message', actor: 'p_actor' },
+	{ field: 'dm_msg_id', rpc: 'dm_push_payload', param: 'p_msg', actor: 'p_actor' }
 ] as const;
 
 export const POST: RequestHandler = async ({ request, platform }) => {

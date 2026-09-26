@@ -40,20 +40,6 @@ try {
 	await page.locator('textarea').first().fill('입력 테스트');
 	check('입력칸은 그대로 입력·선택 가능', (await us(page.locator('textarea'))) !== 'none' && (await page.locator('textarea').inputValue()) === '입력 테스트');
 
-	console.log('[편지]');
-	await page.goto(U('/dev/letters?v=detail'));
-	await page.locator('.c-body').first().waitFor(); await page.waitForTimeout(400);
-	check('★ 편지 본문 선택됨', (await drag(page.locator('.body.selectable'))).length > 3);
-	check('★ 댓글 선택됨', (await drag(page.locator('.c-body'))).length > 1);
-	check('"답글 달기" 버튼 · 작성자 이름 → 선택 안 됨', (await us(page.locator('.c-foot button'))) === 'none' && (await drag(page.locator('.c-name'))) === '');
-	check('상단 "편지" 제목 → 선택 안 됨', (await drag(page.locator('.topbar .title'))) === '');
-	await page.goto(U('/dev/letters?v=feed'));
-	await page.locator('.posts li').first().waitFor(); await page.waitForTimeout(400);
-	check('피드: 탭 이름·버튼 → 선택 안 됨', (await drag(page.locator('nav.tabbar'))) === '');
-	await page.goto(U('/dev/letters?v=new'));
-	await page.locator('.le-doc').waitFor();
-	check('편지 쓰기 편집기는 선택 가능', (await us(page.locator('.le-doc'))) !== 'none');
-
 	console.log('[폰]');
 	const phone = await (await browser.newContext({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true })).newPage();
 	await phone.goto(U('/dev/chat?s=chat'));

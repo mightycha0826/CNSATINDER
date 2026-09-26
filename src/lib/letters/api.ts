@@ -1,115 +1,112 @@
 import { supabase } from '../supabase';
-import { notifyLetterComment } from '../push';
 import { requestModeration } from '../moderation';
-import type {
-	CommentRow,
-	CommentThread,
-	LetterDetail,
-	LetterListItem,
-	LikeResult,
-	PostCommentResult,
-	PostLetterResult,
-	ReplyTaskResult,
-	ReportReason
-} from './types';
-import type { LetterFmt } from './rich';
+import { notifyDm } from '../push';
+import { waitText } from '../time';
 
 /**
- * 익명편지 서버 호출 — 전부 RPC. 편지·댓글 테이블에는 insert 권한이 아예 없다
- * (이름 발급이 잠금 + 재시도가 필요한 절차라 RPC 안에서만 한다).
- *
- * 채팅의 ChatTransport 같은 인터페이스는 두지 않는다. 그건 실시간 전송을 나중에
- * Durable Object 로 갈아끼우기 위한 것이고, 편지는 실시간이 필요 없다.
+ * 이름 편지 (Phase 23) — 학생을 이름으로 찾아 익명으로 편지를 보내고, 둘이 주고받는다.
+ * 받는 사람에게는 보낸 사람이 편지마다 붙는 익명 이름으로만 보인다. 보낸 사람은 받는 사람의 이름 · 학년을 안다.
+ * 서버는 전부 RPC (supabase/schema.sql Phase 23). 표는 private 라 직접 읽을 수 없다.
  */
+export type DmPerson = { id: string; name: string; grade: number | null; checked: boolean };
 
-async function rpc<T>(fn: string, args?: Record<string, unknown>): Promise<T> {
-	// 개발 전용 — /dev/letters 미리보기가 가짜 서버를 끼운다 (배포 빌드에서는 이 분기가 통째로 빠진다)
-	if (import.meta.env.DEV && typeof window !== 'undefined') {
-		const fake = (window as unknown as { __LETTERS_FAKE__?: (fn: string, a?: Record<string, unknown>) => unknown })
-			.__LETTERS_FAKE__;
-		if (fake) return (await fake(fn, args)) as T;
-	}
+export type DmRole = 'sent' | 'received';
+export type DmItem = {
+	id: number;
+	role: DmRole;
+	/** 받은 편지 = 보낸 사람의 익명 이름, 보낸 편지 = 받는 사람 이름 */
+	title: string;
+	grade: number | null;
+	status: 'open' | 'closed';
+	last_at: string;
+	last_body: string | null;
+	unread: number;
+};
+
+export type DmMsg = { id: number; mine: boolean; body: string | null; removed: boolean; created_at: string };
+export type DmThread = {
+	status: 'ok';
+	id: number;
+	role: DmRole;
+	title: string;
+	grade: number | null;
+	thread_status: 'open' | 'closed';
+	closed_by: 'sender' | 'recipient' | 'staff' | null;
+	/** 답 없이 3개를 보냈다 — 상대가 답할 때까지 못 쓴다 */
+	wait_reply: boolean;
+	messages: DmMsg[];
+	server_now: string;
+};
+
+export type SendResult =
+	| { status: 'ok'; thread_id: number; msg_id: number }
+	| { status: 'rate_limited'; retry_after_ms: number }
+	| { status: 'wait_reply'; thread_id?: number }
+	| { status: 'not_available' | 'restricted' | 'no_name' | 'bad_text' | 'closed' | 'not_found' };
+
+const rpc = async <T>(fn: string, args?: Record<string, unknown>): Promise<T> => {
 	const { data, error } = await supabase.rpc(fn, args);
 	if (error) throw error;
 	return data as T;
+};
+
+/** 두 글자 이상. 받기를 끈 사람 · 차단한 사이는 나오지 않는다 */
+export const searchPeople = (q: string) => rpc<DmPerson[]>('dm_search', { p_q: q });
+
+export const fetchInbox = () => rpc<{ threads: DmItem[]; server_now: string }>('dm_inbox');
+
+export const fetchThread = (id: number) => rpc<DmThread | { status: 'not_found' }>('dm_thread', { p_thread: id });
+
+/** 보내고 나면 알림 · AI 검토를 부탁한다 (기다리지 않는다) */
+function afterSend(r: SendResult) {
+	if (r.status !== 'ok') return;
+	notifyDm(r.msg_id);
+	requestModeration();
 }
 
-export async function fetchFeed(cursor: number | null = null) {
-	return rpc<{ letters: LetterListItem[]; server_now: string }>('letter_feed', { p_cursor: cursor });
-}
-
-export function fetchLetter(id: number) {
-	return rpc<LetterDetail>('letter_detail', { p_letter: id });
-}
-
-/** 올라가면 검열봇(AI 검토)에 알린다. 신상정보·금칙어는 서버가 먼저 막는다 (personal_info / blocked_word 오류) */
-export async function postLetter(body: string, fmt: LetterFmt | null = null) {
-	const r = await rpc<PostLetterResult>('post_letter', { p_body: body, p_fmt: fmt });
-	if (r.status === 'ok') requestModeration();
+export async function sendLetter(to: string, body: string) {
+	const r = await rpc<SendResult>('dm_send', { p_to: to, p_body: body });
+	afterSend(r);
 	return r;
 }
 
-/** 댓글·대댓글. 성공하면 받을 사람(편지 작성자 또는 부모 댓글 작성자)에게 알림을 요청한다. */
-export async function postComment(letterId: number, parentId: number | null, body: string, clientId: string) {
-	const r = await rpc<PostCommentResult>('post_comment', {
-		p_letter: letterId,
-		p_parent: parentId,
-		p_body: body,
-		p_client_id: clientId
-	});
-	if (r.status === 'ok') {
-		notifyLetterComment(r.comment_id);
-		requestModeration();
-	}
+export async function replyLetter(thread: number, body: string) {
+	const r = await rpc<SendResult>('dm_reply', { p_thread: thread, p_body: body });
+	afterSend(r);
 	return r;
 }
 
-/** 하트 — 토글이 아니라 원하는 상태를 보낸다 (연타·재전송해도 결과가 같다) */
-export function setLetterLike(id: number, like: boolean) {
-	return rpc<LikeResult>('set_letter_like', { p_letter: id, p_like: like });
+export const closeThread = (id: number) => rpc<{ status: string }>('dm_close', { p_thread: id });
+export const blockThread = (id: number) => rpc<{ status: string }>('dm_block', { p_thread: id });
+export const reportThread = (id: number, reason: string, note: string) =>
+	rpc<{ status: string }>('dm_report', { p_thread: id, p_reason: reason, p_note: note });
+
+/** 편지 받기 (설정) — 끄면 검색에 나오지 않고 새 편지를 받지 않는다 */
+export async function setLettersOpen(on: boolean, uid: string) {
+	const { error } = await supabase.from('profiles').update({ letters_open: on }).eq('id', uid);
+	if (error) throw error;
 }
 
-export function deleteMyLetter(id: number) {
-	return rpc<{ status: 'ok' }>('delete_my_letter', { p_letter: id });
-}
-
-export function deleteMyComment(id: number) {
-	return rpc<{ status: 'ok' }>('delete_my_comment', { p_comment: id });
-}
-
-export function requestReplyTask() {
-	return rpc<ReplyTaskResult>('request_letter_reply_task');
-}
-
-export function reportLetter(letterId: number, commentId: number | null, reason: ReportReason, note: string) {
-	return rpc<{ status: 'ok' | 'already' | 'self' | 'not_found' }>('report_letter', {
-		p_letter: letterId,
-		p_comment: commentId,
-		p_reason: reason,
-		p_note: note
-	});
-}
-
-export function blockLetterAuthor(letterId: number, commentId: number | null) {
-	return rpc<{ status: 'ok' | 'self' | 'not_found' }>('block_letter_author', {
-		p_letter: letterId,
-		p_comment: commentId
-	});
-}
-
-/** 평면 댓글 목록 → 최상위 댓글 + 그 아래 대댓글 (딱 두 단계) */
-export function threadComments(rows: CommentRow[]): CommentThread[] {
-	const top: CommentThread[] = [];
-	const byId = new Map<number, CommentThread>();
-	for (const r of rows) {
-		if (r.parent_id == null) {
-			const t = { ...r, replies: [] };
-			top.push(t);
-			byId.set(r.id, t);
-		}
+/** 상태 코드 → 사용자 문구 (ok 는 null) */
+export function sendError(r: SendResult): string | null {
+	switch (r.status) {
+		case 'ok':
+			return null;
+		case 'rate_limited':
+			return `새 편지는 하루에 몇 통만 보낼 수 있어요. ${waitText(r.retry_after_ms)} 다시 보낼 수 있어요`;
+		case 'wait_reply':
+			return '상대가 답하기 전에는 3개까지 보낼 수 있어요';
+		case 'not_available':
+			return '이 사람에게는 지금 편지를 보낼 수 없어요';
+		case 'restricted':
+			return '이용이 제한된 계정이에요';
+		case 'no_name':
+			return '먼저 내 이름을 확인해 주세요';
+		case 'bad_text':
+			return '1~1000자로 적어 주세요';
+		case 'closed':
+			return '끝난 편지예요';
+		default:
+			return '편지를 찾을 수 없어요';
 	}
-	for (const r of rows) {
-		if (r.parent_id != null) byId.get(r.parent_id)?.replies.push(r);
-	}
-	return top;
 }

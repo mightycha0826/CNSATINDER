@@ -14,11 +14,13 @@ const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ROOM = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const REP = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const HUMAN = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+const DMREP = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const t = new Date().toISOString();
 const calls = [];
 let settings = { is_open: true, notice: '', room_minutes: 10, extend_minutes: 10, vote_window_sec: 90, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5,
 	ai_moderation: false, ai_mod_daily_cap: 250, ai_chat: false, ai_chat_per_user: 3, ai_chat_daily_cap: 3, ai_chat_minutes: 10, ai_chat_max_turns: 30 };
 let terms = ['섹\\s*스', '니\\s*애\\s*미'];
+let dmStatus = 'closed';
 const row = (id, source, reporter) => ({ id, created_at: t, reason: source === 'auto' ? 'self_harm' : 'harassment', note: source === 'auto' ? '[자동 감지] "요즘 사라지고 싶어" — 위기 신호' : '욕했어요', status: 'open', reported_id: A, reporter_id: reporter, source, reported_30d: 1, evidence_count: 2, reported_status: 'active' });
 const RPC = {
 	admin_staff_role: () => 'admin',
@@ -41,6 +43,16 @@ const RPC = {
 		if (a.p_after === 5000) return { csv: `5001,${ROOM},closed,2,"곰",2026-09-24 10:01:00,"'=1+1",5000`, last_id: 5001, count: 1 };
 		return { csv: '', last_id: null, count: 0 };
 	},
+	// 이름 편지 신고 (Phase 23) — letter_id = 편지 줄기 id
+	admin_letter_report: () => ({
+		report: { id: DMREP, created_at: t, target_type: 'dm', letter_id: 42, comment_id: null, reason: 'harassment', note: '누군지 모를 사람이 계속', status: 'open',
+			reported_id: A, reporter_id: B, source: 'user', handled_by: null, handled_at: null, action_note: null },
+		evidence: [{ ord: 1, kind: 'dm_sender', alias: '푸른 우표', body: '너 진짜 별로야', sent_at: t }, { ord: 2, kind: 'dm_recipient', alias: '박받음', body: '누구세요?', sent_at: t }],
+		target: { thread_status: dmStatus }, reported: { status: 'active', strikes: 0, suspended_until: null, created_at: t },
+		history: [], chat_reports: 0, reporter_filed: 1, reporter_dismissed: 0
+	}),
+	admin_remove_dm: (a) => { calls.push(['remove_dm', a]); dmStatus = 'removed'; return null; },
+	admin_set_letter_report: (a) => { calls.push(['letter_status', a]); return null; },
 	admin_get_settings: () => settings,
 	admin_ai_usage: () => ({ mod_checked_today: 12, mod_flagged_today: 2, mod_pending: 3, ai_chats_today: 1, day_start: t }),
 	admin_banned_terms: () => terms,
@@ -140,6 +152,23 @@ try {
 	await page.getByText('올바른 패턴이 아니에요').waitFor();
 	check('틀린 패턴은 안내', (await page.getByText('"(깨진" 는 올바른 패턴이 아니에요').count()) === 1);
 	await page.screenshot({ path: `${OUT}/admin-ai-settings.png`, fullPage: true });
+	console.log('[이름 편지 신고]');
+	await page.goto(U(`/admin/letters/${DMREP}`));
+	await page.getByText('신고 시점 사본').waitFor();
+	await page.waitForLoadState('networkidle');
+	check('제목: 이름 편지 · 사유', (await page.locator('h1').first().innerText()).includes('이름 편지 · 욕설·괴롭힘'), await page.locator('h1').first().innerText());
+	const ev = await page.locator('.m .kind').allInnerTexts();
+	check('★ 증거: 보낸 사람(받는 사람에게는 익명) · 받는 사람 구분', ev[0].includes('보낸 사람') && ev[0].includes('익명') && ev[1] === '받는 사람', JSON.stringify(ev));
+	check('안내: 보낸 사람 확인은 신원 확인(기록)으로', (await page.locator('.a-hint').first().innerText()).includes('신원 확인'));
+	check('예전 편지용 "편지 전체 보기" 링크는 없다', (await page.getByRole('link', { name: /편지 전체/ }).count()) === 0);
+	check('상태: 끝남', (await page.locator('.now').innerText()).includes('끝남'));
+	await page.getByRole('button', { name: '편지 내리기' }).click();
+	await page.getByText('편지 내림').first().waitFor();
+	const rd = calls.filter((c) => c[0] === 'remove_dm').at(-1)?.[1];
+	check('★ 편지 내리기 → 그 줄기 · 신고 · 운영자 기록으로', rd?.p_thread === 42 && rd?.p_report === DMREP && rd?.p_staff === STAFF, JSON.stringify(rd));
+	check('신고는 조치 완료로', calls.some((c) => c[0] === 'letter_status' && c[1].p_status === 'actioned'));
+	await page.screenshot({ path: `${OUT}/admin-dm-report.png`, fullPage: true });
+
 	console.log('[대화 백업 (CSV)]');
 	await page.goto(U('/admin/rooms'));
 	await page.getByRole('button', { name: 'CSV 내려받기' }).waitFor();

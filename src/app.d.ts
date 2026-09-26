@@ -11,6 +11,8 @@ declare global {
 			matched?: boolean;
 			/** 홈 위에 AI 대화 상대가 열려 있다 — 뒤로가기로 닫힌다 ((app)/+page.svelte) */
 			ai?: boolean;
+			/** 편지 쓰기 — 검색에서 고른 받는 사람 (letters/new). 새로고침하면 사라져 다시 고르게 한다 */
+			to?: { id: string; name: string; grade: number | null; checked: boolean };
 		}
 		/** Cloudflare Workers — 응답 뒤에도 작업(푸시 발송)을 마저 하기 위해 · Workers AI 바인딩(wrangler.jsonc "ai") */
 		interface Platform {

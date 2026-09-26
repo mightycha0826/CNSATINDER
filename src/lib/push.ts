@@ -100,17 +100,15 @@ export function notifySent(messageId: number) {
 }
 
 /**
- * 편지에 댓글을 단 직후. 받을 사람(편지 작성자 / 부모 댓글 작성자)과 문구는 서버가 정한다.
- */
-export function notifyLetterComment(commentId: number) {
-	requestPush({ letter_comment_id: commentId });
-}
-
-/**
  * 채팅 메시지에 공감을 단 직후. 상대 메시지에 처음 단 공감만, 상대가 앱을 안 보고 있을 때만 서버가 보낸다.
  */
 export function notifyReaction(messageId: number) {
 	requestPush({ reaction_message_id: messageId });
+}
+
+/** 이름 편지를 보내거나 답장한 직후. 받는 쪽이 앱을 안 보고 있을 때만 서버가 보낸다 (보낸 사람은 "익명"으로만). */
+export function notifyDm(msgId: number) {
+	requestPush({ dm_msg_id: msgId });
 }
 
 function requestPush(body: Record<string, number>) {

@@ -18,6 +18,8 @@ export type Profile = {
 	onboarded: boolean;
 	/** 만났던 사람도 다시 만나기 (설정) — 둘 다 켰을 때만 최근 상대와 다시 매칭 (Phase 21) */
 	allow_rematch?: boolean;
+	/** 편지 받기 (설정) — 끄면 검색에 나오지 않고 새 편지를 받지 않는다 (Phase 23) */
+	letters_open?: boolean;
 };
 
 export type Settings = {
@@ -47,6 +49,11 @@ export const S = $state({
 	settings: null as Settings | null,
 	/** 비밀번호를 설정했는지 — 안 했으면 다음 로그인도 인증 코드로 해야 한다 */
 	hasPassword: null as boolean | null,
+	/**
+	 * 내 이름 (Phase 23 이름 편지) — 명렬표(학번)에서 오거나(roster), 명렬표에 없으면 한 번 직접 적는다(self).
+	 * undefined = 아직 모름(또는 DB 가 Phase 23 전), null = 이름이 없어 적어야 함
+	 */
+	me: undefined as { name: string; grade: number | null; source: 'roster' | 'self' } | null | undefined,
 	/** 전역 1초 틱. 카운트다운·상대시간 표시가 여기에 붙는다. */
 	now: Date.now()
 });
@@ -98,6 +105,9 @@ export function errMsg(e: unknown): string {
 	if (m.includes('bad_format')) return '서식을 저장하지 못했어요. 다시 올려 주세요';
 	if (m.includes('empty_body')) return '내용을 적어 주세요';
 	if (m.includes('not_owner')) return '내가 쓴 글만 지울 수 있어요';
+	// 이름 편지 (Phase 23)
+	if (m.includes('name_in_roster')) return '학교 명단에 있는 이름이에요. 학교 이메일로 가입했는지 확인해 주세요';
+	if (m.includes('bad_name')) return '이름은 한글 또는 영문 2~20자로 적어 주세요';
 	if (m.includes('Token has expired') || m.includes('expired'))
 		return '인증 코드 유효 시간 만료. 다시 받아 주세요';
 	if (m.includes('Invalid token') || m.includes('invalid'))
@@ -134,6 +144,7 @@ export async function init() {
 		if (event === 'SIGNED_OUT') {
 			S.profile = null;
 			S.hasPassword = null;
+			S.me = undefined;
 			loadedFor = null;
 		} else if (sess && event !== 'TOKEN_REFRESHED') {
 			// 등록하자마자 INITIAL_SESSION 이 오고, 탭으로 돌아올 때 SIGNED_IN 이 다시 오기도 한다 —
@@ -163,8 +174,9 @@ export async function loadProfile() {
 	// ★ select('*') 를 쓰지 않는다. 항상 명시 컬럼.
 	const cols = 'id, nickname, bio, interests, mbti, gender, want, status, suspended_until, verified, onboarded';
 	const read = (c: string) => supabase.from('profiles').select(c).eq('id', S.session?.user.id ?? '').maybeSingle();
-	let { data, error } = await read(`${cols}, allow_rematch`);
-	// Phase 21 을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
+	let { data, error } = await read(`${cols}, allow_rematch, letters_open`);
+	// Phase 21 · 23 을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
+	if (error) ({ data, error } = await read(`${cols}, allow_rematch`));
 	if (error) ({ data } = await read(cols));
 	S.profile = (data as unknown as Profile) ?? null;
 }
@@ -191,7 +203,19 @@ async function loadSettings() {
 
 export async function loadAccount() {
 	const { data } = await supabase.rpc('my_account');
-	S.hasPassword = (data as { has_password?: boolean } | null)?.has_password ?? null;
+	const a = data as { has_password?: boolean; name?: string | null; grade?: number | null; name_source?: 'roster' | 'self' } | null;
+	S.hasPassword = a?.has_password ?? null;
+	// 'name' 키가 없으면 DB 가 Phase 23 전 — 이름을 묻지 않는다
+	S.me = !a || !('name' in a) ? undefined : a.name ? { name: a.name, grade: a.grade ?? null, source: a.name_source ?? 'self' } : null;
+}
+
+/** 명렬표에 없는 사람만 — 이름을 한 번 적는다 */
+export async function saveMyName(name: string) {
+	const { data, error } = await supabase.rpc('set_my_name', { p_name: name });
+	if (error) throw error;
+	const st = (data as { status: string }).status;
+	if (st !== 'ok' && st !== 'already' && st !== 'roster') throw new Error(st);
+	await loadAccount();
 }
 
 // ── 온라인 표시 ───────────────────────────────────────────────────────
@@ -347,6 +371,7 @@ export async function signOut() {
 	await supabase.auth.signOut();
 	S.profile = null;
 	S.hasPassword = null;
+	S.me = undefined;
 }
 
 // ── 프로필 ────────────────────────────────────────────────────────────

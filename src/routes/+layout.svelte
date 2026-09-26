@@ -65,9 +65,9 @@
 		}
 		UI.afterLogin = null;
 
-		// 3) 온보딩 (성별·선호를 정해야 매칭이 가능하다)
+		// 3) 온보딩 (성별·선호를 정해야 매칭이 가능하다) · 이름 (명단에 없으면 적어야 편지를 쓸 수 있다, Phase 23)
 		const onOnboarding = path === '/onboarding';
-		if (S.profile && !S.profile.onboarded) {
+		if (S.profile && (!S.profile.onboarded || S.me === null)) {
 			if (!onOnboarding) void goto('/onboarding', { replaceState: true });
 		} else if (onOnboarding && S.profile?.onboarded) {
 			void goto('/', { replaceState: true });

@@ -6,7 +6,7 @@ import type { AiMessage } from './ai';
  */
 export const CATEGORIES = ['harassment', 'sexual', 'hate', 'personal_info', 'self_harm', 'spam'] as const;
 export type Category = (typeof CATEGORIES)[number];
-export type ModItem = { id: number; kind: 'message' | 'letter' | 'comment'; text: string; context: { who: string; text: string }[] };
+export type ModItem = { id: number; kind: 'message' | 'letter' | 'comment' | 'dm'; text: string; context: { who: string; text: string }[] };
 export type Verdict = { flag: boolean; category: Category | 'none'; reason: string };
 
 const SYSTEM = `너는 고등학생들이 쓰는 익명 채팅·편지 앱의 검열 도우미다. '검사할 글'이 아래 중 하나에 해당하는지 판정한다.
@@ -20,7 +20,7 @@ const SYSTEM = `너는 고등학생들이 쓰는 익명 채팅·편지 앱의 �
 다른 말 없이 JSON 한 줄로만 답한다:
 {"flag": true 또는 false, "category": "none|harassment|sexual|hate|personal_info|self_harm|spam", "reason": "한국어 20자 이내"}`;
 
-const KIND = { message: '채팅 메시지', letter: '익명 편지', comment: '편지 댓글' } as const;
+const KIND = { message: '채팅 메시지', letter: '익명 편지', comment: '편지 댓글', dm: '이름을 보고 보낸 익명 편지 (받는 사람은 실명)' } as const;
 
 /** 글 안의 <<< · >>> 는 구분선을 흉내 내 [검사할 글] 밖으로 빠져나가려는 것일 수 있다 — 모양만 바꿔 넣는다 */
 const fence = (t: string) => t.replace(/<{3,}/g, '‹‹').replace(/>{3,}/g, '››');

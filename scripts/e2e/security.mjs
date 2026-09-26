@@ -37,8 +37,6 @@ try {
 	await page.goto(U('/dev/chat?s=chat&matched'));
 	await page.locator('.bubble', { hasText: '안녕하세요!' }).waitFor();
 	await page.waitForTimeout(1800); // 연결 화면 애니메이션 · 인라인 스타일
-	await page.goto(U('/dev/letters'));
-	await page.waitForTimeout(1200);
 	await page.goto(U('/login'));
 	// 비밀번호 찾기 → 인증 코드 받기 = 브라우저에서 Supabase 로 바로 가는 요청
 	await page.getByRole('button', { name: '비밀번호를 잊었어요' }).click();
@@ -46,7 +44,7 @@ try {
 	await page.getByRole('button', { name: '인증 코드 받기' }).click();
 	await page.waitForTimeout(1500);
 	check('로그인 요청이 Supabase 로 나간다 (connect-src 허용)', sb.length > 0, String(sb.length));
-	check('채팅·편지·로그인 화면에 CSP 위반 없음', violations.length === 0, violations.join(' | '));
+	check('채팅·로그인 화면에 CSP 위반 없음', violations.length === 0, violations.join(' | '));
 	check('페이지 오류 없음', errs.length === 0, errs.join(' | '));
 
 	console.log('[실제로 막는다]');

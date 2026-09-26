@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { useTabBack } from '$lib/tabBack.svelte';
+	import { whileVisible } from '$lib/visible';
+	import { DM, refreshUnread } from '$lib/letters/unread.svelte';
 
 	/**
 	 * 앱 화면 공통 틀 — 하단 탭 3개 (왼쪽 익명편지 · 가운데 채팅 · 오른쪽 프로필).
@@ -11,12 +13,17 @@
 	 */
 	let { children } = $props();
 
-	// /dev/letters 는 개발용 미리보기 (배포 빌드에서는 import.meta.env.DEV 가 false)
-	const path = $derived(import.meta.env.DEV && page.url.pathname === '/dev/letters' ? '/letters' : page.url.pathname);
+	const path = $derived(page.url.pathname);
 	const showTabs = $derived(path === '/' || path === '/letters' || path === '/me');
 	const onLetters = $derived(path === '/letters');
 	const onChat = $derived(path === '/');
 	const onMe = $derived(path === '/me');
+
+	// 안 읽은 편지 — 익명편지 탭 위 빨간 점. 앱이 보이는 동안 2분마다 (편지 목록 화면은 따로 30초마다 읽는다)
+	$effect(() => {
+		void refreshUnread();
+		return whileVisible(() => void refreshUnread(), 120_000);
+	});
 
 	const { switchTab } = useTabBack(); // 뒤로가기: 익명편지·프로필 → 홈, 홈 → 두 번 누르면 종료 (lib/tabBack.svelte.ts)
 </script>
@@ -38,6 +45,7 @@
 				{/if}
 			</svg>
 			<span>익명편지</span>
+			{#if DM.unread > 0}<span class="tab-dot" aria-label="안 읽은 편지 {DM.unread}통"></span>{/if}
 		</a>
 		<a class="tab" class:on={onChat} href="/" onclick={(e) => switchTab(e, '/')} aria-current={onChat ? 'page' : undefined}>
 			<svg viewBox="0 0 24 24" aria-hidden="true">

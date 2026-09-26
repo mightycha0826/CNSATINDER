@@ -68,10 +68,13 @@ export const REPORT_TABS = [
 ] as const;
 
 // ── 익명편지 신고 (private.letter_reports) ─────────────────────────────
+/** 신고 대상 — 예전 공개 편지 · 댓글, 또는 이름 편지(Phase 23, letter_id = 편지 줄기 id) */
+export const TARGET_LABEL: Record<string, string> = { letter: '편지', comment: '댓글', dm: '이름 편지' };
+
 export type LetterReportRow = {
 	id: string;
 	created_at: string;
-	target_type: 'letter' | 'comment';
+	target_type: 'letter' | 'comment' | 'dm';
 	letter_id: number;
 	comment_id: number | null;
 	reason: string;
@@ -90,9 +93,19 @@ export type LetterReportRow = {
 export type LetterReportDetail = {
 	report: LetterReportRow & { handled_by: string | null; handled_at: string | null; action_note: string | null };
 	/** letter = 편지 본문 / parent = 대댓글이 달린 댓글 / comment = 신고한 댓글 */
-	evidence: { ord: number; kind: 'letter' | 'parent' | 'comment'; alias: string | null; body: string; sent_at: string }[];
-	/** 지금 그 글이 아직 떠 있는지 */
-	target: { letter_status: 'open' | 'removed' | null; comment_status: 'visible' | 'removed' | null };
+	evidence: {
+		ord: number;
+		kind: 'letter' | 'parent' | 'comment' | 'dm_sender' | 'dm_recipient';
+		alias: string | null;
+		body: string;
+		sent_at: string;
+	}[];
+	/** 지금 그 글이 아직 떠 있는지 (이름 편지면 thread_status) */
+	target: {
+		letter_status?: 'open' | 'removed' | null;
+		comment_status?: 'visible' | 'removed' | null;
+		thread_status?: 'open' | 'closed' | 'removed' | null;
+	};
 	reported: { status: string; strikes: number; suspended_until: string | null; created_at: string } | null;
 	history: { id: string; created_at: string; reason: string; status: ReportStatus }[];
 	/** 같은 사람이 채팅에서 받은 신고 수 (교차 확인용) */
@@ -155,7 +168,7 @@ export type UserDetail = {
 	staff_role: StaffRole | null;
 	counts: { rooms: number; open_rooms: number; letters: number; comments: number; reports_filed: number; reports_dismissed: number };
 	chat_reports: { id: string; created_at: string; reason: string; status: ReportStatus }[];
-	letter_reports: { id: string; created_at: string; reason: string; status: ReportStatus; target_type: 'letter' | 'comment' }[];
+	letter_reports: { id: string; created_at: string; reason: string; status: ReportStatus; target_type: 'letter' | 'comment' | 'dm' }[];
 	history: { action: string; staff_id: string | null; detail: Record<string, unknown>; created_at: string }[];
 };
 
@@ -289,7 +302,8 @@ export const ACTION_LABEL: Record<string, string> = {
 	export_messages: '대화 백업 (CSV)',
 	roster_import: '명렬표 반영',
 	post_notice: '공지 올림',
-	remove_notice: '공지 내림'
+	remove_notice: '공지 내림',
+	remove_dm: '이름 편지 내림'
 };
 
 /** 공지사항 (admin_notices) */

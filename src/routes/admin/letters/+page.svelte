@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { REASON_LABEL, REPORT_TABS, STATUS_LABEL, fmtTime, shortId } from '$lib/adminTypes';
+	import { REASON_LABEL, REPORT_TABS, STATUS_LABEL, fmtTime, shortId, TARGET_LABEL } from '$lib/adminTypes';
 
 	let { data } = $props();
 </script>
@@ -46,7 +46,7 @@
 				{#each data.reports as r (r.id)}
 					<tr>
 						<td class="num muted">{fmtTime(r.created_at)}</td>
-						<td>{r.target_type === 'letter' ? '편지' : '댓글'}</td>
+						<td>{TARGET_LABEL[r.target_type] ?? r.target_type}</td>
 						<td>
 							<span class="a-reason">{REASON_LABEL[r.reason] ?? r.reason}</span>
 							{#if r.source === 'auto'}<span class="pill auto" title="AI 자동 감지">자동</span>{/if}

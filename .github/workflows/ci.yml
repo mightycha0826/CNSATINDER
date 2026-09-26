@@ -31,8 +31,6 @@ jobs:
         run: npm run check
       - name: 채팅 로직
         run: npm run test:chat
-      - name: 편지 로직
-        run: npm run test:letters
       - name: AI 대화 모양
         run: npm run test:aichat
       - name: 운영자 세션

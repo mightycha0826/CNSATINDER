@@ -2336,5 +2336,116 @@ console.log('\n[70] ★ 보안 점검 — 표 권한 · 트리거 함수 (Supaba
 	check('설정 읽기는 그대로', (await rowsAs(u, 'select is_open from public.app_settings')).length === 1);
 }
 
+console.log('\n[71] ★ 이름 편지 — 학생을 찾아 익명으로 보내고 주고받기 (Phase 23)');
+{
+	await resetPool();
+	await db.query(`update public.user_presence set letter_tokens = 3, letter_at = now(), comment_tokens = 10, comment_at = now()`);
+	let no = 20700;
+	// 학교 이메일 앞자리 = 학번 → 명렬표 이름
+	const named = async (name, grade, gender = 'm', want = 'f') => {
+		const n = ++no;
+		if (name) await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name, grade = excluded.grade', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set gender=$2, want=$3, onboarded=true where id=$1', [id, gender, want]);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const A = await named('김보냄', 1);      // 보내는 사람
+	const B = await named('박받음', 2);      // 받는 사람
+	const C = await named('박받음', 3);      // 동명이인
+	const D = await named(null, null);       // 명렬표에 없음
+	const E = await named('최남', 2);        // 제3자
+
+	console.log('  [이름]');
+	const accA = await rpcAs(A, 'my_account');
+	check('★ 명렬표에서 이름 · 학년 자동', accA.name === '김보냄' && accA.grade === 1 && accA.name_source === 'roster', JSON.stringify(accA));
+	check('명렬표에 있으면 직접 못 바꾼다', (await rpcAs(A, 'set_my_name', '가짜이름')).status === 'roster');
+	check('명렬표에 없으면 이름이 비어 있다', (await rpcAs(D, 'my_account')).name == null);
+	check('이상한 이름은 거절', (await rpcAs(D, 'set_my_name', '1')).status === 'bad_name');
+	check('★ 명렬표에 있는 이름으로는 적을 수 없다 (사칭 방지)', (await rpcAs(D, 'set_my_name', '박받음')).status === 'name_in_roster');
+	check('명렬표에 없는 사람은 한 번 적는다', (await rpcAs(D, 'set_my_name', '이외부')).status === 'ok' && (await rpcAs(D, 'my_account')).name_source === 'self');
+	check('한 번 적으면 못 바꾼다', (await rpcAs(D, 'set_my_name', '다른이름')).status === 'already');
+
+	console.log('  [찾기]');
+	check('두 글자 미만은 찾지 않는다', (await rpcAs(A, 'dm_search', '박')).length === 0);
+	let found = await rpcAs(A, 'dm_search', '박받음');
+	check('★ 이름으로 찾기 — 동명이인은 학년으로 구분', found.length === 2 && found.every((x) => x.name === '박받음') && found.map((x) => x.grade).join(',') === '2,3', JSON.stringify(found));
+	check('★ 결과에 이메일 · 학번 없음', !JSON.stringify(found).includes('@') && !JSON.stringify(found).includes(String(no)));
+	check('나 자신은 안 나온다', (await rpcAs(A, 'dm_search', '김보냄')).length === 0);
+	check('명렬표 확인 여부', found[0].checked === true && (await rpcAs(A, 'dm_search', '이외부'))[0]?.checked === false);
+	await db.query('update public.profiles set letters_open = false where id = $1', [C]);
+	check('★ 편지 받기를 끄면 검색에 안 나온다', (await rpcAs(A, 'dm_search', '박받음')).length === 1);
+	await expectError('로그인 안 하면 못 찾는다', () => rowsAs(null, `select public.dm_search('박받음')`), 'permission denied');
+
+	console.log('  [보내기 · 받기]');
+	const s1 = await rpcAs(A, 'dm_send', B, '안녕 나야 누군지 맞혀봐');
+	check('편지 보내기', s1.status === 'ok' && s1.thread_id > 0, JSON.stringify(s1));
+	check('받기를 끈 사람에게는 못 보낸다', (await rpcAs(A, 'dm_send', C, '안녕')).status === 'not_available');
+	const inB = await rpcAs(B, 'dm_inbox');
+	const rb = inB.threads[0];
+	check('★ 받는 사람에게 보낸 사람은 익명 이름뿐', rb.role === 'received' && rb.title && rb.title !== '김보냄' && rb.grade == null && rb.unread === 1, JSON.stringify(rb));
+	const thB = await rpcAs(B, 'dm_thread', s1.thread_id);
+	check('★ 받는 사람 쪽 어디에도 보낸 사람 계정 · 이름이 없다', !JSON.stringify(inB).includes(A) && !JSON.stringify(thB).includes(A) && !JSON.stringify(thB).includes('김보냄'));
+	check('열면 읽음', (await rpcAs(B, 'dm_inbox')).threads[0].unread === 0 && thB.messages[0].mine === false);
+	const sa = (await rpcAs(A, 'dm_inbox')).threads[0];
+	check('보낸 사람에게는 받는 사람 이름 · 학년', sa.role === 'sent' && sa.title === '박받음' && sa.grade === 2);
+	check('남의 편지는 열 수 없다', (await rpcAs(E, 'dm_thread', s1.thread_id)).status === 'not_found' && (await rpcAs(E, 'dm_reply', s1.thread_id, '끼어들기')).status === 'not_found');
+	await expectError('★ 편지 표는 직접 못 읽는다', () => rowsAs(B, 'select * from private.dm_threads'), 'permission denied');
+
+	await rpcAs(A, 'dm_send', B, '두 번째');
+	await rpcAs(A, 'dm_reply', s1.thread_id, '세 번째');
+	check('★ 답 없이 네 번째는 안 된다 (연달아 3개까지)', (await rpcAs(A, 'dm_reply', s1.thread_id, '네 번째')).status === 'wait_reply' && (await rpcAs(A, 'dm_thread', s1.thread_id)).wait_reply === true);
+	check('받는 사람이 답장', (await rpcAs(B, 'dm_reply', s1.thread_id, '누구세요?')).status === 'ok');
+	check('답이 오면 다시 쓸 수 있다', (await rpcAs(A, 'dm_reply', s1.thread_id, '비밀')).status === 'ok');
+	const thA = await rpcAs(A, 'dm_thread', s1.thread_id);
+	check('주고받은 순서 · 내 말 표시', thA.messages.length === 5 && thA.messages.map((m) => (m.mine ? 'A' : 'B')).join('') === 'AAABA');
+	await expectError('★ 신상정보는 편지에도 못 쓴다', () => rpcAs(A, 'dm_reply', s1.thread_id, '내 번호 010-1234-5678'), 'personal_info');
+
+	console.log('  [푸시]');
+	await expectError('학생은 푸시 판단 함수를 못 부른다', () => rowsAs(B, 'select public.dm_push_payload(1, $1)', [B]), 'permission denied');
+	await db.query(`insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://web.push.apple.com/dmB', 'k', 'x')`, [B]);
+	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id = $1`, [B]);
+	const t2 = await rpcAs(A, 'dm_send', E, '처음 보내는 편지');
+	await db.query(`insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://web.push.apple.com/dmE', 'k', 'x')`, [E]);
+	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id = $1`, [E]);
+	const pl = await svc('dm_push_payload', t2.msg_id, A);
+	check('★ 새 편지 알림: "익명의 편지" · 보낸 사람 정보 없음', pl.title === '익명의 편지가 도착했어요' && pl.url === `/letters/${t2.thread_id}` && !JSON.stringify(pl).includes('김보냄'), JSON.stringify(pl));
+	check('남이 쓴 말로는 알림을 못 보낸다', (await svc('dm_push_payload', t2.msg_id, B)).skip === 'not_author');
+
+	console.log('  [끝내기 · 차단 · 신고]');
+	check('받는 사람이 끝내기', (await rpcAs(E, 'dm_close', t2.thread_id)).status === 'ok' && (await rpcAs(A, 'dm_reply', t2.thread_id, '왜')).status === 'closed');
+	check('★ 받는 사람이 끝내면 그 사람에게 새 편지도 못 보낸다', (await rpcAs(A, 'dm_send', E, '다시')).status === 'not_available');
+	const rep = await rpcAs(B, 'dm_report', s1.thread_id, 'harassment', '누군지 모를 사람이 계속');
+	check('신고', rep.status === 'ok');
+	const lr = await one(`select * from private.letter_reports where target_type = 'dm' and letter_id = $1`, [s1.thread_id]);
+	check('★ 신고 대상 = 보낸 사람 (운영진만 안다) · 대화 전문이 증거로', lr.reported_id === A && lr.reporter_id === B && (await cnt('select count(*)::int n from private.letter_report_evidence where report_id = $1', [lr.id])) === 5);
+	check('신고하면 차단 · 끝남 · 검색에서도 서로 안 보인다', (await cnt('select count(*)::int n from public.blocks where blocker_id = $1 and blocked_id = $2', [B, A])) === 1
+		&& (await rpcAs(A, 'dm_thread', s1.thread_id)).thread_status === 'closed' && (await rpcAs(A, 'dm_search', '박받음')).length === 0);
+	check('같은 편지는 두 번 신고하지 않는다', (await rpcAs(B, 'dm_report', s1.thread_id, 'spam', '')).status === 'already');
+	const det = await svc('admin_letter_report', lr.id);
+	check('운영자 신고 상세에 편지 줄기 상태', det.target.thread_status === 'closed' && det.evidence[0].kind === 'dm_sender');
+	const adm = await person('m', 'f');
+	await db.query(`insert into private.staff (user_id, role) values ($1, 'admin') on conflict do nothing`, [adm]);
+	await svc('admin_remove_dm', s1.thread_id, adm, lr.id);
+	check('★ 운영진이 내리면 둘 다에게서 사라진다 · 기록', !(await rpcAs(B, 'dm_inbox')).threads.some((t) => t.id === s1.thread_id)
+		&& (await rpcAs(A, 'dm_thread', s1.thread_id)).status === 'not_found'
+		&& (await cnt(`select count(*)::int n from private.audit_log where action = 'remove_dm'`)) === 1);
+
+	console.log('  [한도 · AI 검토]');
+	const F = await named('한도만', 1), G = await named('한도둘', 1), H = await named('한도셋', 1), I = await named('한도넷', 1);
+	await db.query('update public.user_presence set letter_tokens = 3, letter_at = now() where user_id = $1', [A]);
+	const r1 = await rpcAs(A, 'dm_send', F, '1'), r2 = await rpcAs(A, 'dm_send', G, '2'), r3 = await rpcAs(A, 'dm_send', H, '3');
+	check('★ 새 편지는 편지 한도 (기본 3통) — 넷째는 쉬었다가', [r1, r2, r3].every((r) => r.status === 'ok') && (await rpcAs(A, 'dm_send', I, '4')).status === 'rate_limited');
+	await db.query(`update public.app_settings set ai_moderation = true, ai_mod_daily_cap = 50`);
+	await db.query(`update private.mod_queue set status = 'done' where status in ('pending','working')`);
+	await rpcAs(F, 'dm_reply', r1.thread_id, '너 진짜 짜증나 [flag]');
+	const claimed = await svc('mod_claim', 5);
+	const it = claimed.find((c) => c.kind === 'dm');
+	check('AI 검토가 편지도 가져간다 (앞 말 맥락과 함께)', it && it.text.includes('짜증나') && it.context.length === 1, JSON.stringify(claimed));
+	await svc('mod_verdict', it.id, true, 'harassment', '모욕');
+	check('★ 걸리면 자동 신고 (대상 = 그 말을 쓴 사람)', (await one(`select reported_id, source from private.letter_reports where target_type = 'dm' and letter_id = $1`, [r1.thread_id]))?.reported_id === F);
+	await db.query(`update public.app_settings set ai_moderation = false`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import PasswordFields from '$lib/ui/PasswordFields.svelte';
-	import { S, errMsg, saveOnboarding, setPassword, toast } from '$lib/state.svelte';
+	import { S, errMsg, saveMyName, saveOnboarding, setPassword, toast } from '$lib/state.svelte';
 
 	let gender: 'm' | 'f' | null = $state(null);
 	let want: 'm' | 'f' | 'any' | null = $state(null);
@@ -18,12 +18,23 @@
 		want ??= g === 'm' ? 'f' : 'm';
 	}
 
-	const ready = $derived(!!gender && !!want && (!needPassword || passwordOk));
+	// 이름 (Phase 23 이름 편지) — 학교 명단(학번)에서 자동. 명단에 없을 때만 한 번 적는다.
+	// 이미 시작한 사람이 이름 때문에 다시 온 경우에는 이름만 묻는다.
+	const onlyName = $derived(!!S.profile?.onboarded);
+	const needName = $derived(S.me === null);
+	let nameDraft = $state('');
+	const nameOk = $derived(/^[가-힣A-Za-z]{2,20}$/.test(nameDraft.trim()));
+
+	const ready = $derived(
+		(!needName || nameOk) && (onlyName || (!!gender && !!want && (!needPassword || passwordOk)))
+	);
 
 	async function submit() {
 		if (!ready || busy) return;
 		busy = true;
 		try {
+			if (needName) await saveMyName(nameDraft.trim());
+			if (onlyName) return; // 가드가 홈으로 보낸다
 			if (needPassword) await setPassword(password);
 			await saveOnboarding(gender!, want!);
 		} catch (e) {
@@ -48,7 +59,27 @@
 		<p class="hint muted nick-hint">대화 상대에게는 이 이름으로만 보여요. 바꿀 수 없어요.</p>
 	{/if}
 
-	{#if needPassword}
+	{#if S.me}
+		<section>
+			<h2>내 이름</h2>
+			<p class="name">{S.me.name}{#if S.me.grade}<span class="muted"> · {S.me.grade}학년</span>{/if}</p>
+			<p class="hint muted">
+				학교 명단에서 가져왔어요. 익명편지에서 친구들이 이 이름으로 나를 찾아 편지를 보낼 수 있어요
+				(설정에서 끌 수 있어요). <strong>채팅에서는 보이지 않아요.</strong>
+			</p>
+		</section>
+	{:else if needName}
+		<section>
+			<h2>내 이름</h2>
+			<input class="field" bind:value={nameDraft} maxlength="20" placeholder="실명" autocomplete="name" aria-label="내 이름" />
+			<p class="hint muted">
+				학교 명단에서 찾지 못했어요. 실명을 적어 주세요 — <strong>한 번 적으면 바꿀 수 없어요.</strong>
+				익명편지에서 이 이름으로 찾아져요. 채팅에서는 보이지 않아요.
+			</p>
+		</section>
+	{/if}
+
+	{#if needPassword && !onlyName}
 		<section>
 			<h2>비밀번호 만들기</h2>
 			<PasswordFields bind:value={password} bind:valid={passwordOk} />
@@ -56,6 +87,7 @@
 		</section>
 	{/if}
 
+	{#if !onlyName}
 	<section>
 		<h2>나는</h2>
 		<div class="opts">
@@ -73,6 +105,7 @@
 		</div>
 		<p class="hint muted">서로의 조건이 맞을 때만 연결돼요. 설정에서 언제든 바꿀 수 있어요.</p>
 	</section>
+	{/if}
 
 	<div class="rules">
 		<h2>세 가지만 지켜 주세요</h2>
@@ -85,7 +118,7 @@
 
 	<div class="foot">
 		<button class="btn" onclick={submit} disabled={!ready || busy}>
-			{busy ? '저장 중…' : '동의하고 시작하기'}
+			{busy ? '저장 중…' : onlyName ? '저장' : '동의하고 시작하기'}
 		</button>
 	</div>
 </div>
@@ -129,6 +162,16 @@
 	.hint {
 		margin: 0;
 		font-size: 13px;
+		line-height: 1.6;
+	}
+	.hint strong {
+		color: var(--text);
+		font-weight: 600;
+	}
+	.name {
+		margin: 0;
+		font-size: 20px;
+		font-weight: 700;
 	}
 
 	.rules {
