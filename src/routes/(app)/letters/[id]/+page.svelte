@@ -4,6 +4,7 @@
 	 * 받은 편지: 상대 = "익명 · ○○ ○○" (누군지 알 수 없다) / 보낸 편지: 상대 = 이름 · 학년.
 	 * 메뉴: 그만 주고받기 · 차단 · 신고. 받는 사람이 끝내면 그 사람은 다시 편지를 보낼 수 없다.
 	 * 화면이 보이는 동안 15초마다 새 말을 확인한다 (새 말 알림은 푸시로).
+	 * 키보드가 올라오면 화면을 보이는 영역(visualViewport)에 맞추고 최근 말이 그대로 보이게 한다 (채팅 화면과 같은 방식).
 	 */
 	import { tick } from 'svelte';
 	import { page } from '$app/state';
@@ -25,6 +26,42 @@
 	let gone = $state(false);
 	let skew = $state(0);
 	let listEl: HTMLDivElement | undefined = $state();
+
+	// ── 키보드 (모바일) — ChatView 와 같다 ──
+	// 키보드가 올라와도 페이지째 밀려 올라가지 않게, 실제로 보이는 영역에 화면을 딱 맞춘다
+	let vvH = $state<number | null>(null);
+	let vvTop = $state(0);
+	let keyboard = $state(false);
+	$effect(() => {
+		const vv = window.visualViewport;
+		if (!vv) return;
+		const sync = () => {
+			vvH = vv.height;
+			vvTop = vv.offsetTop;
+			keyboard = window.innerHeight - vv.height > 120;
+		};
+		sync();
+		vv.addEventListener('resize', sync);
+		vv.addEventListener('scroll', sync);
+		return () => {
+			vv.removeEventListener('resize', sync);
+			vv.removeEventListener('scroll', sync);
+		};
+	});
+	/** 맨 아래에서 얼마나 떨어져 있는지 — 목록 높이가 바뀌어도(키보드) 보던 자리를 지킨다 */
+	let fromBottom = 0;
+	function onScroll() {
+		if (listEl) fromBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight;
+	}
+	$effect(() => {
+		if (!listEl) return;
+		const el = listEl;
+		const ro = new ResizeObserver(() => {
+			el.scrollTop = el.scrollHeight - el.clientHeight - (fromBottom < 48 ? 0 : fromBottom);
+		});
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
 
 	async function load(scroll = false) {
 		try {
@@ -112,7 +149,7 @@
 	}
 </script>
 
-<div class="detail">
+<div class="detail" class:keyboard style:height={vvH ? `${vvH}px` : null} style:--vv-top={`${vvTop}px`}>
 	<header class="topbar">
 		<BackButton href="/letters" history />
 		{#if t}
@@ -133,7 +170,7 @@
 		{/if}
 	</header>
 
-	<div class="list" bind:this={listEl} role="region" aria-label="편지 내용">
+	<div class="list" bind:this={listEl} onscroll={onScroll} role="region" aria-label="편지 내용">
 		{#if gone}
 			<p class="empty muted">편지를 찾을 수 없어요.</p>
 		{:else if !t}
@@ -221,6 +258,19 @@
 		display: flex;
 		flex-direction: column;
 		height: 100dvh;
+		/* 보이는 영역에 고정 — 키보드가 올라와도 페이지째 밀려 올라가지 않는다 */
+		position: fixed;
+		top: 0;
+		left: 50%;
+		width: 100%;
+		max-width: 520px;
+		transform: translate(-50%, var(--vv-top, 0px));
+		background: var(--bg);
+		overflow: hidden;
+	}
+	/* 키보드가 떠 있을 때는 홈 인디케이터 여백이 필요 없다 */
+	.detail.keyboard .composer {
+		padding-bottom: 8px;
 	}
 	.who {
 		flex: 1;

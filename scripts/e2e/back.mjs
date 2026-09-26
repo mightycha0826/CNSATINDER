@@ -128,7 +128,7 @@ try {
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
 	const setHeads = await heads();
-	check('★ 설정 = 화면 · 채팅 색상 · 알림 · 매칭 · 편지 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '화면,채팅 색상,알림,매칭,편지,계정,개인정보'
+	check('★ 설정 = 화면(한 줄) · 채팅 색상 · 알림 · 매칭 · 편지 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '채팅 색상,알림,매칭,편지,계정,개인정보'
 		&& (await page.getByRole('switch', { name: '새 메시지 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
 		&& (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
 	check('뒤로는 둥근 단추 · 제목 가운데', (await page.locator('button.back').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%'
@@ -176,6 +176,11 @@ try {
 	await page.emulateMedia({ colorScheme: 'light' });
 	check('화면: 세 가지 · 기본은 "기기 설정 따르기"', (await page.getByRole('radiogroup', { name: '화면' }).getByRole('radio').count()) === 3
 		&& (await mode('기기 설정 따르기').getAttribute('aria-checked')) === 'true');
+	check('★ 화면은 한 줄 — 왼쪽 "화면", 오른쪽 아이콘 셋 (글자 없음)', await page.evaluate(() => {
+		const g = document.querySelector('[role="radiogroup"][aria-labelledby="theme-h"]'), row = g.closest('.g-row');
+		const lab = row.querySelector('#theme-h').getBoundingClientRect(), gr = g.getBoundingClientRect();
+		return row.getBoundingClientRect().height < 60 && lab.right < gr.left && g.innerText.trim() === '' && g.querySelectorAll('svg').length === 3;
+	}));
 	await mode('다크 모드').click(); await page.waitForTimeout(200);
 	check('★ 다크 모드를 고르면 폰이 라이트여도 바로 어두워진다', (await bg()) === 'rgb(0, 0, 0)' && (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark');
 	check('상단 바 색도 검정', (await bar()) === '#000000,#000000', await bar());

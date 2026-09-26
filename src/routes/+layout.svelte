@@ -34,6 +34,10 @@
 
 		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/sw.js').catch(() => {});
+			// 설치한 앱(홈 화면 앱)으로 떠 있으면 서비스워커에 알린다 — 알림을 누르면 브라우저 탭 말고 이 앱으로 열게
+			if (window.matchMedia('(display-mode: standalone)').matches) {
+				navigator.serviceWorker.ready.then((r) => r.active?.postMessage({ type: 'standalone' })).catch(() => {});
+			}
 		}
 		return () => window.removeEventListener('beforeinstallprompt', onPrompt);
 	});

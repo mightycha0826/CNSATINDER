@@ -194,21 +194,29 @@
 </div>
 
 <div class="page grouped settings">
-	<h2 class="g-head" id="theme-h">화면</h2>
-	<div class="g-card" role="radiogroup" aria-labelledby="theme-h">
-		{#each THEME_MODES as t (t.id)}
-			{@const on = THEME.mode === t.id}
-			<button class="g-row" role="radio" aria-checked={on} onclick={() => setTheme(t.id)}>
-				<span>{t.label}</span>
-				{#if on}
-					<svg class="g-check" viewBox="0 0 18 18" fill="none" aria-hidden="true">
-						<path d="M3 9.5l4 4 8-9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-					</svg>
-				{/if}
-			</button>
-		{/each}
+	<!-- 화면 — 한 줄: 왼쪽 이름, 오른쪽 아이콘 셋 (기기 · 해 · 달). 이 기기에서만 바뀐다 -->
+	<div class="g-card theme-card">
+		<div class="g-row">
+			<span id="theme-h">화면</span>
+			<div class="seg" role="radiogroup" aria-labelledby="theme-h">
+				{#each THEME_MODES as t (t.id)}
+					<button class="seg-btn" class:on={THEME.mode === t.id} role="radio" aria-checked={THEME.mode === t.id} aria-label={t.label} title={t.label} onclick={() => setTheme(t.id)}>
+						<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+							{#if t.id === 'system'}
+								<rect x="6.5" y="2.5" width="11" height="19" rx="2.5" stroke="currentColor" stroke-width="1.8" />
+								<path d="M10.5 18.5h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+							{:else if t.id === 'light'}
+								<circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8" />
+								<path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+							{:else}
+								<path d="M20 14.5A8 8 0 019.5 4a8 8 0 1010.5 10.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
+							{/if}
+						</svg>
+					</button>
+				{/each}
+			</div>
+		</div>
 	</div>
-	<p class="g-foot">이 기기에서만 바뀌어요. "기기 설정 따르기"는 폰의 다크 모드 설정을 그대로 따라가요.</p>
 
 	<h2 class="g-head" id="chat-color">채팅 색상</h2>
 	<div class="g-card">
@@ -399,6 +407,35 @@
 <style>
 	.settings {
 		padding-bottom: calc(32px + env(safe-area-inset-bottom));
+	}
+	.theme-card {
+		margin-top: 18px;
+	}
+	/* 화면 모드 — 아이콘 세 개짜리 작은 고르기 칸 */
+	.seg {
+		display: flex;
+		gap: 2px;
+		margin-left: auto;
+		padding: 3px;
+		border-radius: 999px;
+		background: var(--field);
+	}
+	.seg-btn {
+		display: grid;
+		place-items: center;
+		width: 40px;
+		height: 30px;
+		border-radius: 999px;
+		color: var(--text-2);
+		transition: background-color 0.15s, color 0.15s;
+	}
+	.seg-btn svg {
+		width: 18px;
+		height: 18px;
+	}
+	.seg-btn.on {
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.settings > .g-head:first-child {
 		margin-top: 8px;

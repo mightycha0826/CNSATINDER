@@ -161,6 +161,23 @@ try {
 	await page.getByRole('button', { name: '보내기' }).click(); await page.waitForTimeout(500);
 	check('답장', called(w, 'dm_reply').at(-1)?.[1]?.p_body === '누구야?? 고마워' && (await page.locator('.row.mine .bubble').last().innerText()).includes('고마워'));
 	await page.screenshot({ path: `${SP}/letters-4-thread.png` });
+
+	// 키보드: 안드로이드(resizes-content)는 키보드가 올라오면 화면 높이 자체가 줄어든다 — 창 높이를 줄여 흉내
+	const t7 = w.threads.find((x) => x.id === 7);
+	for (let i = 0; i < 10; i++) t7.msgs.push({ id: 80 + i, mine: i % 2 === 0, body: `긴 대화 ${i + 1}`, created_at: ago(1) });
+	await page.reload(); await page.locator('.bubble', { hasText: '긴 대화 10' }).waitFor(); await page.waitForTimeout(400);
+	const lastVisible = () => page.evaluate(() => {
+		const list = document.querySelector('.list').getBoundingClientRect(), b = [...document.querySelectorAll('.bubble')].at(-1).getBoundingClientRect();
+		return b.bottom <= list.bottom + 1 && b.top >= list.top;
+	});
+	check('긴 편지: 열면 맨 아래(최근 말)', await lastVisible());
+	await page.getByRole('textbox', { name: '답장' }).focus();
+	await page.setViewportSize({ width: 390, height: 430 }); await page.waitForTimeout(400);
+	await page.screenshot({ path: `${SP}/letters-4b-keyboard.png` });
+	check('★ 키보드가 올라와도 최근 말이 가려지지 않는다', await lastVisible());
+	check('입력창도 보이는 영역 안', await page.getByRole('textbox', { name: '답장' }).evaluate((e) => e.getBoundingClientRect().bottom <= innerHeight + 1));
+	await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(300);
+	check('키보드가 내려가도 맨 아래 그대로', await lastVisible());
 	w.wait = true;
 	await page.reload(); await page.locator('.bubble').first().waitFor(); await page.waitForTimeout(300);
 	check('답 없이 3개를 보냈으면 입력창 대신 안내', (await page.locator('.wait').count()) === 1 && (await page.getByRole('textbox', { name: '답장' }).count()) === 0);

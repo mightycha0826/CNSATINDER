@@ -157,6 +157,29 @@ try {
 		return out;
 	});
 	check('★ 캐시에 운영자 데이터가 없음', !cached.some((p) => p.startsWith('/admin')), cached.filter((p) => p.startsWith('/admin')).join(', '));
+
+	// ── 알림: 배지 · 설치한 앱 창 기억
+	check('알림 배지를 미리 받아 둠', cached.includes('/badge-96.png'), cached.join(', '));
+	const badge = await page.evaluate(async () => {
+		const img = new Image(); img.src = '/badge-96.png'; await img.decode();
+		const c = document.createElement('canvas'); c.width = c.height = 96; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+		const d = g.getImageData(0, 0, 96, 96).data;
+		let clear = 0, solid = 0, colored = 0;
+		for (let i = 0; i < d.length; i += 4) { if (d[i + 3] === 0) clear++; else if (d[i + 3] === 255) solid++; if (d[i + 3] > 0 && (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250)) colored++; }
+		return { clear, solid, colored };
+	});
+	check('★ 배지 = 흰 로고 + 투명 바탕 (컬러 사각형이면 안드로이드에서 흰 네모)', badge.clear > 96 * 96 * 0.3 && badge.solid > 96 * 96 * 0.3 && badge.colored === 0, JSON.stringify(badge));
+	const meta = await page.evaluate(async () => {
+		const r = await navigator.serviceWorker.ready;
+		r.active.postMessage({ type: 'standalone' });
+		for (let i = 0; i < 30; i++) {
+			const hit = await (await caches.open('cnsatinder-meta')).match('/__app');
+			if (hit) return hit.json();
+			await new Promise((ok) => setTimeout(ok, 100));
+		}
+		return null;
+	});
+	check('★ 앱 창이 알리면 "앱으로 쓰는 기기" · 창 id 를 기억 (알림은 이 창/앱으로)', meta?.app === true && meta.ids.length === 1, JSON.stringify(meta));
 } finally {
 	await browser.close();
 	vite.kill();

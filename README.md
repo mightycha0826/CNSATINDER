@@ -204,6 +204,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `node scripts/import-roster.mjs <csv> [--dry-run]` | 학번-이름 명렬표를 DB 에 반영 (관리자 화면의 이메일 확인 옆 이름 표시용) |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
 | `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 20묶음 — `scripts/e2e/`. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `cnsatinder-e2e/` |
+| `node scripts/generate-badge.mjs` | 알림 배지(`static/badge-96.png`) 재생성 — 앱 아이콘의 흰 로고만 남기고 바탕은 투명 (안드로이드는 배지의 투명도만 써서 컬러 아이콘이면 흰 네모가 된다) |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.*`(png/webp/jpg 아무거나) (헤드리스 Chrome 사용) |
 
 > **자동 검사 (GitHub Actions, `.github/workflows/ci.yml`)** — main 에 푸시할 때마다 타입 검사 · 단위 테스트 전부 ·
@@ -340,9 +341,13 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       새 편지·답장은 푸시 알림, 익명편지 탭에 안 읽은 빨간 점. 옛 공개 피드·편집기·하트 화면은 뺐다 (데이터는 DB 에 그대로)
 - [x] **Phase 24 — 편지 쓰기 편집기** — 새 편지를 쓸 때 서식 도구 막대 (굵게 · 기울임 · 밑줄 · 취소선 · 형광펜 5색 · 글자색 6색 · 크기 · 정렬 · 되돌리기, Tiptap).
       Phase 14 와 같은 방식 — 본문은 순수 텍스트, 서식은 `dm_msgs.fmt` 에 범위 목록으로, DB 가 `letter_fmt_ok` 로 검사. 받는 쪽 말풍선도 표로만 그린다(HTML 없음). 답장은 글자만
-- [x] **화면 모드** — 설정 > 화면: 기기 설정 따르기 / 라이트 모드 / 다크 모드. 이 기기에만 저장(`localStorage` `theme-v1`, `lib/theme.svelte.ts`),
+- [x] **화면 모드** — 설정 맨 위 한 줄 "화면" + 오른쪽 아이콘 셋(기기 · 해 · 달): 기기 설정 따르기 / 라이트 모드 / 다크 모드. 이 기기에만 저장(`localStorage` `theme-v1`, `lib/theme.svelte.ts`),
       `<html data-theme>` 로 app.css 색을 바꾸고 안드로이드 상단 바 색(`theme-color`)도 맞춘다. 첫 화면이 번쩍이지 않게 `app.html` 의
       짧은 스크립트(CSP nonce)가 먼저 입힌다
 - [x] **공지사항 목록 · 내용 나누기** — `/notices` 는 제목 · 시각 · "새" 표시만, 누르면 `/notices/[id]` 에서 내용.
       내용을 보고 뒤로 와도 "새" 표시는 그대로 (SvelteKit snapshot)
+- [x] **편지 화면 키보드** — 키보드가 올라오면 최근 말이 가려지던 것 → 채팅 화면처럼 보이는 영역(visualViewport)에 맞추고 맨 아래를 지킨다
+- [x] **알림 고침** — 안드로이드에서 흰 네모로 보이던 알림 아이콘 → 흰 로고 + 투명 배지(`badge-96.png`).
+      알림을 누르면 브라우저 탭 대신 설치한 앱으로: 앱 창이 뜰 때 서비스워커에 알려 두고(`cnsatinder-meta` 캐시),
+      앱 창이 있으면 그 창을, 앱을 써 온 기기면 새로 열어 안드로이드가 앱으로 열게 한다
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험
