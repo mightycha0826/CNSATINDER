@@ -1,12 +1,14 @@
 <script lang="ts">
 	/**
 	 * 설정 — 상단 바 오른쪽 톱니를 누르면 오는 화면. 아이폰 설정 앱처럼 회색 바탕에 둥근 카드 (app.css .g-*).
+	 *  · 화면: 기기 설정 따르기 / 라이트 / 다크. 이 기기에만 저장 (lib/theme.svelte.ts)
 	 *  · 채팅 색상: 내 말풍선 색. 이 기기에만 저장되고 상대 화면은 그대로다 (lib/chatColor.svelte.ts)
 	 *  · 새 메시지 알림 · 비밀번호 · 계정 상태 · 개인정보 안내 · 로그아웃 (프로필에서 옮겨 옴)
 	 * 홈의 "비밀번호를 만들어 두세요"와 비밀번호 찾기 인증 뒤에는 /settings#password 로 와서 비밀번호 칸이 펼쳐져 있다.
 	 */
 	import { goto } from '$app/navigation';
 	import { CHAT_COLOR, CHAT_COLORS, setChatColor } from '$lib/chatColor.svelte';
+	import { THEME, THEME_MODES, setTheme } from '$lib/theme.svelte';
 	import { disablePush, enablePush, pushEnabled, pushState, type PushState } from '$lib/push';
 	import {
 		S,
@@ -192,6 +194,22 @@
 </div>
 
 <div class="page grouped settings">
+	<h2 class="g-head" id="theme-h">화면</h2>
+	<div class="g-card" role="radiogroup" aria-labelledby="theme-h">
+		{#each THEME_MODES as t (t.id)}
+			{@const on = THEME.mode === t.id}
+			<button class="g-row" role="radio" aria-checked={on} onclick={() => setTheme(t.id)}>
+				<span>{t.label}</span>
+				{#if on}
+					<svg class="g-check" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+						<path d="M3 9.5l4 4 8-9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+					</svg>
+				{/if}
+			</button>
+		{/each}
+	</div>
+	<p class="g-foot">이 기기에서만 바뀌어요. "기기 설정 따르기"는 폰의 다크 모드 설정을 그대로 따라가요.</p>
+
 	<h2 class="g-head" id="chat-color">채팅 색상</h2>
 	<div class="g-card">
 		<!-- 미리보기 — 고르는 즉시 바뀐다 -->

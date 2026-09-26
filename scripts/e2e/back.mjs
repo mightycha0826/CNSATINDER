@@ -128,7 +128,7 @@ try {
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
 	const setHeads = await heads();
-	check('★ 설정 = 채팅 색상 · 알림 · 매칭 · 편지 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '채팅 색상,알림,매칭,편지,계정,개인정보'
+	check('★ 설정 = 화면 · 채팅 색상 · 알림 · 매칭 · 편지 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '화면,채팅 색상,알림,매칭,편지,계정,개인정보'
 		&& (await page.getByRole('switch', { name: '새 메시지 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
 		&& (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
 	check('뒤로는 둥근 단추 · 제목 가운데', (await page.locator('button.back').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%'
@@ -168,6 +168,28 @@ try {
 	check('다시 열어도 그대로', (await fill()).includes('#3b8af6') && (await page.getByRole('radio', { name: '파랑' }).isChecked()));
 	await swatch('기본').click(); await page.waitForTimeout(200);
 	check('기본으로 되돌리면 저장값도 지운다', (await fill()) === before && (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === null);
+
+	console.log('[설정 · 화면 모드]');
+	const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+	const mode = (name) => page.getByRole('radio', { name });
+	const bar = () => page.evaluate(() => [...document.querySelectorAll('meta[name="theme-color"]')].map((m) => m.content).join(','));
+	await page.emulateMedia({ colorScheme: 'light' });
+	check('화면: 세 가지 · 기본은 "기기 설정 따르기"', (await page.getByRole('radiogroup', { name: '화면' }).getByRole('radio').count()) === 3
+		&& (await mode('기기 설정 따르기').getAttribute('aria-checked')) === 'true');
+	await mode('다크 모드').click(); await page.waitForTimeout(200);
+	check('★ 다크 모드를 고르면 폰이 라이트여도 바로 어두워진다', (await bg()) === 'rgb(0, 0, 0)' && (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark');
+	check('상단 바 색도 검정', (await bar()) === '#000000,#000000', await bar());
+	check('이 기기에 저장', (await page.evaluate(() => localStorage.getItem('theme-v1'))) === 'dark');
+	await page.screenshot({ path: `${SP}/settings-theme-dark.png` });
+	await page.reload(); await page.getByRole('radiogroup', { name: '화면' }).waitFor({ timeout: 8000 });
+	check('★ 다시 켜도 그대로 (첫 화면부터)', (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark' && (await mode('다크 모드').getAttribute('aria-checked')) === 'true');
+	await page.emulateMedia({ colorScheme: 'dark' });
+	await mode('라이트 모드').click(); await page.waitForTimeout(200);
+	check('★ 라이트 모드 — 폰이 다크여도 밝게', (await bg()) === 'rgb(255, 255, 255)' && (await bar()) === '#ffffff,#ffffff', await bar());
+	await mode('기기 설정 따르기').click(); await page.waitForTimeout(200);
+	check('기기 설정 따르기 → 폰 설정(다크)대로 · 저장값 지움', (await bg()) === 'rgb(0, 0, 0)' && (await page.evaluate(() => localStorage.getItem('theme-v1'))) === null
+		&& (await page.evaluate(() => document.documentElement.dataset.theme)) === undefined && (await bar()) === '#ffffff,#000000', await bar());
+	await page.emulateMedia({ colorScheme: 'light' });
 	check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
 } finally { await browser.close(); }
 console.log(`\n${pass} passed, ${fail} failed`);

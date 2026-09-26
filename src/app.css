@@ -46,7 +46,7 @@
 		'Noto Sans KR', 'Malgun Gothic', sans-serif;
 }
 
-/* 다크는 시스템 설정을 따른다 (인스타와 동일). JS 없이 동작. */
+/* 다크는 기본적으로 시스템 설정을 따른다 (인스타와 동일). 설정 > 화면에서 고르면 <html data-theme> 가 이긴다. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
 		--bg: #000000;

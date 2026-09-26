@@ -70,13 +70,31 @@ try {
 	const items = await page.locator('li').allInnerTexts();
 	check('최신 공지가 위', items[0]?.includes('시험 기간 운영 안내') && items[1]?.includes('처음 공지'), items.join(' | '));
 	check('처음 보는 공지에만 "새"', (await page.locator('li').nth(0).locator('.new').count()) === 1 && (await page.locator('li').nth(1).locator('.new').count()) === 0);
-	check('줄바꿈 유지', (await page.locator('li .body').first().innerText()).includes('\n'));
+	check('★ 목록에는 제목만 (내용은 안 보임)', !items[0].includes('밤 10시') && (await page.locator('li .body').count()) === 0, items[0]);
 	check('★ 열면 맨 위 공지까지 봤다고 저장', marks.at(-1) === 2, JSON.stringify(marks));
 	check('시간 표시', /30분 전/.test(items[0]), items[0]);
 
+	console.log('[공지 내용]');
+	await page.locator('li a').first().click();
+	await page.waitForURL('**/notices/2');
+	await page.locator('article h1').waitFor();
+	await page.screenshot({ path: `${SP}/notice-2b-detail.png` });
+	check('★ 누르면 제목 · 시간 · 내용', (await page.locator('article h1').innerText()) === '시험 기간 운영 안내'
+		&& (await page.locator('article .body').innerText()).includes('밤 10시') && /30분 전/.test(await page.locator('article .when').innerText()));
+	check('줄바꿈 유지', (await page.locator('article .body').innerText()).includes('\n'));
+	check('내용 화면에서도 탭바는 숨김', (await page.locator('nav.tabbar').count()) === 0);
 	await page.locator('button.back').click();
-	await page.waitForURL(`${BASE}/`);
-	await page.waitForTimeout(500);
+	await page.waitForURL(/\/notices$/);
+	await page.locator('li').first().waitFor(); await page.waitForTimeout(300);
+	check('★ 뒤로 → 목록, "새" 표시 그대로', (await page.locator('li').nth(0).locator('.new').count()) === 1);
+	await page.goto(`${BASE}/notices/1`);
+	await page.locator('article h1').waitFor({ timeout: 8000 }).catch(() => {});
+	check('바로 들어와도 보인다 (내용 없는 공지는 제목만)', (await page.locator('article h1').innerText().catch(() => '')) === '처음 공지' && (await page.locator('article .body').count()) === 0);
+	await page.goto(`${BASE}/notices/99`);
+	await page.getByText('공지를 찾을 수 없어요').waitFor({ timeout: 8000 }).catch(() => {});
+	check('없는 공지', await page.getByText('공지를 찾을 수 없어요').isVisible());
+	await page.goto(`${BASE}/`); await page.locator('button.bell').waitFor(); await page.waitForTimeout(400);
+
 	check('★ 돌아오면 빨간 점 꺼짐', (await page.locator('button.bell .dot').count()) === 0);
 
 	console.log('[새 공지]');

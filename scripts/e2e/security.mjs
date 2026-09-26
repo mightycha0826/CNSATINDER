@@ -44,6 +44,11 @@ try {
 	await page.getByRole('button', { name: '인증 코드 받기' }).click();
 	await page.waitForTimeout(1500);
 	check('로그인 요청이 Supabase 로 나간다 (connect-src 허용)', sb.length > 0, String(sb.length));
+	// 화면 모드(설정) — app.html 의 짧은 스크립트가 nonce 로 허용되어 첫 화면 전에 입히는지
+	await page.evaluate(() => localStorage.setItem('theme-v1', 'dark'));
+	await page.goto(U('/login'));
+	check('★ 화면 모드 스크립트가 CSP 에 막히지 않는다 (nonce)', (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark');
+	await page.evaluate(() => localStorage.removeItem('theme-v1'));
 	check('채팅·로그인 화면에 CSP 위반 없음', violations.length === 0, violations.join(' | '));
 	check('페이지 오류 없음', errs.length === 0, errs.join(' | '));
 

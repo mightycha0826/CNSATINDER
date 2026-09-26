@@ -6,11 +6,15 @@
 	import { hasSupabase } from '$lib/supabase';
 	import { S, UI, init, toasts } from '$lib/state.svelte';
 	import { loadChatColor } from '$lib/chatColor.svelte';
+	import { loadTheme } from '$lib/theme.svelte';
 
 	let { children } = $props();
 
-	// 채팅 색상(설정) — 첫 화면을 그리기 전에 입힌다 (운영자 화면은 서버에서도 그려지므로 브라우저에서만)
-	if (browser) loadChatColor();
+	// 채팅 색상 · 화면 모드(설정) — 첫 화면을 그리기 전에 입힌다 (운영자 화면은 서버에서도 그려지므로 브라우저에서만)
+	if (browser) {
+		loadChatColor();
+		loadTheme();
+	}
 
 	const isAdmin = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
 

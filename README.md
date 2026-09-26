@@ -340,4 +340,9 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       새 편지·답장은 푸시 알림, 익명편지 탭에 안 읽은 빨간 점. 옛 공개 피드·편집기·하트 화면은 뺐다 (데이터는 DB 에 그대로)
 - [x] **Phase 24 — 편지 쓰기 편집기** — 새 편지를 쓸 때 서식 도구 막대 (굵게 · 기울임 · 밑줄 · 취소선 · 형광펜 5색 · 글자색 6색 · 크기 · 정렬 · 되돌리기, Tiptap).
       Phase 14 와 같은 방식 — 본문은 순수 텍스트, 서식은 `dm_msgs.fmt` 에 범위 목록으로, DB 가 `letter_fmt_ok` 로 검사. 받는 쪽 말풍선도 표로만 그린다(HTML 없음). 답장은 글자만
+- [x] **화면 모드** — 설정 > 화면: 기기 설정 따르기 / 라이트 모드 / 다크 모드. 이 기기에만 저장(`localStorage` `theme-v1`, `lib/theme.svelte.ts`),
+      `<html data-theme>` 로 app.css 색을 바꾸고 안드로이드 상단 바 색(`theme-color`)도 맞춘다. 첫 화면이 번쩍이지 않게 `app.html` 의
+      짧은 스크립트(CSP nonce)가 먼저 입힌다
+- [x] **공지사항 목록 · 내용 나누기** — `/notices` 는 제목 · 시각 · "새" 표시만, 누르면 `/notices/[id]` 에서 내용.
+      내용을 보고 뒤로 와도 "새" 표시는 그대로 (SvelteKit snapshot)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험
