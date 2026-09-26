@@ -4873,3 +4873,198 @@ begin
     'server_now', now());
 end
 $fn$;
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 27 — 이름 편지: 편지로 주고받거나, 채팅으로 바꾸거나
+--
+--  편지지(To. · 내용 · From.)로 보내고, 받은 사람은 "편지로 답장하기" 또는 "채팅하기" 중 하나를 고른다.
+--   · dm_threads.mode: 'letter'(편지로 주고받는 중) → 'chat'(받은 사람이 채팅하기를 고름). 한 번 채팅이 되면 채팅으로 이어진다.
+--   · dm_msgs.is_letter: 편지(편지지로 그린다) / 채팅 한 줄(말풍선)
+--   · dm_letter = 편지로 답장 (편지 모드에서만) · dm_chat = 채팅으로 바꾸기 (마지막 편지를 받은 사람만) · dm_reply = 채팅 (채팅 모드에서만)
+--  이미 오간 편지(Phase 23~26)는 첫 말만 편지로 보고, 채팅처럼 주고받은 줄기는 채팅 모드로 둔다.
+-- ════════════════════════════════════════════════════════════════════
+alter table private.dm_threads add column if not exists mode text not null default 'letter';
+alter table private.dm_threads drop constraint if exists dm_threads_mode_check;
+alter table private.dm_threads add constraint dm_threads_mode_check check (mode in ('letter', 'chat'));
+alter table private.dm_msgs add column if not exists is_letter boolean not null default false;
+-- 예전 편지: 줄기의 첫 말 = 편지. 편지가 아닌 말이 하나라도 있으면(= 채팅처럼 주고받음) 채팅 모드.
+update private.dm_msgs m set is_letter = true
+ where not m.is_letter and m.id = (select min(o.id) from private.dm_msgs o where o.thread_id = m.thread_id);
+update private.dm_threads t set mode = 'chat'
+ where t.mode = 'letter' and exists (select 1 from private.dm_msgs m where m.thread_id = t.id and not m.is_letter);
+
+-- 새 편지 — 받는 사람과 열린 편지가 있으면 거기에 이어 쓴다 (언제나 편지)
+create or replace function public.dm_send(p_to uuid, p_body text, p_fmt jsonb default null)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); v text; t private.dm_threads%rowtype; b jsonb; p public.profiles%rowtype; mid bigint;
+        v_body text := btrim(coalesce(p_body, ''));
+        v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  v := private.dm_can_write(me);
+  if v is not null then return jsonb_build_object('status', v); end if;
+  if p_to is null or p_to = me then return jsonb_build_object('status', 'not_available'); end if;
+  if char_length(v_body) not between 1 and 1000 then return jsonb_build_object('status', 'bad_text'); end if;
+  -- 서식 위치는 본문 기준이라, 앞뒤 공백이 잘려 나가면 어긋난다 — 클라가 미리 잘라서 보낸다
+  if v_fmt is not null and (v_body <> p_body or not private.letter_fmt_ok(v_fmt, v_body)) then
+    return jsonb_build_object('status', 'bad_text');
+  end if;
+
+  select * into p from public.profiles where id = p_to;
+  if not found or not p.letters_open or not p.onboarded or p.status <> 'active'
+     or coalesce(p.suspended_until > now(), false) or private.blocked_between(me, p_to) then
+    return jsonb_build_object('status', 'not_available');   -- 왜 안 되는지(차단 · 받기 끔)는 알려 주지 않는다
+  end if;
+  -- 받는 사람이 끝낸 적이 있으면 그 사람에게는 다시 못 보낸다
+  if exists (select 1 from private.dm_threads where sender_id = me and recipient_id = p_to and closed_by = 'recipient') then
+    return jsonb_build_object('status', 'not_available');
+  end if;
+
+  select * into t from private.dm_threads where sender_id = me and recipient_id = p_to and status = 'open' for update;
+  if found then
+    if private.dm_streak(t.id, true) >= 3 then return jsonb_build_object('status', 'wait_reply', 'thread_id', t.id); end if;
+    b := private.letter_bucket_take(me, 'comment');
+  else
+    b := private.letter_bucket_take(me, 'letter');       -- 새 편지는 편지 한도 (기본 하루 3통)
+  end if;
+  if not (b->>'ok')::boolean then
+    return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (b->>'retry_after_ms')::int);
+  end if;
+  if t.id is null then
+    insert into private.dm_threads (sender_id, recipient_id, sender_alias)
+    values (me, p_to, private.letter_alias_candidate()) returning * into t;
+  end if;
+  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter) values (t.id, true, v_body, v_fmt, true) returning id into mid;
+  update private.dm_threads set last_at = now(), sender_read = mid where id = t.id;
+  return jsonb_build_object('status', 'ok', 'thread_id', t.id, 'msg_id', mid);
+end
+$fn$;
+
+-- 채팅 한 줄 (채팅으로 바뀐 편지에서만)
+create or replace function public.dm_reply(p_thread bigint, p_body text)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); v text; role text; t private.dm_threads%rowtype; b jsonb; mid bigint;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select * into t from private.dm_threads where id = p_thread for update;
+  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
+  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
+  if t.status <> 'open' then return jsonb_build_object('status', 'closed'); end if;
+  -- 편지로 주고받는 중이면 채팅은 못 쓴다 — 받은 사람이 "채팅하기"(dm_chat)를 골라야 채팅으로 바뀐다
+  if t.mode <> 'chat' then return jsonb_build_object('status', 'letter_mode'); end if;
+  v := private.dm_can_write(me);
+  if v is not null then return jsonb_build_object('status', v); end if;
+  if char_length(btrim(coalesce(p_body, ''))) not between 1 and 1000 then return jsonb_build_object('status', 'bad_text'); end if;
+  if private.blocked_between(t.sender_id, t.recipient_id) then return jsonb_build_object('status', 'closed'); end if;
+  if private.dm_streak(p_thread, role = 'sender') >= 3 then return jsonb_build_object('status', 'wait_reply'); end if;
+  b := private.letter_bucket_take(me, 'comment');
+  if not (b->>'ok')::boolean then
+    return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (b->>'retry_after_ms')::int);
+  end if;
+  insert into private.dm_msgs (thread_id, from_sender, body) values (p_thread, role = 'sender', btrim(p_body)) returning id into mid;
+  if role = 'sender' then update private.dm_threads set last_at = now(), sender_read = mid where id = p_thread;
+  else update private.dm_threads set last_at = now(), recipient_read = mid where id = p_thread; end if;
+  return jsonb_build_object('status', 'ok', 'msg_id', mid);
+end
+$fn$;
+
+-- 편지로 답장 (편지 모드에서만). 서식도 새 편지와 같이 받는다.
+create or replace function public.dm_letter(p_thread bigint, p_body text, p_fmt jsonb default null)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); v text; role text; t private.dm_threads%rowtype; b jsonb; mid bigint;
+        v_body text := btrim(coalesce(p_body, ''));
+        v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select * into t from private.dm_threads where id = p_thread for update;
+  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
+  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
+  if t.status <> 'open' then return jsonb_build_object('status', 'closed'); end if;
+  if t.mode <> 'letter' then return jsonb_build_object('status', 'chat_mode'); end if;
+  v := private.dm_can_write(me);
+  if v is not null then return jsonb_build_object('status', v); end if;
+  if char_length(v_body) not between 1 and 1000 then return jsonb_build_object('status', 'bad_text'); end if;
+  if v_fmt is not null and (v_body <> p_body or not private.letter_fmt_ok(v_fmt, v_body)) then
+    return jsonb_build_object('status', 'bad_text');
+  end if;
+  if private.blocked_between(t.sender_id, t.recipient_id) then return jsonb_build_object('status', 'closed'); end if;
+  if private.dm_streak(p_thread, role = 'sender') >= 3 then return jsonb_build_object('status', 'wait_reply'); end if;
+  b := private.letter_bucket_take(me, 'comment');
+  if not (b->>'ok')::boolean then
+    return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (b->>'retry_after_ms')::int);
+  end if;
+  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter)
+  values (p_thread, role = 'sender', v_body, v_fmt, true) returning id into mid;
+  if role = 'sender' then update private.dm_threads set last_at = now(), sender_read = mid where id = p_thread;
+  else update private.dm_threads set last_at = now(), recipient_read = mid where id = p_thread; end if;
+  return jsonb_build_object('status', 'ok', 'msg_id', mid);
+end
+$fn$;
+
+-- 채팅으로 바꾸기 — 마지막 편지를 받은 사람만 (편지를 받은 사람이 "편지로 답장 / 채팅하기" 중에 고른다)
+create or replace function public.dm_chat(p_thread bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); role text; t private.dm_threads%rowtype; last_from_sender boolean;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select * into t from private.dm_threads where id = p_thread for update;
+  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
+  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
+  if t.status <> 'open' then return jsonb_build_object('status', 'closed'); end if;
+  if t.mode = 'chat' then return jsonb_build_object('status', 'ok'); end if;
+  select from_sender into last_from_sender from private.dm_msgs where thread_id = p_thread order by id desc limit 1;
+  if last_from_sender is null or last_from_sender = (role = 'sender') then
+    return jsonb_build_object('status', 'not_your_turn');     -- 내가 마지막에 보냈으면 상대가 고를 차례
+  end if;
+  update private.dm_threads set mode = 'chat' where id = p_thread;
+  return jsonb_build_object('status', 'ok');
+end
+$fn$;
+
+-- 편지 한 줄기 — 모드 · 편지지 To./From. 이름 · 말마다 편지인지
+create or replace function public.dm_thread(p_thread bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; last bigint;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select * into t from private.dm_threads where id = p_thread;
+  role := case when t.sender_id = me and not t.sender_hidden then 'sender'
+               when t.recipient_id = me and not t.recipient_hidden then 'recipient' end;
+  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
+  select max(id) into last from private.dm_msgs where thread_id = p_thread;
+  if role = 'sender' then update private.dm_threads set sender_read = greatest(sender_read, coalesce(last, 0)) where id = p_thread;
+  else update private.dm_threads set recipient_read = greatest(recipient_read, coalesce(last, 0)) where id = p_thread; end if;
+  return jsonb_build_object(
+    'status', 'ok', 'id', t.id, 'role', case when role = 'sender' then 'sent' else 'received' end,
+    'title', case when role = 'sender' then (select name from private.person(t.recipient_id)) else t.sender_alias end,
+    'grade', case when role = 'sender' then (select grade from private.person(t.recipient_id)) end,
+    'thread_status', t.status, 'closed_by', t.closed_by,
+    'their_read', case when role = 'sender' then t.recipient_read else t.sender_read end,
+    'mode', t.mode,
+    -- 편지지의 To. / From. — 보낸 사람 쪽 가명과 받는 사람 이름 (둘 다 이미 서로 아는 값: 보낸 사람은 받는 사람 이름을 골랐고,
+    -- 받는 사람은 가명을 본다. 자기 가명 · 자기 이름을 자기에게 보여 줄 뿐 새로 드러나는 것은 없다)
+    'alias', t.sender_alias,
+    'recipient_name', (select name from private.person(t.recipient_id)),
+    'wait_reply', t.status = 'open' and private.dm_streak(p_thread, role = 'sender') >= 3,
+    'messages', coalesce((select jsonb_agg(jsonb_build_object(
+                   'id', m.id, 'mine', m.from_sender = (role = 'sender'),
+                   'body', case when m.status = 'visible' then m.body end,
+                   'fmt', case when m.status = 'visible' then m.fmt end,
+                   'removed', m.status = 'removed',
+                   'letter', m.is_letter,
+                   'created_at', m.created_at) order by m.id)
+                 from private.dm_msgs m where m.thread_id = p_thread), '[]'::jsonb),
+    'server_now', now());
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['dm_letter(bigint, text, jsonb)', 'dm_chat(bigint)']
+  loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end
+$do$;

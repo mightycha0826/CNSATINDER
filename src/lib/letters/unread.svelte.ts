@@ -15,3 +15,9 @@ export async function refreshUnread() {
 		/* DB 가 이름 편지 전이거나 네트워크 — 점을 그대로 둔다 */
 	}
 }
+
+/**
+ * 편지 목록에서 보고 있던 탭 (받은 편지 · 보낸 편지) — 편지를 열었다가 뒤로 와도 그 탭 그대로.
+ * 편지 화면을 열면 그 편지 쪽(보낸/받은)으로 맞춘다 → 보낸 편지에서 들어갔다 나오면 보낸 편지 목록.
+ */
+export const LIST = $state({ tab: 'received' as 'received' | 'sent' });

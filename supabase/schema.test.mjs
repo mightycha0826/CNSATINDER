@@ -2393,13 +2393,13 @@ console.log('\n[71] ★ 이름 편지 — 학생을 찾아 익명으로 보내�
 	await expectError('★ 편지 표는 직접 못 읽는다', () => rowsAs(B, 'select * from private.dm_threads'), 'permission denied');
 
 	await rpcAs(A, 'dm_send', B, '두 번째');
-	await rpcAs(A, 'dm_reply', s1.thread_id, '세 번째');
-	check('★ 답 없이 네 번째는 안 된다 (연달아 3개까지)', (await rpcAs(A, 'dm_reply', s1.thread_id, '네 번째')).status === 'wait_reply' && (await rpcAs(A, 'dm_thread', s1.thread_id)).wait_reply === true);
-	check('받는 사람이 답장', (await rpcAs(B, 'dm_reply', s1.thread_id, '누구세요?')).status === 'ok');
-	check('답이 오면 다시 쓸 수 있다', (await rpcAs(A, 'dm_reply', s1.thread_id, '비밀')).status === 'ok');
+	await rpcAs(A, 'dm_letter', s1.thread_id, '세 번째');
+	check('★ 답 없이 네 번째는 안 된다 (연달아 3개까지)', (await rpcAs(A, 'dm_letter', s1.thread_id, '네 번째')).status === 'wait_reply' && (await rpcAs(A, 'dm_thread', s1.thread_id)).wait_reply === true);
+	check('받는 사람이 답장', (await rpcAs(B, 'dm_letter', s1.thread_id, '누구세요?')).status === 'ok');
+	check('답이 오면 다시 쓸 수 있다', (await rpcAs(A, 'dm_letter', s1.thread_id, '비밀')).status === 'ok');
 	const thA = await rpcAs(A, 'dm_thread', s1.thread_id);
 	check('주고받은 순서 · 내 말 표시', thA.messages.length === 5 && thA.messages.map((m) => (m.mine ? 'A' : 'B')).join('') === 'AAABA');
-	await expectError('★ 신상정보는 편지에도 못 쓴다', () => rpcAs(A, 'dm_reply', s1.thread_id, '내 번호 010-1234-5678'), 'personal_info');
+	await expectError('★ 신상정보는 편지에도 못 쓴다', () => rpcAs(A, 'dm_letter', s1.thread_id, '내 번호 010-1234-5678'), 'personal_info');
 
 	console.log('  [푸시]');
 	await expectError('학생은 푸시 판단 함수를 못 부른다', () => rowsAs(B, 'select public.dm_push_payload(1, $1)', [B]), 'permission denied');
@@ -2414,7 +2414,7 @@ console.log('\n[71] ★ 이름 편지 — 학생을 찾아 익명으로 보내�
 	check('남이 쓴 말로는 알림을 못 보낸다', (await svc('dm_push_payload', t2.msg_id, B)).skip === 'not_author');
 
 	console.log('  [끝내기 · 차단 · 신고]');
-	check('받는 사람이 끝내기', (await rpcAs(E, 'dm_close', t2.thread_id)).status === 'ok' && (await rpcAs(A, 'dm_reply', t2.thread_id, '왜')).status === 'closed');
+	check('받는 사람이 끝내기', (await rpcAs(E, 'dm_close', t2.thread_id)).status === 'ok' && (await rpcAs(A, 'dm_letter', t2.thread_id, '왜')).status === 'closed');
 	check('★ 받는 사람이 끝내면 그 사람에게 새 편지도 못 보낸다', (await rpcAs(A, 'dm_send', E, '다시')).status === 'not_available');
 	const rep = await rpcAs(B, 'dm_report', s1.thread_id, 'harassment', '누군지 모를 사람이 계속');
 	check('신고', rep.status === 'ok');
@@ -2439,7 +2439,7 @@ console.log('\n[71] ★ 이름 편지 — 학생을 찾아 익명으로 보내�
 	check('★ 새 편지는 편지 한도 (기본 3통) — 넷째는 쉬었다가', [r1, r2, r3].every((r) => r.status === 'ok') && (await rpcAs(A, 'dm_send', I, '4')).status === 'rate_limited');
 	await db.query(`update public.app_settings set ai_moderation = true, ai_mod_daily_cap = 50`);
 	await db.query(`update private.mod_queue set status = 'done' where status in ('pending','working')`);
-	await rpcAs(F, 'dm_reply', r1.thread_id, '너 진짜 짜증나 [flag]');
+	await rpcAs(F, 'dm_letter', r1.thread_id, '너 진짜 짜증나 [flag]');
 	const claimed = await svc('mod_claim', 5);
 	const it = claimed.find((c) => c.kind === 'dm');
 	check('AI 검토가 편지도 가져간다 (앞 말 맥락과 함께)', it && it.text.includes('짜증나') && it.context.length === 1, JSON.stringify(claimed));
@@ -2538,8 +2538,52 @@ console.log('\n[74] 이름 편지 — 읽음 (Phase 26)');
 	check('상대가 안 열어 봤으면 읽음 전', (await rpcAs(A, 'dm_thread', s1.thread_id)).their_read < s1.msg_id);
 	await rpcAs(B, 'dm_thread', s1.thread_id);
 	check('★ 상대가 열어 보면 내 말까지 읽음', (await rpcAs(A, 'dm_thread', s1.thread_id)).their_read >= s1.msg_id);
-	const r1 = await rpcAs(B, 'dm_reply', s1.thread_id, '응');
+	const r1 = await rpcAs(B, 'dm_letter', s1.thread_id, '응');
 	check('받는 쪽도: 보낸 사람이 아직 안 봤으면 읽음 전', (await rpcAs(B, 'dm_thread', s1.thread_id)).their_read < r1.msg_id);
+}
+
+console.log('\n[75] 이름 편지 — 편지로 답장 · 채팅하기 (Phase 27)');
+{
+	await resetPool();
+	await db.query(`update public.user_presence set letter_tokens = 3, letter_at = now(), comment_tokens = 10, comment_at = now()`);
+	let no = 21100;
+	const named = async (name, grade) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name, grade = excluded.grade', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set gender=$2, want=$3, onboarded=true where id=$1', [id, 'm', 'f']);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const A = await named('모드보냄', 1), B = await named('모드받음', 2), C = await named('모드셋', 3);
+	const s1 = await rpcAs(A, 'dm_send', B, '첫 편지');
+	const tb = await rpcAs(B, 'dm_thread', s1.thread_id);
+	check('★ 새 편지는 편지 모드 · 편지지 To(받는 사람 이름) / From(가명)', tb.mode === 'letter' && tb.messages[0].letter === true
+		&& tb.recipient_name === '모드받음' && tb.alias === tb.title && !JSON.stringify(tb).includes('모드보냄'), JSON.stringify(tb));
+	const ta = await rpcAs(A, 'dm_thread', s1.thread_id);
+	check('보낸 사람도 자기 가명(From)을 안다', ta.alias === tb.alias && ta.recipient_name === '모드받음');
+	check('편지 모드에서 채팅 한 줄은 안 된다', (await rpcAs(B, 'dm_reply', s1.thread_id, '채팅')).status === 'letter_mode');
+	check('★ 보낸 사람은 채팅으로 바꿀 수 없다 (받은 사람이 고른다)', (await rpcAs(A, 'dm_chat', s1.thread_id)).status === 'not_your_turn');
+	const l2 = await rpcAs(B, 'dm_letter', s1.thread_id, '답장 편지', JSON.stringify({ m: [[0, 2, 'b']] }));
+	const ta2 = await rpcAs(A, 'dm_thread', s1.thread_id);
+	check('★ 편지로 답장 (서식 포함) — 여전히 편지 모드', l2.status === 'ok' && ta2.mode === 'letter' && ta2.messages[1].letter === true && ta2.messages[1].fmt?.m?.length === 1);
+	check('편지 답장도 표에 없는 서식은 거절', (await rpcAs(A, 'dm_letter', s1.thread_id, '안녕', JSON.stringify({ m: [[0, 2, 'c:#000']] }))).status === 'bad_text');
+	check('받는 쪽이 채팅을 고를 차례가 아니면 못 바꾼다 (방금 내가 보냄)', (await rpcAs(B, 'dm_chat', s1.thread_id)).status === 'not_your_turn');
+	check('★ 편지를 받은 사람(A)이 채팅하기', (await rpcAs(A, 'dm_chat', s1.thread_id)).status === 'ok' && (await rpcAs(B, 'dm_thread', s1.thread_id)).mode === 'chat');
+	const c1 = await rpcAs(A, 'dm_reply', s1.thread_id, '채팅으로 하자');
+	check('채팅 모드: 채팅 한 줄 (편지 아님)', c1.status === 'ok' && (await rpcAs(B, 'dm_thread', s1.thread_id)).messages.at(-1).letter === false);
+	check('채팅 모드에서는 편지 답장 대신 채팅', (await rpcAs(B, 'dm_letter', s1.thread_id, '편지')).status === 'chat_mode');
+	check('남의 줄기는 바꿀 수 없다', (await rpcAs(C, 'dm_chat', s1.thread_id)).status === 'not_found' && (await rpcAs(C, 'dm_letter', s1.thread_id, 'x')).status === 'not_found');
+	await expectError('로그인 안 하면 못 쓴다', () => rowsAs(null, `select public.dm_letter(1, 'x')`), 'permission denied');
+	// 예전 데이터 옮기기: 첫 말 = 편지, 채팅처럼 주고받은 줄기 = 채팅
+	const old = await rpcAs(A, 'dm_send', C, '옛 편지');
+	await db.query(`update private.dm_threads set mode = 'letter' where id = $1`, [old.thread_id]);
+	await db.query(`insert into private.dm_msgs (thread_id, from_sender, body) values ($1, false, '옛 답장')`, [old.thread_id]);
+	await db.query(`update private.dm_msgs set is_letter = false where thread_id = $1`, [old.thread_id]);
+	await db.query(`update private.dm_msgs m set is_letter = true where not m.is_letter and m.id = (select min(o.id) from private.dm_msgs o where o.thread_id = m.thread_id)`);
+	await db.query(`update private.dm_threads t set mode = 'chat' where t.mode = 'letter' and exists (select 1 from private.dm_msgs m where m.thread_id = t.id and not m.is_letter)`);
+	const ot = await rpcAs(C, 'dm_thread', old.thread_id);
+	check('예전 줄기: 첫 말은 편지 · 채팅처럼 주고받았으면 채팅 모드', ot.mode === 'chat' && ot.messages[0].letter === true && ot.messages[1].letter === false, JSON.stringify(ot.messages));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

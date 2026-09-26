@@ -11,7 +11,7 @@
 	import { ago } from '$lib/time';
 	import { whileVisible } from '$lib/visible';
 	import { fetchInbox, searchPeople, type DmItem, type DmPerson } from '$lib/letters/api';
-	import { DM, countUnread } from '$lib/letters/unread.svelte';
+	import { DM, LIST, countUnread } from '$lib/letters/unread.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
 	import { longpress } from '$lib/longpress';
 
@@ -48,7 +48,8 @@
 	let items = $state<DmItem[]>([]);
 	let loaded = $state(false);
 	let skew = $state(0);
-	let tab = $state<'received' | 'sent'>('received');
+	// 보고 있던 탭은 LIST 에 — 편지를 열었다 뒤로 와도 그대로 (보낸 편지에서 들어갔으면 보낸 편지로)
+	const tab = $derived(LIST.tab);
 	async function load() {
 		try {
 			const r = await fetchInbox();
@@ -118,10 +119,10 @@
 		</p>
 
 		<div class="tabs" role="tablist">
-			<button role="tab" class:on={tab === 'received'} aria-selected={tab === 'received'} onclick={() => (tab = 'received')}>
+			<button role="tab" class:on={tab === 'received'} aria-selected={tab === 'received'} onclick={() => (LIST.tab = 'received')}>
 				받은 편지{#if unreadOf('received')}<span class="dot" aria-label="안 읽은 편지 있음"></span>{/if}
 			</button>
-			<button role="tab" class:on={tab === 'sent'} aria-selected={tab === 'sent'} onclick={() => (tab = 'sent')}>
+			<button role="tab" class:on={tab === 'sent'} aria-selected={tab === 'sent'} onclick={() => (LIST.tab = 'sent')}>
 				보낸 편지{#if unreadOf('sent')}<span class="dot" aria-label="안 읽은 답장 있음"></span>{/if}
 			</button>
 		</div>

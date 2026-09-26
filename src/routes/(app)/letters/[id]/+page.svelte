@@ -1,6 +1,9 @@
 <script lang="ts">
 	/**
-	 * 편지 한 줄기 — 보낸 사람과 받는 사람이 주고받는다 (채팅처럼 말풍선).
+	 * 편지 한 줄기 — 보낸 사람과 받는 사람이 주고받는다 (Phase 27).
+	 *  · 편지는 편지지(LetterPaper: To. · 내용 · From.)로, 채팅 한 줄은 말풍선으로 그린다.
+	 *  · 편지 모드: 편지를 받은 사람이 아래에서 "편지로 답장하기"(→ /letters/[id]/write) 또는 "채팅하기"를 고른다.
+	 *    내가 마지막에 보냈으면 "답장을 기다리는 중" (+ 한 통 더 쓰기). 채팅 모드: 입력창.
 	 * 받은 편지: 상대 = 가명 "○○ ○○" (누군지 알 수 없다) / 보낸 편지: 상대 = 이름 · 학년.
 	 * 메뉴(LetterMenu): 신고 · 차단 · 나가기 — 하고 나면 내 목록에서 사라진다. 받는 사람이 나가면 그 사람은 다시 편지를 보낼 수 없다.
 	 * 화면이 보이는 동안 15초마다 새 말을 확인한다 (새 말 알림은 푸시로).
@@ -10,14 +13,15 @@
 	import { page } from '$app/state';
 	import { goBack } from '$lib/nav';
 	import BackButton from '$lib/ui/BackButton.svelte';
-	import RichText from '$lib/letters/RichText.svelte';
+	import { goto } from '$app/navigation';
+	import LetterPaper from '$lib/letters/LetterPaper.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import { agoText } from '$lib/time';
 	import { whileVisible } from '$lib/visible';
 	import { scrollBehavior } from '$lib/motion';
-	import { fetchThread, replyLetter, sendError, type DmThread } from '$lib/letters/api';
-	import { refreshUnread } from '$lib/letters/unread.svelte';
+	import { fetchThread, paperNames, replyLetter, sendError, startChat, type DmThread } from '$lib/letters/api';
+	import { LIST, refreshUnread } from '$lib/letters/unread.svelte';
 
 	const id = $derived(Number(page.params.id));
 	let t = $state<DmThread | null>(null);
@@ -70,6 +74,7 @@
 			}
 			const grew = !t || r.messages.length !== t.messages.length;
 			t = r;
+			LIST.tab = r.role; // 뒤로 가면 이 편지 쪽(보낸/받은) 목록으로
 			skew = Date.parse(r.server_now) - Date.now();
 			void refreshUnread(); // 열면 읽음 — 탭의 빨간 점도 맞춘다
 			if (scroll || grew) {
@@ -89,6 +94,8 @@
 	});
 
 	const open = $derived(t?.thread_status === 'open');
+	// Phase 27 전 DB 는 mode 가 없다 → 예전처럼 채팅
+	const chatMode = $derived((t?.mode ?? 'chat') === 'chat');
 	const heading = $derived(t?.title ?? '');
 	// 말마다 시간을 달지 않고 가장 최근 말 아래 한 줄만 — 내 말이고 상대가 읽었으면 "읽음 · 3분 전"
 	const last = $derived(t?.messages.at(-1));
@@ -128,6 +135,26 @@
 		}
 	}
 
+	// ── 편지 모드: 편지로 답장 / 채팅하기 ──
+	const myTurn = $derived(!!last && !last.mine);
+	let switching = $state(false);
+	let textEl: HTMLTextAreaElement | undefined = $state();
+	async function chat() {
+		if (!t || switching) return;
+		switching = true;
+		try {
+			const r = await startChat(t.id);
+			if (r.status !== 'ok') toast(r.status === 'closed' ? '끝난 편지예요' : '지금은 채팅으로 바꿀 수 없어요');
+			await load(true);
+			await tick();
+			textEl?.focus();
+		} catch (e) {
+			toast(errMsg(e));
+		} finally {
+			switching = false;
+		}
+	}
+
 	// ── 메뉴 ── 신고 · 차단 · 나가기 (LetterMenu). 하고 나면 이 편지는 내 목록에서 사라지므로 목록으로 돌아간다
 	let menu = $state(false);
 </script>
@@ -162,18 +189,23 @@
 			<p class="intro muted">
 				{t.role === 'received'
 					? '이 편지를 보낸 사람은 익명이에요. 불편하면 언제든 나가거나 신고할 수 있어요.'
-					: `${t.title}님에게는 내 이름 대신 익명 이름이 보여요.`}
+					: `${t.title}님에게는 내 이름 대신 가명이 보여요.`}
 			</p>
 			{#each t.messages as m, i (m.id)}
-				<!-- 말하는 쪽이 바뀔 때만 크게 띄운다 (같은 쪽 연달아는 붙여서) -->
-				<div class="row" class:mine={m.mine} class:turn={i > 0 && t.messages[i - 1].mine !== m.mine}>
-					<div class="bubble selectable" class:removed={m.removed}>
-						<span class="sr-only">{m.mine ? '나' : heading}: </span>{#if m.removed}운영진이 내린 말이에요{:else if m.fmt}<RichText
-								body={m.body ?? ''}
-								fmt={m.fmt}
-							/>{:else}{m.body}{/if}
+				{@const turn = i > 0 && t.messages[i - 1].mine !== m.mine}
+				{#if m.letter}
+					{@const n = paperNames(t, m)}
+					<div class="paper-row" class:turn={i > 0}>
+						<LetterPaper to={n.to} from={n.from} body={m.body} fmt={m.fmt} removed={m.removed} mine={m.mine} />
 					</div>
-				</div>
+				{:else}
+					<!-- 말하는 쪽이 바뀔 때만 크게 띄운다 (같은 쪽 연달아는 붙여서) -->
+					<div class="row" class:mine={m.mine} class:turn={turn || (i > 0 && !!t.messages[i - 1].letter)}>
+						<div class="bubble selectable" class:removed={m.removed}>
+							<span class="sr-only">{m.mine ? '나' : heading}: </span>{m.removed ? '운영진이 내린 말이에요' : m.body}
+						</div>
+					</div>
+				{/if}
 			{/each}
 			{#if last}
 				<div class="when num" class:mine={last.mine}>{lastSeen ? '읽음 · ' : ''}{agoText(last.created_at, S.now + skew)}</div>
@@ -182,13 +214,29 @@
 		{/if}
 	</div>
 
-	{#if t && open}
+	{#if t && open && !chatMode}
+		<!-- 편지 모드 — 받은 사람이 고른다: 편지로 답장 / 채팅으로 -->
+		<div class="choose">
+			{#if myTurn}
+				<p class="muted hint">편지로 답장하거나, 채팅으로 이어갈 수 있어요</p>
+				<div class="btns">
+					<button class="btn" onclick={() => goto(`/letters/${t!.id}/write`)}>편지로 답장하기</button>
+					<button class="btn ghost" onclick={chat} disabled={switching}>채팅하기</button>
+				</div>
+			{:else}
+				<p class="muted hint">답장을 기다리고 있어요 · 상대가 편지로 답하거나 채팅을 열 수 있어요</p>
+				{#if !t.wait_reply}
+					<button class="more-letter" onclick={() => goto(`/letters/${t!.id}/write`)}>한 통 더 쓰기</button>
+				{/if}
+			{/if}
+		</div>
+	{:else if t && open}
 		<div class="composer">
 			{#if t.wait_reply}
 				<p class="wait muted">상대가 답하기 전에는 3개까지 보낼 수 있어요</p>
 			{:else}
 				<div class="pill">
-					<textarea bind:value={draft} rows="1" maxlength="1100" placeholder="답장 쓰기…" onkeydown={onKey} aria-label="답장"></textarea>
+					<textarea bind:this={textEl} bind:value={draft} rows="1" maxlength="1100" placeholder="메시지 쓰기…" onkeydown={onKey} aria-label="메시지"></textarea>
 					<button class="send" onclick={send} disabled={!draft.trim() || sending}>보내기</button>
 				</div>
 			{/if}
@@ -226,6 +274,42 @@
 	/* 키보드가 떠 있을 때는 홈 인디케이터 여백이 필요 없다 */
 	.detail.keyboard .composer {
 		padding-bottom: 8px;
+	}
+	.paper-row.turn {
+		margin-top: 14px;
+	}
+	/* 편지 모드 아래 — 편지로 답장 / 채팅하기 */
+	.choose {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 10px;
+		padding: 12px var(--pad) calc(12px + env(safe-area-inset-bottom));
+		border-top: 1px solid var(--line);
+		background: var(--bg);
+	}
+	.choose .hint {
+		margin: 0;
+		font-size: 13px;
+		text-align: center;
+	}
+	.btns {
+		display: flex;
+		gap: 8px;
+		width: 100%;
+	}
+	.btns .btn {
+		flex: 1;
+	}
+	.btn.ghost {
+		background: var(--field);
+		color: var(--text);
+	}
+	.more-letter {
+		padding: 6px 10px;
+		color: var(--accent);
+		font-size: 14px;
+		font-weight: 600;
 	}
 	.who {
 		flex: 1;

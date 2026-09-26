@@ -2,11 +2,11 @@
 	/**
 	 * 편지 쓰기 — 익명편지 탭에서 찾은 학생에게. 받는 사람은 검색에서 고른 값(page.state.to)으로만 온다.
 	 * 새로고침하면 사라지므로 다시 찾게 한다. 받는 사람에게 내 이름은 보이지 않는다.
-	 * 서식 편집기(굵게 · 형광펜 · 글자색 · 크기 · 정렬) — 본문은 순수 텍스트, 서식은 fmt 로 따로 보낸다.
+	 * 편지지 모양 — To. 받는 사람 · 서식 편집기(굵게 · 형광펜 · 글자색 · 크기 · 정렬) · From. 익명.
+	 * 본문은 순수 텍스트, 서식은 fmt 로 따로 보낸다. 받는 사람은 "편지로 답장하기 / 채팅하기" 중에 고른다.
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import Avatar from '$lib/ui/Avatar.svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import LetterEditor from '$lib/letters/LetterEditor.svelte';
 	import type { LetterFmt } from '$lib/letters/rich';
@@ -57,21 +57,22 @@
 
 {#if to}
 	<div class="page compose">
-		<div class="to">
-			<span class="muted label">받는 사람</span>
-			<Avatar name={to.name} size={32} />
-			<b>{to.name}</b>
-			{#if to.grade}<span class="muted">{to.grade}학년</span>{/if}
-		</div>
-
-		<LetterEditor bind:body bind:fmt placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.\n내 이름은 보이지 않아요.`} />
+		<!-- 편지지: To. 받는 사람 · 내용 · From. 익명 (보내면 이 편지에만 쓰는 가명이 붙는다) -->
+		<LetterEditor bind:body bind:fmt placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.\n내 이름은 보이지 않아요.`}>
+			{#snippet before()}
+				<p class="lp-to to">To. {to.name}{#if to.grade}<small>{to.grade}학년</small>{/if}</p>
+			{/snippet}
+			{#snippet after()}
+				<p class="lp-from">From. 익명<small>보내면 가명이 붙어요</small></p>
+			{/snippet}
+		</LetterEditor>
 
 		<div class="foot">
-			<span class="muted">받는 사람에게는 익명 이름으로 보여요</span>
+			<span class="muted">받는 사람에게는 내 이름 대신 가명으로 보여요</span>
 			<span class="num" class:over={len > MAX}>{len > MAX ? `${len - MAX}자 넘음 · ` : ''}{len}/{MAX}</span>
 		</div>
 		<ul class="rules muted">
-			<li>상대가 답하기 전에는 3개까지 보낼 수 있어요. 받는 사람은 언제든 대화를 끝내거나 신고할 수 있어요.</li>
+			<li>받는 사람은 편지로 답장하거나 채팅으로 이어갈 수 있어요. 답이 오기 전에는 3통까지 보낼 수 있고, 받는 사람은 언제든 나가거나 신고할 수 있어요.</li>
 			<li>괴롭힘으로 신고되면 운영진은 누가 보냈는지 확인할 수 있어요 (확인할 때마다 기록이 남아요).</li>
 			<li>전화번호 · 학번 · SNS 아이디는 적을 수 없어요.</li>
 		</ul>
@@ -87,17 +88,6 @@
 		gap: 10px;
 		padding-top: 14px;
 		padding-bottom: calc(24px + env(safe-area-inset-bottom));
-	}
-	.to {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding-bottom: 4px;
-		font-size: 15px;
-	}
-	.to .label {
-		font-size: 13px;
-		margin-right: 4px;
 	}
 	.foot {
 		display: flex;

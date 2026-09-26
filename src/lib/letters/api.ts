@@ -24,8 +24,10 @@ export type DmItem = {
 	unread: number;
 };
 
-/** fmt = 서식 (편지 쓰기 편집기로 쓴 새 편지만, 답장은 null) */
-export type DmMsg = { id: number; mine: boolean; body: string | null; fmt?: LetterFmt | null; removed: boolean; created_at: string };
+/** letter = 편지(편지지로 그린다) / 아니면 채팅 한 줄. fmt = 서식 (편지만) */
+export type DmMsg = { id: number; mine: boolean; body: string | null; fmt?: LetterFmt | null; letter?: boolean; removed: boolean; created_at: string };
+/** letter = 편지로 주고받는 중 / chat = 받은 사람이 "채팅하기"를 골라 채팅으로 이어지는 중 (Phase 27) */
+export type DmMode = 'letter' | 'chat';
 export type DmThread = {
 	status: 'ok';
 	id: number;
@@ -36,6 +38,11 @@ export type DmThread = {
 	closed_by: 'sender' | 'recipient' | 'staff' | null;
 	/** 상대가 어디까지 읽었는지 (dm_msgs.id) — Phase 26 전 DB 면 없다 */
 	their_read?: number;
+	/** Phase 27 전 DB 면 없다 → 채팅으로 본다 */
+	mode?: DmMode;
+	/** 편지지 From/To — 보낸 쪽 가명 · 받는 사람 이름 */
+	alias?: string;
+	recipient_name?: string | null;
 	/** 답 없이 3개를 보냈다 — 상대가 답할 때까지 못 쓴다 */
 	wait_reply: boolean;
 	messages: DmMsg[];
@@ -46,7 +53,7 @@ export type SendResult =
 	| { status: 'ok'; thread_id: number; msg_id: number }
 	| { status: 'rate_limited'; retry_after_ms: number }
 	| { status: 'wait_reply'; thread_id?: number }
-	| { status: 'not_available' | 'restricted' | 'no_name' | 'bad_text' | 'closed' | 'not_found' };
+	| { status: 'not_available' | 'restricted' | 'no_name' | 'bad_text' | 'closed' | 'not_found' | 'letter_mode' | 'chat_mode' };
 
 const rpc = async <T>(fn: string, args?: Record<string, unknown>): Promise<T> => {
 	const { data, error } = await supabase.rpc(fn, args);
@@ -75,10 +82,29 @@ export async function sendLetter(to: string, body: string, fmt: LetterFmt | null
 	return r;
 }
 
+/** 채팅 한 줄 (채팅 모드에서만) */
 export async function replyLetter(thread: number, body: string) {
 	const r = await rpc<SendResult>('dm_reply', { p_thread: thread, p_body: body });
 	afterSend(r);
 	return r;
+}
+
+/** 편지로 답장 (편지 모드에서만) — body 는 편집기가 앞뒤 공백을 잘라 둔 것 */
+export async function sendLetterReply(thread: number, body: string, fmt: LetterFmt | null = null) {
+	const r = await rpc<SendResult>('dm_letter', { p_thread: thread, p_body: body, p_fmt: fmt });
+	afterSend(r);
+	return r;
+}
+
+/** 채팅으로 바꾸기 — 마지막 편지를 받은 사람만 */
+export const startChat = (id: number) => rpc<{ status: 'ok' | 'not_your_turn' | 'closed' | 'not_found' }>('dm_chat', { p_thread: id });
+
+/** 편지지의 To. / From. — 보낸 쪽(from_sender)의 편지면 To = 받는 사람 이름, From = 가명. 답장 편지는 반대 */
+export function paperNames(t: DmThread, m: { mine: boolean }) {
+	const fromSender = m.mine === (t.role === 'sent');
+	const name = t.recipient_name ?? (t.role === 'sent' ? t.title : '나');
+	const alias = t.alias ?? (t.role === 'received' ? t.title : '익명');
+	return fromSender ? { to: name, from: alias } : { to: alias, from: name };
 }
 
 export const closeThread = (id: number) => rpc<{ status: string }>('dm_close', { p_thread: id });
@@ -111,6 +137,10 @@ export function sendError(r: SendResult): string | null {
 			return '1~1000자로 적어 주세요';
 		case 'closed':
 			return '끝난 편지예요';
+		case 'letter_mode':
+			return '편지로 주고받는 중이에요. 편지로 답장해 주세요';
+		case 'chat_mode':
+			return '채팅으로 이어지는 중이에요';
 		default:
 			return '편지를 찾을 수 없어요';
 	}

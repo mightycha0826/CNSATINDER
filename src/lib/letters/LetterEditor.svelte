@@ -18,12 +18,16 @@
 	 * 편지 서식 편집기 — 굵게·기울임·밑줄·취소선·형광펜·글자색·크기·정렬·되돌리기.
 	 * 문단 하나 = 본문 한 줄. 붙여넣기는 글자만 받는다(다른 곳의 서식·색은 버린다).
 	 * 결과는 body(순수 텍스트) + fmt(서식 범위)로 내보낸다 — 서버에는 이 둘만 간다.
+	 * before · after 를 주면 글 쓰는 칸을 편지지(app.css .letter-paper)로 감싸고 그 위 · 아래에 그린다 (To. · From.)
 	 */
+	import type { Snippet } from 'svelte';
 	let {
 		body = $bindable(''),
 		fmt = $bindable<LetterFmt | null>(null),
-		placeholder = ''
-	}: { body?: string; fmt?: LetterFmt | null; placeholder?: string } = $props();
+		placeholder = '',
+		before,
+		after
+	}: { body?: string; fmt?: LetterFmt | null; placeholder?: string; before?: Snippet; after?: Snippet } = $props();
 
 	let el: HTMLDivElement | undefined = $state();
 	let editor: Editor | null = $state(null);
@@ -180,7 +184,11 @@
 		</div>
 	{/if}
 
-	<div class="area" bind:this={el}></div>
+	<div class="sheet" class:letter-paper={!!(before || after)}>
+		{@render before?.()}
+		<div class="area" bind:this={el}></div>
+		{@render after?.()}
+	</div>
 </div>
 
 <style>
@@ -277,6 +285,21 @@
 		width: 14px;
 		height: 14px;
 		border-radius: 50%;
+	}
+	.sheet {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+	.sheet.letter-paper {
+		margin-top: 12px;
+	}
+	.sheet.letter-paper .area {
+		padding-top: 0;
+	}
+	.sheet.letter-paper .area :global(.le-doc) {
+		min-height: 36dvh;
+		line-height: 1.8;
 	}
 	.area {
 		flex: 1;

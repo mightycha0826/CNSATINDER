@@ -32,6 +32,10 @@
 	--cell: #ffffff;
 	--cell-line: #e3e3e8;
 	--switch-off: #e9e9eb;
+	/* 편지지 — 따뜻한 미색 종이 · 먹색 글씨 */
+	--paper: #fffaf0;
+	--paper-ink: #2b2620;
+	--paper-edge: #efe4cf;
 	--r-card: 22px;
 
 	--r-sm: 8px;
@@ -60,6 +64,9 @@
 		--cell: #1c1c1e;
 		--cell-line: #38383a;
 		--switch-off: #39393d;
+		--paper: #1f1c17;
+		--paper-ink: #ece5d8;
+		--paper-edge: #34302a;
 	}
 }
 
@@ -75,6 +82,9 @@
 	--cell: #1c1c1e;
 	--cell-line: #38383a;
 	--switch-off: #39393d;
+	--paper: #1f1c17;
+	--paper-ink: #ece5d8;
+	--paper-edge: #34302a;
 }
 
 * {
@@ -571,4 +581,51 @@ button.g-row:active:not(:disabled) {
 		transition-duration: 0.01ms !important;
 		scroll-behavior: auto !important;
 	}
+}
+
+/* ── 편지지 (이름 편지) — 편지 쓰기 · 편지로 답장 · 편지 화면이 같이 쓴다 ─────────────
+   To. 는 왼쪽 위, From. 은 오른쪽 아래. 종이 윗단에 테마 색 띠 한 줄 */
+.letter-paper {
+	position: relative;
+	padding: 22px 20px 18px;
+	border: 1px solid var(--paper-edge);
+	border-radius: 16px;
+	background: var(--paper);
+	color: var(--paper-ink);
+	overflow: hidden;
+}
+.letter-paper::before {
+	content: '';
+	position: absolute;
+	inset: 0 0 auto;
+	height: 4px;
+	background: var(--accent-fill);
+	opacity: 0.85;
+}
+.letter-paper .lp-to,
+.letter-paper .lp-from {
+	margin: 0;
+	font-size: 15px;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+}
+.letter-paper .lp-to {
+	margin-bottom: 14px;
+}
+.letter-paper .lp-from {
+	margin-top: 18px;
+	text-align: right;
+}
+.letter-paper .lp-to small,
+.letter-paper .lp-from small {
+	margin-left: 4px;
+	font-size: 12px;
+	font-weight: 500;
+	opacity: 0.6;
+}
+.letter-paper .lp-body {
+	font-size: 16px;
+	line-height: 1.8;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
 }

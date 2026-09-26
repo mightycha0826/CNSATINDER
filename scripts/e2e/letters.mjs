@@ -22,20 +22,23 @@ function world({ named = true } = {}) {
 		calls: [],
 		patches: [],
 		threads: [
-			{ id: 7, role: 'received', title: '푸른 우표', grade: null, status: 'open', last_at: ago(5), unread: 2,
-				msgs: [{ id: 70, mine: false, body: '안녕! 너 그림 진짜 잘 그리더라', created_at: ago(8) }, { id: 71, mine: false, body: '나중에 알려 줄게 ㅎㅎ', created_at: ago(5) }] }
+			{ id: 7, role: 'received', title: '푸른 우표', alias: '푸른 우표', recipient_name: '김보냄', mode: 'letter', grade: null, status: 'open', last_at: ago(5), unread: 2,
+				msgs: [{ id: 70, mine: false, letter: true, body: '안녕! 너 그림 진짜 잘 그리더라', created_at: ago(8) }, { id: 71, mine: false, letter: true, body: '나중에 알려 줄게 ㅎㅎ', created_at: ago(5) }] },
+			{ id: 8, role: 'received', title: '노란 편지지', alias: '노란 편지지', recipient_name: '김보냄', mode: 'letter', grade: null, status: 'open', last_at: ago(30), unread: 1,
+				msgs: [{ id: 60, mine: false, letter: true, body: '시험 잘 봐!', created_at: ago(30) }] }
 		],
 		rooms: [{ room_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', status: 'active', my_seat: 1, partner_alias: '새벽수달', expires_at: new Date(Date.now() + 600_000).toISOString(), round: 1, joined: true, partner_online: false, last_body: '안녕', last_seat: 2, last_at: ago(1), unread: 0 }],
 		wait: false
 	};
 	return w;
 }
-const inbox = (w) => ({ threads: w.threads.filter((t) => !t.hidden).map(({ msgs, hidden, ...t }) => ({ ...t, last_body: msgs.at(-1)?.body ?? null })), server_now: new Date().toISOString() });
+const inbox = (w) => ({ threads: w.threads.filter((t) => !t.hidden).map(({ msgs, hidden, alias, recipient_name, mode, ...t }) => ({ ...t, last_body: msgs.at(-1)?.body ?? null })), server_now: new Date().toISOString() });
 const thread = (w, id) => {
 	const t = w.threads.find((x) => x.id === id);
 	if (!t || t.hidden) return { status: 'not_found' };
 	t.unread = 0;
 	return { status: 'ok', id: t.id, role: t.role, title: t.title, grade: t.grade, thread_status: t.status, closed_by: t.status === 'closed' ? (t.role === 'received' ? 'recipient' : 'sender') : null,
+		mode: t.mode, alias: t.alias, recipient_name: t.recipient_name,
 		wait_reply: w.wait, their_read: t.theirRead ?? 0, messages: t.msgs.map((m) => ({ ...m, removed: false })), server_now: new Date().toISOString() };
 };
 
@@ -64,17 +67,26 @@ async function openApp(browser, w) {
 		}
 		if (rpc === 'dm_send') {
 			const id = 100 + w.threads.length;
-			w.threads.unshift({ id, role: 'sent', title: '박받음', grade: 2, status: 'open', last_at: new Date().toISOString(), unread: 0, msgs: [{ id: id * 10, mine: true, body: a.p_body, fmt: a.p_fmt ?? null, created_at: new Date().toISOString() }] });
+			w.threads.unshift({ id, role: 'sent', title: '박받음', alias: '빨간 우체통', recipient_name: '박받음', mode: 'letter', grade: 2, status: 'open', last_at: new Date().toISOString(), unread: 0, msgs: [{ id: id * 10, mine: true, letter: true, body: a.p_body, fmt: a.p_fmt ?? null, created_at: new Date().toISOString() }] });
 			return json({ status: 'ok', thread_id: id, msg_id: id * 10 });
 		}
 		if (rpc === 'dm_thread') return json(thread(w, a.p_thread));
 		if (rpc === 'dm_reply') {
 			if (w.wait) return json({ status: 'wait_reply' });
 			const t = w.threads.find((x) => x.id === a.p_thread);
+			if (t.mode !== 'chat') return json({ status: 'letter_mode' });
 			const mid = t.msgs.at(-1).id + 1;
 			t.msgs.push({ id: mid, mine: true, body: a.p_body, created_at: new Date().toISOString() });
 			return json({ status: 'ok', msg_id: mid });
 		}
+		if (rpc === 'dm_letter') {
+			const t = w.threads.find((x) => x.id === a.p_thread);
+			if (t.mode !== 'letter') return json({ status: 'chat_mode' });
+			const mid = t.msgs.at(-1).id + 1;
+			t.msgs.push({ id: mid, mine: true, letter: true, body: a.p_body, fmt: a.p_fmt ?? null, created_at: new Date().toISOString() });
+			return json({ status: 'ok', msg_id: mid });
+		}
+		if (rpc === 'dm_chat') { const t = w.threads.find((x) => x.id === a.p_thread); t.mode = 'chat'; return json({ status: 'ok' }); }
 		if (rpc === 'dm_close' || rpc === 'dm_block' || rpc === 'dm_report') {
 			const t = w.threads.find((x) => x.id === a.p_thread); if (t) { t.status = 'closed'; t.hidden = true; } // 나가면 내 목록에서 사라진다 (Phase 25)
 			return json({ status: 'ok' });
@@ -124,7 +136,8 @@ try {
 	await page.locator('.person').first().click(); await page.waitForURL('**/letters/new');
 	check('편지 쓰기: 받는 사람 이름 · 학년', (await page.locator('.to').innerText()).includes('박받음') && (await page.locator('.to').innerText()).includes('2학년'));
 	check('비어 있으면 못 보낸다', await page.getByRole('button', { name: '보내기' }).isDisabled());
-	check('"내 이름은 보이지 않아요" 안내', (await page.locator('.foot').innerText()).includes('익명 이름'));
+	check('★ 편지지: To. 받는 사람 · From. 익명', (await page.locator('.letter-paper .lp-to').innerText()).startsWith('To. 박받음') && (await page.locator('.letter-paper .lp-from').innerText()).startsWith('From. 익명')
+		&& (await page.locator('.foot').innerText()).includes('가명'));
 	check('서식 도구 막대 (굵게 · 형광펜 · 글자색 · 크기 · 정렬)', await page.getByRole('toolbar', { name: '서식' }).isVisible()
 		&& (await page.getByRole('toolbar', { name: '서식' }).getByRole('button').count()) >= 10);
 	const editor = page.getByRole('textbox', { name: '편지 내용' });
@@ -148,20 +161,34 @@ try {
 	check('★ 서식은 본문과 따로 — "발표"(11~13) 굵게 · 노랑 형광펜', JSON.stringify(sent?.p_fmt?.m?.slice().sort()) === JSON.stringify([[11, 13, 'b'], [11, 13, 'h:yellow']]), JSON.stringify(sent?.p_fmt));
 	await page.waitForTimeout(2000); // AI 검토 요청은 1.5초 모아서
 	check('보낸 뒤 알림 · AI 검토 요청', w.calls.some((c) => c[0] === 'api' && c[1] === '/api/push' && c[2]?.dm_msg_id) && w.calls.some((c) => c[0] === 'api' && c[1] === '/api/moderate'));
-	await page.locator('.row.mine .bubble').first().waitFor();
+	await page.locator('.letter-paper.mine').first().waitFor();
 	check('보낸 편지 화면: 받는 사람 이름 · "나는 익명"', (await page.locator('.names b').innerText()) === '박받음' && (await page.locator('.names small').innerText()).includes('나는 익명'));
-	check('내 편지는 오른쪽 말풍선', (await page.locator('.row.mine .bubble').innerText()).includes('발표 멋있었어'));
+	check('★ 보낸 편지는 편지지로 — To. 박받음 · From. 내 가명', (await page.locator('.letter-paper.mine .lp-to').innerText()) === 'To. 박받음'
+		&& (await page.locator('.letter-paper.mine .lp-from').innerText()) === 'From. 빨간 우체통' && (await page.locator('.letter-paper.mine .lp-body').innerText()).includes('발표 멋있었어'));
+	check('★ 서식 그대로 (HTML 없이 표로)', (await page.locator('.letter-paper.mine .rt-b').innerText()) === '발표'
+		&& (await page.locator('.letter-paper.mine .rt-b').getAttribute('style'))?.includes('background-color'));
+	check('보낸 쪽 아래: 답장 기다리는 중 · 한 통 더 쓰기 (입력창 없음)', (await page.locator('.choose').innerText()).includes('답장을 기다리고') && (await page.getByRole('button', { name: '한 통 더 쓰기' }).count()) === 1
+		&& (await page.getByRole('textbox', { name: '메시지' }).count()) === 0);
 	await page.screenshot({ path: `${SP}/letters-3b-sent.png` });
-	check('★ 받은 쪽 화면에도 서식 그대로 (HTML 없이 표로)', (await page.locator('.row.mine .bubble .rt-b').innerText()) === '발표'
-		&& (await page.locator('.row.mine .bubble .rt-b').getAttribute('style'))?.includes('background-color'));
+	await page.locator('button.back').click(); await page.waitForURL(/\/letters$/); await page.locator('.tabs').waitFor(); await page.waitForTimeout(300);
+	check('★ 보낸 편지에서 뒤로 → 보낸 편지 목록 (받은 편지로 튀지 않는다)', (await page.locator('.tabs button.on').innerText()).startsWith('보낸 편지')
+		&& (await page.locator('.thread .line1 b').first().innerText()) === '박받음');
 
 	console.log('[받은 편지 열기 · 답장]');
-	await page.goto(`${BASE}/letters/7`); await page.locator('.bubble').first().waitFor(); await page.waitForTimeout(300);
+	await page.goto(`${BASE}/letters/7`); await page.locator('.letter-paper').first().waitFor(); await page.waitForTimeout(300);
 	check('★ 받은 편지: 가명 "푸른 우표" · 누가 보냈는지 알 수 없다는 안내', (await page.locator('.names b').innerText()) === '푸른 우표' && (await page.locator('.names small').innerText()).includes('알 수 없어요'));
-	check('편지 글은 선택 · 복사 가능', await page.locator('.bubble').first().evaluate((e) => getComputedStyle(e).userSelect !== 'none'));
-	await page.getByRole('textbox', { name: '답장' }).fill('누구야?? 고마워');
+	check('★ 받은 편지는 편지지 — To. 내 이름 · From. 가명', (await page.locator('.letter-paper').count()) === 2 && (await page.locator('.letter-paper .lp-to').first().innerText()) === 'To. 김보냄'
+		&& (await page.locator('.letter-paper .lp-from').first().innerText()) === 'From. 푸른 우표');
+	check('편지 글은 선택 · 복사 가능', await page.locator('.letter-paper .lp-body').first().evaluate((e) => getComputedStyle(e).userSelect !== 'none'));
+	check('★ 받은 사람이 고른다: 편지로 답장하기 · 채팅하기 (입력창은 아직 없음)', (await page.locator('.choose .btn').allInnerTexts()).join(',') === '편지로 답장하기,채팅하기'
+		&& (await page.getByRole('textbox', { name: '메시지' }).count()) === 0);
+	await page.screenshot({ path: `${SP}/letters-4a-choose.png` });
+	await page.locator('.choose .btn', { hasText: '채팅하기' }).click(); await page.getByRole('textbox', { name: '메시지' }).waitFor();
+	check('★ 채팅하기 → 채팅으로 바뀌고 입력창', JSON.stringify(called(w, 'dm_chat').at(-1)?.[1]) === '{"p_thread":7}' && (await page.locator('.choose').count()) === 0);
+	await page.getByRole('textbox', { name: '메시지' }).fill('누구야?? 고마워');
 	await page.getByRole('button', { name: '보내기' }).click(); await page.waitForTimeout(500);
-	check('답장', called(w, 'dm_reply').at(-1)?.[1]?.p_body === '누구야?? 고마워' && (await page.locator('.row.mine .bubble').last().innerText()).includes('고마워'));
+	check('채팅 한 줄은 말풍선 (편지지는 위에 그대로)', called(w, 'dm_reply').at(-1)?.[1]?.p_body === '누구야?? 고마워' && (await page.locator('.row.mine .bubble').last().innerText()).includes('고마워')
+		&& (await page.locator('.letter-paper').count()) === 2);
 	check('★ 시간은 가장 최근 말 아래 한 줄만 (말마다 X)', (await page.locator('.when').count()) === 1
 		&& (await page.locator('.when').innerText()) === '방금' && (await page.locator('.when').getAttribute('class')).includes('mine'), await page.locator('.when').allInnerTexts().then((x) => x.join('|')));
 	w.threads.find((x) => x.id === 7).theirRead = 10_000;
@@ -178,17 +205,31 @@ try {
 		return b.bottom <= list.bottom + 1 && b.top >= list.top;
 	});
 	check('긴 편지: 열면 맨 아래(최근 말)', await lastVisible());
-	await page.getByRole('textbox', { name: '답장' }).focus();
+	await page.getByRole('textbox', { name: '메시지' }).focus();
 	await page.setViewportSize({ width: 390, height: 430 }); await page.waitForTimeout(400);
 	await page.screenshot({ path: `${SP}/letters-4b-keyboard.png` });
 	check('★ 키보드가 올라와도 최근 말이 가려지지 않는다', await lastVisible());
-	check('입력창도 보이는 영역 안', await page.getByRole('textbox', { name: '답장' }).evaluate((e) => e.getBoundingClientRect().bottom <= innerHeight + 1));
+	check('입력창도 보이는 영역 안', await page.getByRole('textbox', { name: '메시지' }).evaluate((e) => e.getBoundingClientRect().bottom <= innerHeight + 1));
 	await page.setViewportSize({ width: 390, height: 844 }); await page.waitForTimeout(300);
 	check('키보드가 내려가도 맨 아래 그대로', await lastVisible());
 	w.wait = true;
 	await page.reload(); await page.locator('.bubble').first().waitFor(); await page.waitForTimeout(300);
-	check('답 없이 3개를 보냈으면 입력창 대신 안내', (await page.locator('.wait').count()) === 1 && (await page.getByRole('textbox', { name: '답장' }).count()) === 0);
+	check('답 없이 3개를 보냈으면 입력창 대신 안내', (await page.locator('.wait').count()) === 1 && (await page.getByRole('textbox', { name: '메시지' }).count()) === 0);
 	w.wait = false;
+
+	console.log('[편지로 답장하기]');
+	await page.goto(`${BASE}/letters/8`); await page.locator('.letter-paper').first().waitFor(); await page.waitForTimeout(300);
+	await page.locator('.choose .btn', { hasText: '편지로 답장하기' }).click(); await page.waitForURL('**/letters/8/write');
+	await page.locator('.letter-paper .lp-to').waitFor();
+	check('★ 답장 편지지: To. 가명 · From. 내 이름 (상대는 이미 내 이름을 안다)', (await page.locator('.letter-paper .lp-to').innerText()) === 'To. 노란 편지지'
+		&& (await page.locator('.letter-paper .lp-from').innerText()) === 'From. 김보냄' && (await page.getByRole('toolbar', { name: '서식' }).count()) === 1);
+	await page.getByRole('textbox', { name: '편지 내용' }).fill('고마워! 너도 잘 봐');
+	await page.screenshot({ path: `${SP}/letters-4c-reply.png` });
+	await page.getByRole('button', { name: '보내기' }).click(); await page.waitForURL(/\/letters\/8$/); await page.waitForTimeout(500);
+	check('★ 편지로 답장 → 편지 화면에 내 편지지 · 답장 기다리는 중', JSON.stringify(called(w, 'dm_letter').at(-1)?.[1]) === JSON.stringify({ p_thread: 8, p_body: '고마워! 너도 잘 봐', p_fmt: null })
+		&& (await page.locator('.letter-paper.mine .lp-body').innerText()).includes('너도 잘 봐') && (await page.locator('.choose').innerText()).includes('답장을 기다리고'), JSON.stringify(called(w, 'dm_letter')));
+	await page.screenshot({ path: `${SP}/letters-4d-waiting.png` });
+	await page.goto(`${BASE}/letters/7`); await page.locator('.letter-paper').first().waitFor(); await page.waitForTimeout(300);
 
 	console.log('[메뉴 · 신고]');
 	await page.getByRole('button', { name: '메뉴' }).click(); await page.waitForTimeout(300);
