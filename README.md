@@ -180,7 +180,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `src/lib/chat/` | 채팅방 — `ChatView`(화면) · `room.svelte.ts`(상태·동기화) · `ChatIntro`(맨 위 소개) · `PartnerCard`(상대 프로필) · `ReactionPicker`·`ReactionBadge`·`reactions.ts`(공감) · `ReplyQuote`(답장 인용) · `Starters`(첫마디 도우미) · `MatchScreen`(연결 화면) · `gestures.ts`(길게 누르기·두 번 톡·밀어서 답장) |
 | `src/lib/letters/` | 이름 편지 — `api.ts`(검색·받은/보낸 편지·보내기·끝내기·차단·신고 RPC), `unread.svelte.ts`(탭 빨간 점), `LetterEditor.svelte`(서식 편집기) · `rich.ts` · `RichText.svelte`(서식 그리기) |
 | `src/lib/tabBack.svelte.ts` | 탭 첫 화면 뒤로가기 — 익명편지·프로필 → 홈, 홈에서 두 번 누르면 종료 |
-| `src/lib/chatColor.svelte.ts` | 채팅 색상(내 말풍선) — 설정 화면에서 고르고 이 기기에만 저장 |
+| `src/lib/themeColor.svelte.ts` | 테마 색상(앱 전체 포인트 색 — 로고 · 버튼 · 링크 · 내 말풍선) — 설정 화면에서 고르고 이 기기에만 저장 |
 | `src/lib/admin/` | 운영자 화면 공용 조각 — 신고 상세 카드(`ReportHeader` · `ReportedCard` · `ReporterCard` · `IdentityCard`), `AccountStatus`, `FormMsg`, `SanctionForm` |
 | `src/lib/server/` | 서버 전용 — 운영자 세션·권한, `reports.ts`(채팅·편지 신고 공용 로드·액션), 푸시 (`/api/push` 는 요청 키 → DB 판단 함수 표, 받을 기기는 DB `private.push_target`), `ai.ts`(Workers AI 호출) · `moderation.ts`(검열 판정 프롬프트) · `aiChat.ts`(AI 대화 프롬프트) |
 | `src/lib/ai/` · `src/lib/moderation.ts` | AI 대화 상대 화면(`AiChat`, 홈 위에 덮어 띄움) · 글을 올린 뒤 검열봇 부르기(`/api/moderate`) |
@@ -350,4 +350,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 - [x] **알림 고침** — 안드로이드에서 흰 네모로 보이던 알림 아이콘 → 흰 로고 + 투명 배지(`badge-96.png`).
       알림을 누르면 브라우저 탭 대신 설치한 앱으로: 앱 창이 뜰 때 서비스워커에 알려 두고(`cnsatinder-meta` 캐시),
       앱 창이 있으면 그 창을, 앱을 써 온 기기면 새로 열어 안드로이드가 앱으로 열게 한다
+- [x] **테마 색상** — 설정의 "채팅 색상"을 "테마 색상"으로. 고른 색이 말풍선만이 아니라 앱 전체 포인트 색
+      (`--g-*`→로고 `--brand`, 채운 버튼 `--accent-fill`, 글자·아이콘 `--accent`, 내 말풍선 `--bubble-fill`)을 바꾼다. 미리보기 대화는 그대로.
+      저장 키(`chat-color-v1`)는 그대로라 이미 고른 색은 유지
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

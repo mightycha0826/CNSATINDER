@@ -1050,7 +1050,7 @@
 		padding-left: 13px;
 		font-size: 13px;
 	}
-	/* 왼쪽 세로줄 — 설정의 채팅 색상(내 말풍선 색)을 따른다 */
+	/* 왼쪽 세로줄 — 설정의 테마 색상(내 말풍선 색)을 따른다 */
 	.replying-text::before {
 		content: '';
 		position: absolute;

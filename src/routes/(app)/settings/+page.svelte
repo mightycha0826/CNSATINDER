@@ -2,12 +2,12 @@
 	/**
 	 * 설정 — 상단 바 오른쪽 톱니를 누르면 오는 화면. 아이폰 설정 앱처럼 회색 바탕에 둥근 카드 (app.css .g-*).
 	 *  · 화면: 기기 설정 따르기 / 라이트 / 다크. 이 기기에만 저장 (lib/theme.svelte.ts)
-	 *  · 채팅 색상: 내 말풍선 색. 이 기기에만 저장되고 상대 화면은 그대로다 (lib/chatColor.svelte.ts)
+	 *  · 테마 색상: 앱 전체의 포인트 색 (버튼 · 로고 · 내 말풍선 …). 이 기기에만 저장되고 상대 화면은 그대로다 (lib/themeColor.svelte.ts)
 	 *  · 새 메시지 알림 · 비밀번호 · 계정 상태 · 개인정보 안내 · 로그아웃 (프로필에서 옮겨 옴)
 	 * 홈의 "비밀번호를 만들어 두세요"와 비밀번호 찾기 인증 뒤에는 /settings#password 로 와서 비밀번호 칸이 펼쳐져 있다.
 	 */
 	import { goto } from '$app/navigation';
-	import { CHAT_COLOR, CHAT_COLORS, setChatColor } from '$lib/chatColor.svelte';
+	import { THEME_COLOR, THEME_COLORS, fillOf, setThemeColor } from '$lib/themeColor.svelte';
 	import { THEME, THEME_MODES, setTheme } from '$lib/theme.svelte';
 	import { disablePush, enablePush, pushEnabled, pushState, type PushState } from '$lib/push';
 	import {
@@ -218,7 +218,7 @@
 		</div>
 	</div>
 
-	<h2 class="g-head" id="chat-color">채팅 색상</h2>
+	<h2 class="g-head" id="theme-color">테마 색상</h2>
 	<div class="g-card">
 		<!-- 미리보기 — 고르는 즉시 바뀐다 -->
 		<div class="preview" aria-hidden="true">
@@ -226,23 +226,23 @@
 			<div class="prow mine"><span class="bubble">카레! 맛있었어</span></div>
 			<div class="prow mine"><span class="bubble">너는 뭐 먹었어?</span></div>
 		</div>
-		<div class="swatches" role="radiogroup" aria-labelledby="chat-color">
-			{#each CHAT_COLORS as c (c.id)}
-				<label class="swatch" class:on={CHAT_COLOR.id === c.id}>
+		<div class="swatches" role="radiogroup" aria-labelledby="theme-color">
+			{#each THEME_COLORS as c (c.id)}
+				<label class="swatch" class:on={THEME_COLOR.id === c.id}>
 					<input
 						type="radio"
-						name="chat-color"
+						name="theme-color"
 						value={c.id}
 						aria-label={c.label}
-						checked={CHAT_COLOR.id === c.id}
-						onchange={() => setChatColor(c.id)}
+						checked={THEME_COLOR.id === c.id}
+						onchange={() => setThemeColor(c.id)}
 					/>
-					<span class="dot" style:background={c.fill}></span>
+					<span class="dot" style:background={fillOf(c)}></span>
 				</label>
 			{/each}
 		</div>
 	</div>
-	<p class="g-foot">내 말풍선 색이에요. 이 기기에서만 바뀌고, 상대에게는 원래 색으로 보여요.</p>
+	<p class="g-foot">버튼 · 로고 · 내 말풍선 등 앱 전체의 색이에요. 이 기기에서만 바뀌고, 상대 화면은 그대로예요.</p>
 
 	<h2 class="g-head">알림</h2>
 	<div class="g-card">
@@ -480,7 +480,7 @@
 		color: var(--text-2);
 	}
 
-	/* 채팅 색상 — 위는 대화 미리보기, 아래는 색 동그라미 (아이폰 "라이트 · 다크" 고르기처럼) */
+	/* 테마 색상 — 위는 대화 미리보기, 아래는 색 동그라미 (아이폰 "라이트 · 다크" 고르기처럼) */
 	.preview {
 		display: flex;
 		flex-direction: column;

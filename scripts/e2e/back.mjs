@@ -122,13 +122,13 @@ try {
 	await page.evaluate(() => document.documentElement.style.removeProperty('--safe-top'));
 	check('안전영역이 없으면 44 그대로', Math.round((await page.locator('.topbar').first().boundingBox()).height) === 44);
 
-	console.log('[설정 · 채팅 색상]');
+	console.log('[설정 · 테마 색상]');
 	const fill = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bubble-fill').trim());
 	const before = await fill();
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
 	const setHeads = await heads();
-	check('★ 설정 = 화면(한 줄) · 채팅 색상 · 알림 · 매칭 · 편지 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '채팅 색상,알림,매칭,편지,계정,개인정보'
+	check('★ 설정 = 화면(한 줄) · 테마 색상 · 알림 · 매칭 · 편지 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '테마 색상,알림,매칭,편지,계정,개인정보'
 		&& (await page.getByRole('switch', { name: '새 메시지 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
 		&& (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
 	check('뒤로는 둥근 단추 · 제목 가운데', (await page.locator('button.back').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%'
@@ -161,13 +161,22 @@ try {
 	check('★ 파랑을 고르면 말풍선 색이 바로 바뀐다', blue !== before && blue.includes('#3b8af6'), blue);
 	const mine = await page.locator('.preview .mine .bubble').first().evaluate((e) => getComputedStyle(e).backgroundImage);
 	check('미리보기 말풍선에도 입혀진다', mine.includes('59, 138, 246'), mine);
+	const tok = () => page.evaluate(() => { const cs = getComputedStyle(document.documentElement); return ['--accent-fill', '--accent', '--brand'].map((k) => cs.getPropertyValue(k).trim()); });
+	const [af, ac, br] = await tok();
+	check('★ 앱 전체 색이 바뀐다 — 채운 버튼 · 글자/아이콘 색 · 로고', af.includes('#3b8af6') && ac === '#3b8af6' && br.includes('#3b8af6'), JSON.stringify([af, ac, br]));
+	check('설정 안의 포인트(화면 모드 고른 칸)도 파랑', (await page.locator('.seg-btn.on').evaluate((e) => getComputedStyle(e).backgroundImage)).includes('59, 138, 246'));
 	check('이 기기에 저장', (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === 'ocean');
 	await page.screenshot({ path: `${SP}/settings-color.png` });
 	check('긴 설정 화면에서도 머리글 52px 그대로 (눌려 줄지 않음)', Math.round((await page.locator('.topbar').boundingBox()).height) === 52, String((await page.locator('.topbar').boundingBox()).height));
 	await page.reload(); await page.locator('.swatch.on').waitFor({ timeout: 8000 });
 	check('다시 열어도 그대로', (await fill()).includes('#3b8af6') && (await page.getByRole('radio', { name: '파랑' }).isChecked()));
+	await page.goto(`${BASE}/`); await page.locator('a.logo').waitFor(); await page.waitForTimeout(400);
+	await page.screenshot({ path: `${SP}/home-theme-blue.png` });
+	check('★ 홈 로고도 테마 색 (파랑)', (await page.locator('a.logo').evaluate((e) => { const cs = getComputedStyle(e); return cs.backgroundImage + cs.color; })).includes('59, 138, 246'));
+	await page.goto(`${BASE}/settings`); await page.locator('.swatch.on').waitFor({ timeout: 8000 });
 	await swatch('기본').click(); await page.waitForTimeout(200);
 	check('기본으로 되돌리면 저장값도 지운다', (await fill()) === before && (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === null);
+	check('기본으로 되돌리면 앱 색도 원래대로 (주황 → 핑크)', (await tok()).every((v) => !v.includes('#3b8af6')) && (await tok())[0].includes('#f2603f'), JSON.stringify(await tok()));
 
 	console.log('[설정 · 화면 모드]');
 	const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);

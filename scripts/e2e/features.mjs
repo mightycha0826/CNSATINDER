@@ -47,7 +47,7 @@ try {
 	await page.screenshot({ path: `${SP}/feat-2-replying.png` });
 	await page.evaluate(() => document.documentElement.style.setProperty('--bubble-fill', 'linear-gradient(#3b8af6, #3b8af6)'));
 	const barBg = await page.locator('.replying-text').evaluate((e) => getComputedStyle(e, '::before').backgroundImage);
-	check('답장 막대의 세로줄 = 채팅 색상 (설정에서 고른 색)', barBg.includes('59, 138, 246'), barBg);
+	check('답장 막대의 세로줄 = 테마 색상 (설정에서 고른 색)', barBg.includes('59, 138, 246'), barBg);
 	await page.evaluate(() => document.documentElement.style.removeProperty('--bubble-fill'));
 	await page.locator('.replying-x').click();
 	check('✕ 로 답장 취소', (await page.locator('.replying').count()) === 0);
