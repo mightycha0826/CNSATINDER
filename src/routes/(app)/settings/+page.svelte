@@ -3,7 +3,7 @@
 	 * 설정 — 상단 바 오른쪽 톱니를 누르면 오는 화면. 아이폰 설정 앱처럼 회색 바탕에 둥근 카드 (app.css .g-*).
 	 *  · 화면: 기기 설정 따르기 / 라이트 / 다크. 이 기기에만 저장 (lib/theme.svelte.ts)
 	 *  · 테마 색상: 앱 전체의 포인트 색 (버튼 · 로고 · 내 말풍선 …). 이 기기에만 저장되고 상대 화면은 그대로다 (lib/themeColor.svelte.ts)
-	 *  · 새 메시지 알림 · 비밀번호 · 계정 상태 · 개인정보 안내 · 로그아웃 (프로필에서 옮겨 옴)
+	 *  · 새 메시지 알림 · 비밀번호 · 계정 상태 · 약관 및 정책(이용약관 · 개인정보 처리방침 · 운영정책 → /settings/[doc]) · 로그아웃
 	 * 홈의 "비밀번호를 만들어 두세요"와 비밀번호 찾기 인증 뒤에는 /settings#password 로 와서 비밀번호 칸이 펼쳐져 있다.
 	 */
 	import { goto } from '$app/navigation';
@@ -26,6 +26,7 @@
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import { setLettersOpen } from '$lib/letters/api';
 	import Chevron from '$lib/ui/Chevron.svelte';
+	import { LEGAL, LEGAL_IDS } from '$lib/legal';
 	import PasswordFields from '$lib/ui/PasswordFields.svelte';
 
 	let busy = $state(false);
@@ -306,7 +307,7 @@
 	</div>
 	<p class="g-foot">
 		켜 두면 다른 학생이 내 이름으로 찾아 익명 편지를 보낼 수 있어요. 끄면 검색에 나오지 않고 새 편지를 받지 않아요
-		(이미 주고받던 편지는 그대로예요). 불편한 편지는 편지 화면에서 끝내기 · 차단 · 신고할 수 있어요.
+		(이미 주고받던 편지는 그대로예요). 불편한 편지는 편지 화면에서 나가기 · 차단 · 신고할 수 있어요.
 	</p>
 
 	<h2 class="g-head">계정</h2>
@@ -386,17 +387,32 @@
 	</div>
 	<p class="g-foot">학교 이메일 앞부분과 비밀번호로 로그인해요. {S.hasPassword ? '' : '비밀번호가 아직 없어요.'}</p>
 
-	<h2 class="g-head">개인정보</h2>
+	<h2 class="g-head">약관 및 정책</h2>
 	<div class="g-card">
-		<p class="privacy">
-			채팅에서는 이름 · 학번이 다른 학생에게 드러나지 않습니다 (계정마다 정해진 익명 이름만 보임).
-			익명편지에서는 학교 명단의 내 이름과 학년으로 검색될 수 있고(위 "편지 받기"로 끌 수 있음),
-			내가 보낸 편지는 받는 사람에게 편지마다 다른 익명 이름으로만 보입니다.
-			다만 안전한 운영을 위해 관리자는 대화 내용, 편지를 보낸 사람, 학교 이메일을 확인할 수 있으며,
-			모든 열람은 기록으로 남습니다. 대화 내용은 방이 닫히고 24시간 뒤 서버에서 지워지지만,
-			그 전에 관리자가 운영을 위해 파일로 보관할 수 있습니다 (계정 정보 없이 익명 이름과 내용만, 보관할 때마다 기록이 남음).
-			편지는 운영진이 내리기 전까지 남습니다.
-		</p>
+		{#each LEGAL_IDS as id (id)}
+			<a class="g-row legal-row" href="/settings/{id}">
+				<span class="legal-ic" aria-hidden="true">
+					<svg viewBox="0 0 24 24" fill="none">
+						{#if id === 'terms'}
+							<path d="M7 3.5h7l4 4V20a.5.5 0 01-.5.5h-10A.5.5 0 017 20V3.5z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+							<path d="M14 3.5V8h4M9.5 12h5M9.5 15.5h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+						{:else if id === 'privacy'}
+							<path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+							<path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+						{:else}
+							<circle cx="9" cy="9" r="3" stroke="currentColor" stroke-width="1.7" />
+							<circle cx="16.5" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7" />
+							<path d="M3.5 19c.6-3 2.8-4.8 5.5-4.8s4.9 1.8 5.5 4.8M14.5 15c2.6-.6 5.2.7 6 3.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+						{/if}
+					</svg>
+				</span>
+				<span class="legal-text">
+					<span>{LEGAL[id].title}</span>
+					<small class="muted">{LEGAL[id].subtitle}</small>
+				</span>
+				<Chevron />
+			</a>
+		{/each}
 	</div>
 
 	<div class="g-card out">
@@ -472,12 +488,37 @@
 		color: var(--text-2);
 	}
 
-	.privacy {
-		margin: 0;
-		padding: 14px 16px;
-		font-size: 13px;
-		line-height: 1.7;
-		color: var(--text-2);
+	/* 약관 및 정책 — 아이콘 · 제목 · 한 줄 설명 · › */
+	.legal-row {
+		color: inherit;
+		text-decoration: none;
+	}
+	a.legal-row:active {
+		background: var(--field);
+	}
+	.legal-ic {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 32px;
+		height: 32px;
+		border-radius: 9px;
+		background: var(--accent-fill);
+		color: var(--on-accent);
+	}
+	.legal-ic svg {
+		width: 19px;
+		height: 19px;
+	}
+	.legal-text {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		line-height: 1.3;
+	}
+	.legal-text small {
+		font-size: 12px;
 	}
 
 	/* 테마 색상 — 위는 대화 미리보기, 아래는 색 동그라미 (아이폰 "라이트 · 다크" 고르기처럼) */

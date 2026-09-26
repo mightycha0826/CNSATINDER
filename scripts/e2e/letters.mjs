@@ -287,7 +287,8 @@ try {
 	await sw.click(); await page.waitForTimeout(500);
 	check('★ 끄면 letters_open = false 로 저장', JSON.stringify(w.patches.at(-1)) === '{"letters_open":false}' && !(await sw.isChecked()));
 	check('설정에 내 이름 · 학년', (await page.locator('.g-row', { hasText: '이름' }).innerText()).includes('김보냄 · 1학년'));
-	check('개인정보 안내: 익명편지에서 이름으로 검색될 수 있음', (await page.locator('.privacy').innerText()).includes('이름과 학년으로 검색'));
+	await page.locator('a.legal-row', { hasText: '개인정보 처리방침' }).click(); await page.waitForURL('**/settings/privacy'); await page.locator('article h1').waitFor();
+	check('개인정보 처리방침: 익명편지에서 이름으로 검색될 수 있음', (await page.locator('.intro').innerText()).includes('이름과 학년으로 검색'));
 	check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
 
 	console.log('[명단에 없는 학생 — 이름 적기]');

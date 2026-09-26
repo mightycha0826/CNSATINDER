@@ -128,7 +128,7 @@ try {
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
 	const setHeads = await heads();
-	check('★ 설정 = 화면(한 줄) · 테마 색상 · 알림 · 매칭 · 편지 · 계정 · 개인정보 · 로그아웃', setHeads.join(',') === '테마 색상,알림,매칭,편지,계정,개인정보'
+	check('★ 설정 = 화면(한 줄) · 테마 색상 · 알림 · 매칭 · 편지 · 계정 · 약관 및 정책 · 로그아웃', setHeads.join(',') === '테마 색상,알림,매칭,편지,계정,약관 및 정책'
 		&& (await page.getByRole('switch', { name: '새 메시지 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
 		&& (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
 	check('뒤로는 둥근 단추 · 제목 가운데', (await page.locator('button.back').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%'
@@ -177,6 +177,24 @@ try {
 	await swatch('기본').click(); await page.waitForTimeout(200);
 	check('기본으로 되돌리면 저장값도 지운다', (await fill()) === before && (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === null);
 	check('기본으로 되돌리면 앱 색도 원래대로 (주황 → 핑크)', (await tok()).every((v) => !v.includes('#3b8af6')) && (await tok())[0].includes('#f2603f'), JSON.stringify(await tok()));
+
+	console.log('[설정 · 약관 및 정책]');
+	const legal = page.locator('a.legal-row');
+	check('★ 약관 및 정책 = 이용약관 · 개인정보 처리방침 · 운영정책 (각각 한 줄 설명)', (await legal.count()) === 3
+		&& (await legal.locator('.legal-text > span').allInnerTexts()).join(',') === '이용약관,개인정보 처리방침,운영정책'
+		&& (await legal.locator('small').allInnerTexts()).every((t) => t.length > 0));
+	for (const [label, path, must] of [['이용약관', 'terms', '@cnsa.hs.kr'], ['개인정보 처리방침', 'privacy', '24시간 뒤'], ['운영정책', 'policy', '신고와 차단']]) {
+		await page.locator('a.legal-row', { hasText: label }).click(); await page.waitForURL(`**/settings/${path}`); await page.locator('article h1').waitFor();
+		const txt = await page.locator('article').innerText();
+		check(`★ ${label} 페이지 (제목 · 시행일 · 내용)`, (await page.locator('article h1').innerText()) === label && txt.includes('시행일') && txt.includes(must) && (await page.locator('article section').count()) >= 4);
+		if (path === 'privacy') await page.screenshot({ path: `${SP}/legal-privacy.png` });
+		await page.locator('button.back').click(); await page.waitForURL(/\/settings$/); await page.locator('a.legal-row').first().waitFor();
+	}
+	await page.locator('a.legal-row').first().scrollIntoViewIfNeeded();
+	await page.screenshot({ path: `${SP}/settings-legal.png` });
+	await page.goto(`${BASE}/settings/nope`); await page.getByText('없는 문서예요').waitFor({ timeout: 8000 }).catch(() => {});
+	check('없는 문서 주소', await page.getByText('없는 문서예요').isVisible());
+	await page.goto(`${BASE}/settings`); await page.getByRole('radiogroup', { name: '화면' }).waitFor({ timeout: 8000 });
 
 	console.log('[설정 · 화면 모드]');
 	const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
