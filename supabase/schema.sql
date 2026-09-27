@@ -6206,3 +6206,504 @@ begin
   end if;
 end
 $do$;
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 31 — 업적 (동 · 은 · 금)
+--
+--  한 사람이 쌓아 온 것을 메달로 — 프로필에 명성처럼 보이고, 대화 상대에게는 대표 업적 3개가 보인다.
+--  · 카운터: private.user_stats.counts (jsonb, 사람마다 한 줄). 메시지는 24시간 뒤 지워지므로 개수는 그때그때 쌓아 둔다.
+--    가벼운 트리거가 올린다 — 메시지 · 공감 · 방(연장 · 고정 · 끝까지) · 공통 질문 답 · 편지 · 평가 · 접속(연속 일수).
+--  · 카탈로그: private.achievement_defs — 업적 정의는 여기가 유일한 출처다 (화면은 RPC 로 받아서 그린다).
+--  · 받은 등급: private.user_achievements — 올라가기만 하고 내려가지 않는다.
+--  · 대표 업적: profiles.featured_badges (최대 3개, 비어 있으면 높은 등급 순으로 자동)
+--  학생은 세 표 모두 직접 읽을 수 없다. 내 것은 my_achievements(), 상대 것은 partner_profile() 의 대표 3개뿐.
+-- ════════════════════════════════════════════════════════════════════
+
+create table if not exists private.user_stats (
+  user_id    uuid primary key references public.profiles(id) on delete cascade,
+  counts     jsonb not null default '{}'::jsonb,
+  streak_day date,                 -- 마지막으로 연속 접속을 센 날 (KST)
+  updated_at timestamptz not null default now()
+);
+alter table private.user_stats enable row level security;
+
+create table if not exists private.achievement_defs (
+  code         text primary key,
+  title        text not null,
+  description  text not null,
+  icon         text not null,
+  category     text not null check (category in ('chat', 'manner', 'letter', 'special')),
+  stat         text not null,
+  unit         text not null default '회',
+  bronze       numeric not null,
+  silver       numeric not null,
+  gold         numeric not null,
+  lower_better boolean not null default false,   -- 개척자처럼 작을수록 좋은 것
+  sort         int not null
+);
+alter table private.achievement_defs enable row level security;
+
+create table if not exists private.user_achievements (
+  user_id   uuid not null references public.profiles(id) on delete cascade,
+  code      text not null references private.achievement_defs(code) on delete cascade,
+  tier      smallint not null check (tier between 1 and 3),
+  earned_at timestamptz not null default now(),
+  primary key (user_id, code)
+);
+create index if not exists user_achievements_new on private.user_achievements (user_id, earned_at desc);
+alter table private.user_achievements enable row level security;
+
+alter table public.profiles add column if not exists featured_badges text[] not null default '{}';
+alter table public.profiles add column if not exists ach_seen_at timestamptz;
+
+-- 카탈로그 (24종) — 다시 실행하면 이름 · 기준을 최신으로
+insert into private.achievement_defs (code, title, description, icon, category, stat, unit, bronze, silver, gold, lower_better, sort) values
+  ('warm',        '따뜻한 사람',   '매너 온도',                  '🌡️', 'manner',  'temp',        '도',    42,   45,    50,   false, 10),
+  ('good',        '호평 수집가',   '"좋았어요" 평가 받기',        '👍', 'manner',  'good',        '번',    10,   50,   200,   false, 11),
+  ('kind',        '친절왕',        '"친절해요" 받기',             '🤝', 'manner',  'kind',        '번',    10,   50,   200,   false, 12),
+  ('fun',         '이야기꾼',      '"대화가 재밌어요" 받기',      '🎉', 'manner',  'fun',         '번',    10,   50,   200,   false, 13),
+  ('listen',      '경청가',        '"잘 들어줘요" 받기',          '👂', 'manner',  'listen',      '번',    10,   50,   200,   false, 14),
+  ('fast',        '번개 답장',     '"답이 빨라요" 받기',          '⚡', 'manner',  'fast',        '번',    10,   50,   200,   false, 15),
+  ('manner',      '예의 바른 사람', '"예의 발라요" 받기',         '🎩', 'manner',  'manner',      '번',    10,   50,   200,   false, 16),
+  ('rater',       '성실한 평가자', '대화 상대 평가 남기기',       '📝', 'manner',  'rated',       '번',    10,   50,   200,   false, 17),
+  ('chats',       '대화 여행자',   '끝까지 이어간 대화',          '💬', 'chat',    'chats',       '번',     5,   25,   100,   false, 20),
+  ('extend',      '연장의 달인',   '둘 다 원해서 연장한 횟수',    '⏳', 'chat',    'extends',     '번',     5,   20,    50,   false, 21),
+  ('deep',        '속 깊은 대화',  '동아리까지 공개한 대화',      '🌊', 'chat',    'deep',        '번',     1,    5,    15,   false, 22),
+  ('pin',         '고정 친구',     '둘 다 고정한 채팅',           '📌', 'chat',    'pins',        '명',     1,    3,    10,   false, 23),
+  ('hello',       '먼저 인사하기', '대화의 첫마디를 건넨 횟수',   '👋', 'chat',    'hello',       '번',    10,   50,   200,   false, 24),
+  ('talk',        '수다쟁이',      '보낸 메시지',                 '🗣️', 'chat',    'msgs',        '개',   300, 2000, 10000,   false, 25),
+  ('heart',       '공감 부자',     '내 메시지에 받은 공감',       '❤️', 'chat',    'hearts',      '개',    30,  150,   500,   false, 26),
+  ('question',    '솔직한 대답',   '공통 질문에 답한 횟수',       '❓', 'chat',    'answers',     '번',     5,   20,    50,   false, 27),
+  ('owl',         '밤 올빼미',     '밤 10시~12시에 시작한 대화',  '🦉', 'chat',    'owl',         '번',     5,   20,    50,   false, 28),
+  ('letter_got',  '인기 편지함',   '받은 편지',                   '💌', 'letter',  'letters_got', '통',     5,   20,    50,   false, 30),
+  ('letter_sent', '편지 쓰는 사람', '보낸 편지',                  '✉️', 'letter',  'letters_sent','통',     5,   20,    50,   false, 31),
+  ('reply',       '답장이 왔어요', '내 편지에 받은 답장',         '📬', 'letter',  'replies_got', '통',     3,   10,    30,   false, 32),
+  ('deco',        '꾸미기 장인',   '글자를 꾸며 쓴 편지',         '🎨', 'letter',  'deco',        '통',     3,   10,    30,   false, 33),
+  ('streak',      '개근상',        '며칠 연속으로 접속',          '📅', 'special', 'streak',      '일',     3,    7,    30,   false, 40),
+  ('clean',       '깨끗한 기록',   '경고 없이 끝까지 이어간 대화', '🕊️', 'special', 'clean',       '번',    10,   30,   100,   false, 41),
+  ('pioneer',     '개척자',        '가입한 순서',                 '🚩', 'special', 'pioneer',     '번째', 1000, 300,   100,   true,  42)
+on conflict (code) do update
+  set title = excluded.title, description = excluded.description, icon = excluded.icon, category = excluded.category,
+      stat = excluded.stat, unit = excluded.unit, bronze = excluded.bronze, silver = excluded.silver, gold = excluded.gold,
+      lower_better = excluded.lower_better, sort = excluded.sort;
+
+-- 값 → 등급 (0 = 아직)
+create or replace function private.ach_tier(d private.achievement_defs, v numeric)
+returns smallint language sql immutable set search_path = '' as $fn$
+  select case
+    when v is null then 0
+    when d.lower_better then case when v <= d.gold then 3 when v <= d.silver then 2 when v <= d.bronze then 1 else 0 end
+    else case when v >= d.gold then 3 when v >= d.silver then 2 when v >= d.bronze then 1 else 0 end
+  end::smallint;
+$fn$;
+
+-- 그 카운터를 쓰는 업적만 다시 본다 — 오르기만 한다
+create or replace function private.award_stat(p_user uuid, p_stat text, p_value numeric)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare d private.achievement_defs%rowtype; t smallint;
+begin
+  for d in select * from private.achievement_defs where stat = p_stat loop
+    t := private.ach_tier(d, p_value);
+    if t > 0 then
+      insert into private.user_achievements (user_id, code, tier) values (p_user, d.code, t)
+      on conflict (user_id, code) do update set tier = excluded.tier, earned_at = now()
+       where private.user_achievements.tier < excluded.tier;
+    end if;
+  end loop;
+end
+$fn$;
+
+-- 카운터 올리기 / 값 두기
+create or replace function private.bump(p_user uuid, p_stat text, p_n int default 1)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare v numeric;
+begin
+  if p_user is null then return; end if;
+  insert into private.user_stats (user_id, counts) values (p_user, jsonb_build_object(p_stat, p_n))
+  on conflict (user_id) do update
+     set counts = private.user_stats.counts
+                  || jsonb_build_object(p_stat, coalesce((private.user_stats.counts->>p_stat)::int, 0) + p_n),
+         updated_at = now()
+  returning (counts->>p_stat)::numeric into v;
+  perform private.award_stat(p_user, p_stat, v);
+end
+$fn$;
+create or replace function private.set_stat(p_user uuid, p_stat text, p_value numeric)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+begin
+  if p_user is null then return; end if;
+  insert into private.user_stats (user_id, counts) values (p_user, jsonb_build_object(p_stat, p_value))
+  on conflict (user_id) do update
+     set counts = private.user_stats.counts || jsonb_build_object(p_stat, p_value), updated_at = now();
+  perform private.award_stat(p_user, p_stat, p_value);
+end
+$fn$;
+
+-- 방의 자리 → 사람
+create or replace function private.seat_user(p_room uuid, p_seat smallint)
+returns uuid language sql stable security definer set search_path = public as $fn$
+  select user_id from public.room_members where room_id = p_room and seat = p_seat;
+$fn$;
+
+-- 경고 · 정지가 없는 사람만 "깨끗한 기록"
+create or replace function private.bump_chat_done(p_user uuid)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+begin
+  perform private.bump(p_user, 'chats');
+  if exists (select 1 from public.profiles where id = p_user and strikes = 0 and status = 'active'
+               and (suspended_until is null or suspended_until <= now())) then
+    perform private.bump(p_user, 'clean');
+  end if;
+end
+$fn$;
+
+-- ── 카운터 트리거 ──
+-- 보낸 메시지 · 첫마디
+create or replace function private.stats_on_message()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+declare u uuid;
+begin
+  if new.sender_seat not in (1, 2) then return null; end if;
+  u := private.seat_user(new.room_id, new.sender_seat);
+  perform private.bump(u, 'msgs');
+  if not exists (select 1 from public.messages m where m.room_id = new.room_id and m.sender_seat in (1, 2) and m.id <> new.id) then
+    perform private.bump(u, 'hello');
+  end if;
+  return null;
+end
+$fn$;
+drop trigger if exists messages_stats on public.messages;
+create trigger messages_stats after insert on public.messages
+  for each row execute function private.stats_on_message();
+
+-- 받은 공감 — 한 메시지에 한 사람이 처음 달 때만 (껐다 켜기로 불리지 못하게)
+create or replace function private.stats_on_reaction()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+declare v_sender smallint;
+begin
+  if new.emoji is null then return null; end if;
+  select sender_seat into v_sender from public.messages where id = new.message_id;
+  if v_sender in (1, 2) and v_sender <> new.seat then
+    perform private.bump(private.seat_user(new.room_id, v_sender), 'hearts');
+  end if;
+  return null;
+end
+$fn$;
+drop trigger if exists message_reactions_stats on public.message_reactions;
+create trigger message_reactions_stats after insert on public.message_reactions
+  for each row execute function private.stats_on_reaction();
+
+-- 방: 시작(밤 대화) · 연장 · 동아리까지 · 고정 · 끝까지
+create or replace function private.stats_on_room()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+declare u uuid;
+begin
+  for u in select user_id from public.room_members where room_id = new.id loop
+    if old.status = 'pending' and new.status = 'active'
+       and extract(hour from now() at time zone 'Asia/Seoul') >= 22 then
+      perform private.bump(u, 'owl');
+    end if;
+    if new.round > old.round and not new.pinned then
+      perform private.bump(u, 'extends');
+      if new.round >= 6 and old.round < 6 then perform private.bump(u, 'deep'); end if;
+    end if;
+    if new.pinned and not old.pinned then
+      perform private.bump(u, 'pins');
+      perform private.bump_chat_done(u);
+    end if;
+    if new.status = 'closed' and old.status <> 'closed' and not old.pinned and new.armed_at is not null
+       and new.close_reason in ('expired', 'declined') then
+      perform private.bump_chat_done(u);
+    end if;
+  end loop;
+  return null;
+end
+$fn$;
+drop trigger if exists rooms_stats on public.rooms;
+create trigger rooms_stats after update on public.rooms
+  for each row
+  when (old.status is distinct from new.status or old.round is distinct from new.round or old.pinned is distinct from new.pinned)
+  execute function private.stats_on_room();
+
+-- 공통 질문에 답함
+create or replace function private.stats_on_hint()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+begin
+  if new.kind in ('q1', 'q2') then perform private.bump(private.seat_user(new.room_id, new.seat), 'answers'); end if;
+  return null;
+end
+$fn$;
+drop trigger if exists room_hints_stats on private.room_hints;
+create trigger room_hints_stats after insert on private.room_hints
+  for each row execute function private.stats_on_hint();
+
+-- 편지: 보냄 · 받음 · 꾸밈 · 답장 받음 (편지만 — 예전 채팅 줄은 세지 않는다)
+create or replace function private.stats_on_dm()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+declare t private.dm_threads%rowtype; v_from uuid; v_to uuid;
+begin
+  if not new.is_letter then return null; end if;
+  select * into t from private.dm_threads where id = new.thread_id;
+  v_from := case when new.from_sender then t.sender_id else t.recipient_id end;
+  v_to   := case when new.from_sender then t.recipient_id else t.sender_id end;
+  perform private.bump(v_from, 'letters_sent');
+  perform private.bump(v_to, 'letters_got');
+  if new.fmt is not null then perform private.bump(v_from, 'deco'); end if;
+  if exists (select 1 from private.dm_msgs o where o.thread_id = new.thread_id and o.id < new.id
+               and o.is_letter and o.from_sender <> new.from_sender) then
+    perform private.bump(v_to, 'replies_got');
+  end if;
+  return null;
+end
+$fn$;
+drop trigger if exists dm_msgs_stats on private.dm_msgs;
+create trigger dm_msgs_stats after insert on private.dm_msgs
+  for each row execute function private.stats_on_dm();
+
+-- 평가: 남김(평가자) · 반영될 때 받은 칭찬(평가받은 사람)
+create or replace function private.stats_on_rating()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+declare r text;
+begin
+  if tg_op = 'INSERT' then
+    perform private.bump(new.rater_id, 'rated');
+  elsif new.counted and not coalesce(old.counted, false) then
+    if new.score = 'good' then perform private.bump(new.rated_id, 'good'); end if;
+    foreach r in array new.reasons loop
+      if r in ('kind', 'fun', 'listen', 'fast', 'manner') then perform private.bump(new.rated_id, r); end if;
+    end loop;
+  end if;
+  return null;
+end
+$fn$;
+drop trigger if exists ratings_stats on private.ratings;
+create trigger ratings_stats after insert or update of counted on private.ratings
+  for each row execute function private.stats_on_rating();
+
+-- 매너 온도가 바뀜 · 경고/정지를 받음(깨끗한 기록은 처음부터)
+create or replace function private.stats_on_profile()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+begin
+  if new.manner_temp is distinct from old.manner_temp then
+    perform private.set_stat(new.id, 'temp', new.manner_temp);
+  end if;
+  if new.strikes > old.strikes or (new.status <> 'active' and old.status = 'active') then
+    perform private.set_stat(new.id, 'clean', 0);
+  end if;
+  return null;
+end
+$fn$;
+drop trigger if exists profiles_stats on public.profiles;
+create trigger profiles_stats after update of manner_temp, strikes, status on public.profiles
+  for each row execute function private.stats_on_profile();
+
+-- 연속 접속 (KST 날짜) — 처음 세는 날엔 가입 순서(개척자)도 매긴다
+create or replace function private.touch_streak(p_user uuid)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare today date := (now() at time zone 'Asia/Seoul')::date; s private.user_stats%rowtype; n int; v_first boolean;
+begin
+  if p_user is null then return; end if;
+  select * into s from private.user_stats where user_id = p_user;
+  if found and s.streak_day = today then return; end if;
+  v_first := not found or s.streak_day is null;
+  n := case when s.streak_day = today - 1 then coalesce((s.counts->>'streak')::int, 0) + 1 else 1 end;
+  insert into private.user_stats (user_id, counts, streak_day) values (p_user, jsonb_build_object('streak', n), today)
+  on conflict (user_id) do update
+     set counts = private.user_stats.counts || jsonb_build_object('streak', n), streak_day = today, updated_at = now();
+  perform private.award_stat(p_user, 'streak', n);
+  if v_first then
+    perform private.award_stat(p_user, 'pioneer',
+      (select count(*) from public.profiles o join public.profiles me on me.id = p_user where o.created_at <= me.created_at));
+  end if;
+end
+$fn$;
+
+create or replace function public.heartbeat(p_online boolean default true)
+returns jsonb language plpgsql security definer set search_path = public as $fn$
+declare cfg public.app_settings%rowtype;
+begin
+  if auth.uid() is null then raise exception 'unauthenticated'; end if;
+  select * into cfg from public.app_settings where id;
+  if p_online then
+    update public.user_presence
+       set online_until = greatest(online_until, now() + make_interval(secs => cfg.online_ttl_sec))
+     where user_id = auth.uid();
+    perform private.touch_streak(auth.uid());
+  else
+    update public.user_presence
+       set online_until = now(), seeking_until = null, seeking_since = null
+     where user_id = auth.uid();
+  end if;
+  return jsonb_build_object('server_now', now());
+end
+$fn$;
+
+-- ── 보이는 곳 ──
+-- 대표 업적 (최대 3개) — 고른 것이 없거나 더는 없는 업적이면 높은 등급 · 최근 순으로 채운다
+create or replace function private.featured(p_user uuid)
+returns jsonb language sql stable security definer set search_path = public, private as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object('code', x.code, 'title', x.title, 'icon', x.icon, 'tier', x.tier) order by x.o), '[]'::jsonb)
+  from (
+    select d.code, d.title, d.icon, a.tier,
+           row_number() over (order by coalesce(array_position(p.featured_badges, d.code), 99), a.tier desc, a.earned_at desc) as o
+      from private.user_achievements a
+      join private.achievement_defs d on d.code = a.code
+      join public.profiles p on p.id = a.user_id
+     where a.user_id = p_user
+     order by o
+     limit 3
+  ) x;
+$fn$;
+
+create or replace function public.my_achievements()
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); p public.profiles%rowtype; c jsonb; v_rank int;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  perform private.touch_streak(me);
+  select * into p from public.profiles where id = me;
+  select coalesce(counts, '{}'::jsonb) into c from private.user_stats where user_id = me;
+  select count(*) into v_rank from public.profiles o where o.created_at <= p.created_at;
+  return jsonb_build_object(
+    'items', coalesce((select jsonb_agg(jsonb_build_object(
+               'code', d.code, 'title', d.title, 'description', d.description, 'icon', d.icon,
+               'category', d.category, 'unit', d.unit, 'lower_better', d.lower_better,
+               'tiers', jsonb_build_array(d.bronze, d.silver, d.gold),
+               'tier', coalesce(a.tier, 0), 'earned_at', a.earned_at,
+               'value', case d.stat when 'temp' then p.manner_temp when 'pioneer' then v_rank
+                                    else coalesce((c->>d.stat)::numeric, 0) end,
+               'new', a.earned_at is not null and a.earned_at > coalesce(p.ach_seen_at, '-infinity'))
+             order by d.sort)
+             from private.achievement_defs d
+             left join private.user_achievements a on a.user_id = me and a.code = d.code), '[]'::jsonb),
+    'featured', private.featured(me),
+    'chosen', to_jsonb(p.featured_badges));
+end
+$fn$;
+
+-- 새로 딴 업적만 (앱을 열 때 축하용 — 가볍게)
+create or replace function public.new_achievements()
+returns jsonb language sql security definer set search_path = public, private stable as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object('code', d.code, 'title', d.title, 'icon', d.icon, 'tier', a.tier) order by a.earned_at), '[]'::jsonb)
+    from private.user_achievements a
+    join private.achievement_defs d on d.code = a.code
+    join public.profiles p on p.id = a.user_id
+   where a.user_id = auth.uid() and a.earned_at > coalesce(p.ach_seen_at, '-infinity');
+$fn$;
+
+create or replace function public.mark_achievements_seen()
+returns void language plpgsql security definer set search_path = public as $fn$
+begin
+  if auth.uid() is null then raise exception 'unauthenticated'; end if;
+  update public.profiles set ach_seen_at = now() where id = auth.uid();
+end
+$fn$;
+
+-- 대표 업적 고르기 — 가진 업적만, 3개까지 (빈 배열 = 자동)
+create or replace function public.set_featured_badges(p_codes text[])
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); v text[];
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select coalesce(array_agg(x order by o), '{}') into v
+    from (select distinct on (x) x, o from unnest(coalesce(p_codes, '{}')) with ordinality as t(x, o) order by x, o) q;
+  if cardinality(v) > 3 then return jsonb_build_object('status', 'too_many'); end if;
+  if exists (select 1 from unnest(v) x
+              where not exists (select 1 from private.user_achievements a where a.user_id = me and a.code = x)) then
+    return jsonb_build_object('status', 'not_owned');
+  end if;
+  update public.profiles set featured_badges = v where id = me;
+  return jsonb_build_object('status', 'ok', 'featured', private.featured(me));
+end
+$fn$;
+
+-- 상대 프로필 — 대표 업적 3개 · 업적 수까지 (★ uuid 없음)
+create or replace function public.partner_profile(p_room uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare s smallint; v jsonb; v_other uuid;
+begin
+  s := public.my_seat(p_room);
+  if s is null then raise exception 'not_member'; end if;
+  select user_id into v_other from public.room_members where room_id = p_room and seat <> s;
+  select jsonb_build_object(
+           'nickname',    case when s = 1 then r.alias2 else r.alias1 end,
+           'bio',         p.bio,
+           'interests',   to_jsonb(p.interests),
+           'mbti',        p.mbti,
+           'manner_temp', p.manner_temp,
+           'badges',      private.featured(v_other),
+           'badge_count', (select count(*) from private.user_achievements a where a.user_id = v_other),
+           'online',      coalesce(up.online_until > now(), false))
+    into v
+    from public.rooms r
+    join public.profiles p on p.id = v_other
+    left join public.user_presence up on up.user_id = v_other
+   where r.id = p_room;
+  return v;
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['my_achievements()', 'new_achievements()', 'mark_achievements_seen()', 'set_featured_badges(text[])']
+  loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+  foreach f in array array['ach_tier(private.achievement_defs, numeric)', 'award_stat(uuid, text, numeric)', 'bump(uuid, text, int)',
+                           'set_stat(uuid, text, numeric)', 'seat_user(uuid, smallint)', 'bump_chat_done(uuid)', 'touch_streak(uuid)',
+                           'featured(uuid)', 'stats_on_message()', 'stats_on_reaction()', 'stats_on_room()', 'stats_on_hint()',
+                           'stats_on_dm()', 'stats_on_rating()', 'stats_on_profile()']
+  loop
+    execute format('revoke all on function private.%s from public, anon, authenticated', f);
+  end loop;
+end
+$do$;
+
+-- ── 지금까지 쌓인 것 채우기 (여러 번 실행해도 같은 값) ──
+-- 방 기록은 남아 있다 (메시지만 24시간 뒤 지워짐). 남아 있는 메시지 · 편지도 센다.
+do $do$
+declare u record; c jsonb; d private.achievement_defs%rowtype; v numeric;
+begin
+  for u in select id, manner_temp from public.profiles loop
+    select jsonb_strip_nulls(jsonb_build_object(
+      'chats',   (select count(*) from public.room_members rm join public.rooms r on r.id = rm.room_id
+                   where rm.user_id = u.id and r.armed_at is not null
+                     and (r.pinned or (r.status = 'closed' and r.close_reason in ('expired', 'declined')))),
+      'extends', (select coalesce(sum(greatest(case when r.pinned then r.round - 2 else r.round - 1 end, 0)), 0)
+                    from public.room_members rm join public.rooms r on r.id = rm.room_id where rm.user_id = u.id),
+      'deep',    (select count(*) from public.room_members rm join public.rooms r on r.id = rm.room_id
+                   where rm.user_id = u.id and r.round >= 6),
+      'pins',    (select count(*) from public.room_members rm join public.rooms r on r.id = rm.room_id
+                   where rm.user_id = u.id and r.pinned),
+      'owl',     (select count(*) from public.room_members rm join public.rooms r on r.id = rm.room_id
+                   where rm.user_id = u.id and r.armed_at is not null
+                     and extract(hour from r.armed_at at time zone 'Asia/Seoul') >= 22),
+      'msgs',    (select count(*) from public.room_members rm join public.messages m on m.room_id = rm.room_id and m.sender_seat = rm.seat
+                   where rm.user_id = u.id),
+      'answers', (select count(*) from private.room_hints h join public.room_members rm on rm.room_id = h.room_id and rm.seat = h.seat
+                   where rm.user_id = u.id and h.kind in ('q1', 'q2')),
+      'letters_sent', (select count(*) from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
+                        where m.is_letter and ((m.from_sender and t.sender_id = u.id) or (not m.from_sender and t.recipient_id = u.id))),
+      'letters_got',  (select count(*) from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
+                        where m.is_letter and ((m.from_sender and t.recipient_id = u.id) or (not m.from_sender and t.sender_id = u.id))),
+      'deco',    (select count(*) from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
+                   where m.is_letter and m.fmt is not null
+                     and ((m.from_sender and t.sender_id = u.id) or (not m.from_sender and t.recipient_id = u.id)))
+    )) into c;
+    insert into private.user_stats (user_id, counts) values (u.id, c)
+    on conflict (user_id) do update
+       set counts = private.user_stats.counts || (
+             select coalesce(jsonb_object_agg(k, greatest(coalesce((private.user_stats.counts->>k)::int, 0), (c->>k)::int)), '{}'::jsonb)
+               from jsonb_object_keys(c) k);
+    select counts into c from private.user_stats where user_id = u.id;
+    for d in select * from private.achievement_defs loop
+      v := case d.stat when 'temp' then u.manner_temp
+                       when 'pioneer' then (select count(*) from public.profiles o join public.profiles me on me.id = u.id where o.created_at <= me.created_at)
+                       else (c->>d.stat)::numeric end;
+      if v is not null then perform private.award_stat(u.id, d.stat, v); end if;
+    end loop;
+  end loop;
+end
+$do$;

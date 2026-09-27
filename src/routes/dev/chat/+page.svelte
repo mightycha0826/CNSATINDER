@@ -241,6 +241,12 @@
 				interests: ['밴드', '기타', '영화'],
 				mbti: 'INFP',
 				manner_temp: 42.3,
+				badges: [
+					{ code: 'warm', title: '따뜻한 사람', icon: '🌡️', tier: 2 as const },
+					{ code: 'pin', title: '고정 친구', icon: '📌', tier: 1 as const },
+					{ code: 'fun', title: '이야기꾼', icon: '🎉', tier: 3 as const }
+				],
+				badge_count: 7,
 				online: true
 			};
 		}

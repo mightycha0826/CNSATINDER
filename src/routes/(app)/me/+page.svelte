@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import MannerTemp from '$lib/ui/MannerTemp.svelte';
+	import Badge from '$lib/ui/Badge.svelte';
+	import { fetchMyAchievements, type MyAchievements } from '$lib/achievements';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import { supabase } from '$lib/supabase';
 	import { S, errMsg, loadProfile, saveProfile, toast } from '$lib/state.svelte';
@@ -13,6 +15,15 @@
 	 */
 
 	let busy = $state(false);
+
+	// ── 명성 (Phase 31) — 대표 업적 3개 · 모은 업적 수. 누르면 업적 전체 ──
+	let fame = $state<MyAchievements | null>(null);
+	$effect(() => {
+		fetchMyAchievements()
+			.then((d) => (fame = d))
+			.catch(() => {});
+	});
+	const earned = $derived(fame?.items.filter((a) => a.tier > 0).length ?? 0);
 
 	// ── 기본 정보 (상대에게 보이는 것) ──
 	const MBTIS = [
@@ -111,6 +122,24 @@
 		</section>
 	{/if}
 
+	{#if fame}
+		<a class="fame" href="/me/achievements" aria-label="업적 {earned}개 · 전체 보기">
+			<div class="fame-top">
+				<strong>명성</strong>
+				<span class="num">업적 {earned}/{fame.items.length} ›</span>
+			</div>
+			{#if fame.featured.length}
+				<div class="fame-row">
+					{#each fame.featured as b (b.code)}
+						<div class="fb"><Badge icon={b.icon} tier={b.tier} title={b.title} size={54} label shine /><span>{b.title}</span></div>
+					{/each}
+				</div>
+			{:else}
+				<p class="muted small">대화하고 편지를 주고받으며 첫 업적을 모아 보세요</p>
+			{/if}
+		</a>
+	{/if}
+
 	<h2 class="g-head" id="bio-h">소개</h2>
 	<div class="g-card bio">
 		<textarea
@@ -191,6 +220,46 @@
 		text-align: center;
 	}
 	.who p {
+		margin: 0;
+	}
+	.fame {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin: 14px 16px 0;
+		padding: 14px 16px 16px;
+		border-radius: 18px;
+		background: var(--cell);
+		color: inherit;
+		text-decoration: none;
+	}
+	.fame-top {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+	}
+	.fame-top strong {
+		font-size: 15px;
+	}
+	.fame-top span {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-2);
+	}
+	.fame-row {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+	}
+	.fb {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 8px;
+		font-size: 12px;
+		font-weight: 600;
+		text-align: center;
+	}
+	.fame p {
 		margin: 0;
 	}
 	.who .temp {

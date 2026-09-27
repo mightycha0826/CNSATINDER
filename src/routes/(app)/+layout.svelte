@@ -3,6 +3,7 @@
 	import { useTabBack } from '$lib/tabBack.svelte';
 	import { whileVisible } from '$lib/visible';
 	import { DM, refreshUnread } from '$lib/letters/unread.svelte';
+	import AchievementCelebrate from '$lib/ui/AchievementCelebrate.svelte';
 
 	/**
 	 * 앱 화면 공통 틀 — 하단 탭 3개 (왼쪽 익명편지 · 가운데 채팅 · 오른쪽 프로필).
@@ -29,6 +30,9 @@
 </script>
 
 {@render children()}
+
+<!-- 새로 딴 업적 축하 (Phase 31) — 탭 첫 화면에서만 뜬다 -->
+<AchievementCelebrate />
 
 {#if showTabs}
 	<!-- 탭바에 가려지지 않게 같은 높이만큼 비워 둔다 -->

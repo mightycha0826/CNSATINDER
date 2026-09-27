@@ -1,3 +1,5 @@
+import type { BadgeLite } from '../achievements';
+
 /** 서버의 messages 행. ★ 식별 컬럼이 없다 — sender_seat(0=시스템, 1, 2)뿐. */
 export type MsgRow = {
 	id: number;
@@ -92,6 +94,9 @@ export type PartnerProfile = {
 	online: boolean;
 	/** 매너 온도 (Phase 30 전 DB 면 없다 → 40.0) */
 	manner_temp?: number;
+	/** 대표 업적 3개 · 업적 수 (Phase 31) */
+	badges?: BadgeLite[];
+	badge_count?: number;
 };
 
 export type ReportReason =

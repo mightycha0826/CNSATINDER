@@ -2829,5 +2829,127 @@ console.log('\n[77] 매너 온도 — 평가 · 모아서 반영 · 익명성 (P
 	check('익명 사용자는 평가할 수 없다', await rowsAs(null, `select public.rate_partner($1, 'good')`, [room]).then(() => false, () => true));
 }
 
+console.log('\n[78] 업적 — 카운터 · 동/은/금 · 대표 업적 (Phase 31)');
+{
+	await resetPool();
+	let no = 21400;
+	const mk = async () => {
+		const n = ++no;
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set onboarded=true where id=$1', [id]);
+		await rpcAs(id, 'ensure_self');
+		return { id, email: `${n}@cnsa.hs.kr` };
+	};
+	const A = await mk(), B = await mk();
+	const stat = async (u, k) => Number((await one('select counts->>$2 v from private.user_stats where user_id = $1', [u.id, k]))?.v ?? 0);
+	const tier = async (u, code) => (await one('select tier from private.user_achievements where user_id = $1 and code = $2', [u.id, code]))?.tier ?? 0;
+	const openRoom = async (x, y) => (await one(`select private.dev_open_room($1, $2, 10) as id`, [x.email, y.email])).id;
+	const say = async (room, seat) => (await one(`insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, $2, '안녕', gen_random_uuid()) returning id`, [room, seat])).id;
+
+	check('카탈로그 24종', Number((await one('select count(*) n from private.achievement_defs')).n) === 24);
+
+	console.log('  [대화]');
+	let room = await openRoom(A, B);
+	const m1 = await say(room, 1);
+	await say(room, 2);
+	await say(room, 1);
+	check('★ 보낸 메시지 · 첫마디', (await stat(A, 'msgs')) === 2 && (await stat(B, 'msgs')) === 1 && (await stat(A, 'hello')) === 1 && (await stat(B, 'hello')) === 0);
+	await rpcAs(B.id, 'react_message', m1, 'heart');
+	await rpcAs(B.id, 'react_message', m1, null);
+	await rpcAs(B.id, 'react_message', m1, 'laugh');
+	check('★ 받은 공감 — 껐다 켜도 한 번만', (await stat(A, 'hearts')) === 1);
+	await rpcAs(A.id, 'react_message', m1, 'heart');
+	check('내 메시지에 내가 단 공감은 세지 않는다', (await stat(A, 'hearts')) === 1);
+	await db.query(`update public.rooms set round = 2 where id = $1`, [room]);
+	check('★ 연장', (await stat(A, 'extends')) === 1 && (await stat(B, 'extends')) === 1);
+	await db.query(`update public.rooms set round = 6 where id = $1`, [room]);
+	check('★ 동아리까지 공개 (50분)', (await stat(A, 'deep')) === 1);
+	await db.query(`insert into private.room_hints (room_id, seat, kind, value) values ($1, 1, 'q1', '러닝')`, [room]);
+	check('공통 질문 답', (await stat(A, 'answers')) === 1 && (await stat(B, 'answers')) === 0);
+	await db.query(`update public.rooms set pinned = true, round = 7, expires_at = 'infinity' where id = $1`, [room]);
+	check('★ 고정 → 고정 친구 · 끝까지 이어간 대화 (연장으로는 안 셈)', (await stat(A, 'pins')) === 1 && (await stat(A, 'chats')) === 1 && (await stat(A, 'extends')) === 2);
+	check('★ 동 등급: 고정 친구 1명 · 속 깊은 대화 1번', (await tier(A, 'pin')) === 1 && (await tier(A, 'deep')) === 1);
+	await rpcAs(A.id, 'leave_room', room, false);
+	check('고정했던 대화를 나가도 두 번 세지 않는다', (await stat(A, 'chats')) === 1);
+
+	room = await openRoom(A, B);
+	await db.query(`select public.close_room($1, 'expired')`, [room]);
+	check('★ 시간이 다 돼 끝난 대화 = 끝까지 이어간 대화 · 깨끗한 기록', (await stat(B, 'chats')) === 2 && (await stat(B, 'clean')) === 2);
+	room = await openRoom(A, B);
+	await rpcAs(A.id, 'leave_room', room, true);
+	check('중간에 나간 대화는 세지 않는다', (await stat(A, 'chats')) === 2);
+	await db.query('update public.profiles set strikes = strikes + 1 where id = $1', [B.id]);
+	check('경고를 받으면 깨끗한 기록이 처음부터', (await stat(B, 'clean')) === 0);
+	room = await openRoom(A, B);
+	await db.query(`select public.close_room($1, 'declined')`, [room]);
+	check('경고가 있으면 깨끗한 기록은 안 오른다 (대화 수는 오름)', (await stat(B, 'clean')) === 0 && (await stat(B, 'chats')) === 3);
+
+	console.log('  [등급 · 평가 · 온도]');
+	await db.query(`update private.user_stats set counts = counts || '{"extends": 19}' where user_id = $1`, [A.id]);
+	room = await openRoom(A, B);
+	await db.query(`update public.rooms set round = round + 1 where id = $1`, [room]);
+	check('★ 기준을 넘으면 은 등급 (연장 20)', (await tier(A, 'extend')) === 2);
+	await db.query(`update private.user_stats set counts = counts || '{"extends": 0}' where user_id = $1`, [A.id]);
+	await db.query('select private.award_stat($1, $2, 0)', [A.id, 'extends']);
+	check('★ 등급은 내려가지 않는다', (await tier(A, 'extend')) === 2);
+	await db.query('update public.profiles set manner_temp = 45.2 where id = $1', [A.id]);
+	check('★ 매너 온도 45도 → 따뜻한 사람 은', (await tier(A, 'warm')) === 2);
+	room = await openRoom(A, B);
+	await say(room, 1); await say(room, 2); await say(room, 1); await say(room, 2);
+	await rpcAs(A.id, 'leave_room', room, false);
+	await rpcAs(B.id, 'rate_partner', room, 'good', ['kind', 'listen']);
+	check('평가를 남기면 성실한 평가자 카운터', (await stat(B, 'rated')) === 1);
+	check('반영 전에는 칭찬이 안 쌓인다', (await stat(A, 'kind')) === 0);
+	await db.query(`update private.ratings set created_at = now() - interval '7 hours' where room_id = $1`, [room]);
+	await db.query('select private.apply_ratings()');
+	check('★ 반영되면 "좋았어요" · 칩별 칭찬', (await stat(A, 'good')) === 1 && (await stat(A, 'kind')) === 1 && (await stat(A, 'listen')) === 1 && (await stat(A, 'fun')) === 0);
+
+	console.log('  [편지]');
+	const t = (await one(`insert into private.dm_threads (sender_id, recipient_id, sender_alias) values ($1, $2, '푸른 우표') returning id`, [A.id, B.id])).id;
+	await db.query(`insert into private.dm_msgs (thread_id, from_sender, body, is_letter, fmt) values ($1, true, '안녕', true, '{"v":1,"m":[]}'::jsonb)`, [t]);
+	await db.query(`insert into private.dm_msgs (thread_id, from_sender, body, is_letter) values ($1, true, '또 안녕', true)`, [t]);
+	check('★ 편지: 보냄 · 받음 · 꾸밈', (await stat(A, 'letters_sent')) === 2 && (await stat(B, 'letters_got')) === 2 && (await stat(A, 'deco')) === 1 && (await stat(A, 'replies_got')) === 0);
+	await db.query(`insert into private.dm_msgs (thread_id, from_sender, body, is_letter) values ($1, false, '답장이야', true)`, [t]);
+	check('★ 답장을 받으면 답장 카운터', (await stat(A, 'replies_got')) === 1 && (await stat(B, 'letters_sent')) === 1 && (await stat(B, 'replies_got')) === 0);
+	await db.query(`insert into private.dm_msgs (thread_id, from_sender, body, is_letter) values ($1, false, '채팅 한 줄', false)`, [t]);
+	check('예전 채팅 줄은 세지 않는다', (await stat(B, 'letters_sent')) === 1);
+
+	console.log('  [연속 접속 · 개척자]');
+	await rpcAs(A.id, 'heartbeat', true);
+	const rank = Number((await one('select count(*) n from public.profiles o where o.created_at <= (select created_at from public.profiles where id = $1)', [A.id])).n);
+	const want = rank <= 100 ? 3 : rank <= 300 ? 2 : rank <= 1000 ? 1 : 0;
+	check('처음 접속 = 1일 · 개척자는 가입 순서대로', (await stat(A, 'streak')) === 1 && (await tier(A, 'pioneer')) === want, `rank ${rank}`);
+	await rpcAs(A.id, 'heartbeat', true);
+	check('같은 날 다시 접속해도 1일', (await stat(A, 'streak')) === 1);
+	await db.query(`update private.user_stats set streak_day = streak_day - 1 where user_id = $1`, [A.id]);
+	await rpcAs(A.id, 'heartbeat', true);
+	check('★ 다음 날 접속하면 2일', (await stat(A, 'streak')) === 2);
+	await db.query(`update private.user_stats set streak_day = streak_day - 3 where user_id = $1`, [A.id]);
+	await rpcAs(A.id, 'heartbeat', true);
+	check('★ 하루라도 빠지면 다시 1일', (await stat(A, 'streak')) === 1);
+
+	console.log('  [보이는 곳]');
+	const mine = await rpcAs(A.id, 'my_achievements');
+	const ext = mine.items.find((x) => x.code === 'extend');
+	check('★ 내 업적: 24종 · 진행도 · 등급 · 새로 딴 것', mine.items.length === 24 && ext.tier === 2 && ext.value === 0 && JSON.stringify(ext.tiers) === '[5,20,50]' && ext.new === true, JSON.stringify(ext));
+	check('개척자는 가입 순서 (작을수록 좋음)', mine.items.find((x) => x.code === 'pioneer').lower_better === true);
+	check('대표 업적은 자동으로 높은 등급부터 3개', mine.featured.length === 3 && mine.featured.every((x, i, a) => i === 0 || a[i - 1].tier >= x.tier), JSON.stringify(mine.featured));
+	check('새 업적 목록', (await rpcAs(A.id, 'new_achievements')).length > 0);
+	await rpcAs(A.id, 'mark_achievements_seen');
+	check('★ 봤다고 하면 새 업적이 비워진다', (await rpcAs(A.id, 'new_achievements')).length === 0 && !(await rpcAs(A.id, 'my_achievements')).items.some((x) => x.new));
+	check('가지지 않은 업적은 대표로 못 고른다', (await rpcAs(A.id, 'set_featured_badges', ['talk'])).status === 'not_owned');
+	check('4개는 못 고른다', (await rpcAs(A.id, 'set_featured_badges', ['pin', 'deep', 'warm', 'extend'])).status === 'too_many');
+	const fx = await rpcAs(A.id, 'set_featured_badges', ['warm', 'pin']);
+	check('★ 대표 업적 고르기 — 고른 순서대로, 남는 자리는 자동', fx.status === 'ok' && fx.featured[0].code === 'warm' && fx.featured[1].code === 'pin' && fx.featured.length === 3, JSON.stringify(fx));
+	room = await openRoom(A, B);
+	const pp = await rpcAs(B.id, 'partner_profile', room);
+	check('★ 상대 프로필: 대표 업적 3개 · 업적 수', pp.badges.length === 3 && pp.badges[0].code === 'warm' && pp.badge_count >= 5, JSON.stringify(pp));
+	check('★ 상대 프로필에 uuid 없음', !JSON.stringify(pp).includes(A.id) && !JSON.stringify(pp).includes('user_id'));
+	await expectError('카운터 표는 학생이 못 읽는다', () => rowsAs(A.id, 'select * from private.user_stats'), 'permission denied');
+	await expectError('업적 표는 학생이 못 읽는다', () => rowsAs(A.id, 'select * from private.user_achievements'), 'permission denied');
+	await expectError('카운터를 학생이 못 올린다', () => rowsAs(A.id, `select private.bump($1, 'extends', 100)`, [A.id]), 'permission denied');
+	await expectError('★ 대표 업적 칸을 직접 못 고친다', () => rowsAs(A.id, `update public.profiles set featured_badges = '{talk}' where id = $1`, [A.id]), 'permission denied');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

@@ -134,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 31 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (업적 `private.user_stats` · `achievement_defs` · `user_achievements`,
+      카운터 트리거, `my_achievements` · `new_achievements` · `set_featured_badges`, 지금까지의 기록으로 채움). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 30 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (매너 온도 `profiles.manner_temp` · `private.ratings` · `rate_partner` · `pending_ratings`,
       pg_cron `simbun-ratings` 매일 04:27 KST 반영). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 29 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (연장 공개 순서 · 공통 질문 · 대화 고정 `rooms.pinned`).
@@ -398,4 +400,9 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       ★ 평가는 바로 반영하지 않고 매일 새벽 6시간 넘게 지난 것을 모아서(`private.apply_ratings`) — 방금 대화한 상대가 누가 낮게 줬는지 알 수 없게.
       좋았어요 +0.3 · 괜찮았어요 +0.1 · 아쉬웠어요 −0.8, 아쉬운 칩 하나에 −0.2 (2개까지), 같은 사람을 7일 안에 또 평가하면 첫 평가만, 0~99.
       신고 · 차단 · 운영진이 끝낸 대화는 평가하지 않는다. 온도는 상대 프로필 · 대화 맨 위 소개 · 내 프로필에 (`MannerTemp`)
+- [x] **Phase 31 — 업적 (동 · 은 · 금)** — 24종 × 3등급 (`private.achievement_defs` 가 유일한 출처: 매너 · 대화 · 편지 · 특별).
+      메시지는 24시간 뒤 지워지므로 개수는 `private.user_stats.counts` 에 가벼운 트리거로 쌓는다 (메시지 · 첫마디 · 공감 · 연장 · 고정 · 끝까지 · 공통 질문 ·
+      편지 · 평가 · 매너 온도 · 연속 접속). 등급은 오르기만 한다. 공감은 한 메시지에 한 사람이 처음 달 때만, 경고를 받으면 "깨끗한 기록"은 처음부터.
+      내 프로필의 "명성" 카드 → `/me/achievements` (분류 탭 · 메달 격자 · 대표 업적 걸기). 대화 상대에게는 대표 업적 3개만 (`partner_profile.badges`).
+      새로 따면 탭 첫 화면에서 축하 시트 (`AchievementCelebrate`). 미리보기 `/dev/achievements` (`?celebrate`, `&one`), 화면 테스트 `achievements`
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

@@ -5,6 +5,7 @@
 	 */
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import MannerTemp from '$lib/ui/MannerTemp.svelte';
+	import Badge from '$lib/ui/Badge.svelte';
 	import type { PartnerProfile } from './types';
 
 	let {
@@ -23,7 +24,12 @@
 	<Avatar name={alias} size={88} {online} />
 	<h2>{alias}</h2>
 	<p>{line}</p>
-	{#if profile}<span class="temp"><MannerTemp temp={profile.manner_temp} size="chip" /></span>{/if}
+	{#if profile}
+		<span class="temp">
+			<MannerTemp temp={profile.manner_temp} size="chip" />
+			{#each profile.badges ?? [] as b (b.code)}<Badge icon={b.icon} tier={b.tier} title={b.title} size={26} />{/each}
+		</span>
+	{/if}
 	<button class="intro-btn" onclick={onprofile}>프로필 보기</button>
 </div>
 
@@ -48,6 +54,9 @@
 		color: var(--text-2);
 	}
 	.temp {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 		margin-top: 8px;
 	}
 	.intro-btn {

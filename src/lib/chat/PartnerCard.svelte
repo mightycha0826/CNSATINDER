@@ -2,6 +2,7 @@
 	/** 상대 프로필 시트 — 아바타 · 이름 · 접속 여부 · 소개 · MBTI · 관심사. 같은 방 멤버에게만 서버가 준다. */
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import MannerTemp from '$lib/ui/MannerTemp.svelte';
+	import Badge from '$lib/ui/Badge.svelte';
 	import type { PartnerProfile } from './types';
 
 	let { alias, profile, loading }: { alias: string | null; profile: PartnerProfile | null; loading: boolean } = $props();
@@ -17,6 +18,13 @@
 	{/if}
 	{#if profile}
 		<div class="temp"><MannerTemp temp={profile.manner_temp} /></div>
+		{#if profile.badges?.length}
+			<div class="badges" aria-label="대표 업적 (모은 업적 {profile.badge_count ?? profile.badges.length}개)">
+				{#each profile.badges as b (b.code)}
+					<div class="b"><Badge icon={b.icon} tier={b.tier} title={b.title} size={46} label /><span>{b.title}</span></div>
+				{/each}
+			</div>
+		{/if}
 		{#if profile.bio}<p class="bio selectable">{profile.bio}</p>{/if}
 		{#if profile.mbti || profile.interests.length}
 			<div class="tags">
@@ -40,6 +48,21 @@
 		justify-content: center;
 		width: 100%;
 		margin: 6px 0 4px;
+	}
+	.badges {
+		display: flex;
+		justify-content: center;
+		gap: 14px;
+		margin: 6px 0 4px;
+	}
+	.b {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+		width: 72px;
+		font-size: 11px;
+		font-weight: 600;
 	}
 	.profile {
 		display: flex;
