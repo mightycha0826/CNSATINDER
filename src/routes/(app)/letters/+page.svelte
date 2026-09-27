@@ -1,366 +1,259 @@
 <script lang="ts">
 	/**
-	 * 익명편지 탭 (Phase 23 이름 편지) — 위: 학생 찾기, 아래: 받은 편지 · 보낸 편지.
-	 * 찾은 학생을 누르면 편지 쓰기로. 받은 편지에서 보낸 사람은 가명으로만 보인다.
-	 * 편지 줄을 길게 누르면(마우스는 오른쪽 클릭) 신고 · 차단 · 나가기 (LetterMenu).
+	 * 익명편지 탭 = 편지함 (Phase 32) — 받은 편지 · 보낸 편지를 따로. 편지 한 통 = 봉투 한 장.
+	 * 받은 편지는 덮개 쪽(안 연 편지는 밀랍 봉인), 보낸 편지는 주소 쪽(우표 · 소인 · 읽음/답장 옴).
+	 * 오른쪽 아래 버튼으로 새 편지. 봉투를 길게 누르면 신고 · 차단 · 나가기 (LetterMenu).
 	 */
 	import { goto } from '$app/navigation';
-	import Avatar from '$lib/ui/Avatar.svelte';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
-	import { S, errMsg, toast } from '$lib/state.svelte';
-	import { ago } from '$lib/time';
-	import { whileVisible } from '$lib/visible';
-	import { fetchInbox, searchPeople, type DmItem, type DmPerson } from '$lib/letters/api';
-	import { DM, LIST, countUnread } from '$lib/letters/unread.svelte';
+	import MailboxItem from '$lib/letters/MailboxItem.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
-	import { longpress } from '$lib/longpress';
+	import { anonName, fetchMailbox, fromLabel, toLabel, type Box, type MailItem } from '$lib/letters/api';
+	import { DM, LIST, refreshUnread } from '$lib/letters/unread.svelte';
+	import { envWidth } from '$lib/letters/stage';
+	import { whileVisible } from '$lib/visible';
+	import { S } from '$lib/state.svelte';
 
-	// ── 찾기 ──
-	let q = $state('');
-	let results = $state<DmPerson[] | null>(null);
-	let searching = $state(false);
-	$effect(() => {
-		const term = q.trim();
-		if (term.length < 2) {
-			results = null;
-			return;
-		}
-		searching = true;
-		const t = setTimeout(async () => {
-			try {
-				const r = await searchPeople(term);
-				if (q.trim() === term) results = r;
-			} catch (e) {
-				toast(errMsg(e));
-			} finally {
-				searching = false;
-			}
-		}, 250);
-		return () => clearTimeout(t);
-	});
-
-	function pick(p: DmPerson) {
-		// 기록(history)에는 복사본만 넣을 수 있다 — $state 프록시를 그대로 넣으면 브라우저가 거부한다
-		void goto('/letters/new', { state: { to: $state.snapshot(p) } });
-	}
-
-	// ── 목록 ──
-	let items = $state<DmItem[]>([]);
-	let loaded = $state(false);
-	let skew = $state(0);
-	// 보고 있던 탭은 LIST 에 — 편지를 열었다 뒤로 와도 그대로 (보낸 편지에서 들어갔으면 보낸 편지로)
+	const PAGE = 30;
+	let boxes = $state<Record<Box, MailItem[]>>({ received: [], sent: [] });
+	let loaded = $state<Record<Box, boolean>>({ received: false, sent: false });
+	let more = $state<Record<Box, boolean>>({ received: false, sent: false });
 	const tab = $derived(LIST.tab);
-	async function load() {
+	const list = $derived(boxes[tab]);
+	let vw = $state(390);
+	const w = $derived(envWidth(vw, 340, 56));
+
+	async function load(box: Box) {
 		try {
-			const r = await fetchInbox();
-			items = r.threads;
-			skew = Date.parse(r.server_now) - Date.now();
-			DM.unread = countUnread(r.threads);
+			const r = await fetchMailbox(box);
+			boxes[box] = r;
+			more[box] = r.length === PAGE;
 		} catch {
 			/* 다음 번에 */
 		} finally {
-			loaded = true;
+			loaded[box] = true;
 		}
 	}
+	async function loadMore() {
+		const box = tab;
+		const last = boxes[box].at(-1);
+		if (!last) return;
+		const r = await fetchMailbox(box, last.id).catch(() => [] as MailItem[]);
+		boxes[box] = [...boxes[box], ...r];
+		more[box] = r.length === PAGE;
+	}
 	$effect(() => {
-		void load();
-		return whileVisible(() => void load(), 30_000);
+		const refresh = () => {
+			void load('received');
+			void load('sent');
+			void refreshUnread();
+		};
+		refresh();
+		return whileVisible(refresh, 30_000);
 	});
 
-	const list = $derived(items.filter((i) => i.role === tab));
-	// 길게 누른 편지 — 메뉴를 띄운다. 나가기 · 차단 · 신고를 하면 목록에서 사라지므로 다시 읽는다
-	let menuFor = $state<DmItem | null>(null);
-	const unreadOf = (r: 'received' | 'sent') => items.filter((i) => i.role === r).reduce((n, i) => n + i.unread, 0);
-	const gradeText = (g: number | null) => (g ? `${g}학년` : '');
+	// 받은 편지의 To. 는 나 — 모르는 사람의 편지면 내 이름, 내 편지에 온 답장이면 (나는 익명이었으니) 익명의 나
+	const myName = $derived(S.me?.name ?? '나');
+	const meFor = (it: MailItem) =>
+		tab === 'received' ? (it.from_name ? anonName(S.profile?.gender) : myName) : it.to_name ? anonName(S.profile?.gender) : myName;
+	// 봉투를 살짝씩 비뚤게 — 책상 위에 쌓인 편지처럼
+	const tilt = (i: number) => [-1.6, 1.2, -0.6, 1.8, -1.2, 0.8][i % 6];
+
+	let menuFor = $state<MailItem | null>(null);
+	const recv = $derived(boxes.received.filter((i) => !i.opened).length);
 </script>
+
+<svelte:window bind:innerWidth={vw} />
 
 <div class="topbar">
 	<span class="title">익명편지</span>
 	<TopbarMe />
 </div>
 
-<div class="page letters">
-	<label class="search">
-		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="1.8" />
-			<path d="M16 16l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
-		</svg>
-		<input
-			type="search"
-			bind:value={q}
-			placeholder="이름으로 찾아서 익명 편지 보내기"
-			aria-label="편지 받을 학생 찾기"
-			autocomplete="off"
-			enterkeyhint="search"
-		/>
-	</label>
+<div class="page mailbox">
+	<div class="seg" role="tablist" aria-label="편지함">
+		<button role="tab" class:on={tab === 'received'} aria-selected={tab === 'received'} onclick={() => (LIST.tab = 'received')}>
+			받은 편지{#if DM.unread || recv}<span class="count num" aria-label="안 읽은 편지 {DM.unread || recv}통">{DM.unread || recv}</span>{/if}
+		</button>
+		<button role="tab" class:on={tab === 'sent'} aria-selected={tab === 'sent'} onclick={() => (LIST.tab = 'sent')}>보낸 편지</button>
+		<span class="thumb" class:right={tab === 'sent'} aria-hidden="true"></span>
+	</div>
 
-	{#if results !== null}
-		<section class="results" aria-label="찾은 학생">
-			{#if results.length === 0}
-				<p class="muted empty">{searching ? '찾는 중…' : '찾는 사람이 없어요. 편지 받기를 꺼 둔 사람은 나오지 않아요.'}</p>
-			{:else}
-				{#each results as p (p.id)}
-					<button class="person" onclick={() => pick(p)}>
-						<Avatar name={p.name} size={40} />
-						<span class="who">
-							<b>{p.name}</b>
-							<small class="muted">{gradeText(p.grade)}{p.checked ? '' : `${p.grade ? ' · ' : ''}직접 적은 이름`}</small>
-						</span>
-						<span class="go">편지 쓰기</span>
-					</button>
-				{/each}
-			{/if}
-		</section>
-	{:else}
-
-		<div class="tabs" role="tablist">
-			<button role="tab" class:on={tab === 'received'} aria-selected={tab === 'received'} onclick={() => (LIST.tab = 'received')}>
-				받은 편지{#if unreadOf('received')}<span class="dot" aria-label="안 읽은 편지 있음"></span>{/if}
-			</button>
-			<button role="tab" class:on={tab === 'sent'} aria-selected={tab === 'sent'} onclick={() => (LIST.tab = 'sent')}>
-				보낸 편지{#if unreadOf('sent')}<span class="dot" aria-label="안 읽은 답장 있음"></span>{/if}
-			</button>
+	{#if !loaded[tab]}
+		<p class="muted center">편지함을 여는 중…</p>
+	{:else if list.length === 0}
+		<div class="empty">
+			<svg viewBox="0 0 120 90" aria-hidden="true">
+				<rect x="10" y="22" width="100" height="62" rx="6" fill="var(--env-paper)" stroke="var(--line)" />
+				<path d="M10 28l50 32 50-32" fill="none" stroke="var(--line)" stroke-width="2" />
+				<circle cx="60" cy="58" r="9" fill="#d92c55" opacity=".85" />
+				<path d="M60 62s-4-2.4-4-5.4a2.2 2.2 0 0 1 4-1.3 2.2 2.2 0 0 1 4 1.3c0 3-4 5.4-4 5.4z" fill="#fff" opacity=".8" />
+			</svg>
+			<p>{tab === 'received' ? '아직 받은 편지가 없어요' : '아직 보낸 편지가 없어요'}</p>
+			<small class="muted">{tab === 'received' ? '편지가 오면 여기에 봉인된 채로 도착해요' : '마음을 전하고 싶은 친구에게 첫 편지를 써 보세요'}</small>
 		</div>
-
-		{#if !loaded}
-			<p class="muted empty">불러오는 중…</p>
-		{:else if list.length === 0}
-			<p class="muted empty">
-				{tab === 'received' ? '아직 받은 편지가 없어요.' : '위에서 이름을 찾아 첫 편지를 보내 보세요.'}
-			</p>
-		{:else}
-			<ul class="threads">
-				{#each list as t (t.id)}
-					<li>
-						<button class="thread" class:unread={t.unread > 0} onclick={() => goto(`/letters/${t.id}`)} use:longpress={() => (menuFor = t)}>
-							{#if t.role === 'received'}
-								<span class="anon" aria-hidden="true">?</span>
-							{:else}
-								<Avatar name={t.title} size={48} />
-							{/if}
-							<span class="body">
-								<span class="line1">
-									<b>{t.title}</b>
-									{#if t.role === 'sent' && t.grade}<small class="muted">{t.grade}학년</small>{/if}
-									{#if t.status === 'closed'}<small class="muted ended">끝남</small>{/if}
-								</span>
-								<span class="line2 muted">{t.last_body ?? ''}</span>
-							</span>
-							<span class="meta">
-								<small class="muted num">{ago(t.last_at, S.now + skew)}</small>
-								{#if t.unread}<span class="badge num">{t.unread}</span>{/if}
-							</span>
-						</button>
-					</li>
-				{/each}
-			</ul>
-		{/if}
+	{:else}
+		<ul class="stack">
+			{#each list as it, i (it.id)}
+				<li>
+					<MailboxItem
+						item={it}
+						box={tab}
+						me={meFor(it)}
+						{w}
+						tilt={tilt(i)}
+						onopen={() => goto(`/letters/m/${it.id}`)}
+						onmenu={() => (menuFor = it)}
+					/>
+				</li>
+			{/each}
+		</ul>
+		{#if more[tab]}<button class="more" onclick={loadMore}>지난 편지 더 보기</button>{/if}
 	{/if}
 </div>
 
+<a class="fab" href="/letters/new" aria-label="편지 쓰기">
+	<svg viewBox="0 0 24 24" aria-hidden="true">
+		<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+		<path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="2" />
+	</svg>
+	<span>편지 쓰기</span>
+</a>
+
 {#if menuFor}
 	<LetterMenu
-		thread={menuFor}
-		title={menuFor.title}
+		thread={{ id: menuFor.thread_id, recipient: tab === 'received' ? !menuFor.from_name : !menuFor.to_name }}
+		title={tab === 'received' ? fromLabel(menuFor) : toLabel(menuFor)}
 		onclose={() => (menuFor = null)}
 		ondone={() => {
-			const id = menuFor?.id;
+			const t = menuFor?.thread_id;
 			menuFor = null;
-			items = items.filter((i) => i.id !== id); // 바로 지우고, 서버 목록으로 맞춘다
-			void load();
+			boxes = { received: boxes.received.filter((x) => x.thread_id !== t), sent: boxes.sent.filter((x) => x.thread_id !== t) };
+			void load('received');
+			void load('sent');
 		}}
 	/>
 {/if}
 
 <style>
-	.letters {
+	.mailbox {
+		gap: 18px;
 		padding-top: 12px;
-		padding-bottom: 24px;
+		padding-bottom: 110px;
+		background: var(--desk);
 	}
-	.search {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		height: 42px;
-		padding: 0 14px;
-		border-radius: 12px;
-		background: var(--field);
-		color: var(--text-2);
-	}
-	.search svg {
-		flex: none;
-		width: 18px;
-		height: 18px;
-	}
-	.search input {
-		flex: 1;
-		min-width: 0;
-		border: 0;
-		outline: none;
-		background: none;
-		color: var(--text);
-		font-size: 15px;
-	}
-	.search input::placeholder {
-		color: var(--text-2);
-	}
-	.empty {
-		margin: 32px 0;
-		text-align: center;
-		font-size: 14px;
-	}
-
-	.results {
-		display: flex;
-		flex-direction: column;
-		margin-top: 8px;
-	}
-	.person {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 10px 2px;
-		text-align: left;
-	}
-	.who {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-	}
-	.who b {
-		font-size: 15px;
-		font-weight: 600;
-	}
-	.who small {
-		font-size: 12px;
-	}
-	.go {
-		flex: none;
-		padding: 7px 12px;
-		border-radius: 8px;
-		background: var(--accent-fill);
-		color: var(--on-accent);
-		font-size: 13px;
-		font-weight: 600;
-	}
-
-	.tabs {
-		display: flex;
-		gap: 6px;
-		margin: 14px 0 4px;
-	}
-	.tabs button {
+	/* 두 칸 분할 버튼 — 고른 쪽 아래로 흰 알약이 미끄러진다 */
+	.seg {
 		position: relative;
-		padding: 7px 14px;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		padding: 4px;
 		border-radius: 999px;
 		background: var(--field);
+	}
+	.seg button {
+		position: relative;
+		z-index: 1;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		height: 38px;
+		border-radius: 999px;
 		font-size: 14px;
-		font-weight: 500;
+		font-weight: 700;
+		color: var(--text-2);
+		transition: color 0.2s;
 	}
-	.tabs button.on {
-		background: var(--text);
-		color: var(--bg);
-		font-weight: 600;
+	.seg button.on {
+		color: var(--text);
 	}
-	.dot {
-		display: inline-block;
-		width: 7px;
-		height: 7px;
-		margin-left: 5px;
-		border-radius: 50%;
-		background: #ff3040;
-		vertical-align: 2px;
+	.thumb {
+		position: absolute;
+		top: 4px;
+		bottom: 4px;
+		left: 4px;
+		width: calc(50% - 4px);
+		border-radius: 999px;
+		background: var(--bg);
+		box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
+		transition: transform 0.3s cubic-bezier(0.3, 0.7, 0.2, 1.1);
 	}
-
-	.threads {
-		margin: 4px 0 0;
+	.thumb.right {
+		transform: translateX(100%);
+	}
+	.count {
+		min-width: 18px;
+		height: 18px;
+		padding: 0 5px;
+		border-radius: 9px;
+		background: var(--accent-fill);
+		color: var(--on-accent);
+		font-size: 11px;
+		line-height: 18px;
+	}
+	.center {
+		margin: 40px 0;
+		text-align: center;
+	}
+	.stack {
+		display: flex;
+		flex-direction: column;
+		gap: 26px;
+		margin: 8px 0 0;
 		padding: 0;
 		list-style: none;
 	}
-	.thread {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		width: 100%;
-		padding: 10px 0;
-		text-align: left;
-	}
-	.anon {
-		flex: none;
-		display: grid;
-		place-items: center;
-		width: 48px;
-		height: 48px;
-		border-radius: 50%;
-		background: var(--bubble-fill);
-		color: #fff;
-		font-size: 20px;
-		font-weight: 800;
-	}
-	.body {
-		flex: 1;
-		min-width: 0;
+	.empty {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
-	}
-	.line1 {
-		display: flex;
-		align-items: baseline;
+		align-items: center;
 		gap: 6px;
-		min-width: 0;
+		margin-top: 36px;
+		text-align: center;
 	}
-	.line1 b {
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
+	.empty svg {
+		width: 140px;
+		margin-bottom: 8px;
+	}
+	.empty p {
+		margin: 0;
 		font-size: 15px;
-		font-weight: 500;
-	}
-	.thread.unread .line1 b {
 		font-weight: 700;
 	}
-	.line1 small {
-		flex: none;
-		font-size: 12px;
-	}
-	.ended {
-		padding: 0 6px;
+	.more {
+		align-self: center;
+		height: 38px;
+		padding: 0 16px;
 		border-radius: 999px;
 		background: var(--field);
-	}
-	.line2 {
-		overflow: hidden;
-		white-space: nowrap;
-		text-overflow: ellipsis;
-		font-size: 14px;
-	}
-	.thread.unread .line2 {
-		color: var(--text);
-		font-weight: 500;
-	}
-	.meta {
-		flex: none;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 4px;
-	}
-	.meta small {
-		font-size: 12px;
-	}
-	.badge {
-		min-width: 20px;
-		height: 20px;
-		padding: 0 6px;
-		border-radius: 10px;
-		background: #ff3040;
-		color: #fff;
-		font-size: 12px;
+		font-size: 13px;
 		font-weight: 700;
-		line-height: 20px;
-		text-align: center;
+	}
+	.fab {
+		position: fixed;
+		right: max(16px, calc(50% - 260px + 16px));
+		bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px);
+		z-index: 20;
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		height: 52px;
+		padding: 0 20px 0 16px;
+		border-radius: 999px;
+		background: var(--accent-fill);
+		color: var(--on-accent);
+		font-size: 15px;
+		font-weight: 800;
+		text-decoration: none;
+		box-shadow: 0 10px 24px -6px rgb(240 57 110 / 0.55);
+		transition: transform 0.15s;
+	}
+	.fab:active {
+		transform: scale(0.95);
+	}
+	.fab svg {
+		width: 22px;
+		height: 22px;
 	}
 </style>

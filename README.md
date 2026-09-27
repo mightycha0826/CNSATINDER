@@ -134,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 32 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (편지함 `dm_mailbox` · `dm_open` · `dm_reply_to` · `dm_unread`,
+      `dm_msgs.from_gender` · `opened_at`, 채팅 모드 `dm_reply` · `dm_chat` 삭제, 알림 제목 "익명의 ○학생에게서 편지가 왔어요"). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 31 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (업적 `private.user_stats` · `achievement_defs` · `user_achievements`,
       카운터 트리거, `my_achievements` · `new_achievements` · `set_featured_badges`, 지금까지의 기록으로 채움). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 30 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (매너 온도 `profiles.manner_temp` · `private.ratings` · `rate_partner` · `pending_ratings`,
@@ -190,7 +192,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `src/lib/motion.ts` | 기기의 "동작 줄이기" 설정 — JS 스크롤을 부드럽게 할지 (CSS 애니메이션은 `app.css` 에서 한꺼번에 끈다) |
 | `src/lib/time.ts` · `restriction.ts` | 상대 시간·`mm:ss` 표시 / 이용 제한 판정 (학생 앱·운영자 화면 공용) |
 | `src/lib/chat/` | 채팅방 — `ChatView`(화면) · `room.svelte.ts`(상태·동기화) · `ChatIntro`(맨 위 소개) · `PartnerCard`(상대 프로필) · `ReactionPicker`·`ReactionBadge`·`reactions.ts`(공감) · `ReplyQuote`(답장 인용) · `Starters`(첫마디 도우미) · `MatchScreen`(연결 화면) · `gestures.ts`(길게 누르기·두 번 톡·밀어서 답장) |
-| `src/lib/letters/` | 이름 편지 — `api.ts`(검색·받은/보낸 편지·보내기·끝내기·차단·신고 RPC), `unread.svelte.ts`(탭 빨간 점), `LetterEditor.svelte`(서식 편집기) · `rich.ts` · `RichText.svelte`(서식 그리기) |
+| `src/lib/letters/` | 익명편지 — `api.ts`(검색 · 편지함 · 봉투 열기 · 보내기 · 답장 · 끝내기 · 차단 · 신고 RPC, 이름표), `unread.svelte.ts`(탭 빨간 점), `Envelope`(봉투 앞 · 뒤) · `MailboxItem` · `EnvelopeCompose`(쓰기 연출) · `LetterSheet`(편지지) · `stage.ts`(연출 단계), `LetterEditor.svelte`(서식 편집기) · `rich.ts` · `RichText.svelte`(서식 그리기) |
 | `src/lib/tabBack.svelte.ts` | 탭 첫 화면 뒤로가기 — 익명편지·프로필 → 홈, 홈에서 두 번 누르면 종료 |
 | `src/lib/themeColor.svelte.ts` | 테마 색상(앱 전체 포인트 색 — 로고 · 버튼 · 링크 · 내 말풍선) — 설정 화면에서 고르고 이 기기에만 저장 |
 | `src/lib/admin/` | 운영자 화면 공용 조각 — 신고 상세 카드(`ReportHeader` · `ReportedCard` · `ReporterCard` · `IdentityCard`), `AccountStatus`, `FormMsg`, `SanctionForm` |
@@ -405,4 +407,11 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       편지 · 평가 · 매너 온도 · 연속 접속). 등급은 오르기만 한다. 공감은 한 메시지에 한 사람이 처음 달 때만, 경고를 받으면 "깨끗한 기록"은 처음부터.
       내 프로필의 "명성" 카드 → `/me/achievements` (분류 탭 · 메달 격자 · 대표 업적 걸기). 대화 상대에게는 대표 업적 3개만 (`partner_profile.badges`).
       새로 따면 탭 첫 화면에서 축하 시트 (`AchievementCelebrate`). 미리보기 `/dev/achievements` (`?celebrate`, `&one`), 화면 테스트 `achievements`
+- [x] **Phase 32 — 익명편지 리뉴얼 (봉투 · 편지지)** — 채팅처럼 좌우로 쌓이던 편지 줄기를 없애고 **편지 한 통 = 봉투 하나**.
+      편지함은 받은 편지 · 보낸 편지 따로 (`/letters`): 받은 편지는 덮개 쪽(안 연 편지는 밀랍 봉인 · 빛남), 보낸 편지는 주소 쪽(항공우편 줄무늬 · 우표 · 소인 · 읽음/답장 옴).
+      받는 사람에게 모르는 사람은 **"익명의 ○학생"(성별만)** — 보낼 때의 성별을 `dm_msgs.from_gender` 에 새긴다. 내가 이름으로 보낸 사람의 답장은 그 이름으로.
+      봉투 열기(`/letters/m/[id]`, 처음 여는 받은 편지만): 주소 면 → 뒤집기 → 봉인이 두 쪽으로 깨지고 → 덮개가 열리고(안감) → 편지지가 나와 → 펼쳐 읽기. 누르면 건너뜀.
+      쓰기(`/letters/new` 찾기 → `EnvelopeCompose`, 답장 `/letters/m/[id]/reply`): 봉투가 열리고 편지지가 솟아 편지 쓰는 칸이 되고, 보내면 접혀 봉투로 →
+      덮개 → 봉인 찍힘 → 뒤집어 소인 "보냄" → 날아간다. 답장은 편지로만 (채팅 모드 · 말풍선 삭제), 예전 채팅 줄은 표에 남고 편지함엔 안 보인다.
+      손글씨는 나눔펜 (Fontsource, 자체 호스팅 · CSP font-src 'self' 그대로). 동작 줄이기면 연출 없이. 예전 주소 `/letters/<줄기>` 는 편지함으로
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

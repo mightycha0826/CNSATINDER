@@ -299,7 +299,7 @@
 	}
 	.sheet.letter-paper .area :global(.le-doc) {
 		min-height: 36dvh;
-		line-height: 1.8;
+		line-height: var(--rule-h, 1.8); /* 편지지 줄에 맞춘다 (app.css .letter-paper) */
 	}
 	.area {
 		flex: 1;

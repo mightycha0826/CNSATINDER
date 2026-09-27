@@ -2390,7 +2390,7 @@ console.log('\n[71] ★ 이름 편지 — 학생을 찾아 익명으로 보내�
 	check('열면 읽음', (await rpcAs(B, 'dm_inbox')).threads[0].unread === 0 && thB.messages[0].mine === false);
 	const sa = (await rpcAs(A, 'dm_inbox')).threads[0];
 	check('보낸 사람에게는 받는 사람 이름 · 학년', sa.role === 'sent' && sa.title === '박받음' && sa.grade === 2);
-	check('남의 편지는 열 수 없다', (await rpcAs(E, 'dm_thread', s1.thread_id)).status === 'not_found' && (await rpcAs(E, 'dm_reply', s1.thread_id, '끼어들기')).status === 'not_found');
+	check('남의 편지는 열 수 없다', (await rpcAs(E, 'dm_thread', s1.thread_id)).status === 'not_found' && (await rpcAs(E, 'dm_letter', s1.thread_id, '끼어들기')).status === 'not_found');
 	await expectError('★ 편지 표는 직접 못 읽는다', () => rowsAs(B, 'select * from private.dm_threads'), 'permission denied');
 
 	await rpcAs(A, 'dm_send', B, '두 번째');
@@ -2411,7 +2411,9 @@ console.log('\n[71] ★ 이름 편지 — 학생을 찾아 익명으로 보내�
 	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id = $1`, [E]);
 	const pl = await svc('dm_push_payload', t2.msg_id, A);
 	const aliasE = (await rpcAs(E, 'dm_inbox')).threads.find((t) => t.id === t2.thread_id).title;
-	check('★ 새 편지 알림: 제목 = 가명만 ("익명 · " 없이) · 보낸 사람 정보 없음', pl.title === aliasE && !pl.title.includes('익명') && pl.url === `/letters/${t2.thread_id}` && !JSON.stringify(pl).includes('김보냄'), JSON.stringify(pl));
+	void aliasE;
+	// Phase 32 — 봉투는 열어야 보인다: 제목은 성별만, 본문 없이, 편지 한 통으로 바로
+	check('★ 새 편지 알림: "익명의 남학생에게서 편지가 왔어요" · 본문 · 보낸 사람 정보 없음', pl.title === '익명의 남학생에게서 편지가 왔어요' && pl.body === '봉투를 열어 확인해 보세요' && pl.url === `/letters/m/${t2.msg_id}` && !JSON.stringify(pl).includes('김보냄') && !JSON.stringify(pl).includes('처음 보내는'), JSON.stringify(pl));
 	check('남이 쓴 말로는 알림을 못 보낸다', (await svc('dm_push_payload', t2.msg_id, B)).skip === 'not_author');
 
 	console.log('  [끝내기 · 차단 · 신고]');
@@ -2563,18 +2565,16 @@ console.log('\n[75] 이름 편지 — 편지로 답장 · 채팅하기 (Phase 27
 		&& tb.recipient_name === '모드받음' && tb.alias === tb.title && !JSON.stringify(tb).includes('모드보냄'), JSON.stringify(tb));
 	const ta = await rpcAs(A, 'dm_thread', s1.thread_id);
 	check('보낸 사람도 자기 가명(From)을 안다', ta.alias === tb.alias && ta.recipient_name === '모드받음');
-	check('편지 모드에서 채팅 한 줄은 안 된다', (await rpcAs(B, 'dm_reply', s1.thread_id, '채팅')).status === 'letter_mode');
-	check('★ 보낸 사람은 채팅으로 바꿀 수 없다 (받은 사람이 고른다)', (await rpcAs(A, 'dm_chat', s1.thread_id)).status === 'not_your_turn');
+	// Phase 32 — 채팅 모드(채팅 한 줄 · 채팅하기)는 없어졌다
+	await expectError('★ 채팅 한 줄(dm_reply)은 없다', () => rowsAs(B, `select public.dm_reply(1, 'x')`), 'does not exist');
+	await expectError('★ 채팅하기(dm_chat)도 없다', () => rowsAs(A, `select public.dm_chat(1)`), 'does not exist');
 	const l2 = await rpcAs(B, 'dm_letter', s1.thread_id, '답장 편지', JSON.stringify({ m: [[0, 2, 'b']] }));
 	const ta2 = await rpcAs(A, 'dm_thread', s1.thread_id);
 	check('★ 편지로 답장 (서식 포함) — 여전히 편지 모드', l2.status === 'ok' && ta2.mode === 'letter' && ta2.messages[1].letter === true && ta2.messages[1].fmt?.m?.length === 1);
 	check('편지 답장도 표에 없는 서식은 거절', (await rpcAs(A, 'dm_letter', s1.thread_id, '안녕', JSON.stringify({ m: [[0, 2, 'c:#000']] }))).status === 'bad_text');
-	check('받는 쪽이 채팅을 고를 차례가 아니면 못 바꾼다 (방금 내가 보냄)', (await rpcAs(B, 'dm_chat', s1.thread_id)).status === 'not_your_turn');
-	check('★ 편지를 받은 사람(A)이 채팅하기', (await rpcAs(A, 'dm_chat', s1.thread_id)).status === 'ok' && (await rpcAs(B, 'dm_thread', s1.thread_id)).mode === 'chat');
-	const c1 = await rpcAs(A, 'dm_reply', s1.thread_id, '채팅으로 하자');
-	check('채팅 모드: 채팅 한 줄 (편지 아님)', c1.status === 'ok' && (await rpcAs(B, 'dm_thread', s1.thread_id)).messages.at(-1).letter === false);
-	check('채팅 모드에서는 편지 답장 대신 채팅', (await rpcAs(B, 'dm_letter', s1.thread_id, '편지')).status === 'chat_mode');
-	check('남의 줄기는 바꿀 수 없다', (await rpcAs(C, 'dm_chat', s1.thread_id)).status === 'not_found' && (await rpcAs(C, 'dm_letter', s1.thread_id, 'x')).status === 'not_found');
+	await db.query(`update private.dm_threads set mode = 'chat' where id = $1`, [s1.thread_id]);
+	check('★ 예전에 채팅으로 바뀐 줄기도 편지로 답장된다', (await rpcAs(A, 'dm_letter', s1.thread_id, '편지로 답장')).status === 'ok');
+	check('남의 줄기에는 못 쓴다', (await rpcAs(C, 'dm_letter', s1.thread_id, 'x')).status === 'not_found');
 	await expectError('로그인 안 하면 못 쓴다', () => rowsAs(null, `select public.dm_letter(1, 'x')`), 'permission denied');
 	// 예전 데이터 옮기기: 첫 말 = 편지, 채팅처럼 주고받은 줄기 = 채팅
 	const old = await rpcAs(A, 'dm_send', C, '옛 편지');
@@ -2949,6 +2949,84 @@ console.log('\n[78] 업적 — 카운터 · 동/은/금 · 대표 업적 (Phase 
 	await expectError('업적 표는 학생이 못 읽는다', () => rowsAs(A.id, 'select * from private.user_achievements'), 'permission denied');
 	await expectError('카운터를 학생이 못 올린다', () => rowsAs(A.id, `select private.bump($1, 'extends', 100)`, [A.id]), 'permission denied');
 	await expectError('★ 대표 업적 칸을 직접 못 고친다', () => rowsAs(A.id, `update public.profiles set featured_badges = '{talk}' where id = $1`, [A.id]), 'permission denied');
+}
+
+console.log('\n[79] 익명편지 리뉴얼 — 편지함 · 봉투 열기 · 편지로만 답장 · 성별 (Phase 32)');
+{
+	let no = 21500;
+	const named = async (name, grade, gender) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name, grade = excluded.grade', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set gender=$2, onboarded=true where id=$1', [id, gender]);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const A = await named('편지보냄', 1, 'f');   // 이름으로 찾아 보내는 사람 (익명)
+	const B = await named('편지받음', 2, 'm');   // 받는 사람
+	const X = await named('성별없음', 3, 'x');
+	const E = await named('제삼자', 3, 'm');
+	const box = async (u, which) => (await rpcAs(u, 'dm_mailbox', which)).letters;
+
+	const s1 = await rpcAs(A, 'dm_send', B, '처음 쓰는 편지', JSON.stringify({ m: [[0, 2, 'b']] }));
+	check('편지 보내기', s1.status === 'ok');
+	check('★ 보낼 때의 성별이 새겨진다', (await one('select from_gender g from private.dm_msgs where id = $1', [s1.msg_id])).g === 'f');
+	let rb = await box(B, 'received');
+	const r0 = rb.find((x) => x.id === s1.msg_id);
+	check('★ 받은 편지함: 익명 + 성별만 (이름 없음) · 아직 안 엶', r0 && r0.from_gender === 'f' && r0.from_name === null && r0.opened === false && r0.is_reply === false && !JSON.stringify(rb).includes('편지보냄'), JSON.stringify(r0));
+	check('받은 편지함에 본문은 없다 (봉투는 열어야 보인다)', !JSON.stringify(rb).includes('처음 쓰는'));
+	const sa = (await box(A, 'sent')).find((x) => x.id === s1.msg_id);
+	check('★ 보낸 편지함: 받는 사람 이름 · 학년 · 아직 안 읽음', sa && sa.to_name === '편지받음' && sa.to_grade === 2 && sa.opened === false && sa.replied === false, JSON.stringify(sa));
+	check('보낸 편지는 내 받은 편지함에 없다', !(await box(A, 'received')).some((x) => x.id === s1.msg_id));
+	check('안 연 편지 수', (await rpcAs(B, 'dm_unread')) === 1);
+
+	check('남의 편지는 열 수 없다', (await rpcAs(E, 'dm_open', s1.msg_id)).status === 'not_found');
+	const mine = await rpcAs(A, 'dm_open', s1.msg_id);
+	check('보낸 사람이 열어 봐도 "읽음"이 되지 않는다', mine.status === 'ok' && mine.role === 'sent' && mine.opened === false && mine.can_reply === false && mine.to_name === '편지받음');
+	const op = await rpcAs(B, 'dm_open', s1.msg_id);
+	check('★ 받은 사람이 봉투를 열면 본문 · 서식 · From 은 성별만', op.status === 'ok' && op.role === 'received' && op.body === '처음 쓰는 편지' && op.fmt?.m?.length === 1
+		&& op.from_gender === 'f' && op.from_name === null && op.can_reply === true && !JSON.stringify(op).includes('편지보냄'), JSON.stringify(op));
+	check('★ 열면 보낸 쪽에 "읽음" · 안 연 편지 수가 준다', (await box(A, 'sent')).find((x) => x.id === s1.msg_id).opened === true && (await rpcAs(B, 'dm_unread')) === 0);
+
+	console.log('  [답장]');
+	check('★ 보낸 사람은 자기 편지에 답장할 수 없다', (await rpcAs(A, 'dm_reply_to', s1.msg_id, '내가 나에게')).status === 'not_found');
+	check('남은 답장할 수 없다', (await rpcAs(E, 'dm_reply_to', s1.msg_id, '끼어들기')).status === 'not_found');
+	const rp = await rpcAs(B, 'dm_reply_to', s1.msg_id, '고마워 누구야?');
+	check('★ 받은 사람이 편지로 답장', rp.status === 'ok' && rp.thread_id === s1.thread_id);
+	const ra = (await box(A, 'received')).find((x) => x.id === rp.msg_id);
+	check('★ 답장은 이름으로 (내가 이름으로 찾아 보낸 사람이니까) · 답장 표시', ra && ra.from_name === '편지받음' && ra.is_reply === true && ra.from_gender === 'm', JSON.stringify(ra));
+	const sb = (await box(B, 'sent')).find((x) => x.id === rp.msg_id);
+	check('★ 답장한 쪽의 보낸 편지함: To 는 "익명의 ○학생" (성별만)', sb && sb.to_name === null && sb.to_gender === 'f', JSON.stringify(sb));
+	check('보낸 편지함: 답장이 왔다', (await box(A, 'sent')).find((x) => x.id === s1.msg_id).replied === true);
+	const opA = await rpcAs(A, 'dm_open', rp.msg_id);
+	check('답장을 열면 From = 이름 · 받은 편지니 답장 가능', opA.from_name === '편지받음' && opA.is_reply === true && opA.can_reply === true);
+
+	console.log('  [예전 채팅 줄 · 3통 · 성별 x]');
+	await db.query(`insert into private.dm_msgs (thread_id, from_sender, body, is_letter) values ($1, true, '예전 채팅 한 줄', false)`, [s1.thread_id]);
+	check('★ 예전 채팅 줄은 편지함에 안 보인다', !JSON.stringify(await box(B, 'received')).includes('예전') && (await box(B, 'received')).length === 1);
+	const s2 = await rpcAs(X, 'dm_send', B, '성별을 안 밝힌 사람');
+	check('성별 x → "익명의 학생"으로 (from_gender x)', (await box(B, 'received')).find((x) => x.id === s2.msg_id).from_gender === 'x');
+	await rpcAs(X, 'dm_send', B, '두 번째');
+	await rpcAs(X, 'dm_send', B, '세 번째');
+	check('★ 답 없이 3통이면 상대 차례 (wait_reply)', (await rpcAs(X, 'dm_send', B, '네 번째')).status === 'wait_reply' && (await rpcAs(X, 'dm_open', s2.msg_id)).wait_reply === true);
+	const last = (await box(B, 'received'))[0];
+	await rpcAs(B, 'dm_reply_to', last.id, '답장');
+	check('답장을 받으면 다시 쓸 수 있다', (await rpcAs(X, 'dm_send', B, '네 번째')).status === 'ok');
+
+	console.log('  [끝내기 · 숨김 · 알림]');
+	await rpcAs(B, 'dm_close', s2.thread_id);
+	// 끝내기(나가기)는 끝낸 사람 편지함에서 그 편지를 치운다 (Phase 25) — 끝낸 뒤엔 어느 쪽도 이어 쓸 수 없다
+	check('끝낸 편지에는 답장할 수 없다', (await rpcAs(B, 'dm_reply_to', s2.msg_id, 'x')).status !== 'ok' && (await rpcAs(X, 'dm_send', B, '다시')).status === 'not_available');
+	check('끝낸 사람 편지함에서 사라진다', !(await box(B, 'received')).some((x) => x.thread_id === s2.thread_id));
+	await db.query('update private.dm_threads set recipient_hidden = true where id = $1', [s2.thread_id]);
+	check('나간 편지는 편지함에서도 · 열 수도 없다', !(await box(B, 'received')).some((x) => x.thread_id === s2.thread_id) && (await rpcAs(B, 'dm_open', s2.msg_id)).status === 'not_found');
+	await db.query(`insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://web.push.apple.com/dm32', 'k', 'x') on conflict do nothing`, [A]);
+	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id = $1`, [A]);
+	const rp2 = await rpcAs(B, 'dm_reply_to', rp.msg_id - 1, '또 답장');
+	const pl = await svc('dm_push_payload', rp2.msg_id, B);
+	check('★ 답장 알림: "○○님의 답장이 왔어요" · 본문 없음 · 그 편지로', pl.title === '편지받음님의 답장이 왔어요' && pl.body === '봉투를 열어 확인해 보세요' && pl.url === `/letters/m/${rp2.msg_id}`, JSON.stringify(pl));
+	await expectError('로그인 안 하면 편지함을 못 본다', () => rowsAs(null, `select public.dm_mailbox('received')`), 'permission denied');
+	check('이상한 편지함 이름은 빈 목록', (await box(A, 'trash')).length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

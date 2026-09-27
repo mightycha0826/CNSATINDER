@@ -1,20 +1,22 @@
 <script lang="ts">
 	/**
-	 * 편지 메뉴 — 편지 목록에서 길게 누르기 · 편지 화면의 ⋯ 가 같이 쓴다.
-	 * 신고하기 · 차단하기 · 나가기. 셋 다 하고 나면 그 편지는 내 목록에서 사라진다 (Phase 25) → ondone.
+	 * 편지 메뉴 — 편지함에서 길게 누르기 · 편지 화면의 ⋯ 가 같이 쓴다.
+	 * 신고하기 · 차단하기 · 나가기 — 편지 한 통이 아니라 그 사람과 주고받은 편지 줄기 전체에 한다.
+	 * 셋 다 하고 나면 그 사람과의 편지가 내 편지함에서 사라진다 (Phase 25) → ondone.
+	 * recipient = 내가 이름으로 받은 쪽(모르는 사람이 나를 찾아 보냄) — 나가면 그 사람은 다시 못 보낸다.
 	 */
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import ReportPicker from '$lib/ui/ReportPicker.svelte';
 	import type { ReportReason } from '$lib/chat/types';
 	import { errMsg, toast } from '$lib/state.svelte';
-	import { blockThread, closeThread, reportThread, type DmRole } from './api';
+	import { blockThread, closeThread, reportThread } from './api';
 
 	let {
 		thread,
 		title = '',
 		onclose,
 		ondone
-	}: { thread: { id: number; role: DmRole }; title?: string; onclose: () => void; ondone: () => void } = $props();
+	}: { thread: { id: number; recipient: boolean }; title?: string; onclose: () => void; ondone: () => void } = $props();
 
 	let step = $state<'menu' | 'leave' | 'block' | 'report'>('menu');
 	let reason = $state<ReportReason | null>(null);
@@ -44,7 +46,7 @@
 		<button class="item" onclick={() => (step = 'leave')}>나가기</button>
 		<button class="item" onclick={onclose}>취소</button>
 	{:else if step === 'leave'}
-		<p class="warn">목록에서 사라져요.{#if thread.role === 'received'}<br /><strong>이 사람은 다시 편지를 보낼 수 없어요.</strong>{/if}</p>
+		<p class="warn">이 사람과 주고받은 편지가 편지함에서 사라져요.{#if thread.recipient}<br /><strong>이 사람은 다시 편지를 보낼 수 없어요.</strong>{/if}</p>
 		<button class="item danger" onclick={() => act(() => closeThread(thread.id), '편지에서 나왔어요')} disabled={acting}>나가기</button>
 		<button class="item" onclick={onclose}>취소</button>
 	{:else if step === 'block'}

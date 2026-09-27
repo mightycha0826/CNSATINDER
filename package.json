@@ -34,6 +34,7 @@
 		"wrangler": "^4.135.0"
 	},
 	"dependencies": {
+		"@fontsource/nanum-pen-script": "^5.3.0",
 		"@supabase/supabase-js": "^2.110.0",
 		"@tiptap/core": "^3.31.3",
 		"@tiptap/extension-bold": "^3.31.3",
