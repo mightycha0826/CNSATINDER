@@ -62,7 +62,7 @@
 			{@const b = data.featured[i]}
 			<div class="slot">
 				{#if b}
-					<Badge icon={b.icon} tier={b.tier} title={b.title} size={60} label shine />
+					<Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={60} label shine />
 					<span class="slot-name">{b.title}</span>
 				{:else}
 					<span class="empty" aria-hidden="true">+</span>
@@ -84,7 +84,7 @@
 		<li>
 			<button class="card" class:locked={a.tier === 0} onclick={() => (open = a)}>
 				{#if a.new}<span class="new" aria-label="새 업적">NEW</span>{/if}
-				<Badge icon={a.icon} tier={a.tier} title={a.title} size={52} label shine={a.new} />
+				<Badge code={a.code} icon={a.icon} tier={a.tier} title={a.title} size={52} label shine={a.new} />
 				<span class="name">{a.title}</span>
 				<span class="desc">{a.description}</span>
 				<span class="bar" aria-hidden="true"><i style:width="{progress(a) * 100}%"></i></span>
@@ -98,7 +98,7 @@
 	{@const a = open}
 	<Sheet onclose={() => (open = null)} label={a.title}>
 		<div class="detail">
-			<Badge icon={a.icon} tier={a.tier} title={a.title} size={88} label shine />
+			<Badge code={a.code} icon={a.icon} tier={a.tier} title={a.title} size={88} label shine />
 			<h3>{a.title}</h3>
 			<p class="muted">{a.description} · {progressText(a)}</p>
 			<ol class="tiers">

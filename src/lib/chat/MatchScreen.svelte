@@ -55,7 +55,7 @@
 		width: 520px;
 		height: 520px;
 		border-radius: 50%;
-		background: radial-gradient(circle, rgb(240 57 110 / 0.55), rgb(255 122 80 / 0.25) 45%, transparent 70%);
+		background: radial-gradient(circle, color-mix(in srgb, var(--g-pink) 55%, transparent), color-mix(in srgb, var(--g-orange) 25%, transparent) 45%, transparent 70%);
 		filter: blur(30px);
 		animation: pulse 1.8s ease-in-out;
 	}
@@ -81,7 +81,7 @@
 		padding: 4px;
 		border-radius: 50%;
 		background: var(--brand);
-		box-shadow: 0 14px 40px -10px rgb(240 57 110 / 0.7);
+		box-shadow: 0 14px 40px -10px color-mix(in srgb, var(--g-pink) 70%, transparent);
 	}
 	.face :global(.av) {
 		border: 4px solid #1a0f12;

@@ -19,8 +19,8 @@ const base = { status: 'active', suspended_until: null, onboarded: true, staff_r
 
 // 처음 상태: A·B 대화 중(A 앱 켜짐), C 매칭 대기, D 접속 중, E 오프라인(정지)
 let world = [
-	{ ...base, id: A, nickname: '푸른고래', online: true, last_seen: soon, room_count: 1, rooms: [ROOM] },
-	{ ...base, id: B, nickname: '작은별', online: false, last_seen: ago(3), room_count: 1, rooms: [ROOM] },
+	{ ...base, id: A, nickname: '푸른고래', online: true, last_seen: soon, room_count: 1, talking: 1, rooms: [ROOM] },
+	{ ...base, id: B, nickname: '작은별', online: false, last_seen: ago(3), room_count: 1, talking: 0, rooms: [ROOM] },
 	{ ...base, id: C, nickname: '노란우산', online: true, last_seen: soon, seeking: true },
 	{ ...base, id: D, nickname: '초록나무', online: true, last_seen: soon },
 	{ ...base, id: E, nickname: '회색구름', online: false, last_seen: ago(180), status: 'suspended', suspended_until: soon }
@@ -78,9 +78,9 @@ try {
 
 	check('메뉴에 "실시간"이 있고 선택됨', (await page.locator('nav a.on', { hasText: '실시간' }).count()) === 1);
 	const tabs = await tabText();
-	check('탭별 인원', /전체 5/.test(tabs) && /대화 중 2/.test(tabs) && /매칭 대기 1/.test(tabs) && /접속 중 1/.test(tabs) && /오프라인 1/.test(tabs) && /이용 제한 1/.test(tabs), tabs);
+	check('탭별 인원', /전체 5/.test(tabs) && /대화 중 1/.test(tabs) && /대화방 있음 1/.test(tabs) && /매칭 대기 1/.test(tabs) && /접속 중 1/.test(tabs) && /오프라인 1/.test(tabs) && /이용 제한 1/.test(tabs), tabs);
 	let rows = await rowText();
-	check('정렬: 대화 중 → 매칭 대기 → 접속 중 → 오프라인', /^대화 중/.test(rows[0]) && /^대화 중/.test(rows[1]) && /^매칭 대기/.test(rows[2]) && /^접속 중/.test(rows[3]) && /^오프라인/.test(rows[4]), rows.join(' | '));
+	check('★ 정렬: 대화 중(둘 다 보고 있음) → 대화방 있음 → 매칭 대기 → 접속 중 → 오프라인', /^대화 중/.test(rows[0]) && /^대화방 있음/.test(rows[1]) && /^매칭 대기/.test(rows[2]) && /^접속 중/.test(rows[3]) && /^오프라인/.test(rows[4]), rows.join(' | '));
 	check('대화 중끼리는 최근 접속순 (앱 켜진 푸른고래 먼저)', rows[0].includes('푸른고래'), rows[0]);
 	check('오프라인 사용자는 마지막 접속 시간', /3시간 전/.test(rows[4]), rows[4]);
 	check('정지 표시', /정지/.test(rows[4]), rows[4]);
@@ -103,10 +103,10 @@ try {
 
 	// ── 자동 갱신: 서버 상태를 바꾸고 새로고침 없이 기다린다
 	const labelsBefore = labelCalls;
-	world = world.map((u) => (u.id === D ? { ...u, online: false, last_seen: ago(0) } : u.id === C ? { ...u, seeking: false, room_count: 1, rooms: [id('9')] } : u));
+	world = world.map((u) => (u.id === D ? { ...u, online: false, last_seen: ago(0) } : u.id === C ? { ...u, seeking: false, room_count: 1, talking: 1, rooms: [id('9')] } : u));
 	await page.waitForFunction(() => document.querySelector('nav.a-tabs')?.textContent?.replace(/\s+/g, ' ').includes('매칭 대기 0'), null, { timeout: 15000 }).catch(() => {});
 	const tabs2 = await tabText();
-	check('★ 10초 안에 새로고침 없이 상태 반영', /대화 중 3/.test(tabs2) && /매칭 대기 0/.test(tabs2) && /접속 중 0/.test(tabs2) && /오프라인 2/.test(tabs2), tabs2);
+	check('★ 10초 안에 새로고침 없이 상태 반영', /대화 중 2/.test(tabs2) && /대화방 있음 1/.test(tabs2) && /매칭 대기 0/.test(tabs2) && /접속 중 0/.test(tabs2) && /오프라인 2/.test(tabs2), tabs2);
 	check('★ 자동 갱신은 학번·이름을 다시 부르지 않는다 (활동 기록이 쌓이지 않음)', labelCalls === labelsBefore, `${labelsBefore}→${labelCalls}`);
 	check('상태 RPC 는 여러 번 불림', liveCalls >= 2, String(liveCalls));
 	await page.screenshot({ path: `${SP}/live-${ROLE}-2.png`, fullPage: true });

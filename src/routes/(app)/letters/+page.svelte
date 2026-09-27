@@ -1,66 +1,62 @@
 <script lang="ts">
 	/**
-	 * 익명편지 탭 = 편지함 (Phase 32) — 받은 편지 · 보낸 편지를 따로. 편지 한 통 = 봉투 한 장.
-	 * 받은 편지는 덮개 쪽(안 연 편지는 밀랍 봉인), 보낸 편지는 주소 쪽(우표 · 소인 · 읽음/답장 옴).
+	 * 익명편지 탭 = 편지함 (Phase 32 · 35).
+	 *   위: 아직 안 연 받은 편지만 — 봉인된 봉투가 비스듬히 쌓여 있다 (누르면 봉투를 연다).
+	 *   아래: 갈색 책상 위 서류 더미 = 편지 보관함. 읽은 편지 · 보낸 편지가 겹겹이 쌓여 있고, 누르면 지금까지 받은 · 쓴 편지 전부 (/letters/archive).
 	 * 오른쪽 아래 버튼으로 새 편지. 봉투를 길게 누르면 신고 · 차단 · 나가기 (LetterMenu).
+	 * 목록은 앱 안에서 기억해 두고(mailbox.svelte.ts) 다시 들어오면 바로 그린 뒤 뒤에서 새로 읽는다.
 	 */
 	import { goto } from '$app/navigation';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
+	import Envelope from '$lib/letters/Envelope.svelte';
 	import MailboxItem from '$lib/letters/MailboxItem.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
-	import { anonName, fetchMailbox, fromLabel, toLabel, type Box, type MailItem } from '$lib/letters/api';
-	import { DM, LIST, refreshUnread } from '$lib/letters/unread.svelte';
+	import { anonName, borderOf, fromLabel, stampDate, toLabel, type MailItem } from '$lib/letters/api';
+	import { BOX, PAGE, dropThread, refreshMailbox } from '$lib/letters/mailbox.svelte';
 	import { envWidth } from '$lib/letters/stage';
 	import { whileVisible } from '$lib/visible';
 	import { S } from '$lib/state.svelte';
 
-	const PAGE = 30;
-	let boxes = $state<Record<Box, MailItem[]>>({ received: [], sent: [] });
-	let loaded = $state<Record<Box, boolean>>({ received: false, sent: false });
-	let more = $state<Record<Box, boolean>>({ received: false, sent: false });
-	const tab = $derived(LIST.tab);
-	const list = $derived(boxes[tab]);
 	let vw = $state(390);
 	const w = $derived(envWidth(vw, 340, 56));
 
-	async function load(box: Box) {
-		try {
-			const r = await fetchMailbox(box);
-			boxes[box] = r;
-			more[box] = r.length === PAGE;
-		} catch {
-			/* 다음 번에 */
-		} finally {
-			loaded[box] = true;
-		}
-	}
-	async function loadMore() {
-		const box = tab;
-		const last = boxes[box].at(-1);
-		if (!last) return;
-		const r = await fetchMailbox(box, last.id).catch(() => [] as MailItem[]);
-		boxes[box] = [...boxes[box], ...r];
-		more[box] = r.length === PAGE;
-	}
 	$effect(() => {
-		const refresh = () => {
-			void load('received');
-			void load('sent');
-			void refreshUnread();
-		};
-		refresh();
-		return whileVisible(refresh, 30_000);
+		refreshMailbox();
+		return whileVisible(refreshMailbox, 30_000);
 	});
 
-	// 받은 편지의 To. 는 나 — 모르는 사람의 편지면 내 이름, 내 편지에 온 답장이면 (나는 익명이었으니) 익명의 나
+	const unread = $derived(BOX.received.filter((i) => !i.opened && !i.removed));
+	const readCount = $derived(BOX.received.length - unread.length);
+	const sentCount = $derived(BOX.sent.length);
+	const count = (n: number, more: boolean) => (more ? `${PAGE}+` : String(n));
+	// 더미 맨 위 한 장 = 가장 최근에 읽은 받은 편지 (없으면 가장 최근에 보낸 편지)
+	const top = $derived.by(() => {
+		const r = BOX.received.find((i) => i.opened);
+		const s = BOX.sent[0];
+		if (r && (!s || r.id > s.id)) return { it: r, box: 'received' as const };
+		return s ? { it: s, box: 'sent' as const } : null;
+	});
+	// 한 통이라도 있으면 겹겹이 쌓인 느낌이 나게 최소 네 장
+	const pileSize = $derived(readCount + sentCount ? Math.min(7, Math.max(4, readCount + sentCount + 1)) : 0);
+	const loaded = $derived(BOX.loaded.received && BOX.loaded.sent);
+
+	// 받은 편지의 To. 는 나 — 모르는 사람의 편지면 내 이름, 내 편지에 온 답장이면 (나는 익명이었으니) 내 서명 · 익명의 나
 	const myName = $derived(S.me?.name ?? '나');
-	const meFor = (it: MailItem) =>
-		tab === 'received' ? (it.from_name ? anonName(S.profile?.gender) : myName) : it.to_name ? anonName(S.profile?.gender) : myName;
-	// 봉투를 살짝씩 비뚤게 — 책상 위에 쌓인 편지처럼
+	const anonMe = (it: MailItem) => it.my_nick ?? anonName(S.profile?.gender);
+	const meFor = (it: MailItem) => (it.from_name ? anonMe(it) : myName);
+	// 봉투를 살짝씩 비뚤게 — 책상 위에 막 도착한 편지처럼
 	const tilt = (i: number) => [-1.6, 1.2, -0.6, 1.8, -1.2, 0.8][i % 6];
+	// 서류 더미 — 한 장씩 조금씩 어긋나게 (맨 아래일수록 크게)
+	const LAYERS = [
+		{ r: -7, x: -14, y: 10, kind: 'paper' },
+		{ r: 5, x: 16, y: 8, kind: 'env' },
+		{ r: -3, x: -6, y: 6, kind: 'paper' },
+		{ r: 8, x: 10, y: 4, kind: 'env' },
+		{ r: -5, x: -12, y: 3, kind: 'env' },
+		{ r: 3, x: 6, y: 1, kind: 'paper' }
+	];
 
 	let menuFor = $state<MailItem | null>(null);
-	const recv = $derived(boxes.received.filter((i) => !i.opened).length);
 </script>
 
 <svelte:window bind:innerWidth={vw} />
@@ -71,34 +67,29 @@
 </div>
 
 <div class="page mailbox">
-	<div class="seg" role="tablist" aria-label="편지함">
-		<button role="tab" class:on={tab === 'received'} aria-selected={tab === 'received'} onclick={() => (LIST.tab = 'received')}>
-			받은 편지{#if DM.unread || recv}<span class="count num" aria-label="안 읽은 편지 {DM.unread || recv}통">{DM.unread || recv}</span>{/if}
-		</button>
-		<button role="tab" class:on={tab === 'sent'} aria-selected={tab === 'sent'} onclick={() => (LIST.tab = 'sent')}>보낸 편지</button>
-		<span class="thumb" class:right={tab === 'sent'} aria-hidden="true"></span>
+	<div class="head">
+		<h2>새 편지</h2>
+		{#if unread.length}<span class="count num" aria-label="안 읽은 편지 {unread.length}통">{unread.length}</span>{/if}
 	</div>
 
-	{#if !loaded[tab]}
-		<p class="muted center">편지함을 여는 중…</p>
-	{:else if list.length === 0}
-		<div class="empty">
-			<svg viewBox="0 0 120 90" aria-hidden="true">
-				<rect x="10" y="22" width="100" height="62" rx="6" fill="var(--env-paper)" stroke="var(--line)" />
-				<path d="M10 28l50 32 50-32" fill="none" stroke="var(--line)" stroke-width="2" />
-				<circle cx="60" cy="58" r="9" fill="#d92c55" opacity=".85" />
-				<path d="M60 62s-4-2.4-4-5.4a2.2 2.2 0 0 1 4-1.3 2.2 2.2 0 0 1 4 1.3c0 3-4 5.4-4 5.4z" fill="#fff" opacity=".8" />
+	{#if !BOX.loaded.received}
+		<div class="ghost" style:--w="{w}px" aria-label="편지함을 여는 중"></div>
+	{:else if unread.length === 0}
+		<div class="none">
+			<svg viewBox="0 0 48 36" aria-hidden="true">
+				<rect x="3" y="5" width="42" height="27" rx="3" fill="var(--env-paper)" stroke="var(--line)" stroke-width="1.5" />
+				<path d="M3.5 7l20.5 14L44.5 7" fill="none" stroke="var(--line)" stroke-width="1.5" />
 			</svg>
-			<p>{tab === 'received' ? '아직 받은 편지가 없어요' : '아직 보낸 편지가 없어요'}</p>
-			<small class="muted">{tab === 'received' ? '편지가 오면 여기에 봉인된 채로 도착해요' : '마음을 전하고 싶은 친구에게 첫 편지를 써 보세요'}</small>
+			<p>새로 온 편지가 없어요</p>
+			<small class="muted">편지가 오면 여기에 봉인된 채로 도착해요</small>
 		</div>
 	{:else}
 		<ul class="stack">
-			{#each list as it, i (it.id)}
-				<li>
+			{#each unread as it, i (it.id)}
+				<li class="arrive" style:--i={i}>
 					<MailboxItem
 						item={it}
-						box={tab}
+						box="received"
 						me={meFor(it)}
 						{w}
 						tilt={tilt(i)}
@@ -108,8 +99,39 @@
 				</li>
 			{/each}
 		</ul>
-		{#if more[tab]}<button class="more" onclick={loadMore}>지난 편지 더 보기</button>{/if}
 	{/if}
+
+	<!-- 편지 보관함 — 갈색 책상 위 서류 더미 -->
+	<button class="desk" onclick={() => goto('/letters/archive')} aria-label="편지 보관함 — 받은 편지 {count(readCount, BOX.more.received)}통, 보낸 편지 {count(sentCount, BOX.more.sent)}통">
+		<span class="wood" aria-hidden="true">
+			<span class="pile">
+				{#each LAYERS.slice(0, Math.max(0, pileSize - 1)) as l, i (i)}
+					<i class="layer {l.kind}" style:--r="{l.r}deg" style:--x="{l.x}px" style:--y="{l.y}px"></i>
+				{/each}
+				{#if top}
+					<span class="top-env">
+						<Envelope
+							to={top.box === 'received' ? meFor(top.it) : toLabel(top.it)}
+							from={top.box === 'received' ? fromLabel(top.it) : top.it.to_name ? anonMe(top.it) : myName}
+							date={stampDate(top.it.created_at)}
+							border={borderOf(top.it, top.box)}
+							postmark={stampDate(top.it.created_at)}
+							w={176}
+						/>
+					</span>
+				{:else if loaded}
+					<span class="empty-desk">아직 쌓인 편지가 없어요</span>
+				{/if}
+			</span>
+		</span>
+		<span class="plate">
+			<span class="plate-text">
+				<strong>편지 보관함</strong>
+				<span class="muted num">받은 편지 {count(readCount, BOX.more.received)} · 보낸 편지 {count(sentCount, BOX.more.sent)}</span>
+			</span>
+			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+		</span>
+	</button>
 </div>
 
 <a class="fab" href="/letters/new" aria-label="편지 쓰기">
@@ -122,114 +144,221 @@
 
 {#if menuFor}
 	<LetterMenu
-		thread={{ id: menuFor.thread_id, recipient: tab === 'received' ? !menuFor.from_name : !menuFor.to_name }}
-		title={tab === 'received' ? fromLabel(menuFor) : toLabel(menuFor)}
+		thread={{ id: menuFor.thread_id, recipient: !menuFor.from_name }}
+		title={fromLabel(menuFor)}
 		onclose={() => (menuFor = null)}
 		ondone={() => {
 			const t = menuFor?.thread_id;
 			menuFor = null;
-			boxes = { received: boxes.received.filter((x) => x.thread_id !== t), sent: boxes.sent.filter((x) => x.thread_id !== t) };
-			void load('received');
-			void load('sent');
+			if (t != null) dropThread(t);
 		}}
 	/>
 {/if}
 
 <style>
 	.mailbox {
-		gap: 18px;
-		padding-top: 12px;
-		padding-bottom: 110px;
+		gap: 16px;
+		padding-top: 14px;
+		padding-bottom: 120px;
 		background: var(--desk);
 	}
-	/* 두 칸 분할 버튼 — 고른 쪽 아래로 흰 알약이 미끄러진다 */
-	.seg {
-		position: relative;
-		display: grid;
-		grid-template-columns: 1fr 1fr;
-		padding: 4px;
-		border-radius: 999px;
-		background: var(--field);
-	}
-	.seg button {
-		position: relative;
-		z-index: 1;
-		display: inline-flex;
+	.head {
+		display: flex;
 		align-items: center;
-		justify-content: center;
-		gap: 6px;
-		height: 38px;
-		border-radius: 999px;
-		font-size: 14px;
-		font-weight: 700;
-		color: var(--text-2);
-		transition: color 0.2s;
+		gap: 8px;
+		margin: 0 2px;
 	}
-	.seg button.on {
-		color: var(--text);
-	}
-	.thumb {
-		position: absolute;
-		top: 4px;
-		bottom: 4px;
-		left: 4px;
-		width: calc(50% - 4px);
-		border-radius: 999px;
-		background: var(--bg);
-		box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
-		transition: transform 0.3s cubic-bezier(0.3, 0.7, 0.2, 1.1);
-	}
-	.thumb.right {
-		transform: translateX(100%);
+	.head h2 {
+		margin: 0;
+		font-size: 17px;
+		font-weight: 800;
+		letter-spacing: -0.02em;
 	}
 	.count {
-		min-width: 18px;
-		height: 18px;
-		padding: 0 5px;
-		border-radius: 9px;
+		min-width: 20px;
+		height: 20px;
+		padding: 0 6px;
+		border-radius: 10px;
 		background: var(--accent-fill-deep);
 		color: var(--on-accent);
-		font-size: 11px;
-		line-height: 18px;
-	}
-	.center {
-		margin: 40px 0;
+		font-size: 12px;
+		font-weight: 800;
+		line-height: 20px;
 		text-align: center;
 	}
 	.stack {
 		display: flex;
 		flex-direction: column;
 		gap: 26px;
-		margin: 8px 0 0;
+		margin: 6px 0 4px;
 		padding: 0;
 		list-style: none;
 	}
-	.empty {
+	/* 도착 — 위에서 살짝 떨어져 내려앉는다 (한 통씩 조금 늦게) */
+	.arrive {
+		animation: arrive 0.6s calc(var(--i) * 70ms) cubic-bezier(0.2, 0.9, 0.3, 1.08) both;
+	}
+	@keyframes arrive {
+		from {
+			opacity: 0;
+			transform: translateY(-18px) rotate(-2deg);
+		}
+	}
+	/* 불러오는 동안 — 봉투 모양 빈 자리가 은은히 숨 쉰다 */
+	.ghost {
+		align-self: center;
+		width: var(--w);
+		height: calc(var(--w) * 0.62);
+		border-radius: 8px;
+		background: linear-gradient(100deg, var(--field) 30%, var(--surface) 50%, var(--field) 70%) 0 0 / 300% 100%;
+		animation: shimmer 1.4s ease-in-out infinite;
+	}
+	@keyframes shimmer {
+		from {
+			background-position: 100% 0;
+		}
+		to {
+			background-position: 0 0;
+		}
+	}
+	.none {
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 6px;
-		margin-top: 36px;
+		gap: 4px;
+		padding: 22px 16px;
+		border-radius: var(--r-card);
+		background: color-mix(in srgb, var(--surface) 70%, transparent);
+		box-shadow: var(--shadow-1);
 		text-align: center;
+		animation: fade-up 0.4s ease-out both;
 	}
-	.empty svg {
-		width: 140px;
-		margin-bottom: 8px;
+	.none svg {
+		width: 52px;
+		margin-bottom: 4px;
 	}
-	.empty p {
+	.none p {
 		margin: 0;
 		font-size: 15px;
 		font-weight: 700;
 	}
-	.more {
-		align-self: center;
-		height: 38px;
-		padding: 0 16px;
-		border-radius: 999px;
-		background: var(--field);
+	.none small {
+		font-size: 12px;
+	}
+	@keyframes fade-up {
+		from {
+			opacity: 0;
+			transform: translateY(8px);
+		}
+	}
+
+	/* ── 책상 · 서류 더미 ── */
+	.desk {
+		display: flex;
+		flex-direction: column;
+		margin: 14px calc(var(--pad) * -1) 0;
+		text-align: left;
+		transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.3, 1);
+	}
+	.desk:active {
+		transform: scale(0.985);
+	}
+	.wood {
+		position: relative;
+		display: grid;
+		place-items: center;
+		height: 230px;
+		/* 나뭇결 — 가는 결 · 굵은 결 · 위에서 비치는 빛 */
+		background:
+			repeating-linear-gradient(91deg, rgb(255 255 255 / 0.035) 0 2px, transparent 2px 11px),
+			repeating-linear-gradient(89deg, rgb(40 15 0 / 0.08) 0 1px, transparent 1px 27px),
+			radial-gradient(90% 70% at 40% 0%, rgb(255 210 160 / 0.22), transparent 70%),
+			linear-gradient(180deg, #9a5f33, #7b4623 55%, #633619);
+		box-shadow: inset 0 10px 18px -12px rgb(0 0 0 / 0.5);
+		overflow: hidden;
+	}
+	/* 책상 앞 모서리 두께 */
+	.wood::after {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 12px;
+		background: linear-gradient(180deg, #5a3016, #3f200d);
+		box-shadow: 0 -1px 0 rgb(255 220 180 / 0.18);
+	}
+	.pile {
+		position: relative;
+		display: grid;
+		place-items: center;
+		width: 190px;
+		height: 130px;
+		margin-top: -8px;
+		transform: perspective(700px) rotateX(18deg);
+	}
+	.layer {
+		position: absolute;
+		width: 176px;
+		height: 109px;
+		border-radius: 4px;
+		transform: translate(var(--x), var(--y)) rotate(var(--r));
+		box-shadow: 0 2px 5px rgb(30 10 0 / 0.35);
+	}
+	.layer.paper {
+		width: 150px;
+		height: 118px;
+		background:
+			repeating-linear-gradient(180deg, transparent 0 11px, rgb(90 70 50 / 0.14) 11px 12px) 0 14px / 100% 100% no-repeat,
+			#fffaf0;
+	}
+	.layer.env {
+		background:
+			linear-gradient(to bottom right, transparent calc(50% - 0.6px), rgb(80 60 40 / 0.18) 50%, transparent calc(50% + 0.6px)) left top / 50% 60% no-repeat,
+			linear-gradient(to bottom left, transparent calc(50% - 0.6px), rgb(80 60 40 / 0.18) 50%, transparent calc(50% + 0.6px)) right top / 50% 60% no-repeat,
+			var(--env-paper);
+	}
+	.top-env {
+		position: relative;
+		transform: rotate(-2deg);
+		filter: drop-shadow(0 4px 6px rgb(30 10 0 / 0.4));
+	}
+	.empty-desk {
+		color: rgb(255 235 215 / 0.8);
 		font-size: 13px;
 		font-weight: 700;
 	}
+	.plate {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin: -26px var(--pad) 0;
+		padding: 14px 16px;
+		border-radius: var(--r-card);
+		background: var(--surface);
+		box-shadow: var(--shadow-2);
+		position: relative;
+	}
+	.plate-text {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+	.plate strong {
+		font-size: 16px;
+		font-weight: 800;
+	}
+	.plate .muted {
+		font-size: 13px;
+	}
+	.plate svg {
+		width: 20px;
+		height: 20px;
+		color: var(--text-2);
+	}
+
+	/* 편지 쓰기 — 테마 색 (설정 > 테마 색상과 같이 바뀐다) */
 	.fab {
 		position: fixed;
 		right: max(16px, calc(50% - 260px + 16px));
@@ -246,11 +375,11 @@
 		font-size: 15px;
 		font-weight: 800;
 		text-decoration: none;
-		box-shadow: 0 10px 24px -6px rgb(240 57 110 / 0.55);
-		transition: transform 0.15s;
+		box-shadow: var(--glow);
+		transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.3, 1.4);
 	}
 	.fab:active {
-		transform: scale(0.95);
+		transform: scale(0.94);
 	}
 	.fab svg {
 		width: 22px;

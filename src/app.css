@@ -3,7 +3,7 @@
    방향: 브랜드 그라디언트(주황 → 코랄 → 핑크)는 그대로, 인스타 · 틴더처럼 따뜻하고 입체적으로.
      · 바탕은 순백 대신 아주 옅은 따뜻한 흰색, 탭 첫 화면 위쪽엔 브랜드색 빛 번짐(--ambient)
      · 카드는 흰 면 + 부드러운 그림자, 모서리는 크게 (24px) · 버튼은 알약 + 브랜드 빛(--glow)
-     · 머리글 · 탭바는 반투명 유리(--glass) — 탭바는 화면 아래에 떠 있는 알약
+     · 머리글 · 탭바는 반투명 유리(--glass) — 탭바는 화면 맨 아래에 붙는다 (Phase 35: 떠 있는 알약이 아이폰에서 어중간하게 떠 보여서)
      · 서체는 Pretendard (자체 호스팅), 제목은 굵고 촘촘하게
    ──────────────────────────────────────────────────────────── */
 
@@ -72,9 +72,9 @@
 	--header-h: 48px;
 	/* 아이폰 상태바(시계·배터리) 높이 — 홈 화면 앱은 black-translucent 라 화면이 상태바 밑까지 올라간다 */
 	--safe-top: env(safe-area-inset-top, 0px);
-	/* 떠 있는 탭바 — 알약 높이 64 + 아래 여백 10 + 위 틈 10 (그 위로 버튼 · 알림을 띄운다) */
-	--tabbar-pill: 64px;
-	--tabbar-h: 84px;
+	/* 탭바 — 화면 맨 아래에 붙는 막대 (높이 58 + 아이폰 홈 막대 자리 safe-area). 그 위로 버튼 · 알림을 띄운다 */
+	--tabbar-pill: 58px;
+	--tabbar-h: 58px;
 
 	--sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
 		'Malgun Gothic', 'Segoe UI', Roboto, sans-serif;
@@ -256,7 +256,7 @@ a {
 }
 .btn:active:not(:disabled) {
 	transform: scale(0.97);
-	box-shadow: 0 4px 14px -6px rgb(238 67 96 / 0.6);
+	box-shadow: 0 4px 14px -6px color-mix(in srgb, var(--g-coral) 60%, transparent);
 }
 /* 비활성은 그라디언트 · 빛을 빼고 흑백으로 — 누를 수 있는 것만 색을 갖는다 */
 .btn:disabled {
@@ -535,24 +535,24 @@ button.g-row:active:not(:disabled) {
 }
 
 /* 하단 탭바 — 익명편지 · 채팅 · 프로필 (src/routes/(app)/+layout.svelte)
-   화면 아래에 떠 있는 유리 알약. 고른 탭은 브랜드색 아이콘 + 뒤에 옅은 알약. */
+   화면 맨 아래에 붙은 유리 막대 (인스타처럼). 아이폰 홈 막대 자리(safe-area)만큼 아래를 더 채운다.
+   고른 탭은 브랜드색 아이콘 + 뒤에 옅은 알약. 화면을 넘길 때도 제자리에 있다 (view-transition-name). */
 .tabbar {
 	position: fixed;
 	left: 50%;
-	bottom: calc(10px + env(safe-area-inset-bottom));
+	bottom: 0;
 	transform: translateX(-50%);
 	z-index: 20; /* 헤더(10) 위, 시트(50)·토스트(100) 아래 */
 	display: flex;
-	width: calc(100% - 28px);
-	max-width: 480px;
-	height: var(--tabbar-pill);
-	padding: 0 6px;
-	border-radius: 999px;
-	background: color-mix(in srgb, var(--surface) 78%, transparent);
+	width: 100%;
+	max-width: 520px;
+	height: calc(var(--tabbar-pill) + env(safe-area-inset-bottom));
+	padding: 0 10px env(safe-area-inset-bottom);
+	background: color-mix(in srgb, var(--surface) 82%, transparent);
 	-webkit-backdrop-filter: saturate(180%) blur(22px);
 	backdrop-filter: saturate(180%) blur(22px);
-	border: 1px solid var(--glass-line);
-	box-shadow: var(--shadow-2);
+	border-top: 1px solid var(--glass-line);
+	view-transition-name: tabbar;
 }
 .tab {
 	flex: 1;
@@ -579,7 +579,7 @@ button.g-row:active:not(:disabled) {
 .tab.on::before {
 	content: '';
 	position: absolute;
-	inset: 7px 6px;
+	inset: 5px 14px;
 	border-radius: 999px;
 	background: color-mix(in srgb, var(--accent) 12%, transparent);
 	animation: tab-in 0.25s cubic-bezier(0.3, 0.7, 0.3, 1.3);
@@ -599,7 +599,7 @@ button.g-row:active:not(:disabled) {
 }
 .tab-dot {
 	position: absolute;
-	top: 9px;
+	top: 7px;
 	left: calc(50% + 8px);
 	width: 9px;
 	height: 9px;
@@ -617,17 +617,23 @@ button.g-row:active:not(:disabled) {
 	height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
 }
 
-/* 토스트 */
+/* 토스트 — 한 장만. 새 알림이 오면 같은 칸에 겹쳐 그린다 (떠 있던 것은 빨리 사라지고 새 것이 튀어 오른다, Phase 35) */
 .toasts {
 	position: fixed;
 	left: 50%;
 	bottom: calc(16px + var(--tabbar-h) + env(safe-area-inset-bottom)); /* 탭바·입력창 위로 */
 	transform: translateX(-50%);
 	z-index: 100;
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
+	display: grid;
+	justify-items: center;
+	align-items: end;
+	width: max-content;
+	max-width: calc(100vw - 32px);
 	pointer-events: none;
+	view-transition-name: toasts;
+}
+.toasts > * {
+	grid-area: 1 / 1;
 }
 .toast {
 	padding: 11px 18px;
@@ -640,17 +646,88 @@ button.g-row:active:not(:disabled) {
 	font-weight: 600;
 	box-shadow: var(--shadow-2);
 	opacity: 1;
-	animation: toast-in 0.3s cubic-bezier(0.3, 0.7, 0.3, 1.3);
-	transition: opacity 0.26s;
+	text-align: center;
+	animation: toast-in 0.32s cubic-bezier(0.3, 0.7, 0.3, 1.25);
+	transition:
+		opacity 0.14s ease-out,
+		transform 0.14s ease-out;
 }
 @keyframes toast-in {
 	from {
-		transform: translateY(10px) scale(0.95);
+		transform: translateY(8px) scale(0.94);
 		opacity: 0;
 	}
 }
 .toast.out {
 	opacity: 0;
+	transform: scale(0.96);
+}
+
+/* ── 화면 넘김 (View Transitions, Phase 35 · +layout.svelte onNavigate) ──
+   하위 화면으로 들어가면 새 화면이 오른쪽에서 밀려 들어오고, 돌아오면 왼쪽에서. 탭끼리는 겹쳐 사라지기만.
+   탭바 · 토스트 · 앱 안 알림은 제자리 (각자 view-transition-name) */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 0.3s;
+	animation-timing-function: cubic-bezier(0.3, 0.75, 0.25, 1);
+}
+::view-transition-old(root) {
+	animation-name: vt-fade-out;
+}
+::view-transition-new(root) {
+	animation-name: vt-fade-in;
+}
+:root[data-nav='push']::view-transition-old(root) {
+	animation-name: vt-out-left;
+}
+:root[data-nav='push']::view-transition-new(root) {
+	animation-name: vt-in-right;
+}
+:root[data-nav='pop']::view-transition-old(root) {
+	animation-name: vt-out-right;
+}
+:root[data-nav='pop']::view-transition-new(root) {
+	animation-name: vt-in-left;
+}
+::view-transition-group(tabbar),
+::view-transition-group(toasts),
+::view-transition-group(inapp) {
+	animation: none;
+}
+@keyframes vt-fade-out {
+	to {
+		opacity: 0;
+	}
+}
+@keyframes vt-fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(6px);
+	}
+}
+@keyframes vt-out-left {
+	to {
+		opacity: 0;
+		transform: translateX(-18%);
+	}
+}
+@keyframes vt-in-right {
+	from {
+		opacity: 0;
+		transform: translateX(28%);
+	}
+}
+@keyframes vt-out-right {
+	to {
+		opacity: 0;
+		transform: translateX(22%);
+	}
+}
+@keyframes vt-in-left {
+	from {
+		opacity: 0;
+		transform: translateX(-16%);
+	}
 }
 
 /* 부팅 스플래시 — 리다이렉트 플리커 방지 */
@@ -701,7 +778,7 @@ button.g-row:active:not(:disabled) {
 	border-radius: 6px;
 	background-color: var(--paper);
 	background-image:
-		linear-gradient(90deg, transparent 21px, rgb(240 57 110 / 0.28) 21px 22.5px, transparent 22.5px),
+		linear-gradient(90deg, transparent 21px, color-mix(in srgb, var(--g-pink) 28%, transparent) 21px 22.5px, transparent 22.5px),
 		repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-h) - 1px), var(--paper-rule) calc(var(--rule-h) - 1px) var(--rule-h));
 	background-position: 0 0, 0 14px;
 	color: var(--paper-ink);

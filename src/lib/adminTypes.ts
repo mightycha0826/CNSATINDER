@@ -144,6 +144,8 @@ export type LiveUser = {
 	last_seen: string | null;
 	seeking: boolean;
 	room_count: number;
+	/** 둘 다 대화 화면을 보고 있는 방 수 (Phase 35) — 이것만 "대화 중" */
+	talking?: number;
 	rooms: string[] | null;
 };
 
@@ -303,8 +305,13 @@ export const ACTION_LABEL: Record<string, string> = {
 	roster_import: '명렬표 반영',
 	post_notice: '공지 올림',
 	remove_notice: '공지 내림',
-	remove_dm: '이름 편지 내림'
+	remove_dm: '이름 편지 내림',
+	personal_notice: '개인 공지 보냄',
+	remove_personal_notice: '개인 공지 거둠'
 };
+
+/** 한 사람에게 보낸 개인 공지 (admin_personal_notices, Phase 35) */
+export type PersonalNoticeRow = { id: number; kind: 'message' | 'warning'; title: string; body: string; created_at: string; read_at: string | null };
 
 /** 공지사항 (admin_notices) */
 export type NoticeRow = { id: number; title: string; body: string; created_at: string };

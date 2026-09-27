@@ -4,6 +4,9 @@
 	import { whileVisible } from '$lib/visible';
 	import { DM, refreshUnread } from '$lib/letters/unread.svelte';
 	import AchievementCelebrate from '$lib/ui/AchievementCelebrate.svelte';
+	import { INBOX } from '$lib/inbox.svelte';
+	import { notifyInApp } from '$lib/inapp.svelte';
+	import { pushState } from '$lib/push';
 
 	/**
 	 * 앱 화면 공통 틀 — 하단 탭 3개 (왼쪽 익명편지 · 가운데 채팅 · 오른쪽 프로필).
@@ -20,10 +23,41 @@
 	const onChat = $derived(path === '/');
 	const onMe = $derived(path === '/me');
 
-	// 안 읽은 편지 — 익명편지 탭 위 빨간 점. 앱이 보이는 동안 2분마다 (편지 목록 화면은 따로 30초마다 읽는다)
+	// 안 읽은 편지 — 익명편지 탭 위 빨간 점. 앱이 보이는 동안 1분마다 (편지 목록 화면은 따로 30초마다 읽는다)
 	$effect(() => {
 		void refreshUnread();
-		return whileVisible(() => void refreshUnread(), 120_000);
+		return whileVisible(() => void refreshUnread(), 60_000);
+	});
+
+	// ── 대화 목록 · 앱 안 알림 (Phase 35) ──
+	// 대화 목록(INBOX)은 앱이 떠 있는 동안 계속 켜 둔다 — 홈에 돌아오면 바로 그려지고, 다른 화면을 보는 중에 새 메시지가 오면
+	// 위에서 알림 띠가 내려온다 (알림 권한이 없어도). 그 대화를 보고 있으면 띄우지 않는다 (notifyInApp 이 주소로 거른다).
+	$effect(() => {
+		INBOX.onNew = (r) =>
+			notifyInApp(
+				{
+					key: r.room_id,
+					title: r.partner_alias,
+					body: r.joined ? (r.last_body ?? '새 메시지') : '새 대화 상대와 연결됐어요',
+					url: `/chat/${r.room_id}`,
+					kind: 'chat'
+				},
+				`${r.room_id}|${(r.last_body ?? '').slice(0, 60)}`
+			);
+		INBOX.start();
+		return () => {
+			INBOX.onNew = null;
+			INBOX.stop();
+		};
+	});
+	// 편지 — 푸시 알림을 안 켠 기기는 안 읽은 편지 수가 늘어난 것으로 알려 준다 (켠 기기는 서비스워커가 알린다)
+	let lastUnread = -1;
+	$effect(() => {
+		const n = DM.unread;
+		if (!DM.loaded) return;
+		if (lastUnread >= 0 && n > lastUnread && pushState() !== 'granted')
+			notifyInApp({ key: 'dm', title: '새 편지가 왔어요', body: '봉투를 열어 확인해 보세요', url: '/letters', kind: 'letter' }, `dm|${n}`);
+		lastUnread = n;
 	});
 
 	const { switchTab } = useTabBack(); // 뒤로가기: 익명편지·프로필 → 홈, 홈 → 두 번 누르면 종료 (lib/tabBack.svelte.ts)

@@ -101,7 +101,7 @@ const rowsAs = async (uid, sql, params = []) => as(uid, async () => (await db.qu
 const LEGACY_RPCS = ['letter_feed(bigint, integer)', 'letter_detail(bigint)', 'post_letter(text, jsonb)',
 	'post_comment(bigint, bigint, text, uuid)', 'set_letter_like(bigint, boolean)', 'request_letter_reply_task()',
 	'delete_my_letter(bigint)', 'delete_my_comment(bigint)', 'block_letter_author(bigint, bigint)',
-	'report_letter(bigint, bigint, text, text)', 'my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb)'];
+	'report_letter(bigint, bigint, text, text)', 'my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb, text)'];
 const openLegacy = async () => {
 	for (const f of LEGACY_RPCS) await db.exec(`grant execute on function public.${f} to authenticated`);
 };
@@ -1301,7 +1301,13 @@ console.log('\n[44] ★ 푸시 발송 판단');
 	await rpcAs(t, 'heartbeat', true);
 	await sendIn(s, r, sSeat, '아 보고 있구나');
 	const mid2 = (await one('select max(id)::int m from public.messages where room_id = $1', [r])).m;
-	check('받는 사람이 앱을 보고 있으면 보내지 않는다', (await svc('push_payload', mid2, s)).skip === 'online');
+	const p2 = await svc('push_payload', mid2, s);
+	check('★ 앱이 켜져 있어도 그 대화 화면이 아니면 보낸다 (앱 안 알림으로 뜬다, Phase 35)', p2.subs?.length === 1 && Number(p2.id) === Number(mid2) && !!p2.at, JSON.stringify(p2));
+	await rpcAs(t, 'room_view', r, true);
+	await sendIn(s, r, sSeat, '이제 보고 있네');
+	const mid2b = (await one('select max(id)::int m from public.messages where room_id = $1', [r])).m;
+	check('★ 받는 사람이 그 대화 화면을 보고 있으면 보내지 않는다', (await svc('push_payload', mid2b, s)).skip === 'viewing');
+	await rpcAs(t, 'room_view', r, false);
 
 	await rpcAs(t, 'heartbeat', false);
 	await sendIn(s, r, sSeat, '긴 메시지 '.repeat(40));
@@ -2050,7 +2056,8 @@ console.log('\n[63] ★ 공감 푸시 — 상대 메시지에, 한 번만, 앱�
 	const mA2 = await say(A, seatA, '두 번째');
 	await rpcAs(B, 'react_message', mA2, 'wow');
 	await db.query(`update public.user_presence set online_until = now() + interval '1 minute' where user_id = $1`, [A]);
-	check('받는 사람이 앱을 보고 있으면 보내지 않는다', (await pay(B, mA2)).skip === 'online');
+	await db.query(`update public.room_members set viewing_until = now() + interval '20 seconds' where room_id = $1 and user_id = $2`, [r, A]);
+	check('받는 사람이 그 대화 화면을 보고 있으면 보내지 않는다', (await pay(B, mA2)).skip === 'viewing');
 	await expectError('★ 학생은 직접 부를 수 없다', () => rpcAs(B, 'reaction_push_payload', mA, B), 'permission denied');
 }
 
@@ -2687,8 +2694,9 @@ console.log('\n[76] 랜덤 채팅 — 메시지 삭제 · 둘 다 볼 때만 흐
 	snap = await rpcAs(A.id, 'room_snapshot', room);
 	check('★ 30분 째는 디플로마 — 직접 적는 차례', snap.next_hint?.kind === 'diploma' && snap.next_hint.typed === true);
 	check('디플로마를 안 적으면 연장할 수 없다', (await rpcAs(A.id, 'vote_extension', room, true)).result === 'need_hint');
-	await rpcAs(A.id, 'vote_extension', room, true, 'IB'); v = await rpcAs(B.id, 'vote_extension', room, true, '과학');
-	check('★ 연장 → 서로가 적은 디플로마', v.result === 'extended' && v.snap.partner_hints[2]?.kind === 'diploma' && v.snap.partner_hints[2].value === 'IB' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[2].value === '과학');
+	check('★ 학교에 없는 디플로마는 안 된다 (목록에서만, Phase 35)', (await rpcAs(A.id, 'vote_extension', room, true, '과학')).result === 'need_hint');
+	await rpcAs(A.id, 'vote_extension', room, true, 'IB'); v = await rpcAs(B.id, 'vote_extension', room, true, '물리학');
+	check('★ 연장 → 서로가 고른 디플로마', v.result === 'extended' && v.snap.partner_hints[2]?.kind === 'diploma' && v.snap.partner_hints[2].value === 'IB' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[2].value === '물리학');
 
 	await toWindow();
 	snap = await rpcAs(A.id, 'room_snapshot', room);
@@ -3055,8 +3063,8 @@ console.log('\n[80] 점검 — 스키마 정리 · 쓰지 않는 RPC 권한 회�
 		if (r.a) stillOpen.push(f);
 	}
 	check('★ 화면에서 쓰지 않는 학생 RPC 14개 — 학생 실행 권한 없음', LEGACY_RPCS.length === 14 && stillOpen.length === 0, stillOpen.join(', '));
-	check('편지 답장은 dm_reply_to 로만 (dm_letter 직접 호출 불가)', (await one(`select has_function_privilege('authenticated', 'public.dm_reply_to(bigint, text, jsonb)', 'execute') a`)).a === true
-		&& (await one(`select has_function_privilege('authenticated', 'public.dm_letter(bigint, text, jsonb)', 'execute') a`)).a === false);
+	check('편지 답장은 dm_reply_to 로만 (dm_letter 직접 호출 불가)', (await one(`select has_function_privilege('authenticated', 'public.dm_reply_to(bigint, text, jsonb, text)', 'execute') a`)).a === true
+		&& (await one(`select has_function_privilege('authenticated', 'public.dm_letter(bigint, text, jsonb, text)', 'execute') a`)).a === false);
 	// dm_reply_to 는 안에서 dm_letter 를 부른다 — 학생이 dm_letter 를 직접 못 불러도 답장은 된다 (definer 권한)
 	let no80 = 21600;
 	const named80 = async (name) => {
@@ -3072,6 +3080,95 @@ console.log('\n[80] 점검 — 스키마 정리 · 쓰지 않는 RPC 권한 회�
 	check('★ dm_letter 를 거둬도 받은 편지에 답장(dm_reply_to)은 된다', s80.status === 'ok' && (await rpcAs(Q, 'dm_reply_to', s80.msg_id, '답장')).status === 'ok');
 	await expectError('dm_letter 는 학생이 직접 부를 수 없다', () => rowsAs(Q, `select public.dm_letter($1, 'x')`, [s80.thread_id]), 'permission denied');
 	check('지금 쓰는 RPC 는 그대로 (편지함 · 평가 · 업적)', (await one(`select has_function_privilege('authenticated', 'public.dm_mailbox(text, bigint)', 'execute') and has_function_privilege('authenticated', 'public.rate_partner(uuid, text, text[])', 'execute') and has_function_privilege('authenticated', 'public.my_achievements()', 'execute') a`)).a === true);
+}
+
+
+console.log('\n[81] 편지 서명 · 학번 검색 · 개인 공지 · 실시간 현황 "대화 중" (Phase 35)');
+{
+	let no81 = 31700;
+	const named81 = async (name, gender) => {
+		const n = ++no81;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, 2, $2) on conflict (student_no) do update set name = excluded.name', [n, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set onboarded = true, gender = $2 where id = $1', [id, gender]);
+		await rpcAs(id, 'ensure_self');
+		return { id, no: n };
+	};
+	const W = await named81('서명쓴이', 'f'), R = await named81('동명이', 'm'), R2 = await named81('동명이', 'm');
+	void R2;
+	const found = await rpcAs(W.id, 'dm_search', '동명이');
+	check('★ 찾기 결과에 학번 — 같은 학년 동명이인을 구분', found.length === 2 && found.every((x) => x.name === '동명이' && x.grade === 2)
+		&& new Set(found.map((x) => String(x.no))).size === 2 && found.some((x) => String(x.no) === String(R.no)), JSON.stringify(found));
+
+	check('12자 넘는 서명은 안 된다', (await rpcAs(W.id, 'dm_send', R.id, '안녕', null, '가'.repeat(13))).status === 'bad_nick');
+	check('★ 신상정보가 들어간 서명은 안 된다 (규칙 필터)', (await rpcAs(W.id, 'dm_send', R.id, '안녕', null, '010-1234-5678')).status === 'bad_nick');
+	check('운영자 사칭 서명은 안 된다', (await rpcAs(W.id, 'dm_send', R.id, '안녕', null, 'CNSA 운영자')).status === 'bad_nick');
+	check('서명이 막히면 편지도 가지 않는다', Number((await one('select count(*) n from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id where t.sender_id = $1', [W.id])).n) === 0);
+
+	await db.query(`update public.app_settings set ai_moderation = true`);
+	await db.query(`insert into public.push_subscriptions (user_id, endpoint, p256dh, auth) values ($1, 'https://push.example/r81', 'k', 'x') on conflict do nothing`, [R.id]);
+	const s1 = await rpcAs(W.id, 'dm_send', R.id, '서명 붙인 편지', null, '  별빛   소녀 ');
+	check('서명과 함께 보내진다 (앞뒤 공백 · 겹친 빈칸 정리)', s1.status === 'ok' && (await one('select from_nick from private.dm_msgs where id = $1', [s1.msg_id])).from_nick === '별빛 소녀');
+	const inbox = (await rpcAs(R.id, 'dm_mailbox', 'received')).letters;
+	check('★ 받은 편지함: From. = 서명 · 성별 (이름 · id 없음)', inbox[0]?.from_nick === '별빛 소녀' && inbox[0].from_gender === 'f' && !inbox[0].from_name
+		&& !JSON.stringify(inbox).includes(W.id), JSON.stringify(inbox[0]));
+	check('보낸 편지함: 내 서명', (await rpcAs(W.id, 'dm_mailbox', 'sent')).letters[0]?.my_nick === '별빛 소녀');
+	const opened = await rpcAs(R.id, 'dm_open', s1.msg_id);
+	check('편지 열기: From. = 서명', opened.from_nick === '별빛 소녀' && opened.my_nick == null);
+	const pay = await svc('dm_push_payload', s1.msg_id, W.id);
+	check('★ 알림 제목에 서명', pay.title === '별빛 소녀에게서 편지가 왔어요', JSON.stringify(pay));
+
+	await db.query(`update private.mod_queue set status = 'done' where not (kind = 'dm' and ref_id = $1)`, [s1.msg_id]);
+	const claimed = await svc('mod_claim', 3);
+	const mine = claimed.find((c) => c.kind === 'dm');
+	check('★ 검열봇(AI 검토)을 켜면 서명도 본문과 함께 검사된다', mine?.text === '[서명: 별빛 소녀] 서명 붙인 편지', JSON.stringify(claimed));
+	await db.query(`update public.app_settings set ai_moderation = false`);
+
+	const r1 = await rpcAs(R.id, 'dm_reply_to', s1.msg_id, '답장이에요', null, '가짜 서명');
+	check('이름으로 받은 쪽의 답장에는 서명이 붙지 않는다 (이미 이름이 알려져 있다)', r1.status === 'ok'
+		&& (await one('select from_nick from private.dm_msgs where id = $1', [r1.msg_id])).from_nick === null);
+	const back = await rpcAs(W.id, 'dm_open', r1.msg_id);
+	check('답장을 연 익명 쪽: 보낸 사람 이름 · 지난번 내 서명', back.from_name === '동명이' && back.my_nick === '별빛 소녀', JSON.stringify(back));
+	check('답장한 쪽의 보낸 편지함: To. = 상대 서명', (await rpcAs(R.id, 'dm_mailbox', 'sent')).letters[0]?.to_nick === '별빛 소녀');
+	const r2 = await rpcAs(W.id, 'dm_reply_to', r1.msg_id, '다시 답장', null, '새벽 별');
+	check('익명 쪽은 답장에 새 서명을 쓸 수 있다', r2.status === 'ok' && (await one('select from_nick from private.dm_msgs where id = $1', [r2.msg_id])).from_nick === '새벽 별');
+	const plain = await rpcAs(R2.id, 'dm_send', R.id, '서명 없이');
+	check('서명을 비우면 null — 화면은 "익명의 ○학생"', plain.status === 'ok' && (await one('select from_nick from private.dm_msgs where id = $1', [plain.msg_id])).from_nick === null);
+
+	console.log('  [개인 공지]');
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+	await expectError('★ 학생은 개인 공지를 보낼 수 없다', () => rowsAs(W.id, `select public.admin_send_personal_notice($1, $2, 'message', 'x', 'y')`, [W.id, R.id]), 'permission denied');
+	await expectError('운영진 명단에 없으면 거절', () => svc('admin_send_personal_notice', W.id, R.id, 'message', 'x', ''), 'not_staff');
+	const pn = await svc('admin_send_personal_notice', mod, R.id, 'warning', '대화 매너 경고', '상대를 존중해 주세요');
+	check('운영진이 학생 한 명에게 경고를 보낸다 (활동 기록)', Number(pn) > 0
+		&& Number((await one(`select count(*) n from private.audit_log where action = 'personal_notice' and target_user = $1`, [R.id])).n) === 1);
+	const mineN = await rpcAs(R.id, 'my_notices');
+	check('★ 받은 학생의 공지 목록에 개인 공지 (안 읽음)', mineN.personal?.[0]?.title === '대화 매너 경고' && mineN.personal[0].kind === 'warning' && mineN.personal[0].read === false);
+	check('★ 다른 학생에게는 보이지 않는다', (await rpcAs(W.id, 'my_notices')).personal.length === 0);
+	const pnPush = await svc('personal_notice_push', pn);
+	check('개인 공지 알림 (한 번만)', pnPush.title === '운영진 경고' && pnPush.body === '대화 매너 경고' && pnPush.url === '/notices'
+		&& (await svc('personal_notice_push', pn)).skip === 'already', JSON.stringify(pnPush));
+	await rowsAs(W.id, 'select public.read_personal_notice($1)', [pn]);
+	check('★ 남의 개인 공지는 읽음 처리할 수 없다', (await rpcAs(R.id, 'my_notices')).personal[0].read === false);
+	await rowsAs(R.id, 'select public.read_personal_notice($1)', [pn]);
+	check('읽으면 읽음', (await rpcAs(R.id, 'my_notices')).personal[0].read === true);
+	check('운영진 화면: 보낸 개인 공지 · 읽은 시각', !!(await svc('admin_personal_notices', adm, R.id))[0]?.read_at);
+	await svc('admin_remove_personal_notice', adm, pn);
+	check('거두면 학생 목록에서 사라진다 (기록은 남음)', (await rpcAs(R.id, 'my_notices')).personal.length === 0
+		&& Number((await one('select count(*) n from private.personal_notices where id = $1', [pn])).n) === 1);
+	await expectError('학생은 개인 공지 표를 직접 못 읽는다', () => rowsAs(R.id, 'select * from private.personal_notices'), 'permission denied');
+
+	console.log('  [실시간 현황 — 둘 다 보고 있을 때만 "대화 중"]');
+	await resetPool();
+	const c1 = await person('m', 'f'), c2 = await person('f', 'm');
+	const room = await pairRoom(c1, c2);
+	const st = async () => (await svc('admin_live_users', adm)).find((x) => x.id === c1);
+	check('대화방은 있지만 둘 다 보고 있지 않으면 "대화 중"이 아니다', (await st()).room_count === 1 && (await st()).talking === 0);
+	await rpcAs(c1, 'room_view', room, true);
+	check('한 명만 보고 있어도 아니다', (await st()).talking === 0);
+	await rpcAs(c2, 'room_view', room, true);
+	check('★ 둘 다 대화 화면을 보고 있으면 "대화 중"', (await st()).talking === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -67,7 +67,9 @@ try {
 
 	console.log('\n[3] 여러 개');
 	for (let i = 1; i <= 5; i++) T.toast(`알림 ${i}`, 200);
-	check('한꺼번에 최대 3개까지만 보인다 (오래된 것부터 밀려남)', T.toasts.length === 3 && T.toasts[0].text === '알림 3');
+	check('★ 한 장만 — 새 알림이 오면 떠 있던 알림은 그 자리에서 사라진다 (쌓이지 않음)', T.toasts.filter((t) => !t.out).length === 1 && T.toasts.find((t) => !t.out)?.text === '알림 5');
+	await sleep(160);
+	check('밀려난 알림은 금방 목록에서도 빠진다', T.toasts.length === 1 && T.toasts[0].text === '알림 5', `남은 수 ${T.toasts.length}`);
 	await sleep(550);
 	check('★ 전부 사라진다 (밀려난 것의 타이머가 남은 것을 잘못 지우지 않음)', T.toasts.length === 0, `남은 수 ${T.toasts.length}`);
 

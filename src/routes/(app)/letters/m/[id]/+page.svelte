@@ -12,8 +12,10 @@
 	import Envelope from '$lib/letters/Envelope.svelte';
 	import LetterSheet from '$lib/letters/LetterSheet.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
-	import { anonName, fromLabel, openLetter, paperDate, stampDate, toLabel, type Letter } from '$lib/letters/api';
+	import { anonName, borderOf, fromLabel, openLetter, paperDate, stampDate, toLabel, type Letter } from '$lib/letters/api';
 	import { DM, LIST, refreshUnread } from '$lib/letters/unread.svelte';
+	import { markOpened } from '$lib/letters/mailbox.svelte';
+	import { clearNotifications } from '$lib/push';
 	import { envWidth, play } from '$lib/letters/stage';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 
@@ -43,6 +45,8 @@
 				LIST.tab = r.role;
 				if (r.role === 'received') {
 					DM.unread = Math.max(0, DM.unread - (first ? 1 : 0));
+					markOpened(r.id);
+					void clearNotifications(`dm-${r.id}`);
 					void refreshUnread();
 				}
 				// 처음 여는 받은 편지만 봉투 연출
@@ -68,16 +72,17 @@
 		phase = 'read';
 	}
 
-	// 이름표 — 받은 편지: To. 나 / From. 익명의 ○학생(또는 답장한 사람 이름). 보낸 편지: To. 받는 사람 / From. 나
+	// 이름표 — 받은 편지: To. 나 / From. 서명 · 익명의 ○학생(또는 답장한 사람 이름). 보낸 편지: To. 받는 사람 / From. 나
 	const myName = $derived(S.me?.name ?? '나');
+	const anonMe = $derived(letter?.my_nick ?? anonName(S.profile?.gender));
 	const names = $derived.by(() => {
 		if (!letter) return { to: '', toSub: '', from: '' };
 		if (letter.role === 'received') {
-			// 모르는 사람이 보낸 편지는 내 이름으로, 내가 보낸 편지의 답장은 (나는 익명이었으니) 익명의 나로
-			const to = letter.from_name ? anonName(S.profile?.gender) : myName;
+			// 모르는 사람이 보낸 편지는 내 이름으로, 내가 보낸 편지의 답장은 (나는 익명이었으니) 내 서명 · 익명의 나로
+			const to = letter.from_name ? anonMe : myName;
 			return { to, toSub: '', from: fromLabel(letter) };
 		}
-		const from = letter.to_name ? anonName(S.profile?.gender) : myName;
+		const from = letter.to_name ? anonMe : myName;
 		return { to: toLabel(letter), toSub: letter.to_grade ? `${letter.to_grade}학년` : '', from };
 	});
 	const staging = $derived(phase !== 'read');
@@ -112,6 +117,7 @@
 					from={names.from}
 					date={stampDate(letter.created_at)}
 					side={phase === 'front' ? 'front' : 'back'}
+					border={borderOf(letter, letter.role)}
 					sealed
 					broken={phase !== 'front' && phase !== 'back'}
 					open={phase === 'open' || phase === 'out' || phase === 'unfold'}

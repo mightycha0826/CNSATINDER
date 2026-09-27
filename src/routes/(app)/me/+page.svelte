@@ -107,7 +107,8 @@
 
 </script>
 
-<div class="topbar ios">
+<!-- 머리글은 다른 탭(익명편지 · 채팅)과 같은 높이 · 같은 자리 — 탭을 바꿔도 위쪽이 움직이지 않게 (Phase 35) -->
+<div class="topbar">
 	<span class="title">내 프로필</span>
 	<TopbarMe />
 </div>
@@ -132,7 +133,7 @@
 			{#if fame.featured.length}
 				<div class="fame-row">
 					{#each fame.featured as b (b.code)}
-						<div class="fb"><Badge icon={b.icon} tier={b.tier} title={b.title} size={54} label shine /><span>{b.title}</span></div>
+						<div class="fb"><Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={54} label shine /><span>{b.title}</span></div>
 					{/each}
 				</div>
 			{:else}

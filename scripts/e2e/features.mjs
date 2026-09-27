@@ -179,13 +179,23 @@ try {
 	console.log('[연장 공개 순서 — 학년 → 공통 질문 → 디플로마 → 공통 질문 → 동아리]');
 	await page.goto(U('/dev/chat?s=hints')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(300);
 	check('★ 공개된 상대 힌트: 학년 · 공통 질문 답', (await page.locator('.hint-chip').allInnerTexts()).map((x) => x.replace(/\s+/g, '')).join(',') === '학년2학년,요즘빠져있는것밴드음악', JSON.stringify(await page.locator('.hint-chip').allInnerTexts()));
-	check('연장 배너: "연장하면 서로의 디플로마 공개" · 내 디플로마 적는 칸', (await page.locator('.extend').innerText()).includes('서로의 디플로마 공개') && (await page.getByRole('textbox', { name: '내 디플로마' }).count()) === 1);
+	const dip = page.getByRole('combobox', { name: '내 디플로마 검색' });
+	check('연장 배너: "연장하면 서로의 디플로마 공개" · 디플로마 검색 칸', (await page.locator('.extend').innerText()).includes('서로의 디플로마 공개') && (await dip.count()) === 1);
+	check('비어 있으면 목록을 늘어놓지 않는다 (적어야 검색)', (await page.locator('#dip-list').count()) === 0);
 	await page.screenshot({ path: `${SP}/feat-9-hints.png` });
 	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
-	check('★ 디플로마를 안 적으면 연장이 안 된다', (await page.evaluate(() => (window.__votes ?? []).length)) === 0 && (await page.getByText('디플로마을(를) 적어 주세요').isVisible()));
-	await page.getByRole('textbox', { name: '내 디플로마' }).fill('IB');
+	check('★ 디플로마를 안 고르면 연장이 안 된다', (await page.evaluate(() => (window.__votes ?? []).length)) === 0 && (await page.getByText('디플로마를 검색해서 골라 주세요').isVisible()));
+	await dip.fill('과학'); await page.waitForTimeout(200);
+	check('★ 적으면 학교 디플로마 중 맞는 것만 (과학 → 생명과학 · 사회과학)', (await page.locator('#dip-list [role=option]').allInnerTexts()).join(',') === '생명과학,사회과학', (await page.locator('#dip-list').innerText()));
 	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
-	check('★ 적고 연장하면 그 값과 함께 투표', JSON.stringify(await page.evaluate(() => window.__votes)) === '[{"agree":true,"hint":"IB"}]', JSON.stringify(await page.evaluate(() => window.__votes)));
+	check('★ 목록에 없는 글("과학")로는 연장이 안 된다', (await page.evaluate(() => (window.__votes ?? []).length)) === 0);
+	await dip.fill('ㅁㄹ'); await page.waitForTimeout(200);
+	check('초성으로도 찾는다 (ㅁㄹ → 물리학)', (await page.locator('#dip-list [role=option]').allInnerTexts()).join(',') === '물리학');
+	await dip.fill('물리'); await page.waitForTimeout(150);
+	await page.locator('#dip-list [role=option]', { hasText: '물리학' }).click(); await page.waitForTimeout(150);
+	check('고르면 칸에 채워지고 목록이 닫힌다', (await dip.inputValue()) === '물리학' && (await page.locator('#dip-list').count()) === 0);
+	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
+	check('★ 고르고 연장하면 그 값과 함께 투표', JSON.stringify(await page.evaluate(() => window.__votes)) === '[{"agree":true,"hint":"물리학"}]', JSON.stringify(await page.evaluate(() => window.__votes)));
 
 	await page.goto(U('/dev/chat?s=question')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(300);
 	const qBox = page.getByRole('textbox', { name: '공통 질문 요즘 빠져 있는 것 — 내 답' });

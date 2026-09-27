@@ -28,6 +28,8 @@
 	import { backToSeek, goBack } from '$lib/nav';
 	import { mmss as fmtClock } from '$lib/time';
 	import { scrollBehavior } from '$lib/motion';
+	import { clearNotifications } from '$lib/push';
+	import { isDiploma } from './diplomas';
 
 	let {
 		room,
@@ -47,6 +49,12 @@
 	let listEl: HTMLDivElement | undefined = $state();
 	let inputEl: HTMLTextAreaElement | undefined = $state();
 	let atBottom = true;
+
+	// 이 대화의 알림이 알림 센터에 남아 있으면 지운다 (지금 보고 있으니까, Phase 35)
+	$effect(() => {
+		const id = room?.roomId;
+		if (id) void clearNotifications(id);
+	});
 
 	// 처음 불러왔을 때 맨 아래로
 	$effect(() => {
@@ -112,6 +120,7 @@
 		if (!room) return;
 		const typed = agree && !!nextHint?.typed && !pinNext;
 		const what = isQuestion(nextKind) ? '답' : (nextHint?.label ?? '힌트');
+		if (typed && nextKind === 'diploma' && !isDiploma(hintDraft)) return toast('디플로마를 검색해서 골라 주세요');
 		if (typed && !hintDraft.trim()) return toast(`${what}을(를) 적어 주세요`);
 		const r = await room.vote(agree, typed ? hintDraft.trim() : null);
 		if (r === 'need_hint') toast(`${what}을(를) 다시 적어 주세요`);

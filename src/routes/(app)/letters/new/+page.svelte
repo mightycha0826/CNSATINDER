@@ -1,7 +1,8 @@
 <script lang="ts">
 	/**
 	 * 새 편지 (Phase 32) — 1) 받을 학생을 이름으로 찾고 → 2) 봉투를 열어 편지지에 쓰고 → 봉투에 담아 보낸다 (EnvelopeCompose).
-	 * 받는 사람에게 나는 "익명의 ○학생"으로만 보인다 (성별만). 받기를 끈 사람 · 차단한 사이는 검색에 나오지 않는다.
+	 * 받는 사람에게 나는 "익명의 ○학생"(성별만) 또는 내가 적은 서명으로만 보인다 (Phase 35). 받기를 끈 사람 · 차단한 사이는 검색에 나오지 않는다.
+	 * 찾기 결과에는 학년 · 학번 — 같은 학년 동명이인을 구분한다.
 	 */
 	import { goto } from '$app/navigation';
 	import BackButton from '$lib/ui/BackButton.svelte';
@@ -37,10 +38,10 @@
 		return () => clearTimeout(t);
 	});
 
-	async function send(body: string, fmt: LetterFmt | null) {
+	async function send(body: string, fmt: LetterFmt | null, nick: string | null) {
 		if (!to) return false;
 		try {
-			const r = await sendLetter(to.id, body, fmt);
+			const r = await sendLetter(to.id, body, fmt, nick);
 			const err = sendError(r);
 			if (err) {
 				toast(err);
@@ -75,7 +76,8 @@
 		to={to.name}
 		toSub={to.grade ? `${to.grade}학년` : ''}
 		from={anonName(S.profile?.gender)}
-		placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.\n내 이름은 보이지 않고, 성별만 전해져요.`}
+		nickable
+		placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.\n내 이름은 보이지 않고, 아래 서명(비우면 성별)만 전해져요.`}
 		onsend={send}
 		ondone={done}
 	/>
@@ -95,7 +97,7 @@
 				enterkeyhint="search"
 			/>
 		</label>
-		<p class="hint">받는 사람에게 나는 <b>{anonName(S.profile?.gender)}</b>으로만 보여요</p>
+		<p class="hint">받는 사람에게 나는 <b>{anonName(S.profile?.gender)}</b> 또는 내가 적은 서명으로만 보여요</p>
 
 		{#if results === null}
 			<div class="empty">
@@ -112,7 +114,7 @@
 							<Avatar name={p.name} size={44} />
 							<span class="who">
 								<b>{p.name}</b>
-								<small class="muted">{p.grade ? `${p.grade}학년` : ''}{p.checked ? '' : `${p.grade ? ' · ' : ''}직접 적은 이름`}</small>
+								<small class="muted">{[p.grade ? `${p.grade}학년` : '', p.no ? `학번 ${p.no}` : '', p.checked ? '' : '직접 적은 이름'].filter(Boolean).join(' · ')}</small>
 							</span>
 							<span class="go">편지 쓰기</span>
 						</button>

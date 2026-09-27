@@ -4,11 +4,13 @@ import { fetchUnread } from './api';
  * 안 연 편지 수 — 하단 탭 "익명편지" 위의 빨간 점.
  * 편지함 화면이 목록을 새로 읽으면 여기도 같이 바뀌고, 그 밖에는 앱이 보이는 동안 가끔(2분) 확인한다.
  */
-export const DM = $state({ unread: 0 });
+/** loaded = 서버에서 한 번이라도 받았다 (처음 받은 수로 "새 편지" 알림을 띄우지 않게) */
+export const DM = $state({ unread: 0, loaded: false });
 
 export async function refreshUnread() {
 	try {
 		DM.unread = await fetchUnread();
+		DM.loaded = true;
 	} catch {
 		/* DB 가 편지함 전이거나 네트워크 — 점을 그대로 둔다 */
 	}

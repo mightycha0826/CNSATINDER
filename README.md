@@ -134,6 +134,9 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 35 적용** — 2026-09-28 Supabase 커넥터로 실DB 에 적용 (편지 서명 `dm_msgs.from_nick` · `dm_send`/`dm_reply_to` 에 `p_nick`,
+      찾기에 학번, 디플로마 목록 `private.diplomas`, 개인 공지 `private.personal_notices` · `read_personal_notice` · `admin_send_personal_notice`,
+      알림 정책 `private.viewing_room`, 실시간 현황 `talking`). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 34 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (쓰지 않는 학생 RPC 14개 실행 권한 회수, 학생 RLS 정책 5개 `(select auth.uid())`,
       `private.user_achievements(code)` 색인, 트리거 함수 2개 PUBLIC 권한 회수). 실DB 함수 171개 본문이 레포와 같음을 확인. 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 32 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (편지함 `dm_mailbox` · `dm_open` · `dm_reply_to` · `dm_unread`,
@@ -429,4 +432,17 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       학생 RLS 정책 5개를 `(select auth.uid())` 로(Advisor `auth_rls_initplan`), 업적 색인, 트리거 함수 PUBLIC 권한 회수. 보안 점검 기록은 `SECURITY.md`.
       코드: 흩어진 `rpc()` 도우미를 `src/lib/rpc.ts` 하나로, `ChatView` 에서 머리글(`ChatHeader`) · 알림 띠(`Banner`) · 연장/고정 투표 띠(`VoteBanner`)를 떼어 냄.
       화면 테스트 `sheet` 의 오래된 실패(첫 화면을 정해진 시간만 기다림)를 고침 — 신고 사유가 뜰 때까지 기다림
+- [x] **Phase 35 — 편지 · 알림 · 화면 다듬기**
+      편지: 휴대폰에서 쓰는 동안 봉투가 편지지 · 보내기 단추를 가리던 것 고침(쓰는 동안 봉투를 치우고 보내기 줄은 키보드 위에).
+      봉투 다시 그림 — 항공우편 줄무늬 · 학교 로고 우표 · 소인 · 우편번호 칸 · 접힌 날개 그늘 · 덮개 그림자 · 학교 로고 양각 밀랍 봉인.
+      받은 편지는 보낸 사람 성별로 테두리 색(여학생 붉은색 · 남학생 푸른색). 편지함 = 안 연 편지만 위에, 읽은 · 보낸 편지는 갈색 책상 위 서류 더미 →
+      누르면 보관함(`/letters/archive`, 받은/보낸 한 줄씩). 서명(닉네임) 직접 적기 — 비우면 "익명의 ○학생", 규칙 필터 · 검열봇 대상.
+      찾기 결과에 학번(동명이인 구분). 편지 쓰기 단추 등 진한 브랜드 면이 테마 색을 따른다.
+      알림: 상단 종 → 하트(`/activity`) — 새 메시지 · 편지 · 공지 · 개인 공지를 한곳에. 앱이 켜져 있어도 푸시를 보내고(그 대화를 보고 있을 때만 건너뜀),
+      앱이 화면에 떠 있으면 위에서 내려오는 앱 안 알림 띠(`InAppBanner`). 같은 대화 알림은 한 장에 최근 말 몇 줄로 모이고, 알림을 누르면 새로고침 없이 이동,
+      본 대화 · 편지의 알림은 알림 센터에서 지운다. 서버는 토큰을 `getClaims` 로 확인(비대칭 키면 인증 서버 왕복 없음).
+      화면: 탭바를 화면 맨 아래에 붙임(아이폰에서 어중간하게 떠 보이던 것), 프로필 머리글 높이를 다른 탭과 맞춤, 화면 넘김 애니메이션(View Transitions),
+      대화 목록 · 편지함을 기억해 두고 바로 그림, 매너 평가는 화면 가운데 큰 카드에서 끝냄, 토스트는 한 장만(그 자리에서 바뀜),
+      업적 메달은 이모지 대신 새긴 선 그림 · 동전처럼 돌며 튀어나오는 축하, 연장 때 디플로마는 학교 목록에서 검색해 고름.
+      운영: 학생 한 명에게 개인 공지(경고 · 연락) 보내기, 실시간 현황의 "대화 중"은 둘 다 대화 화면을 볼 때만. 학생 앱에서 F12 · 오른쪽 클릭 막음(보안 장치 아님)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

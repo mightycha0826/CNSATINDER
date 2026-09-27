@@ -1631,15 +1631,13 @@ grant execute on function public.save_push_subscription(text, text, text), publi
 -- ★ service_role 전용 — 알림을 보낼지, 누구에게, 무슨 문구로.
 --   p_sender 는 서버가 JWT 로 확인한 보낸 사람. 그 사람이 실제로 보낸 메시지일 때만 동작한다.
 -- 받는 사람의 알림 대상 — 채팅 메시지 · 편지 댓글 · 공감 알림이 같이 쓴다.
---   지금 앱을 보고 있으면 보내지 않는다(앱 안에서 이미 보인다) → { skip: 'online' }
+--   앱이 켜져 있어도 보낸다 (Phase 35) — 앱이 화면에 떠 있으면 서비스워커가 시스템 알림 대신 앱 안 알림으로 띄운다.
+--   그 대화 화면을 보고 있을 때만 보내지 않는다 (채팅 · 공감이 private.viewing_room 으로 따로 확인).
 --   알림을 켠 기기가 없으면 → { skip: 'no_device' },  있으면 → { subs: [{endpoint, p256dh, auth}, …] }
 create or replace function private.push_target(p_user uuid)
 returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
 declare v_subs jsonb;
 begin
-  if exists (select 1 from public.user_presence where user_id = p_user and online_until > now()) then
-    return jsonb_build_object('skip', 'online');
-  end if;
   select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth)), '[]'::jsonb)
     into v_subs from public.push_subscriptions where user_id = p_user;
   if jsonb_array_length(v_subs) = 0 then return jsonb_build_object('skip', 'no_device'); end if;
@@ -1670,15 +1668,20 @@ begin
   if not found then return jsonb_build_object('skip', 'already'); end if;
 
   select user_id into v_to from public.room_members where room_id = m.room_id and seat <> m.sender_seat;
-  v_subs := private.push_target(v_to);          -- 앱을 보고 있거나 기기가 없으면 { skip }
+  -- 그 대화 화면을 보고 있으면 보내지 않는다 (이미 보고 있다). 앱의 다른 화면이면 보낸다 — 앱 안 알림으로 뜬다 (Phase 35)
+  if private.viewing_room(v_to, m.room_id) then return jsonb_build_object('skip', 'viewing'); end if;
+  v_subs := private.push_target(v_to);          -- 기기가 없으면 { skip }
   if v_subs ? 'skip' then return v_subs; end if;
   v_subs := v_subs -> 'subs';
 
   -- ★ 알림 문구에 uuid 는 없다. 제목 = 받는 사람이 보는 상대 이름(보낸 사람의 익명 이름).
+  --   id · at = 서비스워커가 늦게 도착한 알림으로 새 알림을 덮지 않게 (같은 대화의 알림은 한 장에 최근 말 몇 줄로 모인다)
   return jsonb_build_object(
     'title',   case when m.sender_seat = 1 then r.alias1 else r.alias2 end,
     'body',    left(m.body, 120),
     'room_id', m.room_id,
+    'id',      m.id,
+    'at',      m.created_at,
     'subs',    v_subs);
 end
 $fn$;
@@ -3011,12 +3014,16 @@ begin
            pr.online_until as last_seen,
            coalesce(pr.seeking_until > now(), false) as seeking,
            coalesce(lr.n, 0) as room_count,
+           coalesce(lr.talking, 0) as talking,
            case when v_admin then coalesce(lr.ids, '[]'::jsonb) end as rooms
       from public.profiles p
       left join public.user_presence pr on pr.user_id = p.id
       left join private.staff s on s.user_id = p.id
       left join lateral (
-        select count(*)::int as n, jsonb_agg(r.id order by r.created_at) as ids
+        select count(*)::int as n, jsonb_agg(r.id order by r.created_at) as ids,
+               -- 둘 다 대화 화면을 보고 있는 방 (Phase 35) — 이것만 "대화 중"
+               count(*) filter (where (select count(*) from public.room_members v
+                                        where v.room_id = r.id and v.viewing_until > now()) = 2)::int as talking
           from public.room_members rm
           join public.rooms r on r.id = rm.room_id
          where rm.user_id = p.id and rm.open and r.status <> 'closed' and now() < r.expires_at
@@ -3067,7 +3074,13 @@ begin
                        order by n.id desc)
         from (select * from private.notices where removed_at is null order by id desc limit 30) n
     ), '[]'::jsonb),
-    'last_seen', coalesce((select last_id from private.notice_reads where user_id = me), 0)
+    'last_seen', coalesce((select last_id from private.notice_reads where user_id = me), 0),
+    -- 나에게만 온 공지 (Phase 35 — 운영자의 경고 · 개인 연락). 읽었는지는 한 통씩
+    'personal', coalesce((
+      select jsonb_agg(jsonb_build_object('id', n.id, 'kind', n.kind, 'title', n.title, 'body', n.body,
+                                          'created_at', n.created_at, 'read', n.read_at is not null) order by n.id desc)
+        from (select * from private.personal_notices where user_id = me and removed_at is null order by id desc limit 30) n
+    ), '[]'::jsonb)
   );
 end
 $fn$;
@@ -3258,6 +3271,7 @@ begin
   if not found then return jsonb_build_object('skip', 'already'); end if;
 
   select user_id into v_to from public.room_members where room_id = m.room_id and seat = m.sender_seat;
+  if private.viewing_room(v_to, m.room_id) then return jsonb_build_object('skip', 'viewing'); end if;
   v_subs := private.push_target(v_to);
   if v_subs ? 'skip' then return v_subs; end if;
   v_subs := v_subs -> 'subs';
@@ -3531,8 +3545,8 @@ begin
         from public.letter_comments c join public.letters l on l.id = c.letter_id
        where q.kind = 'comment' and c.id = q.ref_id
       union all
-      -- 이름 편지 (Phase 23) — 앞의 말 4개 (같은 쪽 = 작성자)
-      select d.body,
+      -- 이름 편지 (Phase 23) — 앞의 말 4개 (같은 쪽 = 작성자). 서명(Phase 35)이 있으면 본문 앞에 붙여 같이 검사
+      select coalesce('[서명: ' || d.from_nick || '] ', '') || d.body,
              (select coalesce(jsonb_agg(jsonb_build_object('who', case when e.from_sender = d.from_sender then '작성자' else '상대' end,
                                                            'text', left(e.body, 300)) order by e.id), '[]'::jsonb)
                 from (select * from private.dm_msgs e2
@@ -4031,9 +4045,11 @@ begin
   if me is null then raise exception 'unauthenticated'; end if;
   if char_length(q) < 2 then return '[]'::jsonb; end if;
   return coalesce((
-    select jsonb_agg(jsonb_build_object('id', x.id, 'name', x.name, 'grade', x.grade, 'checked', x.source = 'roster')
-                     order by x.exact desc, x.grade nulls last, x.name)
-      from (select p.id, n.name, n.grade, n.source, n.name = q as exact
+    select jsonb_agg(jsonb_build_object('id', x.id, 'name', x.name, 'grade', x.grade, 'no', x.no, 'checked', x.source = 'roster')
+                     order by x.exact desc, x.grade nulls last, x.no nulls last, x.name)
+      from (select p.id, n.name, n.grade, n.source, n.name = q as exact,
+                   -- 학번 = 학교 이메일 앞자리 (Phase 35 — 같은 학년 동명이인 구분)
+                   (select private.email_student_no(u.email) from auth.users u where u.id = p.id) as no
               from public.profiles p
               cross join lateral private.person(p.id) n
              where p.id <> me and p.letters_open and p.onboarded and p.status = 'active'
@@ -4326,7 +4342,8 @@ begin
   -- ★ 받는 사람 쪽 알림에 보낸 사람 정보 없음 (성별만)
   return jsonb_build_object(
     'title', case when m.from_sender
-                  then '익명의 ' || case m.from_gender when 'm' then '남학생' when 'f' then '여학생' else '학생' end || '에게서 편지가 왔어요'
+                  then coalesce(m.from_nick, '익명의 ' || case m.from_gender when 'm' then '남학생' when 'f' then '여학생' else '학생' end)
+                       || '에게서 편지가 왔어요'
                   else (select name from private.person(t.recipient_id)) || '님의 답장이 왔어요' end,
     'body',  '봉투를 열어 확인해 보세요',
     'url',   '/letters/m/' || m.id,
@@ -4366,11 +4383,14 @@ alter table private.dm_msgs add column if not exists fmt jsonb;
 
 -- 서식이 생기며 인자가 늘었다 — 옛 두 인자 버전을 지워 두 버전이 헷갈리지 않게
 drop function if exists public.dm_send(uuid, text);
-create or replace function public.dm_send(p_to uuid, p_body text, p_fmt jsonb default null)
+drop function if exists public.dm_send(uuid, text, jsonb);   -- Phase 35: 서명(p_nick)이 붙었다
+-- p_nick = 받는 사람에게 보일 서명 (Phase 35). 비우면 "익명의 ○학생". 규칙 필터(신상정보 · 금칙어)를 거친다
+create or replace function public.dm_send(p_to uuid, p_body text, p_fmt jsonb default null, p_nick text default null)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare me uuid := auth.uid(); v text; t private.dm_threads%rowtype; b jsonb; p public.profiles%rowtype; mid bigint;
         v_body text := btrim(coalesce(p_body, ''));
         v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
+        v_nick text := private.dm_nick(p_nick);
 begin
   if me is null then raise exception 'unauthenticated'; end if;
   v := private.dm_can_write(me);
@@ -4381,6 +4401,7 @@ begin
   if v_fmt is not null and (v_body <> p_body or not private.letter_fmt_ok(v_fmt, v_body)) then
     return jsonb_build_object('status', 'bad_text');
   end if;
+  if private.dm_nick_bad(v_nick) then return jsonb_build_object('status', 'bad_nick'); end if;
 
   select * into p from public.profiles where id = p_to;
   if not found or not p.letters_open or not p.onboarded or p.status <> 'active'
@@ -4406,13 +4427,14 @@ begin
     insert into private.dm_threads (sender_id, recipient_id, sender_alias)
     values (me, p_to, private.letter_alias_candidate()) returning * into t;
   end if;
-  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter) values (t.id, true, v_body, v_fmt, true) returning id into mid;
+  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter, from_nick)
+  values (t.id, true, v_body, v_fmt, true, v_nick) returning id into mid;
   update private.dm_threads set last_at = now(), sender_read = mid where id = t.id;
   return jsonb_build_object('status', 'ok', 'thread_id', t.id, 'msg_id', mid);
 end
 $fn$;
-revoke all on function public.dm_send(uuid, text, jsonb) from public, anon;
-grant execute on function public.dm_send(uuid, text, jsonb) to authenticated;
+revoke all on function public.dm_send(uuid, text, jsonb, text) from public, anon;
+grant execute on function public.dm_send(uuid, text, jsonb, text) to authenticated;
 
 
 -- ════════════════════════════════════════════════════════════════════
@@ -4463,11 +4485,14 @@ update private.dm_threads t set mode = 'chat'
 
 
 -- 편지로 답장 (편지 모드에서만). 서식도 새 편지와 같이 받는다.
-create or replace function public.dm_letter(p_thread bigint, p_body text, p_fmt jsonb default null)
+-- p_nick (Phase 35) = 서명 — 익명 쪽(처음 보낸 사람)만 쓴다. 이름으로 받은 쪽은 이미 이름이 알려져 있어 무시
+drop function if exists public.dm_letter(bigint, text, jsonb);
+create or replace function public.dm_letter(p_thread bigint, p_body text, p_fmt jsonb default null, p_nick text default null)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare me uuid := auth.uid(); v text; role text; t private.dm_threads%rowtype; b jsonb; mid bigint;
         v_body text := btrim(coalesce(p_body, ''));
         v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
+        v_nick text := private.dm_nick(p_nick);
 begin
   if me is null then raise exception 'unauthenticated'; end if;
   select * into t from private.dm_threads where id = p_thread for update;
@@ -4481,13 +4506,15 @@ begin
     return jsonb_build_object('status', 'bad_text');
   end if;
   if private.blocked_between(t.sender_id, t.recipient_id) then return jsonb_build_object('status', 'closed'); end if;
+  if role <> 'sender' then v_nick := null; end if;
+  if private.dm_nick_bad(v_nick) then return jsonb_build_object('status', 'bad_nick'); end if;
   if private.dm_streak(p_thread, role = 'sender') >= 3 then return jsonb_build_object('status', 'wait_reply'); end if;
   b := private.letter_bucket_take(me, 'comment');
   if not (b->>'ok')::boolean then
     return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (b->>'retry_after_ms')::int);
   end if;
-  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter)
-  values (p_thread, role = 'sender', v_body, v_fmt, true) returning id into mid;
+  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter, from_nick)
+  values (p_thread, role = 'sender', v_body, v_fmt, true, v_nick) returning id into mid;
   if role = 'sender' then update private.dm_threads set last_at = now(), sender_read = mid where id = p_thread;
   else update private.dm_threads set last_at = now(), recipient_read = mid where id = p_thread; end if;
   return jsonb_build_object('status', 'ok', 'thread_id', p_thread, 'msg_id', mid);
@@ -4518,7 +4545,7 @@ $fn$;
 do $do$
 declare f text;
 begin
-  foreach f in array array['dm_letter(bigint, text, jsonb)', 'dm_chat(bigint)']
+  foreach f in array array['dm_letter(bigint, text, jsonb, text)', 'dm_chat(bigint)']
   loop
     execute format('revoke all on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);
@@ -4700,7 +4727,8 @@ begin
   if p_agree and private.hint_typed(v_kind) then
     v_hint := btrim(coalesce(p_hint, ''));
     if char_length(v_hint) not between 1 and (case when v_kind in ('q1', 'q2') then 30 else 20 end)
-       or private.rule_violation(v_hint) is not null then
+       or private.rule_violation(v_hint) is not null
+       or (v_kind = 'diploma' and not (v_hint = any (private.diplomas()))) then
       return jsonb_build_object('result', 'need_hint', 'snap', public.room_snapshot(p_room));
     end if;
     insert into private.room_hints (room_id, seat, kind, value) values (p_room, s, v_kind, v_hint)
@@ -5517,6 +5545,12 @@ begin
              -- 받은 편지: 모르는 사람이면 성별만, 내가 이름으로 보낸 사람의 답장이면 그 이름
              case when p_box = 'received' then m.from_gender end as from_gender,
              case when p_box = 'received' and not m.from_sender then (select name from private.person(t.recipient_id)) end as from_name,
+             -- 서명 (Phase 35) — 익명 쪽이 적은 것. 받은 편지의 From. / 보낸 답장의 To. / 내가 익명 쪽이면 내 서명
+             case when p_box = 'received' and m.from_sender then m.from_nick end as from_nick,
+             case when p_box = 'sent' and not m.from_sender then
+               (select o.from_nick from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender and o.id < m.id order by o.id desc limit 1) end as to_nick,
+             case when t.sender_id = me then
+               (select o.from_nick from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender and o.id <= m.id order by o.id desc limit 1) end as my_nick,
              m.opened_at is not null as opened,
              exists (select 1 from private.dm_msgs o where o.thread_id = m.thread_id and o.id < m.id
                       and o.is_letter and o.from_sender <> m.from_sender) as is_reply,
@@ -5583,6 +5617,12 @@ begin
     -- From. / To. — 받은 편지: 모르는 사람이면 성별만, 아는 사람(내가 이름으로 보낸 사람)이면 이름
     'from_gender', m.from_gender,
     'from_name', case when not m.from_sender then (select name from private.person(t.recipient_id)) end,
+    -- 서명 (Phase 35): 받은 편지의 From. · 답장의 To. · 내가 익명 쪽이면 지난번 내 서명 (답장 칸에 미리 채운다)
+    'from_nick', case when m.from_sender then m.from_nick end,
+    'to_nick',   case when not m.from_sender then
+                   (select o.from_nick from private.dm_msgs o where o.thread_id = t.id and o.from_sender and o.id < m.id order by o.id desc limit 1) end,
+    'my_nick',   case when t.sender_id = me then
+                   (select o.from_nick from private.dm_msgs o where o.thread_id = t.id and o.from_sender order by o.id desc limit 1) end,
     'to_name',   case when m.from_sender then (select name from private.person(t.recipient_id)) end,
     'to_grade',  case when m.from_sender and not v_reader then (select grade from private.person(t.recipient_id)) end,
     'to_gender', case when not m.from_sender then
@@ -5600,8 +5640,9 @@ end
 $fn$;
 
 
--- 받은 편지 한 통에 답장 — 그 편지를 받은 사람만
-create or replace function public.dm_reply_to(p_msg bigint, p_body text, p_fmt jsonb default null)
+-- 받은 편지 한 통에 답장 — 그 편지를 받은 사람만. p_nick = 서명 (Phase 35, 익명 쪽만)
+drop function if exists public.dm_reply_to(bigint, text, jsonb);
+create or replace function public.dm_reply_to(p_msg bigint, p_body text, p_fmt jsonb default null, p_nick text default null)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare me uuid := auth.uid(); m private.dm_msgs%rowtype; t private.dm_threads%rowtype;
 begin
@@ -5610,7 +5651,7 @@ begin
   if not found or not m.is_letter then return jsonb_build_object('status', 'not_found'); end if;
   select * into t from private.dm_threads where id = m.thread_id;
   if private.dm_reader(m, t) is distinct from me then return jsonb_build_object('status', 'not_found'); end if;
-  return public.dm_letter(m.thread_id, p_body, p_fmt);
+  return public.dm_letter(m.thread_id, p_body, p_fmt, p_nick);
 end
 $fn$;
 
@@ -5622,7 +5663,7 @@ drop function if exists public.dm_chat(bigint);
 do $do$
 declare f text;
 begin
-  foreach f in array array['dm_mailbox(text, bigint)', 'dm_unread()', 'dm_open(bigint)', 'dm_reply_to(bigint, text, jsonb)', 'dm_letter(bigint, text, jsonb)']
+  foreach f in array array['dm_mailbox(text, bigint)', 'dm_unread()', 'dm_open(bigint)', 'dm_reply_to(bigint, text, jsonb, text)', 'dm_letter(bigint, text, jsonb, text)']
   loop
     execute format('revoke all on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);
@@ -5655,7 +5696,7 @@ begin
     'letter_feed(bigint, integer)', 'letter_detail(bigint)', 'post_letter(text, jsonb)',
     'post_comment(bigint, bigint, text, uuid)', 'set_letter_like(bigint, boolean)', 'request_letter_reply_task()',
     'delete_my_letter(bigint)', 'delete_my_comment(bigint)', 'block_letter_author(bigint, bigint)',
-    'report_letter(bigint, bigint, text, text)', 'my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb)']
+    'report_letter(bigint, bigint, text, text)', 'my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb, text)']
   loop
     if to_regprocedure('public.' || f) is not null then
       execute format('revoke all on function public.%s from public, anon, authenticated', f);
@@ -5667,3 +5708,174 @@ $do$;
 -- 트리거 함수 두 개에 남아 있던 기본(PUBLIC) 실행 권한도 거둔다 — 트리거로만 돌고, 트리거 발동은 이 권한을 보지 않는다
 revoke all on function private.enforce_school_domain() from public, anon, authenticated;
 revoke all on function private.strip_unconfirmed_password() from public, anon, authenticated;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 35 — 편지 서명 · 학번 검색 · 디플로마 목록 · 개인 공지 · 알림 정책
+--
+--  1) 편지 서명(닉네임): 익명으로 보내는 쪽이 받는 사람에게 보일 이름을 직접 적는다 (dm_msgs.from_nick, 1~12자).
+--     비우면 지금처럼 "익명의 ○학생". 규칙 필터(신상정보 · 금칙어) · 운영자 사칭을 거르고,
+--     AI 검토(검열봇)를 켜면 본문과 함께 검사된다 (mod_claim). dm_send · dm_letter · dm_reply_to 에 p_nick.
+--  2) 편지 받을 사람 찾기에 학번 — 같은 학년 동명이인 구분 (dm_search 자리에서 고침).
+--  3) 연장 때 적는 디플로마는 학교 디플로마 목록에서만 (private.diplomas, vote_extension 자리에서 고침).
+--  4) 개인 공지: 운영진이 학생 한 명에게만 보내는 공지 (경고 · 개인 연락). 공지 목록 · 알림(하트) 화면에 뜨고 푸시도 간다.
+--  5) 알림 정책: 앱이 켜져 있어도 푸시를 보낸다 — 그 대화 화면을 보고 있을 때만 건너뛴다 (private.viewing_room).
+--     앱이 화면에 떠 있으면 서비스워커가 시스템 알림 대신 앱 안 알림(위에서 내려오는 띠)으로 보여 준다.
+--  6) 실시간 현황의 "대화 중"은 둘 다 대화 화면을 보고 있을 때만 (admin_live_users.talking).
+-- ════════════════════════════════════════════════════════════════════
+
+-- ── 1) 편지 서명 ──
+alter table private.dm_msgs add column if not exists from_nick text;
+alter table private.dm_msgs drop constraint if exists dm_msgs_from_nick_check;
+alter table private.dm_msgs add constraint dm_msgs_from_nick_check check (from_nick is null or char_length(from_nick) between 1 and 12);
+
+-- 서명 다듬기 — 앞뒤 공백을 자르고 빈칸 여러 개는 하나로. 비었으면 null (= "익명의 ○학생")
+create or replace function private.dm_nick(p_nick text)
+returns text language sql immutable set search_path = '' as $fn$
+  select nullif(regexp_replace(btrim(coalesce(p_nick, '')), '\s+', ' ', 'g'), '');
+$fn$;
+
+-- 쓸 수 없는 서명 — 12자 넘음 · 규칙 필터(신상정보 · 금칙어) · 운영자나 앱 이름 사칭
+create or replace function private.dm_nick_bad(p_nick text)
+returns boolean language plpgsql stable set search_path = '' as $fn$
+begin
+  if p_nick is null then return false; end if;
+  return char_length(p_nick) > 12
+      or private.rule_violation(p_nick) is not null
+      or lower(replace(p_nick, ' ', '')) ~ '(운영|관리자|admin|cnsatinder|선생님)';
+end
+$fn$;
+revoke all on function private.dm_nick(text), private.dm_nick_bad(text) from public, anon, authenticated;
+
+-- ── 3) 디플로마 — 학교에 있는 것만 (화면도 이 목록에서 검색해 고른다: src/lib/chat/diplomas.ts)
+create or replace function private.diplomas()
+returns text[] language sql immutable set search_path = '' as $fn$
+  select array['수학', '물리학', '화학', '생명과학', '공학', 'IT', '인문학', '국제어문', '사회과학', '경제경영', '예술', '체육', 'IB'];
+$fn$;
+revoke all on function private.diplomas() from public, anon, authenticated;
+
+-- ── 4) 개인 공지 ──
+create table if not exists private.personal_notices (
+  id          bigint generated always as identity primary key,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  kind        text not null default 'message' check (kind in ('message', 'warning')),
+  title       text not null check (char_length(btrim(title)) between 1 and 80),
+  body        text not null default '' check (char_length(body) <= 2000),
+  created_by  uuid,
+  created_at  timestamptz not null default now(),
+  read_at     timestamptz,
+  removed_at  timestamptz
+);
+create index if not exists personal_notices_user on private.personal_notices (user_id, id desc) where removed_at is null;
+alter table private.personal_notices enable row level security;
+revoke all on private.personal_notices from public, anon, authenticated;
+
+-- 학생: 개인 공지 한 통을 읽었다 (내 것만)
+create or replace function public.read_personal_notice(p_id bigint)
+returns void language sql security definer set search_path = '' as $fn$
+  update private.personal_notices set read_at = coalesce(read_at, now())
+   where id = p_id and user_id = (select auth.uid()) and removed_at is null;
+$fn$;
+revoke all on function public.read_personal_notice(bigint) from public, anon;
+grant execute on function public.read_personal_notice(bigint) to authenticated;
+
+-- 운영진: 보내기 (경고 · 개인 연락 — 운영진 누구나). 활동 기록에 남는다
+create or replace function public.admin_send_personal_notice(p_staff uuid, p_user uuid, p_kind text, p_title text, p_body text)
+returns bigint language plpgsql security definer set search_path = public, private as $fn$
+declare v bigint;
+begin
+  perform private.require_staff(p_staff);
+  if coalesce(p_kind, '') not in ('message', 'warning') then raise exception 'bad_kind'; end if;
+  if not exists (select 1 from public.profiles where id = p_user) then raise exception 'user_not_found'; end if;
+  insert into private.personal_notices (user_id, kind, title, body, created_by)
+  values (p_user, p_kind, btrim(p_title), btrim(coalesce(p_body, '')), p_staff)
+  returning id into v;
+  insert into private.audit_log (staff_id, action, target_user, detail)
+  values (p_staff, 'personal_notice', p_user, jsonb_build_object('notice', v, 'kind', p_kind, 'title', btrim(p_title)));
+  return v;
+end
+$fn$;
+
+-- 운영진: 한 사람에게 보낸 개인 공지 (사용자 상세 화면) — 읽었는지까지
+create or replace function public.admin_personal_notices(p_staff uuid, p_user uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  perform private.require_staff(p_staff);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', id, 'kind', kind, 'title', title, 'body', body,
+                                        'created_at', created_at, 'read_at', read_at) order by id desc)
+      from private.personal_notices where user_id = p_user and removed_at is null
+  ), '[]'::jsonb);
+end
+$fn$;
+
+-- 운영진: 거두기 (지우지 않고 숨긴다 — 기록은 남는다)
+create or replace function public.admin_remove_personal_notice(p_staff uuid, p_id bigint)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare v_user uuid;
+begin
+  perform private.require_staff(p_staff);
+  update private.personal_notices set removed_at = now() where id = p_id and removed_at is null returning user_id into v_user;
+  if not found then raise exception 'notice_not_found'; end if;
+  insert into private.audit_log (staff_id, action, target_user, detail)
+  values (p_staff, 'remove_personal_notice', v_user, jsonb_build_object('notice', p_id));
+end
+$fn$;
+
+-- 서버 전용: 개인 공지 알림 — 막 보낸(2분 안) 공지 한 번만
+create table if not exists private.personal_notice_push_log (
+  notice_id  bigint primary key references private.personal_notices(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table private.personal_notice_push_log enable row level security;
+
+create or replace function public.personal_notice_push(p_id bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare n private.personal_notices%rowtype; v_subs jsonb;
+begin
+  select * into n from private.personal_notices where id = p_id and removed_at is null;
+  if not found then return jsonb_build_object('skip', 'no_notice'); end if;
+  if n.created_at < now() - interval '2 minutes' then return jsonb_build_object('skip', 'stale'); end if;
+  insert into private.personal_notice_push_log (notice_id) values (p_id) on conflict do nothing;
+  if not found then return jsonb_build_object('skip', 'already'); end if;
+  v_subs := private.push_target(n.user_id);
+  if v_subs ? 'skip' then return v_subs; end if;
+  return jsonb_build_object(
+    'title', case when n.kind = 'warning' then '운영진 경고' else '운영진이 보낸 공지' end,
+    'body',  n.title,
+    'url',   '/notices',
+    'tag',   'pn-' || n.id,
+    'subs',  v_subs -> 'subs');
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['admin_send_personal_notice(uuid, uuid, text, text, text)', 'admin_personal_notices(uuid, uuid)',
+                           'admin_remove_personal_notice(uuid, bigint)', 'personal_notice_push(bigint)']
+  loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+    execute format('grant execute on function public.%s to service_role', f);
+  end loop;
+end
+$do$;
+
+-- ── 5) 알림 정책 — 그 대화 화면을 보고 있는가 (room_view 가 10초마다 viewing_until 을 25초 뒤로 민다)
+create or replace function private.viewing_room(p_user uuid, p_room uuid)
+returns boolean language sql stable security definer set search_path = '' as $fn$
+  select exists (select 1 from public.room_members
+                  where room_id = p_room and user_id = p_user and viewing_until > now());
+$fn$;
+revoke all on function private.viewing_room(uuid, uuid) from public, anon, authenticated;
+
+-- 발송 기록 정리 — 개인 공지 알림 기록도 하루면 충분
+do $do$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'simbun-purge-pn-push';
+    perform cron.schedule('simbun-purge-pn-push', '49 4 * * *',
+      $q$delete from private.personal_notice_push_log where created_at < now() - interval '1 day'$q$);
+  end if;
+end
+$do$;

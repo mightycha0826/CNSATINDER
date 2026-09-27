@@ -1,19 +1,21 @@
 <script lang="ts">
 	/**
-	 * 새 업적 축하 (Phase 31) — 탭 첫 화면(홈 · 편지 · 프로필)에서만 띄운다 (대화 중에는 방해하지 않는다).
+	 * 새 업적 축하 (Phase 31 · 35 다시 만듦) — 탭 첫 화면(홈 · 편지 · 프로필)에서만 띄운다 (대화 중에는 방해하지 않는다).
 	 * 앱을 열 때와, 화면이 보이는 동안 2분마다 새로 딴 업적이 있는지 묻는다. 닫으면 "봤음"으로 서버에 남긴다.
-	 * 색종이는 CSS 로만 — 동작 줄이기면 app.css 가 애니메이션을 끄고 그대로 멈춰 보인다.
+	 * 움직임 (Phase 35 — 기계적이지 않게): 뒤에서 빛이 퍼지고 → 메달이 동전처럼 돌며 용수철처럼 튀어나오고(한 개씩 조금 늦게) →
+	 * 색종이가 메달에서 위로 터졌다가 제각각 흔들리며 떨어진다 (조각마다 방향 · 속도 · 회전이 다르다).
+	 * 동작 줄이기면 app.css 가 애니메이션을 끄고 그대로 멈춰 보인다.
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Badge from './Badge.svelte';
-	import Sheet from './Sheet.svelte';
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
 	import { whileVisible } from '$lib/visible';
 
 	let { preview = null }: { preview?: BadgeLite[] | null } = $props();
 
 	let fresh = $state<BadgeLite[]>([]);
+	let leaving = $state(false);
 	const onRoot = $derived(['/', '/letters', '/me'].includes(page.url.pathname));
 
 	$effect(() => {
@@ -29,68 +31,236 @@
 	});
 
 	async function close(view = false) {
+		leaving = true;
+		await new Promise((r) => setTimeout(r, 240));
 		fresh = [];
+		leaving = false;
 		if (!preview) await markAchievementsSeen().catch(() => {});
 		if (view) void goto('/me/achievements');
 	}
 	const top = $derived(fresh.slice(0, 6));
+	const one = $derived(fresh.length === 1);
+
+	// 색종이 — 조각마다 제각각 (터지는 방향 · 높이 · 떨어지는 곳 · 회전 · 시간)
+	const COLORS = ['var(--g-orange)', 'var(--g-pink)', '#f2c14e', '#7059f5', '#14a37f', '#3b8af6', 'var(--g-coral)'];
+	const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+	const bits = Array.from({ length: 34 }, (_, i) => {
+		const ang = rnd(-150, -30) * (Math.PI / 180);
+		const pow = rnd(90, 210);
+		return {
+			c: COLORS[i % COLORS.length],
+			bx: Math.cos(ang) * pow,
+			by: Math.sin(ang) * pow,
+			fx: Math.cos(ang) * pow * rnd(1.2, 1.8) + rnd(-30, 30),
+			fy: rnd(160, 320),
+			r: rnd(-720, 720),
+			rx: rnd(0, 720),
+			w: rnd(5, 9),
+			h: rnd(8, 14),
+			d: rnd(1.6, 2.6),
+			t: rnd(0, 0.25),
+			round: i % 5 === 0
+		};
+	});
+
+	function onkey(e: KeyboardEvent) {
+		if (e.key === 'Escape') void close();
+	}
 </script>
 
+<svelte:window onkeydown={fresh.length ? onkey : undefined} />
+
 {#if fresh.length && (onRoot || preview)}
-	<Sheet onclose={() => close()} label="새 업적">
-		<div class="party">
-			<div class="confetti" aria-hidden="true">
-				{#each Array(18) as _, i (i)}<i></i>{/each}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div class="scrim" class:leaving role="presentation" onclick={() => close()}>
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div class="party" role="dialog" aria-modal="true" aria-label="새 업적" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+			<div class="stage" aria-hidden="true">
+				<i class="glow"></i>
+				<i class="rays"></i>
+				<div class="confetti">
+					{#each bits as b, i (i)}
+						<i
+							class:round={b.round}
+							style:--c={b.c}
+							style:--bx="{b.bx}px"
+							style:--by="{b.by}px"
+							style:--fx="{b.fx}px"
+							style:--fy="{b.fy}px"
+							style:--r="{b.r}deg"
+							style:--rx="{b.rx}deg"
+							style:--w="{b.w}px"
+							style:--h="{b.h}px"
+							style:--dur="{b.d}s"
+							style:--t="{0.35 + b.t}s"
+						></i>
+					{/each}
+				</div>
 			</div>
-			<p class="kicker">새 업적</p>
-			<h2>{fresh.length === 1 ? `${fresh[0].title} ${TIER_NAME[fresh[0].tier]} 등급!` : `업적 ${fresh.length}개를 모았어요!`}</h2>
-			<div class="medals">
-				{#each top as b (b.code)}
+			<div class="medals" class:one>
+				{#each top as b, i (b.code)}
 					<div class="m">
-						<Badge icon={b.icon} tier={b.tier} title={b.title} size={fresh.length === 1 ? 104 : 64} label shine />
-						{#if fresh.length > 1}<span>{b.title}</span>{/if}
+						<Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={one ? 116 : 68} label shine enter delay={120 + i * 110} />
+						{#if !one}<span style:--i={i}>{b.title}</span>{/if}
 					</div>
 				{/each}
 			</div>
+			<p class="kicker">새 업적</p>
+			<h2>{one ? `${fresh[0].title} ${TIER_NAME[fresh[0].tier]} 등급!` : `업적 ${fresh.length}개를 모았어요!`}</h2>
 			{#if fresh.length > top.length}<p class="more muted">외 {fresh.length - top.length}개</p>{/if}
-			<button class="btn" onclick={() => close(true)}>업적 보러 가기</button>
-			<button class="later" onclick={() => close()}>닫기</button>
+			<div class="acts">
+				<button class="btn" onclick={() => close(true)}>업적 보러 가기</button>
+				<button class="later" onclick={() => close()}>닫기</button>
+			</div>
 		</div>
-	</Sheet>
+	</div>
 {/if}
 
 <style>
+	.scrim {
+		position: fixed;
+		inset: 0;
+		z-index: 55;
+		display: grid;
+		place-items: center;
+		padding: 20px;
+		background: rgb(14 6 9 / 0.55);
+		-webkit-backdrop-filter: blur(8px);
+		backdrop-filter: blur(8px);
+		animation: fade 0.35s ease-out;
+		transition: opacity 0.24s ease-in;
+	}
+	.scrim.leaving {
+		opacity: 0;
+	}
+	@keyframes fade {
+		from {
+			opacity: 0;
+		}
+	}
 	.party {
 		position: relative;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 10px;
-		padding: 22px var(--pad) 6px;
+		gap: 8px;
+		width: 100%;
+		max-width: 360px;
+		padding: 26px 20px 16px;
+		border-radius: 32px;
+		background: var(--surface);
+		box-shadow: var(--shadow-2);
 		text-align: center;
-		overflow: hidden;
+		outline: none;
+		animation: rise 0.6s cubic-bezier(0.2, 0.9, 0.25, 1.08) both;
+		transition: transform 0.24s ease-in;
 	}
-	.kicker {
-		margin: 0;
-		font-size: 12px;
-		font-weight: 800;
-		letter-spacing: 0.08em;
-		background: var(--brand);
-		-webkit-background-clip: text;
-		background-clip: text;
-		color: transparent;
+	.leaving .party {
+		transform: scale(0.95) translateY(10px);
 	}
-	h2 {
-		margin: 0 0 6px;
-		font-size: 20px;
-		letter-spacing: -0.02em;
+	@keyframes rise {
+		from {
+			opacity: 0;
+			transform: translateY(40px) scale(0.92);
+		}
+	}
+	/* 메달 뒤 — 빛 번짐 · 천천히 도는 빛살 */
+	.stage {
+		position: absolute;
+		left: 0;
+		right: 0;
+		top: 0;
+		height: 190px;
+		pointer-events: none;
+	}
+	.glow {
+		position: absolute;
+		left: 50%;
+		top: 100px;
+		width: 240px;
+		height: 240px;
+		margin: -120px 0 0 -120px;
+		border-radius: 50%;
+		background: radial-gradient(circle, color-mix(in srgb, #f2c14e 55%, transparent), color-mix(in srgb, var(--g-pink) 22%, transparent) 45%, transparent 70%);
+		animation: bloom 1.2s 0.1s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+	}
+	@keyframes bloom {
+		from {
+			transform: scale(0.2);
+			opacity: 0;
+		}
+	}
+	.rays {
+		position: absolute;
+		left: 50%;
+		top: 100px;
+		width: 300px;
+		height: 300px;
+		margin: -150px 0 0 -150px;
+		border-radius: 50%;
+		background: repeating-conic-gradient(from 0deg, rgb(255 214 120 / 0.28) 0 7deg, transparent 7deg 22deg);
+		-webkit-mask: radial-gradient(circle, #000 20%, transparent 68%);
+		mask: radial-gradient(circle, #000 20%, transparent 68%);
+		animation:
+			bloom 1.2s 0.2s cubic-bezier(0.2, 0.8, 0.3, 1) both,
+			turn 18s linear infinite;
+	}
+	@keyframes turn {
+		to {
+			rotate: 360deg;
+		}
+	}
+	/* 색종이 — 메달에서 위로 터졌다가(감속) 흔들리며 떨어진다(가속) */
+	.confetti {
+		position: absolute;
+		left: 50%;
+		top: 100px;
+	}
+	.confetti i {
+		position: absolute;
+		width: var(--w);
+		height: var(--h);
+		margin: calc(var(--h) / -2) 0 0 calc(var(--w) / -2);
+		border-radius: 2px;
+		background: var(--c);
+		opacity: 0;
+		animation: burst var(--dur) var(--t) both;
+	}
+	.confetti i.round {
+		border-radius: 50%;
+		height: var(--w);
+	}
+	@keyframes burst {
+		0% {
+			opacity: 1;
+			transform: translate(0, 0) rotate(0) rotateX(0) scale(0.4);
+			animation-timing-function: cubic-bezier(0.1, 0.8, 0.3, 1);
+		}
+		28% {
+			opacity: 1;
+			transform: translate(var(--bx), var(--by)) rotate(calc(var(--r) * 0.3)) rotateX(calc(var(--rx) * 0.3)) scale(1);
+			animation-timing-function: cubic-bezier(0.5, 0, 0.8, 0.6);
+		}
+		85% {
+			opacity: 1;
+		}
+		100% {
+			opacity: 0;
+			transform: translate(var(--fx), var(--fy)) rotate(var(--r)) rotateX(var(--rx)) scale(0.9);
+		}
 	}
 	.medals {
+		position: relative;
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: center;
+		align-items: center;
 		gap: 14px 10px;
-		margin: 6px 0 4px;
+		min-height: 150px;
+		margin-bottom: 4px;
+	}
+	.medals.one {
+		min-height: 160px;
 	}
 	.m {
 		display: flex;
@@ -100,30 +270,48 @@
 		width: 84px;
 		font-size: 12px;
 		font-weight: 600;
-		animation: pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) both;
 	}
-	.m:nth-child(2) {
-		animation-delay: 0.08s;
+	.medals.one .m {
+		width: auto;
 	}
-	.m:nth-child(3) {
-		animation-delay: 0.16s;
+	.m span {
+		animation: up 0.45s calc(0.6s + var(--i, 0) * 0.11s) ease-out both;
 	}
-	.m:nth-child(n + 4) {
-		animation-delay: 0.24s;
+	.kicker {
+		margin: 0;
+		font-size: 12px;
+		font-weight: 800;
+		letter-spacing: 0.1em;
+		background: var(--brand);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+		animation: up 0.5s 0.55s ease-out both;
 	}
-	@keyframes pop {
+	h2 {
+		margin: 0 0 4px;
+		font-size: 21px;
+		letter-spacing: -0.02em;
+		animation: up 0.5s 0.65s ease-out both;
+	}
+	@keyframes up {
 		from {
-			transform: scale(0.4);
 			opacity: 0;
+			transform: translateY(10px);
 		}
 	}
 	.more {
 		margin: 0;
 		font-size: 12px;
 	}
-	.btn {
+	.acts {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 4px;
 		width: 100%;
-		margin-top: 6px;
+		margin-top: 8px;
+		animation: up 0.5s 0.8s ease-out both;
 	}
 	.later {
 		height: 40px;
@@ -131,65 +319,4 @@
 		font-weight: 600;
 		color: var(--text-2);
 	}
-	/* 색종이 18장 — 위에서 흩날리며 떨어진다 */
-	.confetti {
-		position: absolute;
-		inset: 0;
-		pointer-events: none;
-	}
-	.confetti i {
-		position: absolute;
-		top: -12px;
-		width: 7px;
-		height: 12px;
-		border-radius: 2px;
-		opacity: 0;
-		animation: fall 1.8s ease-in forwards;
-	}
-	@keyframes fall {
-		0% {
-			opacity: 1;
-			transform: translateY(0) rotate(0);
-		}
-		100% {
-			opacity: 0;
-			transform: translateY(260px) rotate(540deg);
-		}
-	}
-	.confetti i:nth-child(6n + 1) {
-		background: #ff7a50;
-	}
-	.confetti i:nth-child(6n + 2) {
-		background: #f0396e;
-	}
-	.confetti i:nth-child(6n + 3) {
-		background: #f2c14e;
-	}
-	.confetti i:nth-child(6n + 4) {
-		background: #7059f5;
-	}
-	.confetti i:nth-child(6n + 5) {
-		background: #14a37f;
-	}
-	.confetti i:nth-child(6n) {
-		background: #3b8af6;
-	}
-	.confetti i:nth-child(1) { left: 4%; animation-delay: 0s; }
-	.confetti i:nth-child(2) { left: 10%; animation-delay: 0.2s; }
-	.confetti i:nth-child(3) { left: 16%; animation-delay: 0.1s; }
-	.confetti i:nth-child(4) { left: 22%; animation-delay: 0.35s; }
-	.confetti i:nth-child(5) { left: 28%; animation-delay: 0.05s; }
-	.confetti i:nth-child(6) { left: 34%; animation-delay: 0.25s; }
-	.confetti i:nth-child(7) { left: 40%; animation-delay: 0.15s; }
-	.confetti i:nth-child(8) { left: 46%; animation-delay: 0.4s; }
-	.confetti i:nth-child(9) { left: 52%; animation-delay: 0.08s; }
-	.confetti i:nth-child(10) { left: 58%; animation-delay: 0.3s; }
-	.confetti i:nth-child(11) { left: 64%; animation-delay: 0.12s; }
-	.confetti i:nth-child(12) { left: 70%; animation-delay: 0.45s; }
-	.confetti i:nth-child(13) { left: 76%; animation-delay: 0.02s; }
-	.confetti i:nth-child(14) { left: 82%; animation-delay: 0.22s; }
-	.confetti i:nth-child(15) { left: 88%; animation-delay: 0.18s; }
-	.confetti i:nth-child(16) { left: 93%; animation-delay: 0.38s; }
-	.confetti i:nth-child(17) { left: 97%; animation-delay: 0.1s; }
-	.confetti i:nth-child(18) { left: 50%; animation-delay: 0.5s; }
 </style>

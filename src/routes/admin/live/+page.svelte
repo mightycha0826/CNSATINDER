@@ -32,15 +32,16 @@
 		return whileVisible(() => void tick(), REFRESH_MS);
 	});
 
-	type St = 'chat' | 'seeking' | 'online' | 'offline';
-	const RANK: Record<St, number> = { chat: 0, seeking: 1, online: 2, offline: 3 };
-	const LABEL: Record<St, string> = { chat: '대화 중', seeking: '매칭 대기', online: '접속 중', offline: '오프라인' };
+	// "대화 중" = 둘 다 그 대화 화면을 보고 있을 때만 (Phase 35). 대화방은 열려 있지만 둘 다 보고 있지 않으면 "대화방 있음"
+	type St = 'chat' | 'room' | 'seeking' | 'online' | 'offline';
+	const RANK: Record<St, number> = { chat: 0, room: 1, seeking: 2, online: 3, offline: 4 };
+	const LABEL: Record<St, string> = { chat: '대화 중', room: '대화방 있음', seeking: '매칭 대기', online: '접속 중', offline: '오프라인' };
 	const stOf = (u: LiveUser): St =>
-		u.room_count > 0 ? 'chat' : u.seeking ? 'seeking' : u.online ? 'online' : 'offline';
+		(u.talking ?? 0) > 0 ? 'chat' : u.room_count > 0 ? 'room' : u.seeking ? 'seeking' : u.online ? 'online' : 'offline';
 	const restricted = (u: LiveUser) => isRestricted(u, now);
 
 	type Tab = St | 'all' | 'restricted';
-	const TAB_KEYS: Tab[] = ['all', 'chat', 'seeking', 'online', 'offline', 'restricted'];
+	const TAB_KEYS: Tab[] = ['all', 'chat', 'room', 'seeking', 'online', 'offline', 'restricted'];
 	const fromUrl = page.url.searchParams.get('tab') as Tab | null;
 	// 탭 링크는 ?tab= 주소라, 화면이 준비되기 전에 눌러도 그 탭으로 열린다
 	let tab = $state<Tab>(fromUrl && TAB_KEYS.includes(fromUrl) ? fromUrl : 'all');
@@ -64,6 +65,7 @@
 	const count = $derived({
 		all: rows.length,
 		chat: rows.filter((r) => r.st === 'chat').length,
+		room: rows.filter((r) => r.st === 'room').length,
 		seeking: rows.filter((r) => r.st === 'seeking').length,
 		online: rows.filter((r) => r.st === 'online').length,
 		offline: rows.filter((r) => r.st === 'offline').length,
@@ -84,6 +86,7 @@
 	const TABS: { v: Tab; label: string }[] = [
 		{ v: 'all', label: '전체' },
 		{ v: 'chat', label: '대화 중' },
+		{ v: 'room', label: '대화방 있음' },
 		{ v: 'seeking', label: '매칭 대기' },
 		{ v: 'online', label: '접속 중' },
 		{ v: 'offline', label: '오프라인' },
@@ -163,7 +166,8 @@
 		</tbody>
 	</table>
 	<p class="a-hint">
-		접속 중 = 앱이 화면에 켜져 있음(약 1분 안에 신호). 대화 중·매칭 대기의 점은 지금 앱을 보고 있는지를 뜻합니다.
+		접속 중 = 앱이 화면에 켜져 있음(약 1분 안에 신호). 대화 중 = 두 사람이 모두 그 대화 화면을 보고 있음.
+		대화방 있음 = 대화방은 열려 있지만 둘 다 보고 있지는 않음(시간이 멈춰 있음). 점은 지금 앱을 보고 있는지를 뜻합니다.
 		{#if !admin}어느 대화인지는 관리자만 볼 수 있습니다.{/if}
 	</p>
 {/if}
@@ -190,6 +194,9 @@
 	}
 	.s-chat {
 		color: var(--accent);
+	}
+	.s-room {
+		color: #7c3aed;
 	}
 	.s-seeking {
 		color: #d97706;

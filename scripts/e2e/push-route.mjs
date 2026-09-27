@@ -9,10 +9,12 @@ const VPUB = b64u(await crypto.subtle.exportKey('raw', vk.publicKey)), VPRIV = (
 const sk = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
 const sub = { endpoint: `${PUSH}/dev1`, p256dh: b64u(await crypto.subtle.exportKey('raw', sk.publicKey)), auth: b64u(crypto.getRandomValues(new Uint8Array(16))) };
 const USER = '3f1c2b4a-1111-4222-8333-944455556666';
+// 대칭 키(HS256) 토큰 — getClaims 가 인증 서버(/auth/v1/user)에 물어 확인한다 (비대칭 키면 서버 안 거치고 바로)
+const GOOD = [b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' })), b64u(JSON.stringify({ sub: USER, role: 'authenticated', aud: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600 })), b64u('sig')].join('.');
 const rpcCalls = [], pushes = [];
 http.createServer((req, res) => { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => {
 	const send = (s, o) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
-	if (req.url.startsWith('/auth/v1/user')) return req.headers.authorization === 'Bearer good-token' ? send(200, { id: USER, aud: 'authenticated', role: 'authenticated' }) : send(401, { msg: 'bad jwt' });
+	if (req.url.startsWith('/auth/v1/user')) return req.headers.authorization === `Bearer ${GOOD}` ? send(200, { id: USER, aud: 'authenticated', role: 'authenticated' }) : send(401, { msg: 'bad jwt' });
 	const fn = req.url.match(/rpc\/([a-z_]+)/)?.[1]; rpcCalls.push([fn, JSON.parse(b || '{}')]);
 	if (fn === 'reaction_push_payload') return send(200, { title: '새벽수달', body: '❤️ 공감: 실리카겔 좋아하세요?', room_id: 'room-1', subs: [sub] });
 	send(200, null);
@@ -24,7 +26,7 @@ let out = ''; vite.stdout.on('data', (d) => (out += d));
 for (let i = 0; i < 60 && !out.includes('ready'); i++) await new Promise((r) => setTimeout(r, 500));
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
-const post = (body, token = 'good-token') => fetch(`http://localhost:${PORT}/api/push`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, origin: `http://localhost:${PORT}` }, body: JSON.stringify(body) });
+const post = (body, token = GOOD) => fetch(`http://localhost:${PORT}/api/push`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, origin: `http://localhost:${PORT}` }, body: JSON.stringify(body) });
 try {
 	const r = await post({ reaction_message_id: 42 });
 	const j = await r.json();

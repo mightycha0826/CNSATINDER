@@ -47,7 +47,7 @@ await page.getByPlaceholder('학교 이메일 앞부분').fill('29999');
 await page.getByPlaceholder('비밀번호').fill('abcd1234');
 await page.getByRole('button', { name: '로그인', exact: true }).click();
 await page.waitForURL(`http://localhost:${PORT}/`, { timeout: 10000 }).catch(() => {});
-await page.locator('button.bell').waitFor({ timeout: 10000 });
+await page.locator('button.heart').waitFor({ timeout: 10000 });
 await page.waitForTimeout(3000);
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
@@ -57,7 +57,7 @@ try {
 	for (const p of ['rpc/ensure_self', 'profiles', 'app_settings', 'rpc/my_account'])
 		check(`★ ${p} 는 한 번만 (예전엔 두 번)`, count(p) === 1, String(count(p)));
 	await page.reload();
-	await page.locator('button.bell').waitFor();
+	await page.locator('button.heart').waitFor();
 	await page.waitForTimeout(2500);
 	for (const p of ['rpc/ensure_self', 'profiles', 'app_settings', 'rpc/my_account'])
 		check(`새로고침해도 한 번씩 더 (${p})`, count(p) === 2, String(count(p)));

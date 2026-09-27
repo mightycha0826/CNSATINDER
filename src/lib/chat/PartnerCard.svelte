@@ -21,7 +21,7 @@
 		{#if profile.badges?.length}
 			<div class="badges" aria-label="대표 업적 (모은 업적 {profile.badge_count ?? profile.badges.length}개)">
 				{#each profile.badges as b (b.code)}
-					<div class="b"><Badge icon={b.icon} tier={b.tier} title={b.title} size={46} label /><span>{b.title}</span></div>
+					<div class="b"><Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={46} label /><span>{b.title}</span></div>
 				{/each}
 			</div>
 		{/if}

@@ -1,12 +1,14 @@
 <script lang="ts">
 	/**
-	 * 상단 바 오른쪽 — 공지 종 + 설정(톱니). 탭 첫 화면(익명편지 · 채팅 · 프로필)이 같이 쓴다.
-	 * 내 프로필은 하단 탭으로 옮겼다.
-	 * 안 본 공지가 있으면 종 오른쪽 위에 빨간 점. 화면이 보이는 동안 5분마다, 앱으로 돌아올 때 새 공지를 확인한다.
-	 * 탭을 오가도 1분 안이면 다시 부르지 않는다 (loadNotices). 공지는 드물게 바뀌므로 자주 물을 이유가 없다.
+	 * 상단 바 오른쪽 — 하트(알림) + 설정(톱니). 탭 첫 화면(익명편지 · 채팅 · 프로필)이 같이 쓴다.
+	 * 하트 = 모든 알림 (Phase 35 — 인스타처럼): 새 메시지 · 새 편지 · 공지 · 나에게 온 개인 공지. 하나라도 있으면 빨간 점.
+	 * 두 아이콘은 같은 크기 · 같은 선 굵기 · 같은 누르는 칸(40px).
+	 * 공지는 화면이 보이는 동안 5분마다, 앱으로 돌아올 때 새로 확인한다 (탭을 오가도 1분 안이면 다시 부르지 않는다).
 	 */
 	import { goto } from '$app/navigation';
-	import { NOTICES, hasNewNotice, loadNotices } from '$lib/notices.svelte';
+	import { NOTICES, hasNewNotice, loadNotices, unreadPersonal } from '$lib/notices.svelte';
+	import { INBOX } from '$lib/inbox.svelte';
+	import { DM } from '$lib/letters/unread.svelte';
 	import { whileVisible } from '$lib/visible';
 
 	$effect(() => {
@@ -15,29 +17,33 @@
 		return whileVisible(() => void loadNotices(true), 300_000);
 	});
 
-	const fresh = $derived(NOTICES.loaded && hasNewNotice());
+	const count = $derived(
+		INBOX.rooms.filter((r) => r.unread > 0 || !r.joined).length +
+			DM.unread +
+			(NOTICES.loaded && hasNewNotice() ? 1 : 0) +
+			unreadPersonal()
+	);
 </script>
 
 <div class="actions">
-	<button class="bell" onclick={() => goto('/notices')} aria-label={fresh ? '공지사항 (새 공지 있음)' : '공지사항'}>
+	<button class="ic heart" onclick={() => goto('/activity')} aria-label={count ? `알림 (새 알림 있음)` : '알림'}>
 		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
 			<path
-				d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16zM10 20a2 2 0 0 0 4 0"
+				d="M12 20.3s-7.6-4.6-7.6-10.3A4.4 4.4 0 0 1 12 7.2a4.4 4.4 0 0 1 7.6 2.8c0 5.7-7.6 10.3-7.6 10.3z"
 				stroke="currentColor"
 				stroke-width="1.8"
-				stroke-linecap="round"
 				stroke-linejoin="round"
 			/>
 		</svg>
-		{#if fresh}<span class="dot"></span>{/if}
+		{#if count}<span class="dot"></span>{/if}
 	</button>
-	<button class="settings" onclick={() => goto('/settings')} aria-label="설정">
+	<button class="ic settings" onclick={() => goto('/settings')} aria-label="설정">
 		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
 			<circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" />
 			<path
 				d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
 				stroke="currentColor"
-				stroke-width="1.6"
+				stroke-width="1.8"
 				stroke-linejoin="round"
 			/>
 		</svg>
@@ -47,35 +53,43 @@
 <style>
 	.actions {
 		margin-left: auto;
+		margin-right: -8px;
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 4px;
 	}
-	.bell,
-	.settings {
+	/* 두 아이콘 — 같은 칸 · 같은 크기 (24px) */
+	.ic {
 		position: relative;
 		display: grid;
 		place-items: center;
-		width: 32px;
-		height: 32px;
+		width: 40px;
+		height: 40px;
+		border-radius: 50%;
+		transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.3, 1.4);
 	}
-	.bell svg {
-		width: 25px;
-		height: 25px;
+	.ic:active {
+		transform: scale(0.88);
 	}
-	.settings svg {
+	.ic svg {
 		width: 24px;
 		height: 24px;
 	}
 	.dot {
 		position: absolute;
-		top: 3px;
-		right: 3px;
-		width: 9px;
-		height: 9px;
+		top: 7px;
+		right: 7px;
+		width: 8px;
+		height: 8px;
 		border-radius: 50%;
 		background: #ff3040;
 		border: 2px solid var(--bg);
 		box-sizing: content-box;
+		animation: dot-in 0.35s cubic-bezier(0.3, 0.7, 0.3, 1.6);
+	}
+	@keyframes dot-in {
+		from {
+			transform: scale(0);
+		}
 	}
 </style>

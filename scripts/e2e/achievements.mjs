@@ -49,7 +49,7 @@ try {
 	await page.screenshot({ path: `${SP}/ach-3-celebrate.png` });
 	await page.goto(U('/dev/achievements?celebrate&one')); await page.waitForTimeout(700);
 	check('하나면 "고정 친구 동 등급!"', (await page.getByRole('dialog', { name: '새 업적' }).innerText()).includes('고정 친구 동 등급!'));
-	await page.getByRole('button', { name: '닫기' }).click(); await page.waitForTimeout(200);
+	await page.getByRole('button', { name: '닫기' }).click(); await page.waitForTimeout(500);
 	check('닫으면 사라진다', (await page.getByRole('dialog', { name: '새 업적' }).count()) === 0);
 
 	console.log('[상대 프로필의 대표 업적]');

@@ -27,7 +27,7 @@
 	{#if profile}
 		<span class="temp">
 			<MannerTemp temp={profile.manner_temp} size="chip" />
-			{#each profile.badges ?? [] as b (b.code)}<Badge icon={b.icon} tier={b.tier} title={b.title} size={26} />{/each}
+			{#each profile.badges ?? [] as b (b.code)}<Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={26} />{/each}
 		</span>
 	{/if}
 	<button class="intro-btn" onclick={onprofile}>프로필 보기</button>

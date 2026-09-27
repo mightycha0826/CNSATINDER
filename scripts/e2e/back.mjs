@@ -68,7 +68,7 @@ try {
 	check('로고를 드래그해도 글자가 잡히지 않는다', (await page.evaluate(() => getSelection().toString())) === '');
 	check('하단 탭 3개 — 익명편지 · 채팅 · 프로필 순서', (await page.locator('a.tab').allInnerTexts()).map((t) => t.trim()).join(',') === '익명편지,채팅,프로필',
 		(await page.locator('a.tab').allInnerTexts()).join(','));
-	check('상단 오른쪽 = 공지 종 + 설정 톱니 (프로필 사진 없음)', (await page.locator('button.settings').count()) === 1 && (await page.locator('button.me').count()) === 0);
+	check('상단 오른쪽 = 알림 하트 + 설정 톱니 (프로필 사진 없음)', (await page.locator('button.settings').count()) === 1 && (await page.locator('button.heart').count()) === 1 && (await page.locator('button.me').count()) === 0);
 	await page.locator('a.tab', { hasText: '프로필' }).click(); await page.waitForURL('**/me'); await page.waitForTimeout(500);
 	check('프로필 탭 → 탭바 그대로 · 프로필 탭 켜짐', (await page.locator('a.tab.on').innerText()).includes('프로필') && (await page.locator('button.back').count()) === 0);
 	check('프로필 탭 전환도 기록을 쌓지 않는다', (await idx()) === 1, String(await idx()));
@@ -106,11 +106,12 @@ try {
 	await page.waitForTimeout(2300);
 
 	console.log('[다른 화면에서 돌아오기]');
-	await page.locator('button.bell').click(); await page.waitForURL('**/notices'); await page.waitForTimeout(300);
+	await page.locator('button.heart').click(); await page.waitForURL('**/activity'); await page.locator('a.all').click(); await page.waitForURL('**/notices'); await page.waitForTimeout(300);
+	await page.locator('button.back').click(); await page.waitForURL('**/activity'); await page.waitForTimeout(300);
 	await page.locator('button.back').click(); await page.waitForURL(`${BASE}/`); await page.waitForTimeout(500);
-	check('공지 → 뒤로 → 홈, 기록 늘지 않음', (await idx()) === 1, String(await idx()));
-	await page.locator('button.bell').click(); await page.waitForURL('**/notices'); await page.waitForTimeout(300);
-	await back();
+	check('공지 → 뒤로 → 알림 → 뒤로 → 홈, 기록 늘지 않음', (await idx()) === 1, String(await idx()));
+	await page.locator('button.heart').click(); await page.waitForURL('**/activity'); await page.locator('a.all').click(); await page.waitForURL('**/notices'); await page.waitForTimeout(300);
+	await back(); await back();
 	check('휴대폰 뒤로가기로 돌아와도 같음 (안내 없이 홈)', new URL(page.url()).pathname === '/' && (await idx()) === 1);
 
 	console.log('[아이폰 상태바]');

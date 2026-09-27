@@ -124,3 +124,41 @@ function requestPush(body: Record<string, number>) {
 		});
 	})().catch(() => {});
 }
+
+/**
+ * 떠 있는 알림 닫기 (Phase 35) — 그 대화 · 편지를 앱에서 보면 알림 센터에 남은 옛 알림을 지운다.
+ * tag = 방 id / 'dm-<편지 id>' / 'pn-' 로 시작하는 개인 공지. prefix 면 그걸로 시작하는 것 전부.
+ */
+export async function clearNotifications(tag: string, prefix = false) {
+	try {
+		if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+		const reg = await navigator.serviceWorker.getRegistration();
+		const list = await reg?.getNotifications(prefix ? undefined : { tag });
+		for (const n of list ?? []) if (!prefix || n.tag.startsWith(tag)) n.close();
+	} catch {
+		/* 알림을 못 읽는 환경 */
+	}
+}
+
+export type SwNote = { kind: 'chat' | 'reaction' | 'letter' | 'notice' | 'other'; title: string; body: string; url: string; tag: string };
+
+/**
+ * 서비스워커가 보내는 말 (Phase 35)
+ *   push — 앱이 화면에 떠 있을 때 온 푸시 → 앱 안 알림으로 (애플 기기는 시스템 알림도 떴으니 바로 닫는다)
+ *   open — 알림을 눌렀다 → 새로고침 없이 그 화면으로 (대답해야 서비스워커가 다시 열지 않는다)
+ */
+export function listenServiceWorker(on: { push: (n: SwNote) => void; open: (url: string) => void }) {
+	if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return () => {};
+	const handler = (e: MessageEvent) => {
+		const d = e.data as { type?: string; note?: SwNote; shown?: boolean; url?: string } | null;
+		if (d?.type === 'push' && d.note) {
+			if (d.shown) void clearNotifications(d.note.tag);
+			on.push(d.note);
+		} else if (d?.type === 'open' && typeof d.url === 'string' && d.url.startsWith('/') && !d.url.startsWith('//')) {
+			e.ports[0]?.postMessage('ok');
+			on.open(d.url);
+		}
+	};
+	navigator.serviceWorker.addEventListener('message', handler);
+	return () => navigator.serviceWorker.removeEventListener('message', handler);
+}

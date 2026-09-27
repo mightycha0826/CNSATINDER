@@ -10,7 +10,8 @@
 // v7: v6 까지는 같은 출처의 GET 을 전부 캐시 우선으로 돌려줘서, 운영자 화면 데이터(__data.json)와
 //     실시간 현황(/admin/live/status)이 처음 받은 사본에 멈춰 있었다. 올리면 그 캐시가 통째로 지워진다.
 // v8: 알림 배지(badge-96.png) 추가
-const VERSION = 'cnsatinder-v8';
+// v9: 앱 안 알림 · 대화별로 모이는 알림 · 알림을 누르면 새로고침 없이 그 화면으로 (Phase 35)
+const VERSION = 'cnsatinder-v9';
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/badge-96.png', '/manifest.webmanifest'];
 // 버전이 바뀌어도 지우지 않는 작은 저장소 — "설치한 앱으로 쓰는 기기인지", 앱 창 id
 const META = 'cnsatinder-meta';
@@ -43,8 +44,56 @@ self.addEventListener('activate', (e) => {
 });
 
 // ── 푸시 알림 ─────────────────────────────────────────────────────────
-// 서버(/api/push)가 암호화해 보낸 { title, body, room } 을 보여준다.
-// tag = 방 id: 같은 대화의 알림은 쌓이지 않고 최신 것으로 바뀐다.
+// 서버(/api/push)가 암호화해 보낸 { kind, title, body, room, id, url, tag } 을 보여준다.
+//  · 앱이 화면에 떠 있으면 → 시스템 알림 대신 앱에 알린다 (앱이 위에서 내려오는 알림 띠로 보여 준다, Phase 35).
+//    애플 기기는 푸시마다 알림을 꼭 띄워야 해서(안 띄우면 구독이 끊긴다) 띄우고, 앱이 받아서 바로 닫는다.
+//  · 같은 대화의 알림은 한 장에 모인다 (tag = 방 id) — 제목에 새 메시지 수, 본문은 최근 말 몇 줄 (카카오톡처럼)
+//  · 늦게 도착한 알림(더 오래된 메시지)은 새 알림을 덮지 않는다 (id 비교)
+const APPLE = /iPhone|iPad|iPod|Macintosh/.test(self.navigator.userAgent);
+const safeUrl = (u) => (typeof u === 'string' && u.startsWith('/') && !u.startsWith('//') ? u : '/');
+
+async function onPush(d) {
+	// 채팅: { room } → /chat/{room} / 편지 · 공지: { url, tag }
+	const room = typeof d.room === 'string' ? d.room : '';
+	const url = room ? `/chat/${room}` : safeUrl(d.url);
+	const tag = room || (typeof d.tag === 'string' ? d.tag : 'cnsatinder');
+	const note = { kind: d.kind || (room ? 'chat' : 'other'), title: d.title || 'CNSATINDER', body: d.body || '새 메시지', url, tag };
+
+	const wins = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(
+		(c) => new URL(c.url).origin === self.location.origin && c.visibilityState === 'visible'
+	);
+	if (wins.length && !APPLE) {
+		for (const w of wins) w.postMessage({ type: 'push', note, shown: false });
+		return;
+	}
+	await showGrouped(d, note, room, url, tag);
+	// 애플: 띄운 알림을 앱이 받아서 바로 닫고 앱 안 알림으로 보여 준다
+	for (const w of wins) w.postMessage({ type: 'push', note, shown: true });
+}
+
+async function showGrouped(d, note, room, url, tag) {
+	// 같은 대화의 이전 알림에 이어 붙인다
+	const prev = room ? (await self.registration.getNotifications({ tag }))[0] : undefined;
+	const pd = (prev && prev.data) || {};
+	const id = Number(d.id) || 0;
+	if (prev && id && pd.id && id <= pd.id) {
+		// 더 새 알림이 이미 떠 있다 — 그대로 다시 띄운다(소리 없이)
+		return self.registration.showNotification(prev.title, { body: prev.body, tag, icon: '/icon-192.png', badge: '/badge-96.png', data: pd, silent: true });
+	}
+	const lines = (Array.isArray(pd.lines) ? pd.lines : []).concat(note.body).slice(-4);
+	const count = (pd.count || 0) + 1;
+	return self.registration.showNotification(count > 1 ? `${note.title} (${count})` : note.title, {
+		body: lines.join('\n'),
+		tag,
+		renotify: true,
+		icon: '/icon-192.png',
+		// 안드로이드는 배지의 투명도만 쓴다 — 컬러 아이콘을 주면 흰 사각형이 된다. 흰 로고 + 투명 바탕.
+		badge: '/badge-96.png',
+		timestamp: d.at ? Date.parse(d.at) || Date.now() : Date.now(),
+		data: { url, id: id || pd.id || 0, lines, count }
+	});
+}
+
 self.addEventListener('push', (e) => {
 	let d = {};
 	try {
@@ -52,21 +101,7 @@ self.addEventListener('push', (e) => {
 	} catch {
 		d = {};
 	}
-	// 채팅: { room } → /chat/{room} / 편지: { url, tag } → /letters/{id}
-	const room = typeof d.room === 'string' ? d.room : '';
-	// 같은 출처의 앱 안 경로만 연다 (외부 주소로 튀지 않게)
-	const url = room ? `/chat/${room}` : typeof d.url === 'string' && d.url.startsWith('/') && !d.url.startsWith('//') ? d.url : '/';
-	e.waitUntil(
-		self.registration.showNotification(d.title || 'CNSATINDER', {
-			body: d.body || '새 메시지',
-			tag: room || (typeof d.tag === 'string' ? d.tag : 'cnsatinder'),
-			renotify: true,
-			icon: '/icon-192.png',
-			// 안드로이드는 배지의 투명도만 쓴다 — 컬러 아이콘을 주면 흰 사각형이 된다. 흰 로고 + 투명 바탕.
-			badge: '/badge-96.png',
-			data: { url }
-		})
-	);
+	e.waitUntil(onPush(d));
 });
 
 // ── 설치한 앱(홈 화면 앱) 창 기억하기 ─────────────────────────────────
@@ -91,10 +126,22 @@ self.addEventListener('message', (e) => {
 });
 
 // 알림을 누르면 그 대화로.
-//  1) 앱 창이 떠 있으면 그 창을 앞으로
+//  1) 앱 창이 떠 있으면 그 창을 앞으로 — 앱에 "여기로 가 줘"라고 알려 새로고침 없이 바로 옮긴다 (Phase 35).
+//     앱이 대답하지 않으면(멈춰 있던 창) 그 주소로 다시 연다
 //  2) 이 기기에서 앱을 써 왔으면 새로 연다 — 안드로이드는 설치한 앱의 범위(scope) 안 주소를 앱으로 연다
 //  3) 앱을 안 쓰는 기기(브라우저로만)는 열려 있는 탭을 쓰고, 없으면 새로
-const go = (w, url) => (w && 'navigate' in w ? w.navigate(url) : w);
+const navigateTo = (w, url) => (w && 'navigate' in w ? w.navigate(url) : w);
+const go = (w, url) =>
+	new Promise((resolve) => {
+		if (!w) return resolve(null);
+		const ch = new MessageChannel();
+		const t = setTimeout(() => resolve(navigateTo(w, url)), 1200);
+		ch.port1.onmessage = () => {
+			clearTimeout(t);
+			resolve(w);
+		};
+		w.postMessage({ type: 'open', url }, [ch.port2]);
+	});
 self.addEventListener('notificationclick', (e) => {
 	e.notification.close();
 	const url = (e.notification.data && e.notification.data.url) || '/';

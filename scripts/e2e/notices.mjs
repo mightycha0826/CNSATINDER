@@ -47,22 +47,25 @@ try {
 	await page.getByPlaceholder('비밀번호').fill('abcd1234');
 	await page.getByRole('button', { name: '로그인', exact: true }).click();
 	await page.waitForURL(`${BASE}/`, { timeout: 8000 }).catch(() => {});
-	const bell = page.locator('button.bell');
+	const bell = page.locator('button.heart');
 	await bell.waitFor({ timeout: 8000 });
 	await page.waitForTimeout(500);
 	await page.screenshot({ path: `${SP}/notice-1-home.png` });
 
 	console.log('[홈]');
 	const box = async (sel) => page.locator(sel).first().boundingBox();
-	const b = await box('button.bell'), me = await box('button.settings');
-	check('종은 설정 톱니 왼쪽', b && me && b.x + b.width <= me.x, JSON.stringify({ b, me }));
-	check('★ 안 본 공지 → 종 오른쪽 위 빨간 점', (await page.locator('button.bell .dot').count()) === 1);
-	const dot = await box('button.bell .dot');
-	check('점 위치: 종의 오른쪽 위', dot && dot.x + dot.width / 2 > b.x + b.width / 2 && dot.y + dot.height / 2 < b.y + b.height / 2, JSON.stringify({ dot, b }));
-	check('점 색은 빨강', (await page.locator('button.bell .dot').evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgb(255, 48, 64)');
+	const b = await box('button.heart'), me = await box('button.settings');
+	check('하트는 설정 톱니 왼쪽', b && me && b.x + b.width <= me.x, JSON.stringify({ b, me }));
+	check('★ 안 본 공지 → 하트 오른쪽 위 빨간 점', (await page.locator('button.heart .dot').count()) === 1);
+	const dot = await box('button.heart .dot');
+	check('점 위치: 하트의 오른쪽 위', dot && dot.x + dot.width / 2 > b.x + b.width / 2 && dot.y + dot.height / 2 < b.y + b.height / 2, JSON.stringify({ dot, b }));
+	check('점 색은 빨강', (await page.locator('button.heart .dot').evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgb(255, 48, 64)');
 
 	console.log('[공지 화면]');
 	await bell.click();
+	await page.waitForURL('**/activity');
+	check('★ 하트 → 알림 화면에 새 공지', await page.getByText('공지 · 시험 기간 운영 안내').isVisible().catch(() => false) || (await page.getByText('공지 · 시험 기간 운영 안내').waitFor({ timeout: 4000 }).then(() => true, () => false)));
+	await page.locator('a.all').click();
 	await page.waitForURL('**/notices');
 	await page.getByText('시험 기간 운영 안내').waitFor();
 	await page.waitForTimeout(400);
@@ -93,23 +96,25 @@ try {
 	await page.goto(`${BASE}/notices/99`);
 	await page.getByText('공지를 찾을 수 없어요').waitFor({ timeout: 8000 }).catch(() => {});
 	check('없는 공지', await page.getByText('공지를 찾을 수 없어요').isVisible());
-	await page.goto(`${BASE}/`); await page.locator('button.bell').waitFor(); await page.waitForTimeout(400);
+	await page.goto(`${BASE}/`); await page.locator('button.heart').waitFor(); await page.waitForTimeout(400);
 
-	check('★ 돌아오면 빨간 점 꺼짐', (await page.locator('button.bell .dot').count()) === 0);
+	check('★ 돌아오면 빨간 점 꺼짐', (await page.locator('button.heart .dot').count()) === 0);
 
 	console.log('[새 공지]');
 	notices = [{ id: 3, title: '새로 올린 공지', body: '내용', created_at: ago(0) }, ...notices];
 	await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
 	await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
 	await page.waitForTimeout(800);
-	check('★ 새 공지가 오면 다시 빨간 점 (앱으로 돌아오면 바로 확인)', (await page.locator('button.bell .dot').count()) === 1);
+	check('★ 새 공지가 오면 다시 빨간 점 (앱으로 돌아오면 바로 확인)', (await page.locator('button.heart .dot').count()) === 1);
 
 	await page.locator('a.tab', { hasText: '익명편지' }).click();
 	await page.waitForURL('**/letters');
 	await page.waitForTimeout(500);
 	await page.screenshot({ path: `${SP}/notice-3-letters.png` });
-	check('익명편지 화면에도 종 + 점', (await page.locator('button.bell .dot').count()) === 1);
-	await page.locator('button.bell').click();
+	check('익명편지 화면에도 하트 + 점', (await page.locator('button.heart .dot').count()) === 1);
+	await page.locator('button.heart').click();
+	await page.waitForURL('**/activity');
+	await page.locator('a.all').click();
 	await page.waitForURL('**/notices');
 	await page.getByText('새로 올린 공지').waitFor();
 	await page.waitForTimeout(300);
@@ -117,15 +122,18 @@ try {
 	check('탭바는 숨김', (await page.locator('nav.tabbar').count()) === 0);
 	await page.locator('button.back').click();
 	await page.waitForTimeout(500);
-	check('뒤로 → 익명편지로', page.url().endsWith('/letters'), page.url());
+	check('뒤로 → 알림 화면', page.url().endsWith('/activity'), page.url());
+	await page.locator('button.back').click();
+	await page.waitForTimeout(500);
+	check('한 번 더 뒤로 → 익명편지로', page.url().endsWith('/letters'), page.url());
 
 	console.log('[공지 없음]');
 	notices = []; lastSeen = 0;
 	await page.goto(`${BASE}/notices`);
 	await page.getByText('아직 공지가 없어요').waitFor({ timeout: 8000 }).catch(() => {});
 	check('빈 화면 안내', await page.getByText('아직 공지가 없어요').isVisible());
-	await page.goto(`${BASE}/`); await page.locator('button.bell').waitFor(); await page.waitForTimeout(400);
-	check('공지가 없으면 점 없음', (await page.locator('button.bell .dot').count()) === 0);
+	await page.goto(`${BASE}/`); await page.locator('button.heart').waitFor(); await page.waitForTimeout(400);
+	check('공지가 없으면 점 없음', (await page.locator('button.heart .dot').count()) === 0);
 	check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
 } finally { await browser.close(); }
 console.log(`\n${pass} passed, ${fail} failed`);

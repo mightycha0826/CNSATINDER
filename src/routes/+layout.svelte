@@ -9,6 +9,11 @@
 	import { S, UI, init, toasts } from '$lib/state.svelte';
 	import { loadThemeColor } from '$lib/themeColor.svelte';
 	import { loadTheme } from '$lib/theme.svelte';
+	import { listenServiceWorker } from '$lib/push';
+	import { notifyInApp } from '$lib/inapp.svelte';
+	import InAppBanner from '$lib/ui/InAppBanner.svelte';
+	import { onNavigate } from '$app/navigation';
+	import { reducedMotion } from '$lib/motion';
 
 	let { children } = $props();
 
@@ -42,6 +47,64 @@
 			}
 		}
 		return () => window.removeEventListener('beforeinstallprompt', onPrompt);
+	});
+
+	// ── 서비스워커 (Phase 35) — 앱이 떠 있을 때 온 푸시는 앱 안 알림으로, 알림을 누르면 새로고침 없이 그 화면으로 ──
+	$effect(() => {
+		if (isAdmin) return;
+		return listenServiceWorker({
+			push: (n) =>
+				notifyInApp(
+					{ key: n.tag, title: n.title, body: n.body, url: n.url, kind: n.kind === 'other' ? 'notice' : n.kind },
+					`${n.tag}|${n.body.slice(0, 60)}`
+				),
+			open: (url) => void goto(url)
+		});
+	});
+
+	// ── 개발자 도구 열기 막기 (Phase 35) — F12 · Ctrl+Shift+I/J/C · Ctrl+U(소스 보기) · 오른쪽 클릭 메뉴.
+	//    학생 앱만(운영자 화면은 그대로). 보안 장치는 아니다 — 브라우저 메뉴로는 여전히 열 수 있고, 모든 보호는 서버(RLS)가 한다.
+	$effect(() => {
+		if (isAdmin || import.meta.env.DEV) return;
+		const key = (e: KeyboardEvent) => {
+			const k = e.key.toUpperCase();
+			const mod = e.ctrlKey || e.metaKey;
+			if (k === 'F12' || (mod && e.shiftKey && ['I', 'J', 'C'].includes(k)) || (mod && e.altKey && ['I', 'J', 'C'].includes(k)) || (mod && k === 'U')) {
+				e.preventDefault();
+				e.stopPropagation();
+			}
+		};
+		const menu = (e: MouseEvent) => {
+			const t = e.target as HTMLElement | null;
+			if (!t?.closest('input, textarea, [contenteditable="true"]')) e.preventDefault();
+		};
+		window.addEventListener('keydown', key, true);
+		window.addEventListener('contextmenu', menu);
+		return () => {
+			window.removeEventListener('keydown', key, true);
+			window.removeEventListener('contextmenu', menu);
+		};
+	});
+
+	// ── 화면 넘김 (Phase 35) — 새 화면이 뜰 때 이전 화면이 부드럽게 겹쳐 사라진다 (View Transitions, 지원 브라우저만).
+	//    데이터를 받는 동안에도 이전 화면이 남아 있다가 넘어가서, 빈 화면이 번쩍이지 않는다.
+	onNavigate((nav) => {
+		if (!document.startViewTransition || reducedMotion() || isAdmin) return;
+		const from = nav.from?.url.pathname ?? '';
+		const to = nav.to?.url.pathname ?? '';
+		if (from === to) return;
+		// 하위 화면으로 들어가면 오른쪽에서, 돌아오면 왼쪽에서 (탭끼리는 겹쳐 사라지기만)
+		const depth = (p: string) => (p === '/' || p === '/letters' || p === '/me' ? 0 : p.split('/').filter(Boolean).length);
+		const dir = depth(to) > depth(from) ? 'push' : depth(to) < depth(from) ? 'pop' : 'fade';
+		document.documentElement.dataset.nav = dir;
+		return new Promise((resolve) => {
+			const vt = document.startViewTransition(async () => {
+				resolve();
+				await nav.complete.catch(() => {}); // 다른 곳으로 곧바로 옮겨 가 이 이동이 취소돼도 오류로 남기지 않는다
+			});
+			vt.ready.catch(() => {});
+			void vt.finished.catch(() => {}).finally(() => delete document.documentElement.dataset.nav);
+		});
 	});
 
 	// ── 라우팅 가드 ───────────────────────────────────────────────
@@ -106,7 +169,10 @@
 	{@render children()}
 {/if}
 
-<div class="toasts">
+{#if !isAdmin}<InAppBanner />{/if}
+
+<!-- 화면 아래 알림 — 한 장만, 새 알림이 오면 그 자리에서 바뀐다 (Phase 35) -->
+<div class="toasts" aria-live="polite">
 	{#each toasts as t (t.id)}
 		<div class="toast" class:out={t.out}>{t.text}</div>
 	{/each}

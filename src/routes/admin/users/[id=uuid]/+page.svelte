@@ -28,6 +28,19 @@
 
 	const askIdentity = confirmed(() => '이 계정의 학교 이메일을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
 	const askLetters = confirmed(() => '이 계정이 쓴 편지·댓글을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
+
+	// 개인 공지 (Phase 35)
+	let pnKind = $state<'message' | 'warning'>('message');
+	let pnTitle = $state('');
+	let pnBody = $state('');
+	const askNotify = confirmed(() => `이 학생에게만 ${pnKind === 'warning' ? '경고' : '개인 공지'}를 보낼까요? 학생 앱에 바로 뜨고 기록에 남습니다.`, {
+		keep: true,
+		onSuccess: () => {
+			pnTitle = '';
+			pnBody = '';
+		}
+	});
+	const askUnnotify = confirmed(() => '이 개인 공지를 거둘까요? 학생 화면에서 사라집니다 (기록은 남음).');
 </script>
 
 <a class="a-back" href="/admin/users">← 사용자 목록</a>
@@ -208,6 +221,37 @@
 			{/if}
 		</section>
 
+		<section class="a-card">
+			<h2 class="a-h2">개인 공지</h2>
+			<p class="a-hint" style="margin-top:0">이 학생에게만 보이는 공지 — 경고나 개인 연락. 학생 앱의 공지 · 알림(하트)에 뜨고 알림도 갑니다.</p>
+			<form class="pn" method="POST" action="?/notify" use:enhance={askNotify}>
+				<select class="field" name="kind" bind:value={pnKind}>
+					<option value="message">개인 연락</option>
+					<option value="warning">경고</option>
+				</select>
+				<input class="field" name="title" maxlength="80" placeholder="제목" bind:value={pnTitle} required />
+				<textarea class="field" name="body" maxlength="2000" rows="4" placeholder="내용 (선택)" bind:value={pnBody}></textarea>
+				<button class="btn sm">보내기</button>
+			</form>
+			{#if data.notices.length}
+				<ul class="a-list pn-list">
+					{#each data.notices as n (n.id)}
+						<li>
+							<span>
+								{#if n.kind === 'warning'}<span class="pill red">경고</span>{/if}
+								<b>{n.title}</b>
+								<span class="muted"> · {fmtTime(n.created_at)} · {n.read_at ? `읽음 ${fmtTime(n.read_at)}` : '안 읽음'}</span>
+							</span>
+							<form method="POST" action="?/unnotify" use:enhance={askUnnotify}>
+								<input type="hidden" name="id" value={n.id} />
+								<button class="btn-text">거두기</button>
+							</form>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</section>
+
 		{#if admin}
 			<section class="a-card">
 				<h2 class="a-h2">학교 이메일</h2>
@@ -234,6 +278,23 @@
 	.email {
 		margin: 0;
 		font-size: 14px;
+	}
+	.pn {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.pn textarea {
+		height: auto;
+		padding: 10px 14px;
+		resize: vertical;
+	}
+	.pn-list {
+		margin-top: 12px;
+	}
+	.pn-list li {
+		align-items: center;
+		gap: 8px;
 	}
 	.a-h1 .pill {
 		font-size: 12px;

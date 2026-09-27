@@ -11,6 +11,7 @@
 	 * 표를 던지는 일 · 적은 값 확인은 ChatView(vote) 가 한다.
 	 */
 	import Banner from './Banner.svelte';
+	import { isDiploma, searchDiplomas } from './diplomas';
 	import type { RoomSnap } from './types';
 
 	let {
@@ -44,10 +45,51 @@
 		return { title: `${snap.extend_minutes}분 더 얘기할까요?`, sub, want };
 	});
 	const asking = $derived(snap.my_vote !== true);
+
+	// 디플로마 검색 칸 (Phase 35) — 고른 값만 hintDraft 로 (목록에 없는 글은 보낼 수 없다)
+	// svelte-ignore state_referenced_locally
+	let dq = $state(hintDraft);
+	const matches = $derived(searchDiplomas(dq));
+	const picked = $derived(isDiploma(dq));
 </script>
 
 <Banner title={view.title} sub={view.sub} want={view.want}>
-	{#if asking && nextHint?.typed && !pinNext}
+	{#if asking && nextHint?.kind === 'diploma' && !pinNext}
+		<!-- 디플로마 — 학교 목록에서만: 적으면 맞는 것이 아래에 뜨고, 눌러서 고른다 (Phase 35) -->
+		<div class="dip">
+			<input
+				class="hint-in"
+				bind:value={dq}
+				oninput={() => (hintDraft = isDiploma(dq) ? dq.trim() : '')}
+				placeholder="디플로마 검색 (예: 물리, ㅅㅎ)"
+				aria-label="내 디플로마 검색"
+				role="combobox"
+				aria-expanded={dq.trim() !== '' && !picked}
+				aria-controls="dip-list"
+				aria-autocomplete="list"
+				autocomplete="off"
+			/>
+			{#if picked}<span class="ok" aria-hidden="true">✓</span>{/if}
+			{#if dq.trim() && !picked}
+				<ul id="dip-list" role="listbox" aria-label="디플로마">
+					{#each matches as d (d)}
+						<li>
+							<button
+								role="option"
+								aria-selected="false"
+								onclick={() => {
+									dq = d;
+									hintDraft = d;
+								}}>{d}</button
+							>
+						</li>
+					{:else}
+						<li class="none">학교 디플로마에 없어요 · 다르게 적어 보세요</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
+	{:else if asking && nextHint?.typed && !pinNext}
 		{@const q = isQuestion(nextHint.kind)}
 		{#if q}<p class="question">Q. {nextHint.label}</p>{/if}
 		<input
@@ -92,5 +134,51 @@
 	.hint-in:focus {
 		border-color: color-mix(in srgb, var(--accent) 60%, transparent);
 		background: var(--bg);
+	}
+	/* 디플로마 검색 — 칸 아래로 맞는 것만 */
+	.dip {
+		position: relative;
+		order: 3;
+		flex-basis: 100%;
+	}
+	.dip .hint-in {
+		padding-right: 36px;
+	}
+	.ok {
+		position: absolute;
+		right: 14px;
+		top: 10px;
+		color: var(--accent);
+		font-weight: 800;
+	}
+	.dip ul {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin: 8px 0 0;
+		padding: 0;
+		list-style: none;
+		animation: drop 0.2s ease-out;
+	}
+	@keyframes drop {
+		from {
+			opacity: 0;
+			transform: translateY(-4px);
+		}
+	}
+	.dip li button {
+		height: 34px;
+		padding: 0 14px;
+		border-radius: 999px;
+		background: var(--field);
+		font-size: 14px;
+		font-weight: 700;
+	}
+	.dip li button:active {
+		background: color-mix(in srgb, var(--accent) 16%, transparent);
+	}
+	.dip .none {
+		font-size: 12px;
+		color: var(--text-2);
 	}
 </style>

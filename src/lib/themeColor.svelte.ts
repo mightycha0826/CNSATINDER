@@ -32,7 +32,14 @@ export const fillOf = (c: ThemeColor) => `linear-gradient(180deg, ${c.stops[0]},
 
 export const THEME_COLOR = $state({ id: DEFAULT });
 
-const PROPS = ['--g-orange', '--g-coral', '--g-pink', '--bubble-fill', '--bubble-a', '--bubble-b', '--bubble-c', '--accent-fill', '--accent'];
+// --accent-fill-deep(작은 흰 글씨가 올라가는 면 · 편지 쓰기 단추) · --glow(버튼 빛) · --ambient/--desk(빛 번짐)도 테마 색을 따른다 (Phase 35)
+const PROPS = [
+	'--g-orange', '--g-coral', '--g-pink', '--bubble-fill', '--bubble-a', '--bubble-b', '--bubble-c', '--accent-fill', '--accent',
+	'--accent-fill-deep', '--glow', '--ambient', '--desk'
+];
+/** 흰 글씨가 읽히게 조금 어둡게 */
+const deep = (c: string) => `color-mix(in srgb, ${c} 80%, #000)`;
+const tint = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
 
 function apply(id: string) {
 	const c = THEME_COLORS.find((x) => x.id === id);
@@ -51,6 +58,10 @@ function apply(id: string) {
 	root.setProperty('--bubble-b', b);
 	root.setProperty('--bubble-c', z);
 	root.setProperty('--accent-fill', `linear-gradient(110deg, ${a}, ${b} 55%, ${z})`);
+	root.setProperty('--accent-fill-deep', `linear-gradient(110deg, ${deep(a)}, ${deep(b)} 55%, ${deep(z)})`);
+	root.setProperty('--glow', `0 10px 28px -8px ${tint(b, 55)}`);
+	root.setProperty('--ambient', `radial-gradient(90% 38% at 0% 0%, ${tint(a, 16)}, transparent 70%), radial-gradient(80% 34% at 100% 6%, ${tint(z, 13)}, transparent 70%)`);
+	root.setProperty('--desk', `radial-gradient(120% 60% at 10% 0%, ${tint(a, 14)}, transparent 60%), radial-gradient(90% 50% at 100% 30%, ${tint(z, 12)}, transparent 60%)`);
 	if (c.accent) root.setProperty('--accent', c.accent);
 }
 

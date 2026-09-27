@@ -4,7 +4,8 @@
 	 * 열면 맨 위 공지까지 본 것으로 저장한다(빨간 점이 꺼짐). 이번에 처음 보는 공지에는 "새" 표시.
 	 */
 	import { untrack } from 'svelte';
-	import { NOTICES, loadNotices, markNoticesSeen } from '$lib/notices.svelte';
+	import { NOTICES, loadNotices, markNoticesSeen, readPersonal } from '$lib/notices.svelte';
+	import { clearNotifications } from '$lib/push';
 	import { S } from '$lib/state.svelte';
 	import { agoText } from '$lib/time';
 	import BackButton from '$lib/ui/BackButton.svelte';
@@ -27,6 +28,7 @@
 			await loadNotices(true);
 			seenBefore ??= NOTICES.lastSeen;
 			await markNoticesSeen();
+			void clearNotifications('pn-', true);
 		})();
 	});
 </script>
@@ -37,6 +39,30 @@
 </div>
 
 <div class="page notices">
+	{#if NOTICES.personal.length}
+		<!-- 나에게만 온 공지 (Phase 35) — 운영진의 경고 · 개인 연락. 누르면 펼쳐지고 읽음 -->
+		<h2 class="sec">나에게 온 공지</h2>
+		<ul class="personal">
+			{#each NOTICES.personal as n (n.id)}
+				<li class:warn={n.kind === 'warning'} class:unread={!n.read}>
+					<details
+						ontoggle={(e) => {
+							if ((e.currentTarget as HTMLDetailsElement).open) void readPersonal(n.id);
+						}}
+					>
+						<summary>
+							<span class="kind">{n.kind === 'warning' ? '경고' : '운영진'}</span>
+							<strong>{n.title}</strong>
+							{#if !n.read}<span class="new">새</span>{/if}
+							<span class="muted when">{agoText(n.created_at, S.now)}</span>
+						</summary>
+						{#if n.body}<p class="pbody selectable">{n.body}</p>{/if}
+					</details>
+				</li>
+			{/each}
+		</ul>
+		<h2 class="sec">전체 공지</h2>
+	{/if}
 	{#if !NOTICES.loaded}
 		<p class="muted empty">불러오는 중…</p>
 	{:else if NOTICES.list.length === 0}
@@ -117,6 +143,67 @@
 	}
 	.when {
 		font-size: 12px;
+	}
+	.sec {
+		margin: 18px 0 6px;
+		font-size: 13px;
+		font-weight: 700;
+		color: var(--text-2);
+	}
+	.personal li {
+		border: 0;
+		margin-bottom: 8px;
+		border-radius: var(--r-md);
+		background: var(--surface);
+		box-shadow: var(--shadow-1);
+		overflow: hidden;
+	}
+	.personal li.warn {
+		box-shadow:
+			inset 3px 0 0 var(--danger),
+			var(--shadow-1);
+	}
+	summary {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		padding: 14px 14px;
+		list-style: none;
+		cursor: pointer;
+	}
+	summary::-webkit-details-marker {
+		display: none;
+	}
+	summary strong {
+		flex: 1;
+		min-width: 0;
+		font-size: 15px;
+		font-weight: 700;
+	}
+	.personal li.unread summary strong {
+		font-weight: 800;
+	}
+	summary .when {
+		flex-basis: 100%;
+	}
+	.kind {
+		padding: 1px 7px;
+		border-radius: 999px;
+		background: var(--field);
+		font-size: 11px;
+		font-weight: 800;
+	}
+	.warn .kind {
+		background: var(--danger);
+		color: #fff;
+	}
+	.pbody {
+		margin: 0;
+		padding: 0 14px 14px;
+		font-size: 15px;
+		line-height: 1.6;
+		white-space: pre-wrap;
 	}
 	.empty {
 		margin: 48px 0;

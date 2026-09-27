@@ -33,6 +33,9 @@ const DEBOUNCE_MS = 300;
  *   행 내용은 쓰지 않고 "바뀌었다"는 신호로만 쓴다 — 목록은 언제나 my_rooms() 한 번으로 다시 그린다.
  *   (미리보기·안 읽은 수·온라인 표시를 한 곳에서 계산하기 위해)
  * 안전망: 30초마다 다시 읽는다. Realtime 은 전달을 보장하지 않고, 상대 온라인 표시는 이벤트가 없다.
+ *
+ * 앱 전체가 하나를 같이 쓴다 (INBOX, Phase 35) — 앱 틀((app)/+layout)이 켜 두고, 홈은 기억해 둔 목록을 바로 그린다.
+ * 새 메시지 · 새 대화가 오면 onNew 로 알린다 → 앱 안 알림 띠 (다른 화면을 보고 있을 때).
  */
 export class Inbox {
 	rooms = $state<InboxRoom[]>([]);
@@ -47,14 +50,22 @@ export class Inbox {
 	#stopPoll: (() => void) | null = null;
 	#debounce: ReturnType<typeof setTimeout> | null = null;
 	#stopped = false;
+	#running = 0;
+	/** 방마다 지난번 안 읽은 수 — 늘었으면 새 메시지 (처음 불러올 때는 알리지 않는다) */
+	#seen: Map<string, number> | null = null;
+	/** 새 메시지 · 새로 연결된 대화 */
+	onNew: ((r: InboxRoom) => void) | null = null;
 
 	start() {
+		if (this.#running++ > 0) return; // 이미 켜져 있다
 		this.#stopped = false;
 		void this.load();
 		this.#stopPoll = whileVisible(() => void this.load(), POLL_MS);
 	}
 
 	stop() {
+		if (--this.#running > 0) return;
+		this.#running = 0;
 		this.#stopped = true;
 		this.#stopPoll?.();
 		this.#stopPoll = null;
@@ -69,9 +80,21 @@ export class Inbox {
 		const res = data as { rooms: InboxRoom[]; server_now: string };
 		this.skew = Date.parse(res.server_now) - Date.now();
 		this.serverAt = Date.parse(res.server_now);
+		this.#announce(res.rooms);
 		this.rooms = res.rooms;
 		this.loaded = true;
 		this.#resubscribe(res.rooms.map((r) => r.room_id));
+	}
+
+	#announce(rooms: InboxRoom[]) {
+		const prev = this.#seen;
+		this.#seen = new Map(rooms.map((r) => [r.room_id, r.unread]));
+		if (!prev || !this.onNew) return;
+		for (const r of rooms) {
+			const was = prev.get(r.room_id);
+			const fresh = was === undefined ? !r.joined : r.unread > was && r.last_seat !== r.my_seat && r.last_seat !== 0;
+			if (fresh) this.onNew(r);
+		}
 	}
 
 	#soon() {
@@ -107,3 +130,6 @@ export class Inbox {
 		this.#ch = null;
 	}
 }
+
+/** 앱 전체가 같이 쓰는 대화 목록 */
+export const INBOX = new Inbox();
