@@ -3,7 +3,7 @@
 	 * 개발 전용 — 대화방 화면 미리보기. Supabase 없이 가짜 전송 계층으로 상태를 재현한다.
 	 * 연장 배너처럼 실계정으로는 8분 넘게 기다려야 보이는 화면을 바로 확인하기 위한 것.
 	 *
-	 *   /dev/chat?s=chat | fresh | vote | waiting | pending | ended | paused | hints | question | pin | pinned   (&sheet=menu|report|block|profile 로 시트 열기, &matched 로 연결 화면, &incoming 으로 상대 새 메시지)
+	 *   /dev/chat?s=chat | fresh | vote | waiting | pending | ended | paused | hints | question | pin | pinned | rate | pinrate   (&sheet=menu|report|block|profile 로 시트 열기, &matched 로 연결 화면, &incoming 으로 상대 새 메시지)
 	 *
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
@@ -14,6 +14,7 @@
 	import { toast } from '$lib/state.svelte';
 	import type { ChatTransport, TransportHandlers } from '$lib/chat/transport';
 	import type { Hint, MsgRow, ReactionKey, ReactionRow, RoomSnap } from '$lib/chat/types';
+	import type { Reason, Score } from '$lib/manner';
 
 	const ROOM = 'preview-room';
 	const scenario = page.url.searchParams.get('s') ?? 'chat';
@@ -82,7 +83,11 @@
 		// 60분 째 — 동아리까지 다 공개됐고, 연장 대신 "이 채팅을 고정하시겠습니까?"
 		pin: { round: 6, expires_at: sec(70), partner_vote: true, partner_hints: HINTS5, my_hints: HINTS5, next_hint: null, pin_next: true },
 		// 둘 다 고정한 대화 — 타이머 없이 "고정됨"
-		pinned: { round: 7, expires_at: 'infinity', partner_hints: HINTS5, my_hints: HINTS5, next_hint: null, pinned: true }
+		pinned: { round: 7, expires_at: 'infinity', partner_hints: HINTS5, my_hints: HINTS5, next_hint: null, pinned: true },
+		// 끝난 대화 — 매너 평가 카드 (Phase 30)
+		rate: { status: 'closed', close_reason: 'expired', expires_at: sec(-1), can_rate: true, rated: false },
+		// 고정한 대화 — 위쪽 "평가하기" 막대
+		pinrate: { round: 7, expires_at: 'infinity', partner_hints: HINTS5, my_hints: HINTS5, next_hint: null, pinned: true, can_rate: true, rated: false }
 	};
 
 	let id = 0;
@@ -181,6 +186,13 @@
 				: { ...this.snap, status: 'closed', close_reason: 'declined' };
 			return { result: agree ? ('waiting' as const) : ('declined' as const), snap: this.#s() };
 		}
+		rates: { score: string; reasons: string[] }[] = [];
+		async rate(_r: string, score: Score, reasons: Reason[]) {
+			this.rates.push({ score, reasons });
+			(window as unknown as { __rates: unknown }).__rates = this.rates;
+			this.snap = { ...this.snap, can_rate: false, rated: true };
+			return 'ok' as const;
+		}
 		async leave(_r: string, skip: boolean) {
 			this.snap = { ...this.snap, status: 'closed', close_reason: skip ? 'skipped' : 'left' };
 			return this.#s();
@@ -228,6 +240,7 @@
 				bio: '밴드 음악 좋아해요. 공연 같이 얘기해요',
 				interests: ['밴드', '기타', '영화'],
 				mbti: 'INFP',
+				manner_temp: 42.3,
 				online: true
 			};
 		}

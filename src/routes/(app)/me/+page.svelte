@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Avatar from '$lib/ui/Avatar.svelte';
+	import MannerTemp from '$lib/ui/MannerTemp.svelte';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import { supabase } from '$lib/supabase';
 	import { S, errMsg, loadProfile, saveProfile, toast } from '$lib/state.svelte';
@@ -106,6 +107,7 @@
 			<Avatar name={S.profile.nickname} size={84} online />
 			<p class="nick">{S.profile.nickname}</p>
 			<p class="muted small">대화 상대에게는 이 이름으로만 보여요 · 바꿀 수 없어요</p>
+			<div class="temp"><MannerTemp temp={S.profile.manner_temp} /></div>
 		</section>
 	{/if}
 
@@ -190,6 +192,12 @@
 	}
 	.who p {
 		margin: 0;
+	}
+	.who .temp {
+		display: flex;
+		justify-content: center;
+		width: 100%;
+		margin-top: 10px;
 	}
 	.nick {
 		margin-top: 6px !important;

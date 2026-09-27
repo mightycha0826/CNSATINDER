@@ -15,6 +15,9 @@
 	import AiChat from '$lib/ai/AiChat.svelte';
 	import RoomMenu from '$lib/chat/RoomMenu.svelte';
 	import { longpress } from '$lib/longpress';
+	import RateForm from '$lib/chat/RateForm.svelte';
+	import { fetchPendingRatings, ratePartner, SCORES, skipRating, skippedRatings, type PendingRating, type Reason, type Score } from '$lib/manner';
+	import { whileVisible } from '$lib/visible';
 
 	/**
 	 * 홈 = 대화 목록 (인스타 DM 받은편지함).
@@ -37,6 +40,34 @@
 	const maxRooms = $derived(S.settings?.max_open_rooms ?? 5);
 
 	const inbox = new Inbox();
+
+	// ── 매너 평가 대기 (Phase 30) — 방금 끝난 대화 · 고정한 대화 중 아직 평가 안 한 것 하나를 목록 위에 ──
+	let pending = $state<PendingRating[]>([]);
+	let skipped = $state(new Set<string>());
+	const toRate = $derived(pending.find((p) => !skipped.has(p.room_id)) ?? null);
+	let rating = $state<{ p: PendingRating; score: Score } | null>(null);
+	$effect(() => {
+		skipped = skippedRatings();
+		const load = async () => (pending = await fetchPendingRatings());
+		void load();
+		return whileVisible(() => void load(), 60_000);
+	});
+	function skip(p: PendingRating) {
+		skipRating(p.room_id);
+		skipped = new Set([...skipped, p.room_id]);
+	}
+	async function sendRate(score: Score, reasons: Reason[]) {
+		if (!rating) return;
+		const { p } = rating;
+		try {
+			const r = await ratePartner(p.room_id, score, reasons);
+			pending = pending.filter((x) => x.room_id !== p.room_id);
+			rating = null;
+			toast(r === 'ok' || r === 'already' ? '평가를 보냈어요' : '이 대화는 평가할 수 없어요');
+		} catch {
+			toast('연결을 확인해 주세요');
+		}
+	}
 	const seeker = new Seeker(
 		// AI 대화가 열려 있었으면 그 기록 자리를 대화방으로 바꿔 끼운다 (대화방에서 뒤로 → AI 가 아니라 홈)
 		(roomId) => void goto(`/chat/${roomId}`, { state: { matched: true }, replaceState: !!page.state.ai }),
@@ -151,6 +182,22 @@
 		<div class="notice selectable">{S.settings.notice}</div>
 	{/if}
 
+	{#if toRate}
+		<!-- 방금 대화한 사람 평가 (Phase 30) — 표정을 누르면 이유 칩까지 시트로 -->
+		<section class="rate-card" aria-label="매너 평가">
+			<button class="rate-x" onclick={() => skip(toRate)} aria-label="건너뛰기">✕</button>
+			<Avatar name={toRate.partner_alias} size={40} />
+			<div class="rate-q">
+				<strong>{toRate.pinned ? '고정한' : '방금 대화한'} {toRate.partner_alias}님, 어땠어요?</strong>
+				<div class="rate-faces">
+					{#each SCORES as s (s.k)}
+						<button onclick={() => (rating = { p: toRate, score: s.k })} aria-label={s.label}><span aria-hidden="true">{s.face}</span></button>
+					{/each}
+				</div>
+			</div>
+		</section>
+	{/if}
+
 	<!-- 대화 목록 -->
 	{#if inbox.rooms.length}
 		<div class="head">
@@ -256,6 +303,12 @@
 	/>
 {/if}
 
+{#if rating}
+	<Sheet onclose={() => (rating = null)} label="매너 평가">
+		<RateForm alias={rating.p.partner_alias} initial={rating.score} onsubmit={sendRate} onskip={() => (rating = null)} />
+	</Sheet>
+{/if}
+
 {#if askPush}
 	<!-- 처음 한 번 — 알림 권한 안내. 바깥을 눌러 닫지 않는다 (둘 중 하나를 골라야 다시 묻지 않는다) -->
 	<Sheet label="알림 받기">
@@ -279,6 +332,55 @@
 {/if}
 
 <style>
+	/* 매너 평가 대기 카드 (Phase 30) */
+	.rate-card {
+		position: relative;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		padding: 14px 40px 14px 14px;
+		border-radius: var(--r-card);
+		background: var(--surface);
+		border: 1px solid var(--line);
+	}
+	.rate-q {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		min-width: 0;
+	}
+	.rate-q strong {
+		font-size: 14px;
+		font-weight: 700;
+	}
+	.rate-faces {
+		display: flex;
+		gap: 8px;
+	}
+	.rate-faces button {
+		display: grid;
+		place-items: center;
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		background: var(--field);
+		font-size: 22px;
+		transition: transform 0.15s ease-out;
+	}
+	.rate-faces button:active {
+		transform: scale(0.9);
+	}
+	.rate-x {
+		position: absolute;
+		top: 8px;
+		right: 8px;
+		width: 28px;
+		height: 28px;
+		border-radius: 50%;
+		color: var(--text-2);
+		font-size: 13px;
+	}
+
 	/* 알림 권한 안내 (Sheet 안) */
 	.ask {
 		display: flex;

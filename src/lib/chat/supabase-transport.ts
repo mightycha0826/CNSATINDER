@@ -2,6 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import { notifyReaction, notifySent } from '../push';
 import { requestModeration } from '../moderation';
+import { ratePartner, type Reason, type Score } from '../manner';
 import type { ChatTransport, TransportHandlers } from './transport';
 import type {
 	MsgRow,
@@ -262,6 +263,10 @@ export class SupabaseTransport implements ChatTransport {
 			.not('emoji', 'is', null);
 		if (error) throw error; // 빈 목록으로 착각해 화면의 공감을 지우지 않게
 		return (data as ReactionRow[] | null) ?? [];
+	}
+
+	rate(roomId: string, score: Score, reasons: Reason[]) {
+		return ratePartner(roomId, score, reasons);
 	}
 
 	async partnerProfile(roomId: string) {

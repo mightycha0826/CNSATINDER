@@ -13,6 +13,7 @@ import type {
 	VoteResult,
 	VoteRow
 } from './types';
+import type { Reason, RateStatus, Score } from '../manner';
 
 const TYPING_SHOW_MS = 3000;
 const TYPING_SEND_EVERY_MS = 1500;
@@ -478,6 +479,21 @@ export class ChatRoom {
 	/** 같은 공감을 다시 누르면 취소, 다른 걸 누르면 바꾸기 */
 	toggleReaction(messageId: number, emoji: ReactionKey) {
 		return this.react(messageId, this.reactions[messageId]?.[this.seat] === emoji ? null : emoji);
+	}
+
+	// ── 매너 온도 평가 (Phase 30) ────────────────────────────────
+	/** 끝났거나 고정한 대화에서 상대를 평가 — 됐으면(또는 이미 했으면) 화면에서 평가 칸을 거둔다 */
+	async rate(score: Score, reasons: Reason[]): Promise<RateStatus | null> {
+		try {
+			const r = await this.#t.rate(this.roomId, score, reasons);
+			if (this.snap && (r === 'ok' || r === 'already' || r === 'not_eligible')) {
+				this.snap.rated = r !== 'not_eligible';
+				this.snap.can_rate = false;
+			}
+			return r;
+		} catch {
+			return null;
+		}
 	}
 
 	// ── 부가 ─────────────────────────────────────────────────────

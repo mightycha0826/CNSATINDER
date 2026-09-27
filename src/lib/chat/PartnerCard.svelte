@@ -1,6 +1,7 @@
 <script lang="ts">
 	/** 상대 프로필 시트 — 아바타 · 이름 · 접속 여부 · 소개 · MBTI · 관심사. 같은 방 멤버에게만 서버가 준다. */
 	import Avatar from '$lib/ui/Avatar.svelte';
+	import MannerTemp from '$lib/ui/MannerTemp.svelte';
 	import type { PartnerProfile } from './types';
 
 	let { alias, profile, loading }: { alias: string | null; profile: PartnerProfile | null; loading: boolean } = $props();
@@ -15,6 +16,7 @@
 		</p>
 	{/if}
 	{#if profile}
+		<div class="temp"><MannerTemp temp={profile.manner_temp} /></div>
 		{#if profile.bio}<p class="bio selectable">{profile.bio}</p>{/if}
 		{#if profile.mbti || profile.interests.length}
 			<div class="tags">
@@ -33,6 +35,12 @@
 </div>
 
 <style>
+	.temp {
+		display: flex;
+		justify-content: center;
+		width: 100%;
+		margin: 6px 0 4px;
+	}
 	.profile {
 		display: flex;
 		flex-direction: column;

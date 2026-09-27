@@ -4,6 +4,7 @@
 	 * 큰 아바타 · 익명 이름 · "MBTI · 관심사 두 개" 한 줄 · 프로필 보기. 적어 둔 게 없으면 앱 이름.
 	 */
 	import Avatar from '$lib/ui/Avatar.svelte';
+	import MannerTemp from '$lib/ui/MannerTemp.svelte';
 	import type { PartnerProfile } from './types';
 
 	let {
@@ -22,6 +23,7 @@
 	<Avatar name={alias} size={88} {online} />
 	<h2>{alias}</h2>
 	<p>{line}</p>
+	{#if profile}<span class="temp"><MannerTemp temp={profile.manner_temp} size="chip" /></span>{/if}
 	<button class="intro-btn" onclick={onprofile}>프로필 보기</button>
 </div>
 
@@ -44,6 +46,9 @@
 		margin: 0;
 		font-size: 14px;
 		color: var(--text-2);
+	}
+	.temp {
+		margin-top: 8px;
 	}
 	.intro-btn {
 		margin-top: 12px;

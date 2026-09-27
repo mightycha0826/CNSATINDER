@@ -5977,3 +5977,232 @@ end
 $fn$;
 revoke all on function public.request_match() from public, anon;
 grant execute on function public.request_match() to authenticated;
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 30 — 매너 온도
+--
+--  익명 상대가 얼마나 친절한지 보이는 숫자. 모두 40.0도에서 시작한다 (평균 40도).
+--  대화가 끝난 뒤(24시간 안), 또는 고정이 성사된 대화에서 상대를 한 번 평가한다:
+--    좋았어요 / 괜찮았어요 / 아쉬웠어요 + 이유 칩 (좋았을 때 · 아쉬울 때 따로).
+--  ★ 평가는 바로 반영하지 않는다 — 매일 새벽(04:27 KST) 6시간 넘게 지난 평가를 모아 반영한다.
+--    평가 직후 온도가 바뀌면 방금 대화한 상대가 누가 낮게 줬는지 알 수 있기 때문이다.
+--  반영: 좋았어요 +0.3 · 괜찮았어요 +0.1 · 아쉬웠어요 −0.8, 아쉬운 이유 칩 하나에 −0.2 (2개까지). 0~99 로 자른다.
+--  같은 사람이 같은 사람을 7일 안에 다시 평가하면 첫 평가만 센다 (다시 만나기로 몰아주기 · 몰아서 깎기 방지).
+--  신고 · 차단 · 운영진이 끝낸 대화는 평가하지 않는다 (신고는 신고대로 처리된다).
+-- ════════════════════════════════════════════════════════════════════
+
+-- 학생은 이 열을 고칠 수 없다 (profiles 는 열 단위 update 권한만 있고, 여기엔 주지 않는다)
+alter table public.profiles add column if not exists manner_temp numeric(4,1) not null default 40.0;
+
+create table if not exists private.ratings (
+  room_id    uuid not null references public.rooms(id) on delete cascade,
+  rater_id   uuid not null references public.profiles(id) on delete cascade,
+  rated_id   uuid not null references public.profiles(id) on delete cascade,
+  score      text not null check (score in ('good', 'ok', 'bad')),
+  reasons    text[] not null default '{}'
+             check (reasons <@ array['kind', 'fun', 'listen', 'fast', 'manner', 'rude', 'dry', 'uncomfy', 'spam']::text[]
+                    and cardinality(reasons) <= 5),
+  created_at timestamptz not null default now(),
+  applied_at timestamptz,          -- 온도에 반영한 때 (null = 아직)
+  counted    boolean,              -- 반영할 때 셈에 넣었는지 (7일 안 중복이면 false)
+  primary key (room_id, rater_id),
+  check (rater_id <> rated_id)
+);
+create index if not exists ratings_pending on private.ratings (created_at) where applied_at is null;
+create index if not exists ratings_pair    on private.ratings (rater_id, rated_id, created_at);
+create index if not exists ratings_rated   on private.ratings (rated_id);
+alter table private.ratings enable row level security;
+
+-- 평가할 수 있는 대화인가 — 둘 다 들어와 시작한 대화이고,
+--   고정했거나 / 닫힌 지 24시간 안이면서 둘 다 말을 했고 (각자 2마디 이상이거나 3분 넘게 이어짐).
+--   (메시지는 닫히고 24시간 뒤 지워지므로 판정은 그 안에서만 된다)
+create or replace function private.rating_eligible(p_room uuid, p_me uuid)
+returns boolean language plpgsql stable security definer set search_path = public as $fn$
+declare r public.rooms%rowtype; n1 int; n2 int;
+begin
+  select * into r from public.rooms where id = p_room;
+  if not found or r.armed_at is null or coalesce(r.close_reason, '') in ('reported', 'blocked', 'admin') then return false; end if;
+  if not exists (select 1 from public.room_members where room_id = p_room and user_id = p_me) then return false; end if;
+  if r.pinned then return true; end if;
+  if r.status <> 'closed' or r.closed_at <= now() - interval '24 hours' then return false; end if;
+  select count(*) filter (where sender_seat = 1), count(*) filter (where sender_seat = 2)
+    into n1, n2 from public.messages where room_id = p_room;
+  return n1 >= 1 and n2 >= 1 and ((n1 >= 2 and n2 >= 2) or r.closed_at - r.armed_at >= interval '3 minutes');
+end
+$fn$;
+revoke all on function private.rating_eligible(uuid, uuid) from public, anon, authenticated;
+
+create or replace function public.rate_partner(p_room uuid, p_score text, p_reasons text[] default '{}')
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  me uuid := auth.uid();
+  s smallint;
+  v_other uuid;
+  v_reasons text[];
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  s := public.my_seat(p_room);
+  if s is null then return jsonb_build_object('status', 'not_eligible'); end if;
+  if p_score is null or p_score not in ('good', 'ok', 'bad') then return jsonb_build_object('status', 'bad_input'); end if;
+  select coalesce(array_agg(distinct x), '{}') into v_reasons from unnest(coalesce(p_reasons, '{}')) x;
+  -- 이유 칩은 고른 쪽의 것만 (좋았는데 "무례해요" 같은 모순은 받지 않는다)
+  if (p_score = 'bad' and not v_reasons <@ array['rude', 'dry', 'uncomfy', 'spam']::text[])
+     or (p_score <> 'bad' and not v_reasons <@ array['kind', 'fun', 'listen', 'fast', 'manner']::text[]) then
+    return jsonb_build_object('status', 'bad_input');
+  end if;
+  if not private.rating_eligible(p_room, me) then return jsonb_build_object('status', 'not_eligible'); end if;
+  select user_id into v_other from public.room_members where room_id = p_room and seat <> s;
+  insert into private.ratings (room_id, rater_id, rated_id, score, reasons)
+  values (p_room, me, v_other, p_score, v_reasons)
+  on conflict (room_id, rater_id) do nothing;
+  if not found then return jsonb_build_object('status', 'already'); end if;
+  return jsonb_build_object('status', 'ok');
+end
+$fn$;
+
+-- 아직 평가하지 않은 대화 (홈의 "어땠어요?" 카드) — 최근 것부터 10개
+create or replace function public.pending_ratings()
+returns jsonb language sql security definer set search_path = public, private stable as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object('room_id', x.id, 'partner_alias', x.alias, 'pinned', x.pinned) order by x.at desc), '[]'::jsonb)
+  from (
+    select r.id, case when rm.seat = 1 then r.alias2 else r.alias1 end as alias, r.pinned,
+           coalesce(r.closed_at, r.pinned_at, r.created_at) as at
+      from public.room_members rm join public.rooms r on r.id = rm.room_id
+     where rm.user_id = auth.uid()
+       and (r.pinned or (r.status = 'closed' and r.closed_at > now() - interval '24 hours'))
+       and not exists (select 1 from private.ratings x where x.room_id = r.id and x.rater_id = auth.uid())
+       and private.rating_eligible(r.id, auth.uid())
+     order by coalesce(r.closed_at, r.pinned_at, r.created_at) desc
+     limit 10
+  ) x;
+$fn$;
+
+-- 모아서 반영 — 6시간 넘게 지난 평가만 (매일 새벽 pg_cron)
+create or replace function private.apply_ratings()
+returns int language plpgsql security definer set search_path = public, private as $fn$
+declare v record; n int := 0; d numeric;
+begin
+  for v in select * from private.ratings
+            where applied_at is null and created_at < now() - interval '6 hours'
+            order by created_at
+            for update skip locked
+  loop
+    if exists (select 1 from private.ratings o
+                where o.rater_id = v.rater_id and o.rated_id = v.rated_id and o.counted
+                  and o.room_id <> v.room_id and o.created_at > v.created_at - interval '7 days') then
+      update private.ratings set applied_at = now(), counted = false where room_id = v.room_id and rater_id = v.rater_id;
+    else
+      d := (case v.score when 'good' then 0.3 when 'ok' then 0.1 else -0.8 end)
+           - 0.2 * least(cardinality(array(select unnest(v.reasons) intersect select unnest(array['rude', 'dry', 'uncomfy', 'spam']))), 2);
+      update public.profiles set manner_temp = least(99, greatest(0, manner_temp + d)) where id = v.rated_id;
+      update private.ratings set applied_at = now(), counted = true where room_id = v.room_id and rater_id = v.rater_id;
+    end if;
+    n := n + 1;
+  end loop;
+  return n;
+end
+$fn$;
+revoke all on function private.apply_ratings() from public, anon, authenticated;
+
+-- 상대 프로필 — 매너 온도까지
+create or replace function public.partner_profile(p_room uuid)
+returns jsonb language plpgsql security definer set search_path = public stable as $fn$
+declare s smallint; v jsonb;
+begin
+  s := public.my_seat(p_room);
+  if s is null then raise exception 'not_member'; end if;
+  select jsonb_build_object(
+           'nickname',    case when s = 1 then r.alias2 else r.alias1 end,
+           'bio',         p.bio,
+           'interests',   to_jsonb(p.interests),
+           'mbti',        p.mbti,
+           'manner_temp', p.manner_temp,
+           'online',      coalesce(up.online_until > now(), false))
+    into v
+    from public.rooms r
+    join public.room_members o on o.room_id = r.id and o.seat <> s
+    join public.profiles p on p.id = o.user_id
+    left join public.user_presence up on up.user_id = o.user_id
+   where r.id = p_room;
+  return v;
+end
+$fn$;
+
+-- 방 스냅샷 — 평가할 수 있는지 · 이미 했는지 (끝났거나 고정한 대화에서만 따진다)
+create or replace function public.room_snapshot(p_room uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare
+  r   public.rooms%rowtype;
+  cfg public.app_settings%rowtype;
+  s   smallint;
+  v_my boolean; v_their boolean; v_joined boolean; v_online boolean; v_next text;
+  v_rated boolean := false; v_can_rate boolean := false;
+begin
+  s := public.my_seat(p_room);
+  if s is null then raise exception 'not_member'; end if;
+  select * into r   from public.rooms where id = p_room;
+  select * into cfg from public.app_settings where id;
+
+  select agree into v_my    from public.extension_votes where room_id = p_room and round = r.round and seat = s;
+  select agree into v_their from public.extension_votes where room_id = p_room and round = r.round and seat <> s;
+  select joined_at is not null into v_joined
+    from public.room_members where room_id = p_room and seat <> s;
+  select coalesce(up.online_until > now(), false) into v_online
+    from public.room_members rm join public.user_presence up on up.user_id = rm.user_id
+   where rm.room_id = p_room and rm.seat <> s;
+  v_next := case when not r.pinned then private.hint_kind(r.round) end;
+  if r.status = 'closed' or r.pinned then
+    v_rated := exists (select 1 from private.ratings x where x.room_id = p_room and x.rater_id = auth.uid());
+    v_can_rate := not v_rated and private.rating_eligible(p_room, auth.uid());
+  end if;
+
+  return jsonb_build_object(
+    'room_id',         r.id,
+    'status',          r.status,
+    'my_seat',         s,
+    'my_alias',        case when s = 1 then r.alias1 else r.alias2 end,
+    'partner_alias',   case when s = 1 then r.alias2 else r.alias1 end,
+    'expires_at',      private.room_deadline(r.expires_at, r.paused_left),
+    'paused',          r.paused_left is not null,
+    'pinned',          r.pinned,
+    'pin_next',        private.pin_round(r),
+    'round',           r.round,
+    'max_rounds',      cfg.max_rounds,
+    'extend_minutes',  cfg.extend_minutes,
+    'vote_window_sec', cfg.vote_window_sec,
+    'my_vote',         v_my,
+    'partner_vote',    v_their,
+    'partner_joined',  coalesce(v_joined, false),
+    'partner_online',  coalesce(v_online, false),
+    'their_read_id',   case when s = 1 then r.read2 else r.read1 end,
+    'close_reason',    r.close_reason,
+    'partner_hints',   private.room_hints_of(p_room, (3 - s)::smallint, r.round - 1),
+    'my_hints',        private.room_hints_of(p_room, s, r.round - 1),
+    'next_hint',       case when v_next is not null then jsonb_build_object(
+                         'kind', v_next, 'label', private.hint_label_in(p_room, v_next), 'typed', private.hint_typed(v_next)) end,
+    'can_rate',        v_can_rate,
+    'rated',           v_rated,
+    'server_now',      now());
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['rate_partner(uuid, text, text[])', 'pending_ratings()']
+  loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end
+$do$;
+
+-- 매일 새벽 04:27 (KST) 에 모아서 반영
+do $do$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'simbun-ratings';
+    perform cron.schedule('simbun-ratings', '27 19 * * *', 'select private.apply_ratings()');
+  end if;
+end
+$do$;

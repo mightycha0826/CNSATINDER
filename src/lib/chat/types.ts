@@ -72,6 +72,9 @@ export type RoomSnap = {
 	/** 지금까지 공개된 상대 · 내 힌트, 다음 연장 때 공개될 힌트 (typed = 연장할 때 직접 적는다) */
 	partner_hints?: Hint[];
 	my_hints?: Hint[];
+	/** 끝났거나 고정한 대화에서 상대를 평가할 수 있는지 · 이미 했는지 (Phase 30 — 매너 온도) */
+	can_rate?: boolean;
+	rated?: boolean;
 	next_hint?: { kind: Hint['kind']; label: string; typed: boolean } | null;
 };
 
@@ -87,6 +90,8 @@ export type PartnerProfile = {
 	interests: string[];
 	mbti: string | null;
 	online: boolean;
+	/** 매너 온도 (Phase 30 전 DB 면 없다 → 40.0) */
+	manner_temp?: number;
 };
 
 export type ReportReason =

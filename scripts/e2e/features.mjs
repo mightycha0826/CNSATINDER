@@ -211,6 +211,35 @@ try {
 	check('나가기 확인에 "고정한 대화" 안내', (await page.locator('.warn').innerText()).includes('고정한 대화'));
 	await page.screenshot({ path: `${SP}/feat-12-pinned.png` });
 
+	console.log('[매너 온도 · 평가 (Phase 30)]');
+	await page.goto(U('/dev/chat?s=chat')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(400);
+	check('대화 맨 위 소개에 상대 매너 온도', (await page.locator('.intro').innerText()).includes('42.3°C'));
+	await page.goto(U('/dev/chat?s=rate')); await page.locator('.rate-card').waitFor(); await page.waitForTimeout(300); // 끝난 대화는 메시지를 불러오지 않는다
+	const rc = page.locator('.rate-card');
+	check('★ 끝난 대화: "새벽수달님과의 대화, 어땠어요?" 평가 카드', (await rc.innerText()).includes('새벽수달님과의 대화, 어땠어요?'));
+	check('표정을 고르기 전에는 보낼 수 없다', await rc.getByRole('button', { name: '평가 보내기' }).isDisabled());
+	await rc.getByRole('radio', { name: '아쉬웠어요' }).click();
+	check('아쉬웠어요 → 아쉬운 이유 칩만', (await rc.getByRole('button', { name: '무례해요' }).count()) === 1 && (await rc.getByRole('button', { name: '친절해요' }).count()) === 0);
+	await rc.getByRole('button', { name: '무례해요' }).click();
+	await rc.getByRole('radio', { name: '좋았어요' }).click();
+	check('좋았어요로 바꾸면 칩도 바뀌고 고른 것은 비워진다', (await rc.getByRole('button', { name: '친절해요' }).count()) === 1 && (await rc.locator('.chip.on').count()) === 0);
+	await rc.getByRole('button', { name: '친절해요' }).click();
+	await rc.getByRole('button', { name: '대화가 재밌어요' }).click();
+	await page.screenshot({ path: `${SP}/feat-13-rate.png` });
+	await rc.getByRole('button', { name: '평가 보내기' }).click(); await page.waitForTimeout(300);
+	check('★ 보내면 표정 · 칩이 그대로 서버로', JSON.stringify(await page.evaluate(() => window.__rates)) === '[{"score":"good","reasons":["kind","fun"]}]', JSON.stringify(await page.evaluate(() => window.__rates)));
+	check('보낸 뒤 카드 대신 안내', (await rc.count()) === 0 && (await page.getByText('평가를 보냈어요 · 매너 온도는 내일 새벽에 반영돼요').isVisible()));
+	await page.goto(U('/dev/chat?s=pinrate')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(400);
+	check('고정한 대화: 위쪽 "평가하기" 막대', await page.locator('.rate-bar').isVisible());
+	await page.locator('.rate-bar').click(); await page.waitForTimeout(200);
+	check('막대를 누르면 평가 시트', await page.getByRole('dialog', { name: '매너 평가' }).isVisible());
+	await page.screenshot({ path: `${SP}/feat-14-pinrate.png` });
+	await page.getByRole('button', { name: '나중에 할게요' }).click(); await page.waitForTimeout(200);
+	check('나중에 → 시트 닫힘 · 막대는 남는다', (await page.getByRole('dialog', { name: '매너 평가' }).count()) === 0 && (await page.locator('.rate-bar').isVisible()));
+	await page.getByRole('button', { name: '프로필 보기' }).first().click(); await page.waitForTimeout(300);
+	check('상대 프로필 시트에 매너 온도 막대', (await page.locator('.profile').innerText()).includes('매너 온도') && (await page.locator('.profile').innerText()).includes('42.3°C'));
+	await page.keyboard.press('Escape');
+
 	console.log('[내 말풍선 그라디언트 — 빠르게 스크롤해도 색이 튀지 않게]');
 	// 목록이 스크롤되도록 낮은 화면. 말풍선 뒤판의 그라디언트 위치 = -(말풍선이 목록 위 끝에서 떨어진 거리) 여야 한다
 	const sp = await (await browser.newContext({ viewport: { width: 390, height: 360 } })).newPage();
@@ -241,7 +270,15 @@ try {
 	}), y);
 	check('뒤판이 스크롤 연동 애니메이션으로 움직인다', (await sp.locator('.mine .bubble').first().evaluate((b) => getComputedStyle(b, '::before').animationName)) !== 'none');
 	let worst = 0;
-	for (const y of [9999, 500, 400, 300, 200, 9999]) worst = Math.max(worst, ...(await drift(y)));
+	// 말풍선 하나하나를 목록 가운데 · 위 끝 · 아래 끝에 오게 스크롤 (화면 구성이 바뀌어도 늘 내 말풍선이 보이게)
+	const targets = await sp.evaluate(() => {
+		const l = document.querySelector('.list'), top = l.getBoundingClientRect().top;
+		return [...document.querySelectorAll('.mine .bubble')].flatMap((b) => {
+			const y = b.getBoundingClientRect().top - top + l.scrollTop;
+			return [y - l.clientHeight / 2, y - 4, y - l.clientHeight + b.offsetHeight + 4].map((v) => Math.max(0, Math.round(v)));
+		});
+	});
+	for (const y of [9999, ...targets, 9999]) worst = Math.max(worst, ...(await drift(y)));
 	check('★ 스크롤해도 말풍선마다 제 위치의 색 (어긋남 1px 미만)', worst < 1, `${worst}px`);
 	check('말풍선 바탕은 테마의 가운데 색 (옛 보라 #9a36e4 아님)', (await sp.locator('.mine .bubble').first().evaluate((b) => getComputedStyle(b).backgroundColor)) === 'rgb(238, 67, 96)');
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));

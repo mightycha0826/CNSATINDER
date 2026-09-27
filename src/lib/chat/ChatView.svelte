@@ -14,6 +14,8 @@
 	import ReplyQuote from './ReplyQuote.svelte';
 	import Starters from './Starters.svelte';
 	import MatchScreen from './MatchScreen.svelte';
+	import RateForm from './RateForm.svelte';
+	import type { Reason, Score } from '$lib/manner';
 	import { replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { pressGestures, swipeReply } from './gestures';
@@ -117,6 +119,38 @@
 		else if (r === 'max_rounds') toast('더 이상 연장할 수 없어요');
 		else if (r === null) toast('연결을 확인해 주세요');
 	}
+
+	// ── 매너 온도 평가 (Phase 30) ────────────────────────────────
+	// 끝난 대화는 종료 안내 아래에서 바로, 고정한 대화는 위쪽 막대 → 시트로. 고정이 이 화면에서 성사되면 시트를 한 번 띄운다.
+	const canRate = $derived(!!snap?.can_rate);
+	let rateSent = $state(false);
+	let rateSheet = $state(false);
+	async function sendRate(score: Score, reasons: Reason[]) {
+		const r = await room?.rate(score, reasons);
+		if (r === 'ok' || r === 'already') {
+			rateSent = true;
+			rateSheet = false;
+			toast('평가를 보냈어요');
+		} else if (r === 'not_eligible') {
+			rateSheet = false;
+			toast('이 대화는 평가할 수 없어요');
+		} else toast('연결을 확인해 주세요');
+	}
+	let pinSeen: boolean | null = null;
+	let pinnedHere = $state(false);
+	let pinPrompted = false;
+	$effect(() => {
+		if (!room?.snap) return;
+		if (pinSeen === false && pinned) pinnedHere = true;
+		pinSeen = pinned;
+	});
+	$effect(() => {
+		// 고정 직후 스냅샷(평가 가능)이 조금 늦게 올 수 있어 둘 다 볼 때까지 기다린다
+		if (pinnedHere && canRate && !pinPrompted) {
+			pinPrompted = true;
+			rateSheet = true;
+		}
+	});
 
 	// ── 상대 이탈 감지 ───────────────────────────────────────────
 	// 대화 중 상대가 45초 넘게 안 보이면(앱을 닫았거나 백그라운드) 넘길 수 있게 한다.
@@ -593,6 +627,12 @@
 			{#each partnerHints as h (h.kind)}<span class="hint-chip"><small>{h.label}</small>{h.value}</span>{/each}
 		</div>
 	{/if}
+	{#if pinned && canRate && !rateSent}
+		<button class="rate-bar" onclick={() => (rateSheet = true)}>
+			<span>고정한 대화예요 · 매너 평가를 남겨 주세요</span>
+			<b>평가하기</b>
+		</button>
+	{/if}
 	{#if paused && !pending && !closed}
 		<div class="paused-bar">둘 다 보고 있을 때만 시간이 흘러요</div>
 	{/if}
@@ -777,6 +817,11 @@
 			{#if closed}
 				<div class="ended">
 					<p>{endedText}</p>
+					{#if canRate && !rateSent && room.snap}
+						<div class="rate-card"><RateForm alias={room.snap.partner_alias} onsubmit={sendRate} /></div>
+					{:else if rateSent}
+						<p class="rated">평가를 보냈어요 · 매너 온도는 내일 새벽에 반영돼요</p>
+					{/if}
 					<button class="btn" onclick={backToSeek}>새 대화 찾기</button>
 					<button class="btn-ghost" onclick={() => goBack('/')}>대화 목록</button>
 					{#if !room.reported}
@@ -835,6 +880,12 @@
 		ondelete={picker.del ? del : undefined}
 		onclose={() => (picker = null)}
 	/>
+{/if}
+
+{#if rateSheet && room?.snap}
+	<Sheet onclose={() => (rateSheet = false)} label="매너 평가">
+		<RateForm alias={room.snap.partner_alias} onsubmit={sendRate} onskip={() => (rateSheet = false)} />
+	</Sheet>
 {/if}
 
 {#if sheet}
@@ -1390,6 +1441,36 @@
 		margin: 0;
 		font-size: 14px;
 		font-weight: 600;
+	}
+	/* 끝난 대화의 평가 카드 (Phase 30) */
+	.rate-card {
+		width: 100%;
+		margin: 8px 0 6px;
+		padding: 14px 0 6px;
+		border-radius: var(--r-card);
+		background: var(--surface);
+		border: 1px solid var(--line);
+	}
+	.ended .rated {
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--text-2);
+	}
+	.rate-bar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 9px var(--pad);
+		border-bottom: 1px solid var(--line);
+		background: var(--surface);
+		font-size: 13px;
+		text-align: left;
+	}
+	.rate-bar b {
+		flex: none;
+		color: var(--accent);
+		font-weight: 700;
 	}
 
 	/* ── 입력창 ── */

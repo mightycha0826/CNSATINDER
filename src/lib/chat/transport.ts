@@ -11,6 +11,7 @@ import type {
 	VoteResult,
 	VoteRow
 } from './types';
+import type { Reason, RateStatus, Score } from '../manner';
 
 export type TransportHandlers = {
 	onMessage(row: MsgRow): void;
@@ -62,6 +63,8 @@ export interface ChatTransport {
 	react(roomId: string, messageId: number, emoji: ReactionKey | null): Promise<ReactResult>;
 	/** 이 방의 공감 전부 (취소된 것 제외) — 재연결·갭 메우기용 */
 	fetchReactions(roomId: string): Promise<ReactionRow[]>;
+	/** 상대 평가 (Phase 30) — 끝났거나 고정한 대화에서 한 번 */
+	rate(roomId: string, score: Score, reasons: Reason[]): Promise<RateStatus>;
 	/** 대화 상대의 기본 정보 (같은 방 멤버만) */
 	partnerProfile(roomId: string): Promise<PartnerProfile>;
 	typing(seat: 1 | 2): void;

@@ -2739,5 +2739,95 @@ console.log('\n[76] 랜덤 채팅 — 메시지 삭제 · 둘 다 볼 때만 흐
 	check('고정한 대화도 나가면 닫힌다', (await one(`select status from public.rooms where id = $1`, [room])).status === 'closed');
 }
 
+console.log('\n[77] 매너 온도 — 평가 · 모아서 반영 · 익명성 (Phase 30)');
+{
+	await resetPool();
+	let no = 21300;
+	const mk = async () => {
+		const n = ++no;
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set onboarded=true where id=$1', [id]);
+		await rpcAs(id, 'ensure_self');
+		return { id, email: `${n}@cnsa.hs.kr` };
+	};
+	const A = await mk(), B = await mk(), C = await mk();
+	const temp = async (u) => Number((await one('select manner_temp t from public.profiles where id=$1', [u.id])).t);
+	const say = (room, seat) => db.query(`insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, $2, '안녕', gen_random_uuid())`, [room, seat]);
+	const talk = async (room) => { await say(room, 1); await say(room, 2); await say(room, 1); await say(room, 2); };
+	const openRoom = async (x, y) => (await one(`select private.dev_open_room($1, $2, 10) as id`, [x.email, y.email])).id;
+	const age = (room, h) => db.query(`update private.ratings set created_at = now() - make_interval(hours => $2) where room_id = $1`, [room, h]);
+	const apply = () => db.query('select private.apply_ratings()');
+	const rate = async (u, room, score, reasons = []) => (await rpcAs(u.id, 'rate_partner', room, score, reasons)).status;
+
+	check('처음 온도는 40.0도', (await temp(A)) === 40);
+	let room = await openRoom(A, B);
+	await talk(room);
+	check('대화 중에는 평가할 수 없다', (await rate(A, room, 'good')) === 'not_eligible');
+	const r0 = await openRoom(A, B); // 앞 방은 닫힌다 (dev_open_room)
+	await rpcAs(A.id, 'leave_room', r0, false);
+	check('★ 둘 다 말하지 않고 끝난 대화는 평가할 수 없다', (await rate(A, r0, 'good')) === 'not_eligible' && (await rpcAs(A.id, 'room_snapshot', r0)).can_rate === false);
+
+	room = await openRoom(A, B);
+	await talk(room);
+	await rpcAs(A.id, 'leave_room', room, false);
+	let snap = await rpcAs(A.id, 'room_snapshot', room);
+	check('★ 둘 다 말한 대화가 끝나면 평가할 수 있다', snap.can_rate === true && snap.rated === false);
+	const card = (await rpcAs(B.id, 'pending_ratings')).find((x) => x.room_id === room);
+	check('홈 카드: 평가할 대화 · 상대 익명 이름 (uuid 없음)', !!card?.partner_alias && Object.keys(card).sort().join() === 'partner_alias,pinned,room_id', JSON.stringify(card));
+	check('좋았는데 "무례해요"는 안 된다', (await rate(A, room, 'good', ['rude'])) === 'bad_input');
+	check('없는 이유 칩은 안 된다', (await rate(A, room, 'good', ['xyz'])) === 'bad_input');
+	check('★ 평가하기', (await rate(A, room, 'good', ['kind', 'fun'])) === 'ok');
+	check('한 대화에 한 번만', (await rate(A, room, 'bad')) === 'already');
+	snap = await rpcAs(A.id, 'room_snapshot', room);
+	check('평가한 뒤: rated · 더는 못 함', snap.rated === true && snap.can_rate === false);
+	check('평가한 대화는 홈 카드에서 빠진다', !(await rpcAs(A.id, 'pending_ratings')).some((x) => x.room_id === room));
+
+	await apply();
+	check('★ 바로 반영하지 않는다 (6시간 안에는 그대로)', (await temp(B)) === 40);
+	await age(room, 7);
+	await apply();
+	check('★ 모아서 반영: 좋았어요 +0.3', (await temp(B)) === 40.3);
+	check('아쉬운 이유는 세 개까지 고를 수 있다', (await rate(B, room, 'bad', ['rude', 'dry', 'spam'])) === 'ok');
+	await age(room, 7);
+	await apply();
+	check('★ 아쉬웠어요 −0.8, 아쉬운 칩은 2개까지 −0.2씩', (await temp(A)) === 38.8);
+
+	room = await openRoom(A, B);
+	await talk(room);
+	await rpcAs(B.id, 'leave_room', room, false);
+	await rate(A, room, 'good');
+	await age(room, 7);
+	await apply();
+	check('★ 7일 안에 같은 사람을 또 평가하면 세지 않는다', (await temp(B)) === 40.3);
+
+	room = await openRoom(A, C);
+	await talk(room);
+	await rpcAs(C.id, 'report_partner', room, 'harassment', '');
+	check('신고로 끝난 대화는 서로 평가할 수 없다', (await rate(A, room, 'bad')) === 'not_eligible' && (await rate(C, room, 'bad')) === 'not_eligible');
+	await db.query('delete from public.blocks');
+
+	room = await openRoom(B, C);
+	await talk(room);
+	await rpcAs(B.id, 'leave_room', room, false);
+	await db.query(`update public.rooms set closed_at = now() - interval '25 hours' where id = $1`, [room]);
+	check('닫힌 지 24시간이 지나면 평가할 수 없다', (await rate(B, room, 'good')) === 'not_eligible');
+
+	room = await openRoom(B, C);
+	await db.query(`update public.rooms set pinned = true, pinned_at = now(), expires_at = 'infinity' where id = $1`, [room]);
+	snap = await rpcAs(B.id, 'room_snapshot', room);
+	check('★ 고정한 대화는 말 수 · 기간과 상관없이 평가할 수 있다', snap.can_rate === true && (await rpcAs(B.id, 'pending_ratings')).some((x) => x.room_id === room && x.pinned));
+	await db.query('update public.profiles set manner_temp = 98.9 where id = $1', [C.id]);
+	await rate(B, room, 'good');
+	await age(room, 7);
+	await apply();
+	check('99도를 넘지 않는다', (await temp(C)) === 99);
+	check('상대 프로필에 매너 온도', (await rpcAs(B.id, 'partner_profile', room)).manner_temp === 99);
+
+	await expectError('평가 표는 학생이 못 읽는다', () => rowsAs(A.id, 'select * from private.ratings'), 'permission denied');
+	await expectError('★ 온도는 학생이 못 고친다', () => rowsAs(A.id, 'update public.profiles set manner_temp = 99 where id = $1', [A.id]), 'permission denied');
+	await expectError('반영 함수는 학생이 못 부른다', () => rowsAs(A.id, 'select private.apply_ratings()'), 'permission denied');
+	check('익명 사용자는 평가할 수 없다', await rowsAs(null, `select public.rate_partner($1, 'good')`, [room]).then(() => false, () => true));
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

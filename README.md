@@ -134,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 30 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (매너 온도 `profiles.manner_temp` · `private.ratings` · `rate_partner` · `pending_ratings`,
+      pg_cron `simbun-ratings` 매일 04:27 KST 반영). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 29 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (연장 공개 순서 · 공통 질문 · 대화 고정 `rooms.pinned`).
       새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 28 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (메시지 삭제 · 둘 다 볼 때만 흐르는 시간 · 연장 힌트).
@@ -225,7 +227,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 
 ## 개발용 훅
 
-- `/dev/chat?s=chat|fresh|vote|waiting|pending|ended|paused|hints|question|pin|pinned` — 대화방 화면 미리보기 (Supabase 불필요, 개발 모드 전용).
+- `/dev/chat?s=chat|fresh|vote|waiting|pending|ended|paused|hints|question|pin|pinned|rate|pinrate` — 대화방 화면 미리보기 (Supabase 불필요, 개발 모드 전용).
   `&matched` 연결 화면, `&incoming` 상대 새 메시지, `&sheet=menu|report|block|profile` 시트
 - `/dev/ai?s=ok|limit|full|off` — AI 대화 상대 화면 미리보기 (`&turns=2` 턴 한도, `&short` 20초 뒤 끝, `&down` AI 오류)
 - `AI_FAKE=1 npm run dev` — Workers AI 대신 정해진 답 (검열: 글에 `[flag:harassment]` 가 있으면 걸림 / 대화: "AI 답: …").
@@ -391,4 +393,9 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       · 채팅 색 깜빡임 고침 — 빠르게 스크롤하면 내 말풍선이 잠깐 보라색으로 보이던 것. 말풍선 그라디언트 위치를 scroll 이벤트 → 다음 프레임 JS 로 고쳐서
         몇 프레임씩 늦었고, 그 사이 그라디언트 밖으로 옛 기본색 보라(`#9a36e4`)가 비쳤다. 이제 CSS 스크롤 연동 애니메이션(`animation-timeline: view()`)이
         말풍선 뒤판을 옮기고(미지원 브라우저만 JS), 그라디언트 위아래를 끝 색으로 늘려 어긋나도 테마 색 밖으로 나가지 않는다 (`--bubble-a/b/c`)
+- [x] **Phase 30 — 매너 온도** — 모두 40.0도에서 시작. 끝난 대화(24시간 안, 둘 다 말을 한 대화)나 고정한 대화에서 상대를 한 번 평가한다:
+      좋았어요 · 괜찮았어요 · 아쉬웠어요 + 이유 칩 (`src/lib/manner.ts`, `RateForm`). 끝난 대화 화면 · 고정한 대화의 "평가하기" 막대 · 홈의 "어땠어요?" 카드.
+      ★ 평가는 바로 반영하지 않고 매일 새벽 6시간 넘게 지난 것을 모아서(`private.apply_ratings`) — 방금 대화한 상대가 누가 낮게 줬는지 알 수 없게.
+      좋았어요 +0.3 · 괜찮았어요 +0.1 · 아쉬웠어요 −0.8, 아쉬운 칩 하나에 −0.2 (2개까지), 같은 사람을 7일 안에 또 평가하면 첫 평가만, 0~99.
+      신고 · 차단 · 운영진이 끝낸 대화는 평가하지 않는다. 온도는 상대 프로필 · 대화 맨 위 소개 · 내 프로필에 (`MannerTemp`)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

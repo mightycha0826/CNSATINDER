@@ -20,6 +20,8 @@ export type Profile = {
 	allow_rematch?: boolean;
 	/** 편지 받기 (설정) — 끄면 검색에 나오지 않고 새 편지를 받지 않는다 (Phase 23) */
 	letters_open?: boolean;
+	/** 매너 온도 (Phase 30) — 서버만 바꾼다 */
+	manner_temp?: number;
 };
 
 export type Settings = {
@@ -174,8 +176,9 @@ export async function loadProfile() {
 	// ★ select('*') 를 쓰지 않는다. 항상 명시 컬럼.
 	const cols = 'id, nickname, bio, interests, mbti, gender, want, status, suspended_until, verified, onboarded';
 	const read = (c: string) => supabase.from('profiles').select(c).eq('id', S.session?.user.id ?? '').maybeSingle();
-	let { data, error } = await read(`${cols}, allow_rematch, letters_open`);
-	// Phase 21 · 23 을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
+	let { data, error } = await read(`${cols}, allow_rematch, letters_open, manner_temp`);
+	// Phase 21 · 23 · 30 을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
+	if (error) ({ data, error } = await read(`${cols}, allow_rematch, letters_open`));
 	if (error) ({ data, error } = await read(`${cols}, allow_rematch`));
 	if (error) ({ data } = await read(cols));
 	S.profile = (data as unknown as Profile) ?? null;
