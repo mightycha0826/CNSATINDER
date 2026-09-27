@@ -10,6 +10,10 @@
 -- ════════════════════════════════════════════════════════════════════
 
 -- ── 0. 스키마 ───────────────────────────────────────────────────────
+-- ★ 함수 본문 검사를 끈다 — 함수는 처음 나오는 자리에 최종 정의 하나만 두므로(Phase 34 정리),
+--   본문이 뒤에서 만드는 표 · 열 · 함수를 가리킬 수 있다. 실제 검사는 부를 때 이루어진다.
+set check_function_bodies = off;
+
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
 -- ★ Dashboard > Settings > API > Exposed schemas 에 private 를 넣지 말 것.
@@ -76,10 +80,11 @@ create table if not exists public.profiles (
 alter table public.profiles enable row level security;
 drop policy if exists "profiles: self read"   on public.profiles;
 drop policy if exists "profiles: self update" on public.profiles;
+-- (select auth.uid()) — 줄마다 다시 계산하지 않고 한 번만 (Phase 34, Supabase advisor auth_rls_initplan)
 create policy "profiles: self read" on public.profiles
-  for select using (id = auth.uid());
+  for select using (id = (select auth.uid()));
 create policy "profiles: self update" on public.profiles
-  for update using (id = auth.uid()) with check (id = auth.uid());
+  for update using (id = (select auth.uid())) with check (id = (select auth.uid()));
 -- ★ insert 정책 없음 → 가입 트리거(security definer)만 행을 만든다.
 -- ★ 남의 프로필은 어떤 쿼리로도 읽히지 않는다. 매칭은 security definer RPC 안에서만.
 
@@ -177,6 +182,7 @@ begin
   insert into public.user_presence (user_id)
     values (new.id)
     on conflict (user_id) do nothing;
+  perform private.assign_nickname(new.id);
   return new;
 end
 $fn$;
@@ -218,6 +224,7 @@ begin
     where p.id = me and not p.verified
       and exists (select 1 from auth.users u
                    where u.id = me and u.email_confirmed_at is not null);
+  perform private.assign_nickname(me);
 end
 $fn$;
 revoke all on function public.ensure_self() from public, anon;
@@ -320,7 +327,7 @@ grant select on public.rooms to authenticated;
 alter table public.room_members enable row level security;
 drop policy if exists "rm: self read only" on public.room_members;
 create policy "rm: self read only" on public.room_members
-  for select to authenticated using (user_id = auth.uid());
+  for select to authenticated using (user_id = (select auth.uid()));
 -- ★ 익명성의 급소. "같은 방 멤버 전부 읽기"로 바꾸는 순간 상대 uuid 가 샌다.
 revoke all on public.room_members from anon, authenticated;
 grant select on public.room_members to authenticated;
@@ -356,25 +363,59 @@ $fn$;
 -- 클라가 방에 대해 아는 모든 것이 여기서 나온다. room_id 외의 uuid 는 절대 반환하지 않는다.
 -- (Phase 3 에서 투표 상태, Phase 4 에서 상대 접속 상태가 추가된다)
 create or replace function public.room_snapshot(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public stable as $fn$
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
 declare
-  r public.rooms%rowtype;
-  s smallint;
+  r   public.rooms%rowtype;
+  cfg public.app_settings%rowtype;
+  s   smallint;
+  v_my boolean; v_their boolean; v_joined boolean; v_online boolean; v_next text;
+  v_rated boolean := false; v_can_rate boolean := false;
 begin
   s := public.my_seat(p_room);
   if s is null then raise exception 'not_member'; end if;
-  select * into r from public.rooms where id = p_room;
+  select * into r   from public.rooms where id = p_room;
+  select * into cfg from public.app_settings where id;
+
+  select agree into v_my    from public.extension_votes where room_id = p_room and round = r.round and seat = s;
+  select agree into v_their from public.extension_votes where room_id = p_room and round = r.round and seat <> s;
+  select joined_at is not null into v_joined
+    from public.room_members where room_id = p_room and seat <> s;
+  select coalesce(up.online_until > now(), false) into v_online
+    from public.room_members rm join public.user_presence up on up.user_id = rm.user_id
+   where rm.room_id = p_room and rm.seat <> s;
+  v_next := case when not r.pinned then private.hint_kind(r.round) end;
+  if r.status = 'closed' or r.pinned then
+    v_rated := exists (select 1 from private.ratings x where x.room_id = p_room and x.rater_id = auth.uid());
+    v_can_rate := not v_rated and private.rating_eligible(p_room, auth.uid());
+  end if;
+
   return jsonb_build_object(
-    'room_id',        r.id,
-    'status',         r.status,
-    'my_seat',        s,
-    'my_alias',       case when s = 1 then r.alias1 else r.alias2 end,
-    'partner_alias',  case when s = 1 then r.alias2 else r.alias1 end,
-    'expires_at',     r.expires_at,
-    'round',          r.round,
-    'their_read_id',  case when s = 1 then r.read2 else r.read1 end,
-    'close_reason',   r.close_reason,
-    'server_now',     now());
+    'room_id',         r.id,
+    'status',          r.status,
+    'my_seat',         s,
+    'my_alias',        case when s = 1 then r.alias1 else r.alias2 end,
+    'partner_alias',   case when s = 1 then r.alias2 else r.alias1 end,
+    'expires_at',      private.room_deadline(r.expires_at, r.paused_left),
+    'paused',          r.paused_left is not null,
+    'pinned',          r.pinned,
+    'pin_next',        private.pin_round(r),
+    'round',           r.round,
+    'max_rounds',      cfg.max_rounds,
+    'extend_minutes',  cfg.extend_minutes,
+    'vote_window_sec', cfg.vote_window_sec,
+    'my_vote',         v_my,
+    'partner_vote',    v_their,
+    'partner_joined',  coalesce(v_joined, false),
+    'partner_online',  coalesce(v_online, false),
+    'their_read_id',   case when s = 1 then r.read2 else r.read1 end,
+    'close_reason',    r.close_reason,
+    'partner_hints',   private.room_hints_of(p_room, (3 - s)::smallint, r.round - 1),
+    'my_hints',        private.room_hints_of(p_room, s, r.round - 1),
+    'next_hint',       case when v_next is not null then jsonb_build_object(
+                         'kind', v_next, 'label', private.hint_label_in(p_room, v_next), 'typed', private.hint_typed(v_next)) end,
+    'can_rate',        v_can_rate,
+    'rated',           v_rated,
+    'server_now',      now());
 end
 $fn$;
 
@@ -515,54 +556,9 @@ $fn$;
 revoke all on function public.close_room(uuid, text) from public, anon, authenticated;
 
 
--- ── 14. 방 스냅샷 (Phase 3 판) ──────────────────────────────────────
-create or replace function public.room_snapshot(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public stable as $fn$
-declare
-  r   public.rooms%rowtype;
-  cfg public.app_settings%rowtype;
-  s   smallint;
-  v_my boolean; v_their boolean; v_joined boolean; v_online boolean;
-begin
-  s := public.my_seat(p_room);
-  if s is null then raise exception 'not_member'; end if;
-  select * into r   from public.rooms where id = p_room;
-  select * into cfg from public.app_settings where id;
-
-  select agree into v_my    from public.extension_votes where room_id = p_room and round = r.round and seat = s;
-  select agree into v_their from public.extension_votes where room_id = p_room and round = r.round and seat <> s;
-  select joined_at is not null into v_joined
-    from public.room_members where room_id = p_room and seat <> s;
-  -- 상대가 앱을 켜 두었는지 (Phase 8 heartbeat). 켜짐/꺼짐 한 비트만 — 언제 접속했는지는 알려주지 않는다.
-  select coalesce(up.online_until > now(), false) into v_online
-    from public.room_members rm join public.user_presence up on up.user_id = rm.user_id
-   where rm.room_id = p_room and rm.seat <> s;
-
-  return jsonb_build_object(
-    'room_id',         r.id,
-    'status',          r.status,
-    'my_seat',         s,
-    'my_alias',        case when s = 1 then r.alias1 else r.alias2 end,
-    'partner_alias',   case when s = 1 then r.alias2 else r.alias1 end,
-    'expires_at',      r.expires_at,
-    'round',           r.round,
-    'max_rounds',      cfg.max_rounds,
-    'extend_minutes',  cfg.extend_minutes,
-    'vote_window_sec', cfg.vote_window_sec,
-    'my_vote',         v_my,
-    'partner_vote',    v_their,
-    'partner_joined',  coalesce(v_joined, false),
-    'partner_online',  coalesce(v_online, false),
-    'their_read_id',   case when s = 1 then r.read2 else r.read1 end,
-    'close_reason',    r.close_reason,
-    'server_now',      now());
-end
-$fn$;
-
-
 -- ── 15. 입장 확인 — 10분 타이머는 양쪽이 실제로 화면을 열어야 시작 ──
 create or replace function public.ack_room(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public as $fn$
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare
   r   public.rooms%rowtype;
   cfg public.app_settings%rowtype;
@@ -577,7 +573,7 @@ begin
     return public.room_snapshot(p_room);
   end if;
 
-  update public.room_members set joined_at = coalesce(joined_at, now())
+  update public.room_members set joined_at = coalesce(joined_at, now()), viewing_until = now() + interval '25 seconds'
    where room_id = p_room and user_id = auth.uid();
 
   if r.status = 'pending' then
@@ -586,11 +582,8 @@ begin
     if v_joined = 2 then
       update public.rooms
          set status = 'active', armed_at = now(),
-             expires_at = now() + make_interval(mins => cfg.room_minutes)   -- ★ 여기서 10분 시작
+             expires_at = now() + make_interval(mins => cfg.room_minutes)
        where id = p_room;
-      -- 재매칭 방지 기록은 매칭 순간이 아니라 "대화가 실제로 시작된" 지금 남긴다.
-      -- 한쪽이 안 들어온(no_show) 상대와는 대화한 적이 없으니 다시 만날 수 있어야 하고,
-      -- 이렇게 하면 롤백 로직 자체가 필요 없다. (pair_history 는 Phase 4 에서 생성 — plpgsql 은 실행 시점에 해석)
       insert into public.pair_history (user_lo, user_hi)
       select least(a.user_id, b.user_id), greatest(a.user_id, b.user_id)
         from public.room_members a join public.room_members b
@@ -600,10 +593,11 @@ begin
          set last_matched_at = now(), times = public.pair_history.times + 1;
       insert into public.messages (room_id, sender_seat, body, client_msg_id)
       values (p_room, 0,
-              cfg.room_minutes || '분 동안 이야기할 수 있어요. 이름·학번·SNS는 묻지도 말하지도 않기로 해요.',
+              cfg.room_minutes || '분 동안 이야기할 수 있어요. 둘 다 대화를 보고 있을 때만 시간이 흘러요.',
               gen_random_uuid());
     end if;
   end if;
+  perform private.room_clock(p_room);
   return public.room_snapshot(p_room);
 end
 $fn$;
@@ -705,9 +699,24 @@ grant execute on function public.ack_room(uuid), public.vote_extension(uuid, boo
 -- 이걸 안 하면 만료된 방이 계속 "열린 대화"로 남아 동시 대화 상한을 차지한다(좀비 방).
 -- 메시지 쓰기 차단은 여기가 아니라 room_is_writable 정책이 이미 하고 있다.
 create or replace function public.sweep_rooms()
-returns int language plpgsql security definer set search_path = public as $fn$
+returns int language plpgsql security definer set search_path = public, private as $fn$
 declare n int := 0; v record;
 begin
+  for v in select r.id from public.rooms r
+            where r.status = 'active' and not r.pinned and r.paused_left is null and r.expires_at > now()
+              and exists (select 1 from public.room_members m
+                           where m.room_id = r.id and (m.viewing_until is null or m.viewing_until <= now()))
+            limit 500
+  loop
+    perform private.room_clock(v.id);
+  end loop;
+  for v in select id from public.rooms
+            where status = 'active' and not pinned and paused_since < now() - interval '1 day'
+            limit 500 for update skip locked
+  loop
+    perform public.close_room(v.id, 'expired');
+    n := n + 1;
+  end loop;
   for v in select id, status from public.rooms
             where status <> 'closed' and now() >= expires_at
             order by expires_at limit 500
@@ -819,23 +828,18 @@ begin
     return jsonb_build_object('status', 'not_eligible', 'server_now', v_now);
   end if;
 
-  -- ① '찾는 중' 등록/갱신. seeking_since 는 첫 요청 시각을 유지 → 오래 기다린 사람이 순서를 잃지 않는다.
-  --   락을 못 잡아도 이 등록은 남으므로, 다른 사람의 매칭이 나를 찾아갈 수 있다.
   insert into public.user_presence (user_id, online_until, seeking_until, seeking_since)
   values (me, v_now + make_interval(secs => cfg.seek_ttl_sec),
               v_now + make_interval(secs => cfg.seek_ttl_sec), v_now)
   on conflict (user_id) do update
-     -- heartbeat 가 더 길게 잡아 둔 온라인 시각을 줄이지 않는다
      set online_until  = greatest(public.user_presence.online_until, excluded.online_until),
          seeking_until = excluded.seeking_until,
          seeking_since = coalesce(public.user_presence.seeking_since, excluded.seeking_since);
 
-  -- ② 풀 직렬화. ★ 대기형이 아니라 즉시 실패형 — 수백 명이 동시에 눌러도 커넥션이 락 큐에 쌓이지 않는다.
   if not pg_try_advisory_xact_lock(hashtext('simbun_match_pool')) then
     return jsonb_build_object('status', 'busy', 'retry_after_ms', 300, 'server_now', v_now);
   end if;
 
-  -- 내 만료된 방 정리 (스위퍼보다 먼저 — 좀비 방 때문에 매칭이 막히지 않게)
   for v_exp in
     select r.id, r.status from public.rooms r
       join public.room_members rm on rm.room_id = r.id
@@ -844,8 +848,6 @@ begin
     perform public.close_room(v_exp.id, case when v_exp.status = 'pending' then 'no_show' else 'expired' end);
   end loop;
 
-  -- ③ 누가 이미 나를 잡아갔으면 그 방으로.
-  --   여러 대화가 동시에 열려 있을 수 있으므로(Phase 8) "아직 내가 들어가 보지 않은 새 방"만 본다.
   select rm.room_id into v_room
     from public.room_members rm join public.rooms r on r.id = rm.room_id
    where rm.user_id = me and rm.open and rm.joined_at is null and r.status = 'pending'
@@ -855,50 +857,42 @@ begin
     return jsonb_build_object('status', 'matched', 'room_id', v_room, 'server_now', v_now);
   end if;
 
-  -- ③-2 동시 대화 상한 — 꽉 찼으면 찾기를 멈춘다
-  select count(*) into v_open from public.room_members where user_id = me and open;
+  -- 동시 대화 상한 — 고정한 대화는 빼고 센다
+  v_open := private.open_rooms(me);
   if v_open >= cfg.max_open_rooms then
     update public.user_presence set seeking_until = null, seeking_since = null where user_id = me;
     return jsonb_build_object('status', 'full', 'max', cfg.max_open_rooms, 'server_now', v_now);
   end if;
 
-  -- ④ 후보 1명
   select c.user_id into v_partner
     from public.user_presence c
     join public.profiles p on p.id = c.user_id
    where c.user_id <> me
-     and c.seeking_until > v_now                         -- ★ 지금 실제로 앱을 보며 찾는 사람만
-     -- 상대도 동시 대화 상한 아래여야 한다
-     and (select count(*) from public.room_members rm where rm.user_id = c.user_id and rm.open) < cfg.max_open_rooms
-     -- 이미 나와 열린 대화가 있는 사람은 또 잡지 않는다
+     and c.seeking_until > v_now
+     and private.open_rooms(c.user_id) < cfg.max_open_rooms
      and not exists (select 1 from public.room_members x
                        join public.room_members y on y.room_id = x.room_id
                       where x.user_id = me and x.open and y.user_id = c.user_id)
      and p.status = 'active' and p.verified and p.onboarded
      and (p.suspended_until is null or p.suspended_until <= v_now)
-     -- 선호 성별: 양방향 모두 만족
      and (m.want = 'any' or m.want = p.gender)
      and (p.want = 'any' or p.want = m.gender)
-     -- 차단: 어느 쪽이 했든
      and not exists (select 1 from public.blocks b
                       where (b.blocker_id = me and b.blocked_id = c.user_id)
                          or (b.blocker_id = c.user_id and b.blocked_id = me))
-     -- 최근에 대화한 상대 제외 — 둘 다 "만났던 사람도 다시 만나기"를 켰으면 예외 (Phase 21, 설정 화면)
      and ((coalesce(m.allow_rematch, false) and coalesce(p.allow_rematch, false))
           or not exists (select 1 from public.pair_history h
                           where h.user_lo = least(me, c.user_id)
                             and h.user_hi = greatest(me, c.user_id)
                             and h.last_matched_at > v_now - make_interval(days => cfg.rematch_cooldown_days)))
-   order by -- 다시 만나기를 켰어도 처음 보는 사람이 있으면 그쪽 먼저
-            exists (select 1 from public.pair_history h
+   order by exists (select 1 from public.pair_history h
                      where h.user_lo = least(me, c.user_id)
                        and h.user_hi = greatest(me, c.user_id)
                        and h.last_matched_at > v_now - make_interval(days => cfg.rematch_cooldown_days)),
-            c.seeking_since asc,   -- ★ 오래 기다린 사람 먼저 (굶주림 방지)
+            c.seeking_since asc,
             random()
    limit 1;
 
-  -- ⑤ 아무도 없으면 에러가 아니라 대기 상태
   if v_partner is null then
     select count(*) into v_pool
       from public.user_presence
@@ -910,15 +904,12 @@ begin
       'server_now', v_now);
   end if;
 
-  -- ⑥ 넘기기 연타 제한 (Phase 5) — 방을 만드는 쪽만 차감. 쉬는 동안에도 풀에는 남아 있어 잡힐 수는 있다.
   v_bucket := public.match_bucket_take(me);
   if not (v_bucket->>'ok')::boolean then
     return jsonb_build_object('status', 'cooldown',
       'retry_after_ms', (v_bucket->>'retry_after_ms')::int, 'server_now', v_now);
   end if;
 
-  -- ⑦ 방 생성 — pending. 10분 타이머는 둘 다 화면을 열어야(ack_room) 시작된다.
-  --   방 안 이름은 각자의 고유 익명 이름(Phase 8). 없으면 임시 이름.
   a1 := coalesce(m.nickname, public.random_alias());
   select coalesce(nickname, public.random_alias()) into a2 from public.profiles where id = v_partner;
   while a2 = a1 loop a2 := public.random_alias(); end loop;
@@ -934,11 +925,10 @@ begin
      set seeking_until = null, seeking_since = null
    where user_id in (me, v_partner);
 
-  -- ★ 반환값에 상대의 uuid 는 없다. room_id 뿐.
   return jsonb_build_object('status', 'matched', 'room_id', v_room, 'server_now', v_now);
 
 exception
-  when unique_violation then   -- 유니크 인덱스 충돌(좌석 중복 등) — 조용히 재시도
+  when unique_violation then
     return jsonb_build_object('status', 'retry', 'retry_after_ms', 300, 'server_now', now());
 end
 $fn$;
@@ -1042,19 +1032,16 @@ begin
   values (p_room, me, v_other, p_reason, left(coalesce(p_note, ''), 1000))
   returning id into v_report;
 
-  -- 대화 전문을 '역할' 기준으로 복사 (1 = 신고자, 2 = 피신고자)
   insert into private.report_evidence (report_id, ord, sender, body, sent_at)
   select v_report, row_number() over (order by m.id),
          case when m.sender_seat = 0 then 0 when m.sender_seat = s then 1 else 2 end,
-         m.body, m.created_at
-    from public.messages m
+         case when d.body is not null then '[삭제함] ' || d.body else m.body end, m.created_at
+    from public.messages m left join private.deleted_messages d on d.message_id = m.id
    where m.room_id = p_room;
 
-  -- 신고하면 자동으로 차단 + 방 종료
   insert into public.blocks (blocker_id, blocked_id) values (me, v_other) on conflict do nothing;
   perform public.close_room(p_room, 'reported');
 
-  -- 자동 정지: 30일 안에 서로 다른 신고자 N명 → 운영진 확인 전까지 정지
   select count(distinct reporter_id) into v_n
     from private.reports
    where reported_id = v_other and status <> 'dismissed' and created_at > now() - interval '30 days';
@@ -1063,7 +1050,6 @@ begin
     if found then
       insert into private.audit_log (staff_id, action, target_user, report_id, detail)
       values (null, 'auto_suspend', v_other, v_report, jsonb_build_object('distinct_reporters', v_n));
-      -- 정지된 사람이 지금 다른 방에 있으면 그 방도 닫는다
       perform public.close_room(rm.room_id, 'admin')
          from public.room_members rm where rm.user_id = v_other and rm.open;
     end if;
@@ -1175,11 +1161,13 @@ returns jsonb language sql security definer set search_path = public, private st
   select jsonb_build_object(
     'open_reports',    (select count(*) from private.reports where status = 'open'),
     'reviewing',       (select count(*) from private.reports where status = 'reviewing'),
+    'open_letter_reports', (select count(*) from private.letter_reports where status = 'open'),
     'active_rooms',    (select count(*) from public.rooms where status <> 'closed' and now() < expires_at),
     'seeking_now',     (select count(*) from public.user_presence where seeking_until > now()),
     'restricted_users',(select count(*) from public.profiles
                          where status <> 'active' or suspended_until > now()),
     'rooms_24h',       (select count(*) from public.rooms where created_at > now() - interval '24 hours'),
+    'letters_24h',     (select count(*) from public.letters where created_at > now() - interval '24 hours'),
     'is_open',         (select is_open from public.app_settings where id));
 $fn$;
 
@@ -1243,7 +1231,21 @@ $fn$;
 create or replace function public.admin_sanction(
   p_user uuid, p_action text, p_days int, p_staff uuid, p_report uuid, p_note text)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare v_role text := private.require_staff(p_staff);
 begin
+  -- 탈퇴한 계정 — 아무것도 바뀌지 않는데 "조치 완료"로 보이지 않게
+  if not exists (select 1 from public.profiles where id = p_user) then raise exception 'user_not_found'; end if;
+  if v_role <> 'admin' then
+    if p_action = 'ban' then raise exception 'admin_only'; end if;
+    if p_action = 'suspend' and coalesce(p_days, 0) > private.mod_max_suspend_days() then
+      raise exception 'mod_days_limit';
+    end if;
+    if p_action = 'reinstate' and exists (select 1 from public.profiles where id = p_user and status = 'banned') then
+      raise exception 'admin_only';
+    end if;
+    if exists (select 1 from private.staff where user_id = p_user) then raise exception 'admin_only'; end if;
+  end if;
+
   if p_action = 'warn' then
     update public.profiles set strikes = strikes + 1 where id = p_user;
   elsif p_action = 'suspend' then
@@ -1275,9 +1277,13 @@ $fn$;
 
 -- ★ 신원(이메일) 열람은 반드시 기록한다. 이메일 자체는 서버가 auth admin API 로 그 순간에만 조회.
 create or replace function public.admin_log_identity_view(p_staff uuid, p_users uuid[], p_report uuid)
-returns void language sql security definer set search_path = public, private as $fn$
-  insert into private.audit_log (staff_id, action, report_id, detail)
-  values (p_staff, 'view_identity', p_report, jsonb_build_object('users', p_users));
+returns void language plpgsql security definer set search_path = public, private as $fn$
+begin
+  perform private.require_staff(p_staff, true);
+  insert into private.audit_log (staff_id, action, target_user, report_id, detail)
+  values (p_staff, 'view_identity', case when cardinality(p_users) = 1 then p_users[1] end, p_report,
+          jsonb_build_object('users', p_users));
+end
 $fn$;
 
 create or replace function public.admin_audit(p_limit int default 50)
@@ -1411,36 +1417,6 @@ end
 $fn$;
 revoke all on function private.nickname_candidate(), private.assign_nickname(uuid) from public, anon, authenticated;
 
--- 가입 트리거·폴백이 이름까지 붙이도록 교체
-create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer set search_path = public as $fn$
-begin
-  insert into public.profiles (id, verified)
-    values (new.id, new.email_confirmed_at is not null)
-    on conflict (id) do nothing;
-  insert into public.user_presence (user_id)
-    values (new.id)
-    on conflict (user_id) do nothing;
-  perform private.assign_nickname(new.id);
-  return new;
-end
-$fn$;
-
-create or replace function public.ensure_self()
-returns void language plpgsql security definer set search_path = public as $fn$
-declare
-  me uuid := auth.uid();
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  insert into public.profiles (id) values (me) on conflict (id) do nothing;
-  insert into public.user_presence (user_id) values (me) on conflict (user_id) do nothing;
-  update public.profiles p set verified = true
-    where p.id = me and not p.verified
-      and exists (select 1 from auth.users u
-                   where u.id = me and u.email_confirmed_at is not null);
-  perform private.assign_nickname(me);
-end
-$fn$;
 
 -- 이미 가입해 있던 계정들에도 이름을 붙인다
 do $do$
@@ -1491,8 +1467,10 @@ $fn$;
 -- 비밀번호가 설정됐는지 (auth.users 는 클라가 읽을 수 없으므로)
 create or replace function public.my_account()
 returns jsonb language sql security definer set search_path = public, auth stable as $fn$
-  select jsonb_build_object('has_password', coalesce(u.encrypted_password, '') <> '')
-    from auth.users u where u.id = auth.uid();
+  select jsonb_build_object('has_password', coalesce(u.encrypted_password, '') <> '',
+                            'name', p.name, 'grade', p.grade, 'name_source', p.source)
+    from auth.users u cross join lateral private.person(u.id) p
+   where u.id = auth.uid();
 $fn$;
 
 
@@ -1509,8 +1487,8 @@ begin
     update public.user_presence
        set online_until = greatest(online_until, now() + make_interval(secs => cfg.online_ttl_sec))
      where user_id = auth.uid();
+    perform private.touch_streak(auth.uid());
   else
-    -- 앱을 내려놓으면 오프라인 + 찾기 중단 (폰을 내려놓은 사람에게 매칭이 가지 않게)
     update public.user_presence
        set online_until = now(), seeking_until = null, seeking_since = null
      where user_id = auth.uid();
@@ -1523,14 +1501,16 @@ $fn$;
 -- ── 29. 대화 목록 · 상대 프로필 ─────────────────────────────────────
 -- 내 열린 대화 전부. ★ 방마다 room_id 외의 uuid 는 없다.
 create or replace function public.my_rooms()
-returns jsonb language sql security definer set search_path = public stable as $fn$
+returns jsonb language sql security definer set search_path = public, private stable as $fn$
   select jsonb_build_object(
-    'rooms', coalesce(jsonb_agg(to_jsonb(x) - 'sort_at' order by x.sort_at desc), '[]'::jsonb),
+    'rooms', coalesce(jsonb_agg(to_jsonb(x) - 'sort_at' order by x.pinned desc, x.sort_at desc), '[]'::jsonb),
     'server_now', now())
   from (
     select r.id as room_id, r.status, rm.seat as my_seat,
            case when rm.seat = 1 then r.alias2 else r.alias1 end as partner_alias,
-           r.expires_at, r.round,
+           private.room_deadline(r.expires_at, r.paused_left) as expires_at, r.round,
+           r.paused_left is not null as paused,
+           r.pinned,
            rm.joined_at is not null as joined,
            coalesce(up.online_until > now(), false) as partner_online,
            lm.body as last_body, lm.sender_seat as last_seat, lm.created_at as last_at,
@@ -1551,22 +1531,25 @@ $fn$;
 
 -- 대화 상대의 기본 정보. 같은 방에 있었던 사람만 볼 수 있다(대화가 끝난 뒤 신고 화면에서도).
 create or replace function public.partner_profile(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public stable as $fn$
-declare s smallint; v jsonb;
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare s smallint; v jsonb; v_other uuid;
 begin
   s := public.my_seat(p_room);
   if s is null then raise exception 'not_member'; end if;
+  select user_id into v_other from public.room_members where room_id = p_room and seat <> s;
   select jsonb_build_object(
-           'nickname',  case when s = 1 then r.alias2 else r.alias1 end,
-           'bio',       p.bio,
-           'interests', to_jsonb(p.interests),
-           'mbti',      p.mbti,
-           'online',    coalesce(up.online_until > now(), false))
+           'nickname',    case when s = 1 then r.alias2 else r.alias1 end,
+           'bio',         p.bio,
+           'interests',   to_jsonb(p.interests),
+           'mbti',        p.mbti,
+           'manner_temp', p.manner_temp,
+           'badges',      private.featured(v_other),
+           'badge_count', (select count(*) from private.user_achievements a where a.user_id = v_other),
+           'online',      coalesce(up.online_until > now(), false))
     into v
     from public.rooms r
-    join public.room_members o on o.room_id = r.id and o.seat <> s
-    join public.profiles p on p.id = o.user_id
-    left join public.user_presence up on up.user_id = o.user_id
+    join public.profiles p on p.id = v_other
+    left join public.user_presence up on up.user_id = v_other
    where r.id = p_room;
   return v;
 end
@@ -1859,7 +1842,7 @@ grant select on public.letter_comments to authenticated;
 alter table public.letter_participants enable row level security;
 drop policy if exists "letter_participants: self read only" on public.letter_participants;
 create policy "letter_participants: self read only" on public.letter_participants
-  for select to authenticated using (user_id = auth.uid());
+  for select to authenticated using (user_id = (select auth.uid()));
 -- ★ 편지 쪽 급소. "같은 편지 참여자 전부 읽기"로 바꾸는 순간 공개 글과 계정이 이어진다.
 revoke all on public.letter_participants from anon, authenticated;
 grant select on public.letter_participants to authenticated;
@@ -1867,7 +1850,7 @@ grant select on public.letter_participants to authenticated;
 alter table public.letter_reply_assignments enable row level security;
 drop policy if exists "letter_assign: self read" on public.letter_reply_assignments;
 create policy "letter_assign: self read" on public.letter_reply_assignments
-  for select to authenticated using (reader_id = auth.uid());
+  for select to authenticated using (reader_id = (select auth.uid()));
 revoke all on public.letter_reply_assignments from anon, authenticated;
 grant select on public.letter_reply_assignments to authenticated;
 
@@ -2580,9 +2563,11 @@ begin
                     'ord', e.ord, 'kind', e.kind, 'alias', e.alias, 'body', e.body, 'sent_at', e.sent_at)
                     order by e.ord), '[]'::jsonb)
                    from private.letter_report_evidence e where e.report_id = p_id),
-    'target', jsonb_build_object(
+    'target', case when r.target_type = 'dm' then
+                jsonb_build_object('thread_status', (select status from private.dm_threads where id = r.letter_id))
+              else jsonb_build_object(
                 'letter_status', (select status from public.letters where id = r.letter_id),
-                'comment_status', (select status from public.letter_comments where id = r.comment_id)),
+                'comment_status', (select status from public.letter_comments where id = r.comment_id)) end,
     'reported', (select jsonb_build_object('status', p.status, 'strikes', p.strikes,
                         'suspended_until', p.suspended_until, 'created_at', p.created_at)
                    from public.profiles p where p.id = r.reported_id),
@@ -2625,21 +2610,6 @@ begin
 end
 $fn$;
 
--- 대시보드 수치에 편지 신고 · 편지 수 추가
-create or replace function public.admin_stats()
-returns jsonb language sql security definer set search_path = public, private stable as $fn$
-  select jsonb_build_object(
-    'open_reports',    (select count(*) from private.reports where status = 'open'),
-    'reviewing',       (select count(*) from private.reports where status = 'reviewing'),
-    'open_letter_reports', (select count(*) from private.letter_reports where status = 'open'),
-    'active_rooms',    (select count(*) from public.rooms where status <> 'closed' and now() < expires_at),
-    'seeking_now',     (select count(*) from public.user_presence where seeking_until > now()),
-    'restricted_users',(select count(*) from public.profiles
-                         where status <> 'active' or suspended_until > now()),
-    'rooms_24h',       (select count(*) from public.rooms where created_at > now() - interval '24 hours'),
-    'letters_24h',     (select count(*) from public.letters where created_at > now() - interval '24 hours'),
-    'is_open',         (select is_open from public.app_settings where id));
-$fn$;
 
 do $do$
 declare f text;
@@ -2699,64 +2669,6 @@ revoke all on function private.require_staff(uuid, boolean) from public, anon, a
 create or replace function private.mod_max_suspend_days() returns int
 language sql immutable as $fn$ select 7 $fn$;
 
--- 역할 검사가 들어간 제재 (기존 시그니처 유지)
-create or replace function public.admin_sanction(
-  p_user uuid, p_action text, p_days int, p_staff uuid, p_report uuid, p_note text)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare v_role text := private.require_staff(p_staff);
-begin
-  -- 탈퇴한 계정 — 아무것도 바뀌지 않는데 "조치 완료"로 보이지 않게
-  if not exists (select 1 from public.profiles where id = p_user) then raise exception 'user_not_found'; end if;
-  if v_role <> 'admin' then
-    if p_action = 'ban' then raise exception 'admin_only'; end if;
-    if p_action = 'suspend' and coalesce(p_days, 0) > private.mod_max_suspend_days() then
-      raise exception 'mod_days_limit';
-    end if;
-    if p_action = 'reinstate' and exists (select 1 from public.profiles where id = p_user and status = 'banned') then
-      raise exception 'admin_only';
-    end if;
-    if exists (select 1 from private.staff where user_id = p_user) then raise exception 'admin_only'; end if;
-  end if;
-
-  if p_action = 'warn' then
-    update public.profiles set strikes = strikes + 1 where id = p_user;
-  elsif p_action = 'suspend' then
-    if coalesce(p_days, 0) < 1 then raise exception 'days_required'; end if;
-    update public.profiles
-       set status = 'active', suspended_until = now() + make_interval(days => p_days), strikes = strikes + 1
-     where id = p_user;
-  elsif p_action = 'ban' then
-    update public.profiles set status = 'banned', strikes = strikes + 1 where id = p_user;
-  elsif p_action = 'reinstate' then
-    update public.profiles set status = 'active', suspended_until = null where id = p_user;
-  else
-    raise exception 'invalid_action';
-  end if;
-
-  if p_action in ('suspend', 'ban') then
-    perform public.close_room(rm.room_id, 'admin')
-       from public.room_members rm where rm.user_id = p_user and rm.open;
-    update public.user_presence set seeking_until = null, seeking_since = null where user_id = p_user;
-  end if;
-
-  insert into private.audit_log (staff_id, action, target_user, report_id, detail)
-  values (p_staff, 'sanction_' || p_action, p_user, p_report,
-          jsonb_build_object('days', p_days, 'note', p_note));
-  return (select jsonb_build_object('status', status, 'strikes', strikes, 'suspended_until', suspended_until)
-            from public.profiles where id = p_user);
-end
-$fn$;
-
--- 이메일 열람은 관리자만 (기존 시그니처 유지)
-create or replace function public.admin_log_identity_view(p_staff uuid, p_users uuid[], p_report uuid)
-returns void language plpgsql security definer set search_path = public, private as $fn$
-begin
-  perform private.require_staff(p_staff, true);
-  insert into private.audit_log (staff_id, action, target_user, report_id, detail)
-  values (p_staff, 'view_identity', case when cardinality(p_users) = 1 then p_users[1] end, p_report,
-          jsonb_build_object('users', p_users));
-end
-$fn$;
 
 -- 한 사람이 받은 신고 수 (기각 제외, 채팅 + 편지)
 create or replace function private.reports_received(p_user uuid) returns int
@@ -3531,6 +3443,8 @@ begin
     insert into private.mod_queue (kind, ref_id) values ('message', new.id) on conflict do nothing;
   elsif tg_table_name = 'letters' then
     insert into private.mod_queue (kind, ref_id) values ('letter', new.id) on conflict do nothing;
+  elsif tg_table_name = 'dm_msgs' then
+    insert into private.mod_queue (kind, ref_id) values ('dm', new.id) on conflict do nothing;
   else
     insert into private.mod_queue (kind, ref_id) values ('comment', new.id) on conflict do nothing;
   end if;
@@ -3592,6 +3506,7 @@ begin
      and not case q.kind
        when 'message' then exists (select 1 from public.messages m where m.id = q.ref_id)
        when 'letter'  then exists (select 1 from public.letters l where l.id = q.ref_id)
+       when 'dm'      then exists (select 1 from private.dm_msgs d where d.id = q.ref_id and d.status = 'visible')
        else exists (select 1 from public.letter_comments c where c.id = q.ref_id) end;
 
   select coalesce(jsonb_agg(jsonb_build_object('id', q.id, 'kind', q.kind, 'text', x.body, 'context', x.ctx)
@@ -3615,6 +3530,15 @@ begin
                             from public.letter_comments pc where pc.id = c.parent_comment_id), '[]'::jsonb)
         from public.letter_comments c join public.letters l on l.id = c.letter_id
        where q.kind = 'comment' and c.id = q.ref_id
+      union all
+      -- 이름 편지 (Phase 23) — 앞의 말 4개 (같은 쪽 = 작성자)
+      select d.body,
+             (select coalesce(jsonb_agg(jsonb_build_object('who', case when e.from_sender = d.from_sender then '작성자' else '상대' end,
+                                                           'text', left(e.body, 300)) order by e.id), '[]'::jsonb)
+                from (select * from private.dm_msgs e2
+                       where e2.thread_id = d.thread_id and e2.id < d.id and e2.status = 'visible'
+                       order by e2.id desc limit 4) e)
+        from private.dm_msgs d where q.kind = 'dm' and d.id = q.ref_id
     ) x
    where q.status = 'working' and q.claimed_at = now();
   return v_out;
@@ -3631,13 +3555,14 @@ $fn$;
 -- 채팅 자동 신고 — 같은 방 · 같은 사람의 처리 안 된 자동 신고가 있으면 거기에 덧붙인다
 create or replace function private.auto_report_message(p_msg bigint, p_reason text, p_why text)
 returns void language plpgsql security definer set search_path = public, private as $fn$
-declare m public.messages%rowtype; v_sender uuid; v_report uuid; v_line text;
+declare m public.messages%rowtype; v_sender uuid; v_report uuid; v_line text; v_body text;
 begin
   select * into m from public.messages where id = p_msg;
   if not found then return; end if;
   select user_id into v_sender from public.room_members where room_id = m.room_id and seat = m.sender_seat;
   if v_sender is null then return; end if;
-  v_line := '[자동 감지] "' || left(m.body, 60) || '" — ' || left(coalesce(p_why, ''), 200);
+  v_body := coalesce((select body from private.deleted_messages where message_id = m.id), m.body);
+  v_line := '[자동 감지] "' || left(v_body, 60) || '" — ' || left(coalesce(p_why, ''), 200);
 
   select id into v_report from private.reports
    where room_id = m.room_id and source = 'auto' and reported_id = v_sender and status in ('open','reviewing')
@@ -3651,12 +3576,12 @@ begin
     delete from private.report_evidence where report_id = v_report;
   end if;
 
-  -- 증거: 지금까지의 대화 전문 (1 = 상대, 2 = 걸린 사람)
   insert into private.report_evidence (report_id, ord, sender, body, sent_at)
   select v_report, row_number() over (order by x.id),
          case when x.sender_seat = 0 then 0 when x.sender_seat = m.sender_seat then 2 else 1 end,
-         x.body, x.created_at
-    from public.messages x where x.room_id = m.room_id and x.id <= m.id;
+         case when d.body is not null then '[삭제함] ' || d.body else x.body end, x.created_at
+    from public.messages x left join private.deleted_messages d on d.message_id = x.id
+   where x.room_id = m.room_id and x.id <= m.id;
 end
 $fn$;
 
@@ -3725,6 +3650,7 @@ begin
    where id = p_id;
   if coalesce(p_flag, false) then
     if q.kind = 'message' then perform private.auto_report_message(q.ref_id, v_cat, p_reason);
+    elsif q.kind = 'dm' then perform private.auto_report_dm(q.ref_id, v_cat, p_reason);
     else perform private.auto_report_letter(q.kind, q.ref_id, v_cat, p_reason);
     end if;
   end if;
@@ -3996,14 +3922,6 @@ language sql security definer set search_path = '' stable as $fn$
 $fn$;
 revoke all on function private.person(uuid) from public, anon, authenticated;
 
--- 내 계정 — 비밀번호 여부 + 이름(Phase 23)
-create or replace function public.my_account()
-returns jsonb language sql security definer set search_path = public, auth stable as $fn$
-  select jsonb_build_object('has_password', coalesce(u.encrypted_password, '') <> '',
-                            'name', p.name, 'grade', p.grade, 'name_source', p.source)
-    from auth.users u cross join lateral private.person(u.id) p
-   where u.id = auth.uid();
-$fn$;
 
 -- 명렬표에 없는 사람만 한 번 — 명렬표에 있는 이름은 쓸 수 없다(사칭 방지). 바꾸려면 운영진에게.
 create or replace function public.set_my_name(p_name text)
@@ -4066,23 +3984,7 @@ create trigger dm_msgs_rule_check before insert on private.dm_msgs
 alter table private.mod_queue drop constraint if exists mod_queue_kind_check;
 alter table private.mod_queue add constraint mod_queue_kind_check check (kind in ('message','letter','comment','dm'));
 
-create or replace function public.mod_enqueue()
-returns trigger language plpgsql security definer set search_path = public, private as $fn$
-begin
-  if not coalesce((select ai_moderation from public.app_settings where id), false) then return null; end if;
-  if tg_table_name = 'messages' then
-    if new.sender_seat = 0 then return null; end if;
-    insert into private.mod_queue (kind, ref_id) values ('message', new.id) on conflict do nothing;
-  elsif tg_table_name = 'letters' then
-    insert into private.mod_queue (kind, ref_id) values ('letter', new.id) on conflict do nothing;
-  elsif tg_table_name = 'dm_msgs' then
-    insert into private.mod_queue (kind, ref_id) values ('dm', new.id) on conflict do nothing;
-  else
-    insert into private.mod_queue (kind, ref_id) values ('comment', new.id) on conflict do nothing;
-  end if;
-  return null;
-end
-$fn$;
+
 revoke all on function public.mod_enqueue() from public, anon, authenticated;
 drop trigger if exists dm_msgs_mod_enqueue on private.dm_msgs;
 create trigger dm_msgs_mod_enqueue after insert on private.dm_msgs
@@ -4194,6 +4096,8 @@ begin
   role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
   if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
   if t.status <> 'open' then return jsonb_build_object('status', 'closed'); end if;
+  -- 편지로 주고받는 중이면 채팅은 못 쓴다 — 받은 사람이 "채팅하기"(dm_chat)를 골라야 채팅으로 바뀐다
+  if t.mode <> 'chat' then return jsonb_build_object('status', 'letter_mode'); end if;
   v := private.dm_can_write(me);
   if v is not null then return jsonb_build_object('status', v); end if;
   if char_length(btrim(coalesce(p_body, ''))) not between 1 and 1000 then return jsonb_build_object('status', 'bad_text'); end if;
@@ -4228,7 +4132,8 @@ begin
                  and m.from_sender = (t.sender_id <> me)
                  and m.id > case when t.sender_id = me then t.sender_read else t.recipient_read end)::int as unread
         from private.dm_threads t
-       where (t.sender_id = me or t.recipient_id = me) and t.status <> 'removed'
+       where ((t.sender_id = me and not t.sender_hidden) or (t.recipient_id = me and not t.recipient_hidden))
+         and t.status <> 'removed'
        order by t.last_at desc limit 100) x), '[]'::jsonb),
     'server_now', now());
 end
@@ -4241,7 +4146,8 @@ declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; last big
 begin
   if me is null then raise exception 'unauthenticated'; end if;
   select * into t from private.dm_threads where id = p_thread;
-  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
+  role := case when t.sender_id = me and not t.sender_hidden then 'sender'
+               when t.recipient_id = me and not t.recipient_hidden then 'recipient' end;
   if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
   select max(id) into last from private.dm_msgs where thread_id = p_thread;
   if role = 'sender' then update private.dm_threads set sender_read = greatest(sender_read, coalesce(last, 0)) where id = p_thread;
@@ -4251,10 +4157,19 @@ begin
     'title', case when role = 'sender' then (select name from private.person(t.recipient_id)) else t.sender_alias end,
     'grade', case when role = 'sender' then (select grade from private.person(t.recipient_id)) end,
     'thread_status', t.status, 'closed_by', t.closed_by,
+    'their_read', case when role = 'sender' then t.recipient_read else t.sender_read end,
+    'mode', t.mode,
+    -- 편지지의 To. / From. — 보낸 사람 쪽 가명과 받는 사람 이름 (둘 다 이미 서로 아는 값: 보낸 사람은 받는 사람 이름을 골랐고,
+    -- 받는 사람은 가명을 본다. 자기 가명 · 자기 이름을 자기에게 보여 줄 뿐 새로 드러나는 것은 없다)
+    'alias', t.sender_alias,
+    'recipient_name', (select name from private.person(t.recipient_id)),
     'wait_reply', t.status = 'open' and private.dm_streak(p_thread, role = 'sender') >= 3,
     'messages', coalesce((select jsonb_agg(jsonb_build_object(
                    'id', m.id, 'mine', m.from_sender = (role = 'sender'),
-                   'body', case when m.status = 'visible' then m.body end, 'removed', m.status = 'removed',
+                   'body', case when m.status = 'visible' then m.body end,
+                   'fmt', case when m.status = 'visible' then m.fmt end,
+                   'removed', m.status = 'removed',
+                   'letter', m.is_letter,
                    'created_at', m.created_at) order by m.id)
                  from private.dm_msgs m where m.thread_id = p_thread), '[]'::jsonb),
     'server_now', now());
@@ -4269,8 +4184,7 @@ begin
   if me is null then raise exception 'unauthenticated'; end if;
   role := private.dm_role(p_thread, me);
   if role is null then return jsonb_build_object('status', 'not_found'); end if;
-  update private.dm_threads set status = 'closed', closed_by = role
-   where id = p_thread and status = 'open';
+  perform private.dm_leave(p_thread, role);
   return jsonb_build_object('status', 'ok');
 end
 $fn$;
@@ -4286,7 +4200,7 @@ begin
   if role is null then return jsonb_build_object('status', 'not_found'); end if;
   other := case when role = 'sender' then t.recipient_id else t.sender_id end;
   insert into public.blocks (blocker_id, blocked_id) values (me, other) on conflict do nothing;
-  update private.dm_threads set status = 'closed', closed_by = role where id = p_thread and status = 'open';
+  perform private.dm_leave(p_thread, role);
   return jsonb_build_object('status', 'ok');
 end
 $fn$;
@@ -4335,9 +4249,9 @@ begin
   values ('dm', p_thread, null, me, other, p_reason, left(coalesce(p_note, ''), 1000))
   returning id into v_report;
   perform private.dm_copy_evidence(v_report, p_thread);
-  -- 신고하면 차단 + 끝내기 (채팅 · 편지와 같다)
+  -- 신고하면 차단 + 끝내고 내 목록에서 지운다 (증거는 위에서 복사해 뒀다)
   insert into public.blocks (blocker_id, blocked_id) values (me, other) on conflict do nothing;
-  update private.dm_threads set status = 'closed', closed_by = role where id = p_thread and status = 'open';
+  perform private.dm_leave(p_thread, role);
 
   -- 자동 정지 — 편지 신고와 같이 센다
   select * into cfg from public.app_settings where id;
@@ -4374,135 +4288,6 @@ end
 $fn$;
 revoke all on function private.auto_report_dm(bigint, text, text) from public, anon, authenticated;
 
-create or replace function public.mod_verdict(p_id bigint, p_flag boolean, p_category text, p_reason text)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare q private.mod_queue%rowtype; v_cat text;
-begin
-  select * into q from private.mod_queue where id = p_id for update;
-  if not found or q.status <> 'working' then return jsonb_build_object('status', 'gone'); end if;
-  v_cat := case when p_category in ('harassment','sexual','hate','personal_info','spam','self_harm')
-                then p_category else 'other' end;
-  update private.mod_queue
-     set status = 'done', done_at = now(),
-         verdict = jsonb_build_object('flag', coalesce(p_flag, false), 'category', v_cat, 'reason', left(coalesce(p_reason, ''), 200))
-   where id = p_id;
-  if coalesce(p_flag, false) then
-    if q.kind = 'message' then perform private.auto_report_message(q.ref_id, v_cat, p_reason);
-    elsif q.kind = 'dm' then perform private.auto_report_dm(q.ref_id, v_cat, p_reason);
-    else perform private.auto_report_letter(q.kind, q.ref_id, v_cat, p_reason);
-    end if;
-  end if;
-  return jsonb_build_object('status', 'ok', 'flagged', coalesce(p_flag, false));
-end
-$fn$;
-
--- AI 검토: 이름 편지(dm)도 가져간다 (Phase 19 의 mod_claim 에 dm 줄기를 더한 것)
-create or replace function public.mod_claim(p_n int default 3)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare
-  cfg    public.app_settings%rowtype;
-  v_used int;
-  v_take int;
-  v_out  jsonb;
-begin
-  select * into cfg from public.app_settings where id;
-  if not cfg.ai_moderation then return '[]'::jsonb; end if;
-
-  -- 정리: 하루 지난 것은 건너뜀 · 세 번 실패한 것은 오류 · 오래된 기록은 지움 (본문은 원래 없다)
-  update private.mod_queue set status = 'skipped', done_at = now()
-   where status in ('pending','working') and created_at < now() - interval '1 day';
-  update private.mod_queue set status = 'error', done_at = now()
-   where status = 'working' and claimed_at < now() - interval '2 minutes' and tries >= 3;
-  delete from private.mod_queue where created_at < now() - interval '30 days';
-  delete from private.ai_chats where created_at < now() - interval '7 days';
-
-  select count(*) into v_used from private.mod_queue where claimed_at >= private.ai_day_start();
-  v_take := least(greatest(coalesce(p_n, 0), 0), 10, cfg.ai_mod_daily_cap - v_used);
-  if v_take <= 0 then return '[]'::jsonb; end if;
-
-  update private.mod_queue q set status = 'working', claimed_at = now(), tries = q.tries + 1
-   where q.id in (select id from private.mod_queue
-                   where status = 'pending'
-                      or (status = 'working' and claimed_at < now() - interval '2 minutes')
-                   order by created_at limit v_take
-                   for update skip locked);
-
-  -- 원문이 이미 지워졌으면(방 purge 등) 건너뜀
-  update private.mod_queue q set status = 'skipped', done_at = now()
-   where q.status = 'working' and q.claimed_at = now()
-     and not case q.kind
-       when 'message' then exists (select 1 from public.messages m where m.id = q.ref_id)
-       when 'letter'  then exists (select 1 from public.letters l where l.id = q.ref_id)
-       when 'dm'      then exists (select 1 from private.dm_msgs d where d.id = q.ref_id and d.status = 'visible')
-       else exists (select 1 from public.letter_comments c where c.id = q.ref_id) end;
-
-  select coalesce(jsonb_agg(jsonb_build_object('id', q.id, 'kind', q.kind, 'text', x.body, 'context', x.ctx)
-                            order by q.id), '[]'::jsonb) into v_out
-    from private.mod_queue q
-    cross join lateral (
-      select m.body,
-             -- 앞의 메시지 4개 (시간 순) — 같은 사람 = 작성자, 다른 사람 = 상대
-             (select coalesce(jsonb_agg(jsonb_build_object('who', case when p.sender_seat = m.sender_seat then '작성자' else '상대' end,
-                                                           'text', left(p.body, 300)) order by p.id), '[]'::jsonb)
-                from (select * from public.messages p2
-                       where p2.room_id = m.room_id and p2.id < m.id and p2.sender_seat <> 0
-                       order by p2.id desc limit 4) p) as ctx
-        from public.messages m where q.kind = 'message' and m.id = q.ref_id
-      union all
-      select l.body, '[]'::jsonb from public.letters l where q.kind = 'letter' and l.id = q.ref_id
-      union all
-      select c.body,
-             jsonb_build_array(jsonb_build_object('who', '편지', 'text', left(l.body, 300)))
-             || coalesce((select jsonb_build_array(jsonb_build_object('who', '윗댓글', 'text', left(pc.body, 300)))
-                            from public.letter_comments pc where pc.id = c.parent_comment_id), '[]'::jsonb)
-        from public.letter_comments c join public.letters l on l.id = c.letter_id
-       where q.kind = 'comment' and c.id = q.ref_id
-      union all
-      -- 이름 편지 (Phase 23) — 앞의 말 4개 (같은 쪽 = 작성자)
-      select d.body,
-             (select coalesce(jsonb_agg(jsonb_build_object('who', case when e.from_sender = d.from_sender then '작성자' else '상대' end,
-                                                           'text', left(e.body, 300)) order by e.id), '[]'::jsonb)
-                from (select * from private.dm_msgs e2
-                       where e2.thread_id = d.thread_id and e2.id < d.id and e2.status = 'visible'
-                       order by e2.id desc limit 4) e)
-        from private.dm_msgs d where q.kind = 'dm' and d.id = q.ref_id
-    ) x
-   where q.status = 'working' and q.claimed_at = now();
-  return v_out;
-end
-$fn$;
-
--- 운영자: 신고 상세에 편지 줄기 상태 · 내리기
-create or replace function public.admin_letter_report(p_id uuid)
-returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare r private.letter_reports%rowtype;
-begin
-  select * into r from private.letter_reports where id = p_id;
-  if not found then return null; end if;
-  return jsonb_build_object(
-    'report', to_jsonb(r),
-    'evidence', (select coalesce(jsonb_agg(jsonb_build_object(
-                    'ord', e.ord, 'kind', e.kind, 'alias', e.alias, 'body', e.body, 'sent_at', e.sent_at)
-                    order by e.ord), '[]'::jsonb)
-                   from private.letter_report_evidence e where e.report_id = p_id),
-    'target', case when r.target_type = 'dm' then
-                jsonb_build_object('thread_status', (select status from private.dm_threads where id = r.letter_id))
-              else jsonb_build_object(
-                'letter_status', (select status from public.letters where id = r.letter_id),
-                'comment_status', (select status from public.letter_comments where id = r.comment_id)) end,
-    'reported', (select jsonb_build_object('status', p.status, 'strikes', p.strikes,
-                        'suspended_until', p.suspended_until, 'created_at', p.created_at)
-                   from public.profiles p where p.id = r.reported_id),
-    'history', (select coalesce(jsonb_agg(jsonb_build_object(
-                    'id', h.id, 'created_at', h.created_at, 'reason', h.reason, 'status', h.status)
-                    order by h.created_at desc), '[]'::jsonb)
-                  from private.letter_reports h where h.reported_id = r.reported_id and h.id <> p_id),
-    'chat_reports', (select count(*) from private.reports where reported_id = r.reported_id),
-    'reporter_filed', (select count(*) from private.letter_reports f where f.reporter_id = r.reporter_id),
-    'reporter_dismissed', (select count(*) from private.letter_reports f
-                            where f.reporter_id = r.reporter_id and f.status = 'dismissed'));
-end
-$fn$;
 
 -- 편지 줄기 내리기 (운영진) — 둘 다에게서 사라진다. 증거는 신고에 복사돼 있다.
 create or replace function public.admin_remove_dm(p_thread bigint, p_staff uuid, p_report uuid)
@@ -4525,30 +4310,27 @@ alter table private.dm_push_log enable row level security;
 
 create or replace function public.dm_push_payload(p_msg bigint, p_actor uuid)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare m private.dm_msgs%rowtype; t private.dm_threads%rowtype; v_to uuid; v_subs jsonb; v_first boolean;
+declare m private.dm_msgs%rowtype; t private.dm_threads%rowtype; v_to uuid; v_subs jsonb;
 begin
   select * into m from private.dm_msgs where id = p_msg;
-  if not found or m.status <> 'visible' then return jsonb_build_object('skip', 'no_message'); end if;
+  if not found or m.status <> 'visible' or not m.is_letter then return jsonb_build_object('skip', 'no_message'); end if;
   select * into t from private.dm_threads where id = m.thread_id;
-  if (case when m.from_sender then t.sender_id else t.recipient_id end) is distinct from p_actor then
-    return jsonb_build_object('skip', 'not_author');
-  end if;
+  if private.dm_writer(m, t) is distinct from p_actor then return jsonb_build_object('skip', 'not_author'); end if;
   if m.created_at < now() - interval '2 minutes' then return jsonb_build_object('skip', 'stale'); end if;
   if t.status <> 'open' then return jsonb_build_object('skip', 'closed'); end if;
   insert into private.dm_push_log (msg_id) values (p_msg) on conflict do nothing;
   if not found then return jsonb_build_object('skip', 'already'); end if;
-  v_to := case when m.from_sender then t.recipient_id else t.sender_id end;
+  v_to := private.dm_reader(m, t);
   v_subs := private.push_target(v_to);
   if v_subs ? 'skip' then return v_subs; end if;
-  v_first := not exists (select 1 from private.dm_msgs o where o.thread_id = t.id and o.id < m.id);
-  -- ★ 받는 사람 쪽 알림에 보낸 사람 정보 없음 (익명 이름만). 보낸 사람 쪽에는 받는 사람 이름.
+  -- ★ 받는 사람 쪽 알림에 보낸 사람 정보 없음 (성별만)
   return jsonb_build_object(
-    'title', case when not m.from_sender then (select name from private.person(t.recipient_id)) || '님의 답장'
-                  when v_first then '익명의 편지가 도착했어요'
-                  else '익명 · ' || t.sender_alias end,
-    'body',  left(m.body, 100),
-    'url',   '/letters/' || t.id,
-    'tag',   'dm-' || t.id,
+    'title', case when m.from_sender
+                  then '익명의 ' || case m.from_gender when 'm' then '남학생' when 'f' then '여학생' else '학생' end || '에게서 편지가 왔어요'
+                  else (select name from private.person(t.recipient_id)) || '님의 답장이 왔어요' end,
+    'body',  '봉투를 열어 확인해 보세요',
+    'url',   '/letters/m/' || m.id,
+    'tag',   'dm-' || m.id,
     'subs',  v_subs -> 'subs');
 end
 $fn$;
@@ -4624,7 +4406,7 @@ begin
     insert into private.dm_threads (sender_id, recipient_id, sender_alias)
     values (me, p_to, private.letter_alias_candidate()) returning * into t;
   end if;
-  insert into private.dm_msgs (thread_id, from_sender, body, fmt) values (t.id, true, v_body, v_fmt) returning id into mid;
+  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter) values (t.id, true, v_body, v_fmt, true) returning id into mid;
   update private.dm_threads set last_at = now(), sender_read = mid where id = t.id;
   return jsonb_build_object('status', 'ok', 'thread_id', t.id, 'msg_id', mid);
 end
@@ -4632,34 +4414,6 @@ $fn$;
 revoke all on function public.dm_send(uuid, text, jsonb) from public, anon;
 grant execute on function public.dm_send(uuid, text, jsonb) to authenticated;
 
--- 편지 한 줄기 — 말마다 서식(fmt)도 함께 (내려진 말은 본문 · 서식 모두 없음)
-create or replace function public.dm_thread(p_thread bigint)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; last bigint;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  select * into t from private.dm_threads where id = p_thread;
-  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
-  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
-  select max(id) into last from private.dm_msgs where thread_id = p_thread;
-  if role = 'sender' then update private.dm_threads set sender_read = greatest(sender_read, coalesce(last, 0)) where id = p_thread;
-  else update private.dm_threads set recipient_read = greatest(recipient_read, coalesce(last, 0)) where id = p_thread; end if;
-  return jsonb_build_object(
-    'status', 'ok', 'id', t.id, 'role', case when role = 'sender' then 'sent' else 'received' end,
-    'title', case when role = 'sender' then (select name from private.person(t.recipient_id)) else t.sender_alias end,
-    'grade', case when role = 'sender' then (select grade from private.person(t.recipient_id)) end,
-    'thread_status', t.status, 'closed_by', t.closed_by,
-    'wait_reply', t.status = 'open' and private.dm_streak(p_thread, role = 'sender') >= 3,
-    'messages', coalesce((select jsonb_agg(jsonb_build_object(
-                   'id', m.id, 'mine', m.from_sender = (role = 'sender'),
-                   'body', case when m.status = 'visible' then m.body end,
-                   'fmt', case when m.status = 'visible' then m.fmt end,
-                   'removed', m.status = 'removed',
-                   'created_at', m.created_at) order by m.id)
-                 from private.dm_msgs m where m.thread_id = p_thread), '[]'::jsonb),
-    'server_now', now());
-end
-$fn$;
 
 -- ════════════════════════════════════════════════════════════════════
 --  Phase 25 — 이름 편지: 나가면 내 목록에서 지우기 · 가명만
@@ -4687,192 +4441,6 @@ returns void language sql security definer set search_path = '' as $fn$
 $fn$;
 revoke all on function private.dm_leave(bigint, text) from public, anon, authenticated;
 
--- 나가기 (둘 다 가능) — 끝내고 내 목록에서 지운다. 받는 사람이 나가면 그 보낸 사람은 다시 편지를 보낼 수 없다.
-create or replace function public.dm_close(p_thread bigint)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); role text;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  role := private.dm_role(p_thread, me);
-  if role is null then return jsonb_build_object('status', 'not_found'); end if;
-  perform private.dm_leave(p_thread, role);
-  return jsonb_build_object('status', 'ok');
-end
-$fn$;
-
-create or replace function public.dm_block(p_thread bigint)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); t private.dm_threads%rowtype; other uuid; role text;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  select * into t from private.dm_threads where id = p_thread;
-  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
-  if role is null then return jsonb_build_object('status', 'not_found'); end if;
-  other := case when role = 'sender' then t.recipient_id else t.sender_id end;
-  insert into public.blocks (blocker_id, blocked_id) values (me, other) on conflict do nothing;
-  perform private.dm_leave(p_thread, role);
-  return jsonb_build_object('status', 'ok');
-end
-$fn$;
-
-create or replace function public.dm_report(p_thread bigint, p_reason text, p_note text default '')
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; other uuid; v_report uuid;
-        cfg public.app_settings%rowtype; v_n int;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  if p_reason not in ('harassment','sexual','spam','personal_info','hate','impersonation','other') then
-    raise exception 'invalid_reason';
-  end if;
-  select * into t from private.dm_threads where id = p_thread;
-  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
-  if role is null then return jsonb_build_object('status', 'not_found'); end if;
-  other := case when role = 'sender' then t.recipient_id else t.sender_id end;
-  if exists (select 1 from private.letter_reports where target_type = 'dm' and letter_id = p_thread and reporter_id = me and comment_id is null) then
-    return jsonb_build_object('status', 'already');
-  end if;
-  insert into private.letter_reports (target_type, letter_id, comment_id, reporter_id, reported_id, reason, note)
-  values ('dm', p_thread, null, me, other, p_reason, left(coalesce(p_note, ''), 1000))
-  returning id into v_report;
-  perform private.dm_copy_evidence(v_report, p_thread);
-  -- 신고하면 차단 + 끝내고 내 목록에서 지운다 (증거는 위에서 복사해 뒀다)
-  insert into public.blocks (blocker_id, blocked_id) values (me, other) on conflict do nothing;
-  perform private.dm_leave(p_thread, role);
-
-  -- 자동 정지 — 편지 신고와 같이 센다
-  select * into cfg from public.app_settings where id;
-  select count(distinct reporter_id) into v_n from private.letter_reports
-   where reported_id = other and status <> 'dismissed' and created_at > now() - interval '30 days';
-  if v_n >= cfg.letter_auto_suspend_reports then
-    update public.profiles set status = 'suspended' where id = other and status = 'active';
-    if found then
-      insert into private.audit_log (staff_id, action, target_user, report_id, detail)
-      values (null, 'auto_suspend_letters', other, v_report, jsonb_build_object('distinct_reporters', v_n));
-      perform public.close_room(rm.room_id, 'admin') from public.room_members rm where rm.user_id = other and rm.open;
-    end if;
-  end if;
-  return jsonb_build_object('status', 'ok');
-end
-$fn$;
-
--- 받은 · 보낸 편지 목록 — 내가 나간 편지는 빼고. 받는 사람에게 보낸 사람은 가명뿐.
-create or replace function public.dm_inbox()
-returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare me uuid := auth.uid();
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  return jsonb_build_object('threads', coalesce((
-    select jsonb_agg(x order by x.last_at desc) from (
-      select t.id, t.status, t.last_at,
-             case when t.sender_id = me then 'sent' else 'received' end as role,
-             case when t.sender_id = me then (select name from private.person(t.recipient_id)) else t.sender_alias end as title,
-             case when t.sender_id = me then (select grade from private.person(t.recipient_id)) end as grade,
-             (select left(m.body, 80) from private.dm_msgs m where m.thread_id = t.id and m.status = 'visible' order by m.id desc limit 1) as last_body,
-             (select count(*) from private.dm_msgs m
-               where m.thread_id = t.id and m.status = 'visible'
-                 and m.from_sender = (t.sender_id <> me)
-                 and m.id > case when t.sender_id = me then t.sender_read else t.recipient_read end)::int as unread
-        from private.dm_threads t
-       where ((t.sender_id = me and not t.sender_hidden) or (t.recipient_id = me and not t.recipient_hidden))
-         and t.status <> 'removed'
-       order by t.last_at desc limit 100) x), '[]'::jsonb),
-    'server_now', now());
-end
-$fn$;
-
--- 편지 한 줄기 — 내가 나간 편지는 없는 것으로
-create or replace function public.dm_thread(p_thread bigint)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; last bigint;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  select * into t from private.dm_threads where id = p_thread;
-  role := case when t.sender_id = me and not t.sender_hidden then 'sender'
-               when t.recipient_id = me and not t.recipient_hidden then 'recipient' end;
-  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
-  select max(id) into last from private.dm_msgs where thread_id = p_thread;
-  if role = 'sender' then update private.dm_threads set sender_read = greatest(sender_read, coalesce(last, 0)) where id = p_thread;
-  else update private.dm_threads set recipient_read = greatest(recipient_read, coalesce(last, 0)) where id = p_thread; end if;
-  return jsonb_build_object(
-    'status', 'ok', 'id', t.id, 'role', case when role = 'sender' then 'sent' else 'received' end,
-    'title', case when role = 'sender' then (select name from private.person(t.recipient_id)) else t.sender_alias end,
-    'grade', case when role = 'sender' then (select grade from private.person(t.recipient_id)) end,
-    'thread_status', t.status, 'closed_by', t.closed_by,
-    'wait_reply', t.status = 'open' and private.dm_streak(p_thread, role = 'sender') >= 3,
-    'messages', coalesce((select jsonb_agg(jsonb_build_object(
-                   'id', m.id, 'mine', m.from_sender = (role = 'sender'),
-                   'body', case when m.status = 'visible' then m.body end,
-                   'fmt', case when m.status = 'visible' then m.fmt end,
-                   'removed', m.status = 'removed',
-                   'created_at', m.created_at) order by m.id)
-                 from private.dm_msgs m where m.thread_id = p_thread), '[]'::jsonb),
-    'server_now', now());
-end
-$fn$;
-
--- 푸시 — 받는 사람에게는 가명만 제목으로 ("익명 · " 없이). 보낸 사람 쪽에는 받는 사람 이름.
-create or replace function public.dm_push_payload(p_msg bigint, p_actor uuid)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare m private.dm_msgs%rowtype; t private.dm_threads%rowtype; v_to uuid; v_subs jsonb;
-begin
-  select * into m from private.dm_msgs where id = p_msg;
-  if not found or m.status <> 'visible' then return jsonb_build_object('skip', 'no_message'); end if;
-  select * into t from private.dm_threads where id = m.thread_id;
-  if (case when m.from_sender then t.sender_id else t.recipient_id end) is distinct from p_actor then
-    return jsonb_build_object('skip', 'not_author');
-  end if;
-  if m.created_at < now() - interval '2 minutes' then return jsonb_build_object('skip', 'stale'); end if;
-  if t.status <> 'open' then return jsonb_build_object('skip', 'closed'); end if;
-  insert into private.dm_push_log (msg_id) values (p_msg) on conflict do nothing;
-  if not found then return jsonb_build_object('skip', 'already'); end if;
-  v_to := case when m.from_sender then t.recipient_id else t.sender_id end;
-  v_subs := private.push_target(v_to);
-  if v_subs ? 'skip' then return v_subs; end if;
-  -- ★ 받는 사람 쪽 알림에 보낸 사람 정보 없음 (가명만)
-  return jsonb_build_object(
-    'title', case when m.from_sender then t.sender_alias
-                  else (select name from private.person(t.recipient_id)) || '님의 답장' end,
-    'body',  left(m.body, 100),
-    'url',   '/letters/' || t.id,
-    'tag',   'dm-' || t.id,
-    'subs',  v_subs -> 'subs');
-end
-$fn$;
-
--- ════════════════════════════════════════════════════════════════════
---  Phase 26 — 이름 편지: 읽음 표시
---  말마다 시간을 달지 않고 가장 최근 말 아래 한 줄만 — 그 말이 내 것이고 상대가 읽었으면 "읽음".
--- ════════════════════════════════════════════════════════════════════
--- 편지 한 줄기 — 상대가 어디까지 읽었는지(their_read)도 — 가장 최근 말 아래 "읽음" 표시용 (채팅의 their_read_id 와 같다)
-create or replace function public.dm_thread(p_thread bigint)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; last bigint;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  select * into t from private.dm_threads where id = p_thread;
-  role := case when t.sender_id = me and not t.sender_hidden then 'sender'
-               when t.recipient_id = me and not t.recipient_hidden then 'recipient' end;
-  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
-  select max(id) into last from private.dm_msgs where thread_id = p_thread;
-  if role = 'sender' then update private.dm_threads set sender_read = greatest(sender_read, coalesce(last, 0)) where id = p_thread;
-  else update private.dm_threads set recipient_read = greatest(recipient_read, coalesce(last, 0)) where id = p_thread; end if;
-  return jsonb_build_object(
-    'status', 'ok', 'id', t.id, 'role', case when role = 'sender' then 'sent' else 'received' end,
-    'title', case when role = 'sender' then (select name from private.person(t.recipient_id)) else t.sender_alias end,
-    'grade', case when role = 'sender' then (select grade from private.person(t.recipient_id)) end,
-    'thread_status', t.status, 'closed_by', t.closed_by,
-    'their_read', case when role = 'sender' then t.recipient_read else t.sender_read end,
-    'wait_reply', t.status = 'open' and private.dm_streak(p_thread, role = 'sender') >= 3,
-    'messages', coalesce((select jsonb_agg(jsonb_build_object(
-                   'id', m.id, 'mine', m.from_sender = (role = 'sender'),
-                   'body', case when m.status = 'visible' then m.body end,
-                   'fmt', case when m.status = 'visible' then m.fmt end,
-                   'removed', m.status = 'removed',
-                   'created_at', m.created_at) order by m.id)
-                 from private.dm_msgs m where m.thread_id = p_thread), '[]'::jsonb),
-    'server_now', now());
-end
-$fn$;
 
 -- ════════════════════════════════════════════════════════════════════
 --  Phase 27 — 이름 편지: 편지로 주고받거나, 채팅으로 바꾸거나
@@ -4893,80 +4461,6 @@ update private.dm_msgs m set is_letter = true
 update private.dm_threads t set mode = 'chat'
  where t.mode = 'letter' and exists (select 1 from private.dm_msgs m where m.thread_id = t.id and not m.is_letter);
 
--- 새 편지 — 받는 사람과 열린 편지가 있으면 거기에 이어 쓴다 (언제나 편지)
-create or replace function public.dm_send(p_to uuid, p_body text, p_fmt jsonb default null)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); v text; t private.dm_threads%rowtype; b jsonb; p public.profiles%rowtype; mid bigint;
-        v_body text := btrim(coalesce(p_body, ''));
-        v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  v := private.dm_can_write(me);
-  if v is not null then return jsonb_build_object('status', v); end if;
-  if p_to is null or p_to = me then return jsonb_build_object('status', 'not_available'); end if;
-  if char_length(v_body) not between 1 and 1000 then return jsonb_build_object('status', 'bad_text'); end if;
-  -- 서식 위치는 본문 기준이라, 앞뒤 공백이 잘려 나가면 어긋난다 — 클라가 미리 잘라서 보낸다
-  if v_fmt is not null and (v_body <> p_body or not private.letter_fmt_ok(v_fmt, v_body)) then
-    return jsonb_build_object('status', 'bad_text');
-  end if;
-
-  select * into p from public.profiles where id = p_to;
-  if not found or not p.letters_open or not p.onboarded or p.status <> 'active'
-     or coalesce(p.suspended_until > now(), false) or private.blocked_between(me, p_to) then
-    return jsonb_build_object('status', 'not_available');   -- 왜 안 되는지(차단 · 받기 끔)는 알려 주지 않는다
-  end if;
-  -- 받는 사람이 끝낸 적이 있으면 그 사람에게는 다시 못 보낸다
-  if exists (select 1 from private.dm_threads where sender_id = me and recipient_id = p_to and closed_by = 'recipient') then
-    return jsonb_build_object('status', 'not_available');
-  end if;
-
-  select * into t from private.dm_threads where sender_id = me and recipient_id = p_to and status = 'open' for update;
-  if found then
-    if private.dm_streak(t.id, true) >= 3 then return jsonb_build_object('status', 'wait_reply', 'thread_id', t.id); end if;
-    b := private.letter_bucket_take(me, 'comment');
-  else
-    b := private.letter_bucket_take(me, 'letter');       -- 새 편지는 편지 한도 (기본 하루 3통)
-  end if;
-  if not (b->>'ok')::boolean then
-    return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (b->>'retry_after_ms')::int);
-  end if;
-  if t.id is null then
-    insert into private.dm_threads (sender_id, recipient_id, sender_alias)
-    values (me, p_to, private.letter_alias_candidate()) returning * into t;
-  end if;
-  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter) values (t.id, true, v_body, v_fmt, true) returning id into mid;
-  update private.dm_threads set last_at = now(), sender_read = mid where id = t.id;
-  return jsonb_build_object('status', 'ok', 'thread_id', t.id, 'msg_id', mid);
-end
-$fn$;
-
--- 채팅 한 줄 (채팅으로 바뀐 편지에서만)
-create or replace function public.dm_reply(p_thread bigint, p_body text)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); v text; role text; t private.dm_threads%rowtype; b jsonb; mid bigint;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  select * into t from private.dm_threads where id = p_thread for update;
-  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
-  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
-  if t.status <> 'open' then return jsonb_build_object('status', 'closed'); end if;
-  -- 편지로 주고받는 중이면 채팅은 못 쓴다 — 받은 사람이 "채팅하기"(dm_chat)를 골라야 채팅으로 바뀐다
-  if t.mode <> 'chat' then return jsonb_build_object('status', 'letter_mode'); end if;
-  v := private.dm_can_write(me);
-  if v is not null then return jsonb_build_object('status', v); end if;
-  if char_length(btrim(coalesce(p_body, ''))) not between 1 and 1000 then return jsonb_build_object('status', 'bad_text'); end if;
-  if private.blocked_between(t.sender_id, t.recipient_id) then return jsonb_build_object('status', 'closed'); end if;
-  if private.dm_streak(p_thread, role = 'sender') >= 3 then return jsonb_build_object('status', 'wait_reply'); end if;
-  b := private.letter_bucket_take(me, 'comment');
-  if not (b->>'ok')::boolean then
-    return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (b->>'retry_after_ms')::int);
-  end if;
-  insert into private.dm_msgs (thread_id, from_sender, body) values (p_thread, role = 'sender', btrim(p_body)) returning id into mid;
-  if role = 'sender' then update private.dm_threads set last_at = now(), sender_read = mid where id = p_thread;
-  else update private.dm_threads set last_at = now(), recipient_read = mid where id = p_thread; end if;
-  return jsonb_build_object('status', 'ok', 'msg_id', mid);
-end
-$fn$;
 
 -- 편지로 답장 (편지 모드에서만). 서식도 새 편지와 같이 받는다.
 create or replace function public.dm_letter(p_thread bigint, p_body text, p_fmt jsonb default null)
@@ -4980,7 +4474,6 @@ begin
   role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
   if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
   if t.status <> 'open' then return jsonb_build_object('status', 'closed'); end if;
-  if t.mode <> 'letter' then return jsonb_build_object('status', 'chat_mode'); end if;
   v := private.dm_can_write(me);
   if v is not null then return jsonb_build_object('status', v); end if;
   if char_length(v_body) not between 1 and 1000 then return jsonb_build_object('status', 'bad_text'); end if;
@@ -4997,7 +4490,7 @@ begin
   values (p_thread, role = 'sender', v_body, v_fmt, true) returning id into mid;
   if role = 'sender' then update private.dm_threads set last_at = now(), sender_read = mid where id = p_thread;
   else update private.dm_threads set last_at = now(), recipient_read = mid where id = p_thread; end if;
-  return jsonb_build_object('status', 'ok', 'msg_id', mid);
+  return jsonb_build_object('status', 'ok', 'thread_id', p_thread, 'msg_id', mid);
 end
 $fn$;
 
@@ -5021,42 +4514,6 @@ begin
 end
 $fn$;
 
--- 편지 한 줄기 — 모드 · 편지지 To./From. 이름 · 말마다 편지인지
-create or replace function public.dm_thread(p_thread bigint)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); t private.dm_threads%rowtype; role text; last bigint;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  select * into t from private.dm_threads where id = p_thread;
-  role := case when t.sender_id = me and not t.sender_hidden then 'sender'
-               when t.recipient_id = me and not t.recipient_hidden then 'recipient' end;
-  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
-  select max(id) into last from private.dm_msgs where thread_id = p_thread;
-  if role = 'sender' then update private.dm_threads set sender_read = greatest(sender_read, coalesce(last, 0)) where id = p_thread;
-  else update private.dm_threads set recipient_read = greatest(recipient_read, coalesce(last, 0)) where id = p_thread; end if;
-  return jsonb_build_object(
-    'status', 'ok', 'id', t.id, 'role', case when role = 'sender' then 'sent' else 'received' end,
-    'title', case when role = 'sender' then (select name from private.person(t.recipient_id)) else t.sender_alias end,
-    'grade', case when role = 'sender' then (select grade from private.person(t.recipient_id)) end,
-    'thread_status', t.status, 'closed_by', t.closed_by,
-    'their_read', case when role = 'sender' then t.recipient_read else t.sender_read end,
-    'mode', t.mode,
-    -- 편지지의 To. / From. — 보낸 사람 쪽 가명과 받는 사람 이름 (둘 다 이미 서로 아는 값: 보낸 사람은 받는 사람 이름을 골랐고,
-    -- 받는 사람은 가명을 본다. 자기 가명 · 자기 이름을 자기에게 보여 줄 뿐 새로 드러나는 것은 없다)
-    'alias', t.sender_alias,
-    'recipient_name', (select name from private.person(t.recipient_id)),
-    'wait_reply', t.status = 'open' and private.dm_streak(p_thread, role = 'sender') >= 3,
-    'messages', coalesce((select jsonb_agg(jsonb_build_object(
-                   'id', m.id, 'mine', m.from_sender = (role = 'sender'),
-                   'body', case when m.status = 'visible' then m.body end,
-                   'fmt', case when m.status = 'visible' then m.fmt end,
-                   'removed', m.status = 'removed',
-                   'letter', m.is_letter,
-                   'created_at', m.created_at) order by m.id)
-                 from private.dm_msgs m where m.thread_id = p_thread), '[]'::jsonb),
-    'server_now', now());
-end
-$fn$;
 
 do $do$
 declare f text;
@@ -5110,91 +4567,7 @@ begin
 end
 $fn$;
 
--- 신고 증거에는 지운 말의 원문을 ("[삭제함] …")
-create or replace function public.report_partner(p_room uuid, p_reason text, p_note text default '')
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare
-  me       uuid := auth.uid();
-  cfg      public.app_settings%rowtype;
-  s        smallint;
-  v_other  uuid;
-  v_report uuid;
-  v_n      int;
-begin
-  s := public.my_seat(p_room);
-  if s is null then raise exception 'not_member'; end if;
-  if p_reason not in ('harassment','sexual','spam','personal_info','hate','impersonation','other') then
-    raise exception 'invalid_reason';
-  end if;
-  select * into cfg from public.app_settings where id;
-  select user_id into v_other from public.room_members where room_id = p_room and seat <> s;
 
-  if exists (select 1 from private.reports where room_id = p_room and reporter_id = me) then
-    return jsonb_build_object('status', 'already', 'snap', public.room_snapshot(p_room));
-  end if;
-
-  insert into private.reports (room_id, reporter_id, reported_id, reason, note)
-  values (p_room, me, v_other, p_reason, left(coalesce(p_note, ''), 1000))
-  returning id into v_report;
-
-  insert into private.report_evidence (report_id, ord, sender, body, sent_at)
-  select v_report, row_number() over (order by m.id),
-         case when m.sender_seat = 0 then 0 when m.sender_seat = s then 1 else 2 end,
-         case when d.body is not null then '[삭제함] ' || d.body else m.body end, m.created_at
-    from public.messages m left join private.deleted_messages d on d.message_id = m.id
-   where m.room_id = p_room;
-
-  insert into public.blocks (blocker_id, blocked_id) values (me, v_other) on conflict do nothing;
-  perform public.close_room(p_room, 'reported');
-
-  select count(distinct reporter_id) into v_n
-    from private.reports
-   where reported_id = v_other and status <> 'dismissed' and created_at > now() - interval '30 days';
-  if v_n >= cfg.auto_suspend_reports then
-    update public.profiles set status = 'suspended' where id = v_other and status = 'active';
-    if found then
-      insert into private.audit_log (staff_id, action, target_user, report_id, detail)
-      values (null, 'auto_suspend', v_other, v_report, jsonb_build_object('distinct_reporters', v_n));
-      perform public.close_room(rm.room_id, 'admin')
-         from public.room_members rm where rm.user_id = v_other and rm.open;
-    end if;
-  end if;
-
-  return jsonb_build_object('status', 'ok', 'snap', public.room_snapshot(p_room));
-end
-$fn$;
-
-create or replace function private.auto_report_message(p_msg bigint, p_reason text, p_why text)
-returns void language plpgsql security definer set search_path = public, private as $fn$
-declare m public.messages%rowtype; v_sender uuid; v_report uuid; v_line text; v_body text;
-begin
-  select * into m from public.messages where id = p_msg;
-  if not found then return; end if;
-  select user_id into v_sender from public.room_members where room_id = m.room_id and seat = m.sender_seat;
-  if v_sender is null then return; end if;
-  v_body := coalesce((select body from private.deleted_messages where message_id = m.id), m.body);
-  v_line := '[자동 감지] "' || left(v_body, 60) || '" — ' || left(coalesce(p_why, ''), 200);
-
-  select id into v_report from private.reports
-   where room_id = m.room_id and source = 'auto' and reported_id = v_sender and status in ('open','reviewing')
-   limit 1;
-  if v_report is null then
-    insert into private.reports (room_id, reporter_id, reported_id, reason, note, source)
-    values (m.room_id, null, v_sender, p_reason, v_line, 'auto')
-    returning id into v_report;
-  else
-    update private.reports set note = left(note || E'\n' || v_line, 1000) where id = v_report;
-    delete from private.report_evidence where report_id = v_report;
-  end if;
-
-  insert into private.report_evidence (report_id, ord, sender, body, sent_at)
-  select v_report, row_number() over (order by x.id),
-         case when x.sender_seat = 0 then 0 when x.sender_seat = m.sender_seat then 2 else 1 end,
-         case when d.body is not null then '[삭제함] ' || d.body else x.body end, x.created_at
-    from public.messages x left join private.deleted_messages d on d.message_id = x.id
-   where x.room_id = m.room_id and x.id <= m.id;
-end
-$fn$;
 revoke all on function private.auto_report_message(bigint, text, text) from public, anon, authenticated;
 
 -- ── 2) 둘 다 볼 때만 흐르는 시간 ──
@@ -5214,7 +4587,7 @@ returns void language plpgsql security definer set search_path = public, private
 declare r public.rooms%rowtype; v_n int; v_stop timestamptz; v_left interval;
 begin
   select * into r from public.rooms where id = p_room for update;
-  if not found or r.status <> 'active' then return; end if;
+  if not found or r.status <> 'active' or r.pinned then return; end if;
   select count(*) filter (where viewing_until > now()), min(coalesce(viewing_until, now() - interval '90 seconds'))
     into v_n, v_stop
     from public.room_members where room_id = p_room;
@@ -5247,51 +4620,6 @@ begin
 end
 $fn$;
 
--- 입장 확인 — 화면을 연 것이므로 "보고 있음"도 같이
-create or replace function public.ack_room(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare
-  r   public.rooms%rowtype;
-  cfg public.app_settings%rowtype;
-  v_joined int;
-begin
-  if public.my_seat(p_room) is null then raise exception 'not_member'; end if;
-  select * into cfg from public.app_settings where id;
-  select * into r from public.rooms where id = p_room for update;
-
-  if r.status = 'pending' and now() >= r.expires_at then
-    perform public.close_room(p_room, 'no_show');
-    return public.room_snapshot(p_room);
-  end if;
-
-  update public.room_members set joined_at = coalesce(joined_at, now()), viewing_until = now() + interval '25 seconds'
-   where room_id = p_room and user_id = auth.uid();
-
-  if r.status = 'pending' then
-    select count(*) into v_joined from public.room_members
-     where room_id = p_room and joined_at is not null;
-    if v_joined = 2 then
-      update public.rooms
-         set status = 'active', armed_at = now(),
-             expires_at = now() + make_interval(mins => cfg.room_minutes)
-       where id = p_room;
-      insert into public.pair_history (user_lo, user_hi)
-      select least(a.user_id, b.user_id), greatest(a.user_id, b.user_id)
-        from public.room_members a join public.room_members b
-          on a.room_id = b.room_id and a.seat = 1 and b.seat = 2
-       where a.room_id = p_room
-      on conflict (user_lo, user_hi) do update
-         set last_matched_at = now(), times = public.pair_history.times + 1;
-      insert into public.messages (room_id, sender_seat, body, client_msg_id)
-      values (p_room, 0,
-              cfg.room_minutes || '분 동안 이야기할 수 있어요. 둘 다 대화를 보고 있을 때만 시간이 흘러요.',
-              gen_random_uuid());
-    end if;
-  end if;
-  perform private.room_clock(p_room);
-  return public.room_snapshot(p_room);
-end
-$fn$;
 
 -- ── 3) 연장 힌트 ──
 create table if not exists private.room_hints (
@@ -5306,245 +4634,6 @@ alter table private.room_hints enable row level security;
 -- 연장 1번째 → 학년, 2번째 → 성씨, 3번째 → 동아리, 4번째 → 디플로마
 create or replace function private.hint_kind(p_n int)
 returns text language sql immutable set search_path = '' as $fn$
-  select (array['grade', 'surname', 'club', 'diploma'])[p_n];
-$fn$;
-create or replace function private.hint_label(p_kind text)
-returns text language sql immutable set search_path = '' as $fn$
-  select case p_kind when 'grade' then '학년' when 'surname' then '성씨' when 'club' then '동아리' when 'diploma' then '디플로마' end;
-$fn$;
-
--- 한 사람의 공개된 힌트들 (연장한 만큼)
-create or replace function private.room_hints_of(p_room uuid, p_seat smallint, p_count int)
-returns jsonb language plpgsql stable security definer set search_path = public, private as $fn$
-declare v_user uuid; v_name text; v_grade smallint; k text; v text; out jsonb := '[]'::jsonb;
-begin
-  select user_id into v_user from public.room_members where room_id = p_room and seat = p_seat;
-  select name, grade into v_name, v_grade from private.person(v_user);
-  for i in 1 .. least(greatest(p_count, 0), 4) loop
-    k := private.hint_kind(i);
-    v := case k
-           when 'grade' then case when v_grade is not null then v_grade || '학년' end
-           when 'surname' then case when v_name is not null then left(v_name, 1) || '씨' end
-           else (select h.value from private.room_hints h where h.room_id = p_room and h.seat = p_seat and h.kind = k)
-         end;
-    out := out || jsonb_build_array(jsonb_build_object('kind', k, 'label', private.hint_label(k), 'value', coalesce(v, '비공개')));
-  end loop;
-  return out;
-end
-$fn$;
-revoke all on function private.room_hints_of(uuid, smallint, int) from public, anon, authenticated;
-
--- 방 스냅샷 — 멈춤 · 힌트까지
-create or replace function public.room_snapshot(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare
-  r   public.rooms%rowtype;
-  cfg public.app_settings%rowtype;
-  s   smallint;
-  v_my boolean; v_their boolean; v_joined boolean; v_online boolean; v_next text;
-begin
-  s := public.my_seat(p_room);
-  if s is null then raise exception 'not_member'; end if;
-  select * into r   from public.rooms where id = p_room;
-  select * into cfg from public.app_settings where id;
-
-  select agree into v_my    from public.extension_votes where room_id = p_room and round = r.round and seat = s;
-  select agree into v_their from public.extension_votes where room_id = p_room and round = r.round and seat <> s;
-  select joined_at is not null into v_joined
-    from public.room_members where room_id = p_room and seat <> s;
-  select coalesce(up.online_until > now(), false) into v_online
-    from public.room_members rm join public.user_presence up on up.user_id = rm.user_id
-   where rm.room_id = p_room and rm.seat <> s;
-  v_next := private.hint_kind(r.round);
-
-  return jsonb_build_object(
-    'room_id',         r.id,
-    'status',          r.status,
-    'my_seat',         s,
-    'my_alias',        case when s = 1 then r.alias1 else r.alias2 end,
-    'partner_alias',   case when s = 1 then r.alias2 else r.alias1 end,
-    'expires_at',      private.room_deadline(r.expires_at, r.paused_left),
-    'paused',          r.paused_left is not null,
-    'round',           r.round,
-    'max_rounds',      cfg.max_rounds,
-    'extend_minutes',  cfg.extend_minutes,
-    'vote_window_sec', cfg.vote_window_sec,
-    'my_vote',         v_my,
-    'partner_vote',    v_their,
-    'partner_joined',  coalesce(v_joined, false),
-    'partner_online',  coalesce(v_online, false),
-    'their_read_id',   case when s = 1 then r.read2 else r.read1 end,
-    'close_reason',    r.close_reason,
-    'partner_hints',   private.room_hints_of(p_room, (3 - s)::smallint, r.round - 1),
-    'my_hints',        private.room_hints_of(p_room, s, r.round - 1),
-    'next_hint',       case when v_next is not null then jsonb_build_object(
-                         'kind', v_next, 'label', private.hint_label(v_next), 'typed', v_next in ('club', 'diploma')) end,
-    'server_now',      now());
-end
-$fn$;
-
--- 연장 투표 — 동아리 · 디플로마 차례면 "연장"을 누를 때 내 값을 같이 (p_hint)
-drop function if exists public.vote_extension(uuid, boolean);
-create or replace function public.vote_extension(p_room uuid, p_agree boolean, p_hint text default null)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare
-  r   public.rooms%rowtype;
-  cfg public.app_settings%rowtype;
-  s   smallint;
-  v_yes int; v_no int; v_kind text; v_hint text;
-begin
-  s := public.my_seat(p_room);
-  if s is null then raise exception 'not_member'; end if;
-  select * into cfg from public.app_settings where id;
-  select * into r from public.rooms where id = p_room for update;
-
-  if r.status <> 'active' then
-    return jsonb_build_object('result', 'closed', 'snap', public.room_snapshot(p_room));
-  end if;
-  if now() >= r.expires_at then
-    perform public.close_room(p_room, 'expired');
-    return jsonb_build_object('result', 'expired', 'snap', public.room_snapshot(p_room));
-  end if;
-  if now() < r.expires_at - make_interval(secs => cfg.vote_window_sec) then   -- 멈춰 있으면(infinity) 여기서 막힌다
-    return jsonb_build_object('result', 'too_early', 'snap', public.room_snapshot(p_room));
-  end if;
-  if cfg.max_rounds > 0 and r.round >= cfg.max_rounds then
-    return jsonb_build_object('result', 'max_rounds', 'snap', public.room_snapshot(p_room));
-  end if;
-
-  v_kind := private.hint_kind(r.round);
-  if p_agree and v_kind in ('club', 'diploma') then
-    v_hint := btrim(coalesce(p_hint, ''));
-    if char_length(v_hint) not between 1 and 20 or private.rule_violation(v_hint) is not null then
-      return jsonb_build_object('result', 'need_hint', 'snap', public.room_snapshot(p_room));
-    end if;
-    insert into private.room_hints (room_id, seat, kind, value) values (p_room, s, v_kind, v_hint)
-    on conflict (room_id, seat, kind) do update set value = excluded.value;
-  end if;
-
-  insert into public.extension_votes (room_id, round, seat, agree)
-  values (p_room, r.round, s, p_agree)
-  on conflict (room_id, round, seat)
-    do update set agree = excluded.agree, created_at = now();
-
-  select count(*) filter (where agree), count(*) filter (where not agree)
-    into v_yes, v_no
-    from public.extension_votes where room_id = p_room and round = r.round;
-
-  if v_no > 0 then
-    perform public.close_room(p_room, 'declined');
-    return jsonb_build_object('result', 'declined', 'snap', public.room_snapshot(p_room));
-  elsif v_yes = 2 then
-    update public.rooms
-       set expires_at = r.expires_at + make_interval(mins => cfg.extend_minutes),
-           round      = r.round + 1
-     where id = p_room;
-    insert into public.messages (room_id, sender_seat, body, client_msg_id)
-    values (p_room, 0, cfg.extend_minutes || '분 연장됨.'
-                       || case when v_kind is not null then ' 서로의 ' || private.hint_label(v_kind) || ' 공개!' else '' end,
-            gen_random_uuid());
-    return jsonb_build_object('result', 'extended', 'snap', public.room_snapshot(p_room));
-  end if;
-  return jsonb_build_object('result', 'waiting', 'snap', public.room_snapshot(p_room));
-end
-$fn$;
-
--- 대화 목록 — 멈춘 방은 남은 시간 그대로 + paused
-create or replace function public.my_rooms()
-returns jsonb language sql security definer set search_path = public, private stable as $fn$
-  select jsonb_build_object(
-    'rooms', coalesce(jsonb_agg(to_jsonb(x) - 'sort_at' order by x.sort_at desc), '[]'::jsonb),
-    'server_now', now())
-  from (
-    select r.id as room_id, r.status, rm.seat as my_seat,
-           case when rm.seat = 1 then r.alias2 else r.alias1 end as partner_alias,
-           private.room_deadline(r.expires_at, r.paused_left) as expires_at, r.round,
-           r.paused_left is not null as paused,
-           rm.joined_at is not null as joined,
-           coalesce(up.online_until > now(), false) as partner_online,
-           lm.body as last_body, lm.sender_seat as last_seat, lm.created_at as last_at,
-           (select count(*) from public.messages m
-             where m.room_id = r.id and m.sender_seat not in (0, rm.seat)
-               and m.id > coalesce(case when rm.seat = 1 then r.read1 else r.read2 end, 0))::int as unread,
-           coalesce(lm.created_at, r.created_at) as sort_at
-      from public.room_members rm
-      join public.rooms r on r.id = rm.room_id
-      join public.room_members o on o.room_id = r.id and o.seat <> rm.seat
-      left join public.user_presence up on up.user_id = o.user_id
-      left join lateral (select body, sender_seat, created_at from public.messages
-                          where room_id = r.id order by id desc limit 1) lm on true
-     where rm.user_id = auth.uid() and rm.open
-       and r.status <> 'closed' and now() < r.expires_at
-  ) x;
-$fn$;
-
--- 스위퍼 — 보던 사람이 떠난 방은 멈추고, 하루 넘게 멈춰 있던 방은 닫는다. 만료는 전과 같이.
-create or replace function public.sweep_rooms()
-returns int language plpgsql security definer set search_path = public, private as $fn$
-declare n int := 0; v record;
-begin
-  for v in select r.id from public.rooms r
-            where r.status = 'active' and r.paused_left is null and r.expires_at > now()
-              and exists (select 1 from public.room_members m
-                           where m.room_id = r.id and (m.viewing_until is null or m.viewing_until <= now()))
-            limit 500
-  loop
-    perform private.room_clock(v.id);
-  end loop;
-  for v in select id from public.rooms
-            where status = 'active' and paused_since < now() - interval '1 day'
-            limit 500 for update skip locked
-  loop
-    perform public.close_room(v.id, 'expired');
-    n := n + 1;
-  end loop;
-  for v in select id, status from public.rooms
-            where status <> 'closed' and now() >= expires_at
-            order by expires_at limit 500
-            for update skip locked
-  loop
-    perform public.close_room(v.id, case when v.status = 'pending' then 'no_show' else 'expired' end);
-    n := n + 1;
-  end loop;
-  return n;
-end
-$fn$;
-revoke all on function public.sweep_rooms() from public, anon, authenticated;
-
-do $do$
-declare f text;
-begin
-  foreach f in array array['delete_message(bigint)', 'room_view(uuid, boolean)', 'vote_extension(uuid, boolean, text)']
-  loop
-    execute format('revoke all on function public.%s from public, anon', f);
-    execute format('grant execute on function public.%s to authenticated', f);
-  end loop;
-end
-$do$;
-
--- ════════════════════════════════════════════════════════════════════
---  Phase 29 — 랜덤 채팅: 연장 공개 순서 · 공통 질문 · 대화 고정
---
---  1) 연장할 때마다 공개하는 것 (성씨는 뺐다):
---       10분 째 학년 → 20분 공통 질문 → 30분 디플로마 → 40분 공통 질문 → 50분 동아리
---     공통 질문은 방마다 정해진 질문 하나(둘에게 같은 질문)에 "연장"을 누르면서 답을 적고, 연장되면 서로의 답이 공개된다.
---     디플로마 · 동아리 · 공통 질문 답은 직접 적는다 (private.room_hints). 학년은 학교 명단에서.
---  2) 동아리까지 연장한 뒤 10분이 더 지나면(60분 째) 연장 대신 "이 채팅을 고정하시겠습니까?".
---     둘 다 고정하면 rooms.pinned — 시간 제한이 없어지고(expires_at = infinity, 멈춤도 없음) 대화 목록 맨 위에 붙는다.
---     방이 닫히지 않으니 24시간 삭제(simbun-purge)에도 걸리지 않는다. 한쪽이라도 안 하면 연장 거절과 같이 끝난다.
---     고정한 대화는 동시 대화 개수(max_open_rooms)에 세지 않는다 — 새 대화를 찾는 걸 막지 않게.
---     고정한 대화도 나가기 · 신고 · 차단하면 닫히고, 그때부터는 보통 대화처럼 지워진다.
--- ════════════════════════════════════════════════════════════════════
-
--- ── 1) 공개 순서 · 공통 질문 ──
-alter table private.room_hints drop constraint if exists room_hints_kind_check;
-alter table private.room_hints add  constraint room_hints_kind_check check (kind in ('club', 'diploma', 'q1', 'q2'));
-alter table private.room_hints drop constraint if exists room_hints_value_check;
-alter table private.room_hints add  constraint room_hints_value_check check (char_length(value) between 1 and 30);
-
--- 연장 1번째 → 학년, 2번째 → 공통 질문, 3번째 → 디플로마, 4번째 → 공통 질문, 5번째 → 동아리. 6번째 차례는 고정 여부.
-create or replace function private.hint_kind(p_n int)
-returns text language sql immutable set search_path = '' as $fn$
   select (array['grade', 'q1', 'diploma', 'q2', 'club'])[p_n];
 $fn$;
 create or replace function private.hint_label(p_kind text)
@@ -5552,36 +4641,6 @@ returns text language sql immutable set search_path = '' as $fn$
   select case p_kind when 'grade' then '학년' when 'surname' then '성씨' when 'club' then '동아리'
                      when 'diploma' then '디플로마' when 'q1' then '공통 질문' when 'q2' then '공통 질문' end;
 $fn$;
--- 연장할 때 직접 적는 것
-create or replace function private.hint_typed(p_kind text)
-returns boolean language sql immutable set search_path = '' as $fn$
-  select coalesce(p_kind in ('club', 'diploma', 'q1', 'q2'), false);
-$fn$;
-
--- 방의 공통 질문 — 둘에게 같은 질문, 방마다 다르게, 두 번째는 첫 번째와 겹치지 않게.
--- 신상(학년 · 반 · 이름 · SNS)을 묻지 않는 가벼운 것만 (첫마디 도우미 Starters 와 같은 약속)
-create or replace function private.room_question(p_room uuid, p_kind text)
-returns text language plpgsql immutable set search_path = '' as $fn$
-declare
-  pool text[] := array['요즘 빠져 있는 것', '제일 좋아하는 급식 메뉴', '주말에 주로 하는 일', '요즘 자주 듣는 노래',
-                       '가 보고 싶은 여행지', '스트레스 푸는 방법', '인생 영화나 드라마', '시험 끝나면 하고 싶은 일',
-                       '좋아하는 계절', '요즘 소소한 행복'];
-  n int := array_length(pool, 1);
-  h bigint := abs(hashtext(p_room::text)::bigint);
-  i int := (h % n)::int;
-begin
-  if p_kind = 'q2' then i := ((i + 1 + (h / n) % (n - 1)) % n)::int; end if;
-  return pool[i + 1];
-end
-$fn$;
-revoke all on function private.room_question(uuid, text) from public, anon, authenticated;
-
--- 화면에 보일 이름 — 공통 질문이면 그 방의 질문 자체
-create or replace function private.hint_label_in(p_room uuid, p_kind text)
-returns text language sql immutable set search_path = '' as $fn$
-  select case when p_kind in ('q1', 'q2') then private.room_question(p_room, p_kind) else private.hint_label(p_kind) end;
-$fn$;
-revoke all on function private.hint_label_in(uuid, text) from public, anon, authenticated;
 
 -- 한 사람의 공개된 힌트들 (연장한 만큼)
 create or replace function private.room_hints_of(p_room uuid, p_seat smallint, p_count int)
@@ -5603,95 +4662,9 @@ end
 $fn$;
 revoke all on function private.room_hints_of(uuid, smallint, int) from public, anon, authenticated;
 
--- ── 2) 대화 고정 ──
-alter table public.rooms add column if not exists pinned    boolean not null default false;
-alter table public.rooms add column if not exists pinned_at timestamptz;
 
--- 고정 여부를 묻는 차례 — 힌트를 다 공개한 뒤의 다음 라운드
-create or replace function private.pin_round(r public.rooms)
-returns boolean language sql immutable set search_path = '' as $fn$
-  select not r.pinned and r.round > 1 and private.hint_kind(r.round) is null;
-$fn$;
-revoke all on function private.pin_round(public.rooms) from public, anon, authenticated;
-
--- 방 시계 — 고정한 대화는 시간이 없다
-create or replace function private.room_clock(p_room uuid)
-returns void language plpgsql security definer set search_path = public, private as $fn$
-declare r public.rooms%rowtype; v_n int; v_stop timestamptz; v_left interval;
-begin
-  select * into r from public.rooms where id = p_room for update;
-  if not found or r.status <> 'active' or r.pinned then return; end if;
-  select count(*) filter (where viewing_until > now()), min(coalesce(viewing_until, now() - interval '90 seconds'))
-    into v_n, v_stop
-    from public.room_members where room_id = p_room;
-  if v_n = 2 then
-    if r.paused_left is not null then
-      update public.rooms set expires_at = now() + r.paused_left, paused_left = null, paused_since = null where id = p_room;
-    end if;
-  elsif r.paused_left is null and r.expires_at > now() then
-    -- 먼저 떠난 쪽이 마지막으로 보고 있던 때부터 멈춘다 (앱이 갑자기 꺼져도 90초 넘게는 흐르지 않게)
-    v_stop := least(now(), greatest(v_stop, now() - interval '90 seconds', r.armed_at));
-    v_left := r.expires_at - v_stop;
-    if v_left > interval '0' then
-      update public.rooms set paused_left = v_left, paused_since = now(), expires_at = 'infinity' where id = p_room;
-    end if;
-  end if;
-end
-$fn$;
-revoke all on function private.room_clock(uuid) from public, anon, authenticated;
-
--- 방 스냅샷 — 고정 · 고정을 묻는 차례까지
-create or replace function public.room_snapshot(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare
-  r   public.rooms%rowtype;
-  cfg public.app_settings%rowtype;
-  s   smallint;
-  v_my boolean; v_their boolean; v_joined boolean; v_online boolean; v_next text;
-begin
-  s := public.my_seat(p_room);
-  if s is null then raise exception 'not_member'; end if;
-  select * into r   from public.rooms where id = p_room;
-  select * into cfg from public.app_settings where id;
-
-  select agree into v_my    from public.extension_votes where room_id = p_room and round = r.round and seat = s;
-  select agree into v_their from public.extension_votes where room_id = p_room and round = r.round and seat <> s;
-  select joined_at is not null into v_joined
-    from public.room_members where room_id = p_room and seat <> s;
-  select coalesce(up.online_until > now(), false) into v_online
-    from public.room_members rm join public.user_presence up on up.user_id = rm.user_id
-   where rm.room_id = p_room and rm.seat <> s;
-  v_next := case when not r.pinned then private.hint_kind(r.round) end;
-
-  return jsonb_build_object(
-    'room_id',         r.id,
-    'status',          r.status,
-    'my_seat',         s,
-    'my_alias',        case when s = 1 then r.alias1 else r.alias2 end,
-    'partner_alias',   case when s = 1 then r.alias2 else r.alias1 end,
-    'expires_at',      private.room_deadline(r.expires_at, r.paused_left),
-    'paused',          r.paused_left is not null,
-    'pinned',          r.pinned,
-    'pin_next',        private.pin_round(r),
-    'round',           r.round,
-    'max_rounds',      cfg.max_rounds,
-    'extend_minutes',  cfg.extend_minutes,
-    'vote_window_sec', cfg.vote_window_sec,
-    'my_vote',         v_my,
-    'partner_vote',    v_their,
-    'partner_joined',  coalesce(v_joined, false),
-    'partner_online',  coalesce(v_online, false),
-    'their_read_id',   case when s = 1 then r.read2 else r.read1 end,
-    'close_reason',    r.close_reason,
-    'partner_hints',   private.room_hints_of(p_room, (3 - s)::smallint, r.round - 1),
-    'my_hints',        private.room_hints_of(p_room, s, r.round - 1),
-    'next_hint',       case when v_next is not null then jsonb_build_object(
-                         'kind', v_next, 'label', private.hint_label_in(p_room, v_next), 'typed', private.hint_typed(v_next)) end,
-    'server_now',      now());
-end
-$fn$;
-
--- 연장 투표 — 적는 차례면 "연장"을 누를 때 내 값을 같이 (p_hint). 고정을 묻는 차례면 둘 다 동의 = 고정
+-- 연장 투표 — 동아리 · 디플로마 차례면 "연장"을 누를 때 내 값을 같이 (p_hint)
+drop function if exists public.vote_extension(uuid, boolean);
 create or replace function public.vote_extension(p_room uuid, p_agree boolean, p_hint text default null)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare
@@ -5772,67 +4745,90 @@ begin
 end
 $fn$;
 
--- 대화 목록 — 고정한 대화가 맨 위
-create or replace function public.my_rooms()
-returns jsonb language sql security definer set search_path = public, private stable as $fn$
-  select jsonb_build_object(
-    'rooms', coalesce(jsonb_agg(to_jsonb(x) - 'sort_at' order by x.pinned desc, x.sort_at desc), '[]'::jsonb),
-    'server_now', now())
-  from (
-    select r.id as room_id, r.status, rm.seat as my_seat,
-           case when rm.seat = 1 then r.alias2 else r.alias1 end as partner_alias,
-           private.room_deadline(r.expires_at, r.paused_left) as expires_at, r.round,
-           r.paused_left is not null as paused,
-           r.pinned,
-           rm.joined_at is not null as joined,
-           coalesce(up.online_until > now(), false) as partner_online,
-           lm.body as last_body, lm.sender_seat as last_seat, lm.created_at as last_at,
-           (select count(*) from public.messages m
-             where m.room_id = r.id and m.sender_seat not in (0, rm.seat)
-               and m.id > coalesce(case when rm.seat = 1 then r.read1 else r.read2 end, 0))::int as unread,
-           coalesce(lm.created_at, r.created_at) as sort_at
-      from public.room_members rm
-      join public.rooms r on r.id = rm.room_id
-      join public.room_members o on o.room_id = r.id and o.seat <> rm.seat
-      left join public.user_presence up on up.user_id = o.user_id
-      left join lateral (select body, sender_seat, created_at from public.messages
-                          where room_id = r.id order by id desc limit 1) lm on true
-     where rm.user_id = auth.uid() and rm.open
-       and r.status <> 'closed' and now() < r.expires_at
-  ) x;
+
+revoke all on function public.sweep_rooms() from public, anon, authenticated;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['delete_message(bigint)', 'room_view(uuid, boolean)', 'vote_extension(uuid, boolean, text)']
+  loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end
+$do$;
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 29 — 랜덤 채팅: 연장 공개 순서 · 공통 질문 · 대화 고정
+--
+--  1) 연장할 때마다 공개하는 것 (성씨는 뺐다):
+--       10분 째 학년 → 20분 공통 질문 → 30분 디플로마 → 40분 공통 질문 → 50분 동아리
+--     공통 질문은 방마다 정해진 질문 하나(둘에게 같은 질문)에 "연장"을 누르면서 답을 적고, 연장되면 서로의 답이 공개된다.
+--     디플로마 · 동아리 · 공통 질문 답은 직접 적는다 (private.room_hints). 학년은 학교 명단에서.
+--  2) 동아리까지 연장한 뒤 10분이 더 지나면(60분 째) 연장 대신 "이 채팅을 고정하시겠습니까?".
+--     둘 다 고정하면 rooms.pinned — 시간 제한이 없어지고(expires_at = infinity, 멈춤도 없음) 대화 목록 맨 위에 붙는다.
+--     방이 닫히지 않으니 24시간 삭제(simbun-purge)에도 걸리지 않는다. 한쪽이라도 안 하면 연장 거절과 같이 끝난다.
+--     고정한 대화는 동시 대화 개수(max_open_rooms)에 세지 않는다 — 새 대화를 찾는 걸 막지 않게.
+--     고정한 대화도 나가기 · 신고 · 차단하면 닫히고, 그때부터는 보통 대화처럼 지워진다.
+-- ════════════════════════════════════════════════════════════════════
+
+-- ── 1) 공개 순서 · 공통 질문 ──
+alter table private.room_hints drop constraint if exists room_hints_kind_check;
+alter table private.room_hints add  constraint room_hints_kind_check check (kind in ('club', 'diploma', 'q1', 'q2'));
+alter table private.room_hints drop constraint if exists room_hints_value_check;
+alter table private.room_hints add  constraint room_hints_value_check check (char_length(value) between 1 and 30);
+
+
+-- 연장할 때 직접 적는 것
+create or replace function private.hint_typed(p_kind text)
+returns boolean language sql immutable set search_path = '' as $fn$
+  select coalesce(p_kind in ('club', 'diploma', 'q1', 'q2'), false);
 $fn$;
 
--- 스위퍼 — 고정한 대화는 멈추지도 닫히지도 않는다
-create or replace function public.sweep_rooms()
-returns int language plpgsql security definer set search_path = public, private as $fn$
-declare n int := 0; v record;
+-- 방의 공통 질문 — 둘에게 같은 질문, 방마다 다르게, 두 번째는 첫 번째와 겹치지 않게.
+-- 신상(학년 · 반 · 이름 · SNS)을 묻지 않는 가벼운 것만 (첫마디 도우미 Starters 와 같은 약속)
+create or replace function private.room_question(p_room uuid, p_kind text)
+returns text language plpgsql immutable set search_path = '' as $fn$
+declare
+  pool text[] := array['요즘 빠져 있는 것', '제일 좋아하는 급식 메뉴', '주말에 주로 하는 일', '요즘 자주 듣는 노래',
+                       '가 보고 싶은 여행지', '스트레스 푸는 방법', '인생 영화나 드라마', '시험 끝나면 하고 싶은 일',
+                       '좋아하는 계절', '요즘 소소한 행복'];
+  n int := array_length(pool, 1);
+  h bigint := abs(hashtext(p_room::text)::bigint);
+  i int := (h % n)::int;
 begin
-  for v in select r.id from public.rooms r
-            where r.status = 'active' and not r.pinned and r.paused_left is null and r.expires_at > now()
-              and exists (select 1 from public.room_members m
-                           where m.room_id = r.id and (m.viewing_until is null or m.viewing_until <= now()))
-            limit 500
-  loop
-    perform private.room_clock(v.id);
-  end loop;
-  for v in select id from public.rooms
-            where status = 'active' and not pinned and paused_since < now() - interval '1 day'
-            limit 500 for update skip locked
-  loop
-    perform public.close_room(v.id, 'expired');
-    n := n + 1;
-  end loop;
-  for v in select id, status from public.rooms
-            where status <> 'closed' and now() >= expires_at
-            order by expires_at limit 500
-            for update skip locked
-  loop
-    perform public.close_room(v.id, case when v.status = 'pending' then 'no_show' else 'expired' end);
-    n := n + 1;
-  end loop;
-  return n;
+  if p_kind = 'q2' then i := ((i + 1 + (h / n) % (n - 1)) % n)::int; end if;
+  return pool[i + 1];
 end
 $fn$;
+revoke all on function private.room_question(uuid, text) from public, anon, authenticated;
+
+-- 화면에 보일 이름 — 공통 질문이면 그 방의 질문 자체
+create or replace function private.hint_label_in(p_room uuid, p_kind text)
+returns text language sql immutable set search_path = '' as $fn$
+  select case when p_kind in ('q1', 'q2') then private.room_question(p_room, p_kind) else private.hint_label(p_kind) end;
+$fn$;
+revoke all on function private.hint_label_in(uuid, text) from public, anon, authenticated;
+
+
+revoke all on function private.room_hints_of(uuid, smallint, int) from public, anon, authenticated;
+
+-- ── 2) 대화 고정 ──
+alter table public.rooms add column if not exists pinned    boolean not null default false;
+alter table public.rooms add column if not exists pinned_at timestamptz;
+
+-- 고정 여부를 묻는 차례 — 힌트를 다 공개한 뒤의 다음 라운드
+create or replace function private.pin_round(r public.rooms)
+returns boolean language sql immutable set search_path = '' as $fn$
+  select not r.pinned and r.round > 1 and private.hint_kind(r.round) is null;
+$fn$;
+revoke all on function private.pin_round(public.rooms) from public, anon, authenticated;
+
+
+revoke all on function private.room_clock(uuid) from public, anon, authenticated;
+
+
 revoke all on function public.sweep_rooms() from public, anon, authenticated;
 
 -- 동시 대화 개수 — 고정한 대화는 세지 않는다
@@ -5843,138 +4839,7 @@ returns int language sql stable security definer set search_path = public as $fn
 $fn$;
 revoke all on function private.open_rooms(uuid) from public, anon, authenticated;
 
--- 매칭 — 위 Phase 4 본문과 같고, 동시 대화 상한만 private.open_rooms 로
-create or replace function public.request_match()
-returns jsonb language plpgsql security definer set search_path = public as $fn$
-declare
-  me        uuid := auth.uid();
-  cfg       public.app_settings%rowtype;
-  m         public.profiles%rowtype;
-  v_now     timestamptz := now();
-  v_partner uuid;
-  v_room    uuid;
-  v_pool    int;
-  v_exp     record;
-  v_bucket  jsonb;
-  v_open    int;
-  a1 text; a2 text;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  select * into cfg from public.app_settings where id;
-  if not cfg.is_open then
-    return jsonb_build_object('status', 'service_closed', 'notice', cfg.notice, 'server_now', v_now);
-  end if;
 
-  select * into m from public.profiles where id = me;
-  if not found or not m.verified or not m.onboarded or m.status <> 'active'
-     or (m.suspended_until is not null and m.suspended_until > v_now) then
-    return jsonb_build_object('status', 'not_eligible', 'server_now', v_now);
-  end if;
-
-  insert into public.user_presence (user_id, online_until, seeking_until, seeking_since)
-  values (me, v_now + make_interval(secs => cfg.seek_ttl_sec),
-              v_now + make_interval(secs => cfg.seek_ttl_sec), v_now)
-  on conflict (user_id) do update
-     set online_until  = greatest(public.user_presence.online_until, excluded.online_until),
-         seeking_until = excluded.seeking_until,
-         seeking_since = coalesce(public.user_presence.seeking_since, excluded.seeking_since);
-
-  if not pg_try_advisory_xact_lock(hashtext('simbun_match_pool')) then
-    return jsonb_build_object('status', 'busy', 'retry_after_ms', 300, 'server_now', v_now);
-  end if;
-
-  for v_exp in
-    select r.id, r.status from public.rooms r
-      join public.room_members rm on rm.room_id = r.id
-     where rm.user_id = me and rm.open and r.status <> 'closed' and v_now >= r.expires_at
-  loop
-    perform public.close_room(v_exp.id, case when v_exp.status = 'pending' then 'no_show' else 'expired' end);
-  end loop;
-
-  select rm.room_id into v_room
-    from public.room_members rm join public.rooms r on r.id = rm.room_id
-   where rm.user_id = me and rm.open and rm.joined_at is null and r.status = 'pending'
-   order by r.created_at desc limit 1;
-  if v_room is not null then
-    update public.user_presence set seeking_until = null, seeking_since = null where user_id = me;
-    return jsonb_build_object('status', 'matched', 'room_id', v_room, 'server_now', v_now);
-  end if;
-
-  -- 동시 대화 상한 — 고정한 대화는 빼고 센다
-  v_open := private.open_rooms(me);
-  if v_open >= cfg.max_open_rooms then
-    update public.user_presence set seeking_until = null, seeking_since = null where user_id = me;
-    return jsonb_build_object('status', 'full', 'max', cfg.max_open_rooms, 'server_now', v_now);
-  end if;
-
-  select c.user_id into v_partner
-    from public.user_presence c
-    join public.profiles p on p.id = c.user_id
-   where c.user_id <> me
-     and c.seeking_until > v_now
-     and private.open_rooms(c.user_id) < cfg.max_open_rooms
-     and not exists (select 1 from public.room_members x
-                       join public.room_members y on y.room_id = x.room_id
-                      where x.user_id = me and x.open and y.user_id = c.user_id)
-     and p.status = 'active' and p.verified and p.onboarded
-     and (p.suspended_until is null or p.suspended_until <= v_now)
-     and (m.want = 'any' or m.want = p.gender)
-     and (p.want = 'any' or p.want = m.gender)
-     and not exists (select 1 from public.blocks b
-                      where (b.blocker_id = me and b.blocked_id = c.user_id)
-                         or (b.blocker_id = c.user_id and b.blocked_id = me))
-     and ((coalesce(m.allow_rematch, false) and coalesce(p.allow_rematch, false))
-          or not exists (select 1 from public.pair_history h
-                          where h.user_lo = least(me, c.user_id)
-                            and h.user_hi = greatest(me, c.user_id)
-                            and h.last_matched_at > v_now - make_interval(days => cfg.rematch_cooldown_days)))
-   order by exists (select 1 from public.pair_history h
-                     where h.user_lo = least(me, c.user_id)
-                       and h.user_hi = greatest(me, c.user_id)
-                       and h.last_matched_at > v_now - make_interval(days => cfg.rematch_cooldown_days)),
-            c.seeking_since asc,
-            random()
-   limit 1;
-
-  if v_partner is null then
-    select count(*) into v_pool
-      from public.user_presence
-     where user_id <> me and seeking_until > v_now;
-    return jsonb_build_object(
-      'status', 'waiting',
-      'reason', case when v_pool = 0 then 'empty' else 'filtered' end,
-      'poll_ms', cfg.seek_poll_sec * 1000,
-      'server_now', v_now);
-  end if;
-
-  v_bucket := public.match_bucket_take(me);
-  if not (v_bucket->>'ok')::boolean then
-    return jsonb_build_object('status', 'cooldown',
-      'retry_after_ms', (v_bucket->>'retry_after_ms')::int, 'server_now', v_now);
-  end if;
-
-  a1 := coalesce(m.nickname, public.random_alias());
-  select coalesce(nickname, public.random_alias()) into a2 from public.profiles where id = v_partner;
-  while a2 = a1 loop a2 := public.random_alias(); end loop;
-
-  insert into public.rooms (status, expires_at, alias1, alias2)
-  values ('pending', v_now + make_interval(secs => cfg.join_grace_sec), a1, a2)
-  returning id into v_room;
-
-  insert into public.room_members (room_id, user_id, seat)
-  values (v_room, me, 1), (v_room, v_partner, 2);
-
-  update public.user_presence
-     set seeking_until = null, seeking_since = null
-   where user_id in (me, v_partner);
-
-  return jsonb_build_object('status', 'matched', 'room_id', v_room, 'server_now', v_now);
-
-exception
-  when unique_violation then
-    return jsonb_build_object('status', 'retry', 'retry_after_ms', 300, 'server_now', now());
-end
-$fn$;
 revoke all on function public.request_match() from public, anon;
 grant execute on function public.request_match() to authenticated;
 
@@ -6104,87 +4969,6 @@ end
 $fn$;
 revoke all on function private.apply_ratings() from public, anon, authenticated;
 
--- 상대 프로필 — 매너 온도까지
-create or replace function public.partner_profile(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public stable as $fn$
-declare s smallint; v jsonb;
-begin
-  s := public.my_seat(p_room);
-  if s is null then raise exception 'not_member'; end if;
-  select jsonb_build_object(
-           'nickname',    case when s = 1 then r.alias2 else r.alias1 end,
-           'bio',         p.bio,
-           'interests',   to_jsonb(p.interests),
-           'mbti',        p.mbti,
-           'manner_temp', p.manner_temp,
-           'online',      coalesce(up.online_until > now(), false))
-    into v
-    from public.rooms r
-    join public.room_members o on o.room_id = r.id and o.seat <> s
-    join public.profiles p on p.id = o.user_id
-    left join public.user_presence up on up.user_id = o.user_id
-   where r.id = p_room;
-  return v;
-end
-$fn$;
-
--- 방 스냅샷 — 평가할 수 있는지 · 이미 했는지 (끝났거나 고정한 대화에서만 따진다)
-create or replace function public.room_snapshot(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare
-  r   public.rooms%rowtype;
-  cfg public.app_settings%rowtype;
-  s   smallint;
-  v_my boolean; v_their boolean; v_joined boolean; v_online boolean; v_next text;
-  v_rated boolean := false; v_can_rate boolean := false;
-begin
-  s := public.my_seat(p_room);
-  if s is null then raise exception 'not_member'; end if;
-  select * into r   from public.rooms where id = p_room;
-  select * into cfg from public.app_settings where id;
-
-  select agree into v_my    from public.extension_votes where room_id = p_room and round = r.round and seat = s;
-  select agree into v_their from public.extension_votes where room_id = p_room and round = r.round and seat <> s;
-  select joined_at is not null into v_joined
-    from public.room_members where room_id = p_room and seat <> s;
-  select coalesce(up.online_until > now(), false) into v_online
-    from public.room_members rm join public.user_presence up on up.user_id = rm.user_id
-   where rm.room_id = p_room and rm.seat <> s;
-  v_next := case when not r.pinned then private.hint_kind(r.round) end;
-  if r.status = 'closed' or r.pinned then
-    v_rated := exists (select 1 from private.ratings x where x.room_id = p_room and x.rater_id = auth.uid());
-    v_can_rate := not v_rated and private.rating_eligible(p_room, auth.uid());
-  end if;
-
-  return jsonb_build_object(
-    'room_id',         r.id,
-    'status',          r.status,
-    'my_seat',         s,
-    'my_alias',        case when s = 1 then r.alias1 else r.alias2 end,
-    'partner_alias',   case when s = 1 then r.alias2 else r.alias1 end,
-    'expires_at',      private.room_deadline(r.expires_at, r.paused_left),
-    'paused',          r.paused_left is not null,
-    'pinned',          r.pinned,
-    'pin_next',        private.pin_round(r),
-    'round',           r.round,
-    'max_rounds',      cfg.max_rounds,
-    'extend_minutes',  cfg.extend_minutes,
-    'vote_window_sec', cfg.vote_window_sec,
-    'my_vote',         v_my,
-    'partner_vote',    v_their,
-    'partner_joined',  coalesce(v_joined, false),
-    'partner_online',  coalesce(v_online, false),
-    'their_read_id',   case when s = 1 then r.read2 else r.read1 end,
-    'close_reason',    r.close_reason,
-    'partner_hints',   private.room_hints_of(p_room, (3 - s)::smallint, r.round - 1),
-    'my_hints',        private.room_hints_of(p_room, s, r.round - 1),
-    'next_hint',       case when v_next is not null then jsonb_build_object(
-                         'kind', v_next, 'label', private.hint_label_in(p_room, v_next), 'typed', private.hint_typed(v_next)) end,
-    'can_rate',        v_can_rate,
-    'rated',           v_rated,
-    'server_now',      now());
-end
-$fn$;
 
 do $do$
 declare f text;
@@ -6251,6 +5035,7 @@ create table if not exists private.user_achievements (
   primary key (user_id, code)
 );
 create index if not exists user_achievements_new on private.user_achievements (user_id, earned_at desc);
+create index if not exists user_achievements_code on private.user_achievements (code);
 alter table private.user_achievements enable row level security;
 
 alter table public.profiles add column if not exists featured_badges text[] not null default '{}';
@@ -6518,25 +5303,6 @@ begin
 end
 $fn$;
 
-create or replace function public.heartbeat(p_online boolean default true)
-returns jsonb language plpgsql security definer set search_path = public as $fn$
-declare cfg public.app_settings%rowtype;
-begin
-  if auth.uid() is null then raise exception 'unauthenticated'; end if;
-  select * into cfg from public.app_settings where id;
-  if p_online then
-    update public.user_presence
-       set online_until = greatest(online_until, now() + make_interval(secs => cfg.online_ttl_sec))
-     where user_id = auth.uid();
-    perform private.touch_streak(auth.uid());
-  else
-    update public.user_presence
-       set online_until = now(), seeking_until = null, seeking_since = null
-     where user_id = auth.uid();
-  end if;
-  return jsonb_build_object('server_now', now());
-end
-$fn$;
 
 -- ── 보이는 곳 ──
 -- 대표 업적 (최대 3개) — 고른 것이 없거나 더는 없는 업적이면 높은 등급 · 최근 순으로 채운다
@@ -6617,31 +5383,6 @@ begin
 end
 $fn$;
 
--- 상대 프로필 — 대표 업적 3개 · 업적 수까지 (★ uuid 없음)
-create or replace function public.partner_profile(p_room uuid)
-returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare s smallint; v jsonb; v_other uuid;
-begin
-  s := public.my_seat(p_room);
-  if s is null then raise exception 'not_member'; end if;
-  select user_id into v_other from public.room_members where room_id = p_room and seat <> s;
-  select jsonb_build_object(
-           'nickname',    case when s = 1 then r.alias2 else r.alias1 end,
-           'bio',         p.bio,
-           'interests',   to_jsonb(p.interests),
-           'mbti',        p.mbti,
-           'manner_temp', p.manner_temp,
-           'badges',      private.featured(v_other),
-           'badge_count', (select count(*) from private.user_achievements a where a.user_id = v_other),
-           'online',      coalesce(up.online_until > now(), false))
-    into v
-    from public.rooms r
-    join public.profiles p on p.id = v_other
-    left join public.user_presence up on up.user_id = v_other
-   where r.id = p_room;
-  return v;
-end
-$fn$;
 
 do $do$
 declare f text;
@@ -6858,37 +5599,6 @@ begin
 end
 $fn$;
 
--- 편지로 답장 — 편지 줄기에 한 통 더 (예전 "채팅 모드" 검사를 없앴다)
-create or replace function public.dm_letter(p_thread bigint, p_body text, p_fmt jsonb default null)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); v text; role text; t private.dm_threads%rowtype; b jsonb; mid bigint;
-        v_body text := btrim(coalesce(p_body, ''));
-        v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  select * into t from private.dm_threads where id = p_thread for update;
-  role := case when t.sender_id = me then 'sender' when t.recipient_id = me then 'recipient' end;
-  if role is null or t.status = 'removed' then return jsonb_build_object('status', 'not_found'); end if;
-  if t.status <> 'open' then return jsonb_build_object('status', 'closed'); end if;
-  v := private.dm_can_write(me);
-  if v is not null then return jsonb_build_object('status', v); end if;
-  if char_length(v_body) not between 1 and 1000 then return jsonb_build_object('status', 'bad_text'); end if;
-  if v_fmt is not null and (v_body <> p_body or not private.letter_fmt_ok(v_fmt, v_body)) then
-    return jsonb_build_object('status', 'bad_text');
-  end if;
-  if private.blocked_between(t.sender_id, t.recipient_id) then return jsonb_build_object('status', 'closed'); end if;
-  if private.dm_streak(p_thread, role = 'sender') >= 3 then return jsonb_build_object('status', 'wait_reply'); end if;
-  b := private.letter_bucket_take(me, 'comment');
-  if not (b->>'ok')::boolean then
-    return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (b->>'retry_after_ms')::int);
-  end if;
-  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter)
-  values (p_thread, role = 'sender', v_body, v_fmt, true) returning id into mid;
-  if role = 'sender' then update private.dm_threads set last_at = now(), sender_read = mid where id = p_thread;
-  else update private.dm_threads set last_at = now(), recipient_read = mid where id = p_thread; end if;
-  return jsonb_build_object('status', 'ok', 'thread_id', p_thread, 'msg_id', mid);
-end
-$fn$;
 
 -- 받은 편지 한 통에 답장 — 그 편지를 받은 사람만
 create or replace function public.dm_reply_to(p_msg bigint, p_body text, p_fmt jsonb default null)
@@ -6908,33 +5618,6 @@ $fn$;
 drop function if exists public.dm_reply(bigint, text);
 drop function if exists public.dm_chat(bigint);
 
--- 푸시 — 봉투는 열어야 보인다: 본문 없이 "익명의 ○학생에게서 편지가 왔어요" / "○○님의 답장이 왔어요"
-create or replace function public.dm_push_payload(p_msg bigint, p_actor uuid)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare m private.dm_msgs%rowtype; t private.dm_threads%rowtype; v_to uuid; v_subs jsonb;
-begin
-  select * into m from private.dm_msgs where id = p_msg;
-  if not found or m.status <> 'visible' or not m.is_letter then return jsonb_build_object('skip', 'no_message'); end if;
-  select * into t from private.dm_threads where id = m.thread_id;
-  if private.dm_writer(m, t) is distinct from p_actor then return jsonb_build_object('skip', 'not_author'); end if;
-  if m.created_at < now() - interval '2 minutes' then return jsonb_build_object('skip', 'stale'); end if;
-  if t.status <> 'open' then return jsonb_build_object('skip', 'closed'); end if;
-  insert into private.dm_push_log (msg_id) values (p_msg) on conflict do nothing;
-  if not found then return jsonb_build_object('skip', 'already'); end if;
-  v_to := private.dm_reader(m, t);
-  v_subs := private.push_target(v_to);
-  if v_subs ? 'skip' then return v_subs; end if;
-  -- ★ 받는 사람 쪽 알림에 보낸 사람 정보 없음 (성별만)
-  return jsonb_build_object(
-    'title', case when m.from_sender
-                  then '익명의 ' || case m.from_gender when 'm' then '남학생' when 'f' then '여학생' else '학생' end || '에게서 편지가 왔어요'
-                  else (select name from private.person(t.recipient_id)) || '님의 답장이 왔어요' end,
-    'body',  '봉투를 열어 확인해 보세요',
-    'url',   '/letters/m/' || m.id,
-    'tag',   'dm-' || m.id,
-    'subs',  v_subs -> 'subs');
-end
-$fn$;
 
 do $do$
 declare f text;
@@ -6950,3 +5633,37 @@ begin
   end loop;
 end
 $do$;
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 34 — 점검 (DB 스키마 · 보안)
+--
+--  1) 스키마 정리: 같은 함수가 단계마다 여러 번 다시 정의돼 있던 것을, 처음 나오는 자리에 최종 정의 하나만 남겼다
+--     (33개 함수 · 겹친 정의 43개 삭제). 정리 전후 PGlite 카탈로그(함수 정의 · 열 · 제약 · 색인 · 트리거 · 정책 · 권한)가 같음을 확인했다.
+--     그래서 맨 위에서 함수 본문 검사를 끈다 (check_function_bodies = off) — 본문은 부를 때 검사된다.
+--  2) 화면에서 더는 부르지 않는 학생용 RPC 의 실행 권한을 거둔다 (함수 · 표는 남긴다 — 신고 증거 · 운영자 화면용).
+--     옛 공개 편지 게시판(Phase 10~15), 옛 대화 한 개 모델(my_room), 편지 줄기 화면(Phase 23~27: dm_inbox · dm_thread),
+--     편지 답장은 dm_reply_to 안에서만 (dm_letter 는 직접 부를 수 없다).
+--  3) 성능 (Supabase advisor): 학생 RLS 정책 5개의 auth.uid() 를 (select auth.uid()) 로 — 줄마다가 아니라 한 번만 계산 (각 정책 자리에서 고침),
+--     private.user_achievements(code) 색인.
+--  실DB 와 레포의 함수 171개를 본문 해시로 대조해 모두 같음을 확인했다 (주석 · 공백 제외).
+-- ════════════════════════════════════════════════════════════════════
+
+do $do$
+declare f text;
+begin
+  foreach f in array array[
+    'letter_feed(bigint, integer)', 'letter_detail(bigint)', 'post_letter(text, jsonb)',
+    'post_comment(bigint, bigint, text, uuid)', 'set_letter_like(bigint, boolean)', 'request_letter_reply_task()',
+    'delete_my_letter(bigint)', 'delete_my_comment(bigint)', 'block_letter_author(bigint, bigint)',
+    'report_letter(bigint, bigint, text, text)', 'my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb)']
+  loop
+    if to_regprocedure('public.' || f) is not null then
+      execute format('revoke all on function public.%s from public, anon, authenticated', f);
+    end if;
+  end loop;
+end
+$do$;
+
+-- 트리거 함수 두 개에 남아 있던 기본(PUBLIC) 실행 권한도 거둔다 — 트리거로만 돌고, 트리거 발동은 이 권한을 보지 않는다
+revoke all on function private.enforce_school_domain() from public, anon, authenticated;
+revoke all on function private.strip_unconfirmed_password() from public, anon, authenticated;

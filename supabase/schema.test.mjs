@@ -94,6 +94,18 @@ async function as(uid, fn) {
 }
 const rowsAs = async (uid, sql, params = []) => as(uid, async () => (await db.query(sql, params)).rows);
 
+/**
+ * 화면에서 더 부르지 않아 Phase 34 에서 학생 실행 권한을 거둔 RPC — 옛 기능 테스트가 함수 자체의 규칙은 계속 확인할 수 있게
+ * 테스트에서만 다시 열어 둔다. 거둔 것은 맨 끝 [80] 에서 스키마를 다시 실행해 확인한다.
+ */
+const LEGACY_RPCS = ['letter_feed(bigint, integer)', 'letter_detail(bigint)', 'post_letter(text, jsonb)',
+	'post_comment(bigint, bigint, text, uuid)', 'set_letter_like(bigint, boolean)', 'request_letter_reply_task()',
+	'delete_my_letter(bigint)', 'delete_my_comment(bigint)', 'block_letter_author(bigint, bigint)',
+	'report_letter(bigint, bigint, text, text)', 'my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb)'];
+const openLegacy = async () => {
+	for (const f of LEGACY_RPCS) await db.exec(`grant execute on function public.${f} to authenticated`);
+};
+
 console.log('\n[1] 스키마 실행');
 try {
 	await db.exec(readFileSync(SCHEMA, 'utf8'));
@@ -107,6 +119,7 @@ console.log('\n[2] 재실행 안전성 · 단일 행 설정');
 try {
 	await db.exec(readFileSync(SCHEMA, 'utf8'));
 	check('schema.sql 두 번 실행해도 안전 (idempotent)', true);
+	await openLegacy();
 } catch (e) {
 	check('schema.sql 두 번 실행해도 안전 (idempotent)', false, e.message);
 }
@@ -1073,6 +1086,7 @@ console.log('\n[37] 고유 익명 이름');
 	];
 	check('★ 후보가 겹쳐도 가입이 실패하지 않고 서로 다른 이름을 받는다', n1 !== n2 && n1.startsWith('고정이름') && n2.startsWith('고정이름'), `${n1} / ${n2}`);
 	await db.exec(readFileSync(SCHEMA, 'utf8')); // 원래 후보 함수로 되돌린다
+	await openLegacy();
 
 	check('★ 사용자는 이름(nickname)을 직접 바꿀 수 없다', !(await hasColPriv('nickname')));
 	check('★ 소개글도 직접 update 로는 바꿀 수 없다 (검사 함수 경유만)', !(await hasColPriv('bio')));
@@ -3027,6 +3041,37 @@ console.log('\n[79] 익명편지 리뉴얼 — 편지함 · 봉투 열기 · 편
 	check('★ 답장 알림: "○○님의 답장이 왔어요" · 본문 없음 · 그 편지로', pl.title === '편지받음님의 답장이 왔어요' && pl.body === '봉투를 열어 확인해 보세요' && pl.url === `/letters/m/${rp2.msg_id}`, JSON.stringify(pl));
 	await expectError('로그인 안 하면 편지함을 못 본다', () => rowsAs(null, `select public.dm_mailbox('received')`), 'permission denied');
 	check('이상한 편지함 이름은 빈 목록', (await box(A, 'trash')).length === 0);
+}
+
+console.log('\n[80] 점검 — 스키마 정리 · 쓰지 않는 RPC 권한 회수 (Phase 34)');
+{
+	await db.exec(readFileSync(SCHEMA, 'utf8'));
+	check('정리한 스키마도 다시 실행해도 안전', true);
+	const dup = await one(`select count(*)::int n from (select 1 from regexp_matches($1, 'create or replace function ([a-z_.]+)\\(', 'gi') m group by m[1] having count(*) > 1) x`, [readFileSync(SCHEMA, 'utf8').replace(/drop function[^;]*;/gi, '')]);
+	check('★ 함수마다 정의는 한 번 (인자가 바뀐 vote_extension · dm_send 옛 판만 따로)', dup.n === 2, `${dup.n}개 겹침`);
+	const stillOpen = [];
+	for (const f of LEGACY_RPCS) {
+		const r = await one(`select has_function_privilege('authenticated', 'public.${f}', 'execute') a`);
+		if (r.a) stillOpen.push(f);
+	}
+	check('★ 화면에서 쓰지 않는 학생 RPC 14개 — 학생 실행 권한 없음', LEGACY_RPCS.length === 14 && stillOpen.length === 0, stillOpen.join(', '));
+	check('편지 답장은 dm_reply_to 로만 (dm_letter 직접 호출 불가)', (await one(`select has_function_privilege('authenticated', 'public.dm_reply_to(bigint, text, jsonb)', 'execute') a`)).a === true
+		&& (await one(`select has_function_privilege('authenticated', 'public.dm_letter(bigint, text, jsonb)', 'execute') a`)).a === false);
+	// dm_reply_to 는 안에서 dm_letter 를 부른다 — 학생이 dm_letter 를 직접 못 불러도 답장은 된다 (definer 권한)
+	let no80 = 21600;
+	const named80 = async (name) => {
+		const n = ++no80;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, 1, $2) on conflict (student_no) do update set name = excluded.name', [n, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set onboarded=true where id=$1', [id]);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const P = await named80('권한보냄'), Q = await named80('권한받음');
+	const s80 = await rpcAs(P, 'dm_send', Q, '권한 확인 편지');
+	check('★ dm_letter 를 거둬도 받은 편지에 답장(dm_reply_to)은 된다', s80.status === 'ok' && (await rpcAs(Q, 'dm_reply_to', s80.msg_id, '답장')).status === 'ok');
+	await expectError('dm_letter 는 학생이 직접 부를 수 없다', () => rowsAs(Q, `select public.dm_letter($1, 'x')`, [s80.thread_id]), 'permission denied');
+	check('지금 쓰는 RPC 는 그대로 (편지함 · 평가 · 업적)', (await one(`select has_function_privilege('authenticated', 'public.dm_mailbox(text, bigint)', 'execute') and has_function_privilege('authenticated', 'public.rate_partner(uuid, text, text[])', 'execute') and has_function_privilege('authenticated', 'public.my_achievements()', 'execute') a`)).a === true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
