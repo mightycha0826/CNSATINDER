@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { rpc } from './rpc';
 
 /**
  * 매너 온도 (Phase 30) — 모두 40.0도에서 시작. 대화가 끝난 뒤(또는 고정한 대화에서) 상대를 평가하고,
@@ -53,16 +53,11 @@ export type PendingRating = { room_id: string; partner_alias: string; pinned: bo
 export type RateStatus = 'ok' | 'already' | 'not_eligible' | 'bad_input';
 
 /** 아직 평가하지 않은 대화 (홈 카드) — Phase 30 전 DB 면 빈 목록 */
-export async function fetchPendingRatings(): Promise<PendingRating[]> {
-	const { data, error } = await supabase.rpc('pending_ratings');
-	if (error) return [];
-	return (data as PendingRating[] | null) ?? [];
-}
+export const fetchPendingRatings = () =>
+	rpc<PendingRating[] | null>('pending_ratings').then((r) => r ?? [], () => [] as PendingRating[]);
 
 export async function ratePartner(roomId: string, score: Score, reasons: Reason[]): Promise<RateStatus> {
-	const { data, error } = await supabase.rpc('rate_partner', { p_room: roomId, p_score: score, p_reasons: reasons });
-	if (error) throw error;
-	return (data as { status: RateStatus }).status;
+	return (await rpc<{ status: RateStatus }>('rate_partner', { p_room: roomId, p_score: score, p_reasons: reasons })).status;
 }
 
 /** 홈 카드에서 "건너뛰기"한 대화 — 이 기기에만 */

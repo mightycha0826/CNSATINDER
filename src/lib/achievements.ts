@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { rpc } from './rpc';
 
 /**
  * 업적 (Phase 31) — 동 · 은 · 금 메달. 업적 정의(이름 · 기준)는 DB 가 유일한 출처라 여기엔 타입과 RPC · 표시용 도움 함수만.
@@ -35,12 +35,6 @@ export const CATEGORIES: { k: Category | 'all'; label: string }[] = [
 	{ k: 'letter', label: '편지' },
 	{ k: 'special', label: '특별' }
 ];
-
-const rpc = async <T>(fn: string, args?: Record<string, unknown>): Promise<T> => {
-	const { data, error } = await supabase.rpc(fn, args);
-	if (error) throw error;
-	return data as T;
-};
 
 /** 비어 있으면(Phase 31 전 DB 등) 오류로 — 화면이 "불러오지 못했어요"를 띄운다 */
 export async function fetchMyAchievements(): Promise<MyAchievements> {

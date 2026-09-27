@@ -17,7 +17,8 @@ try {
 	const U = (p) => `http://localhost:${PORT}${p}`;
 
 	console.log('[대화방]');
-	await page.goto(U('/dev/chat?s=chat&sheet=report')); await page.waitForTimeout(1200);
+	// 첫 화면은 vite 가 처음 빌드하느라 느리다 — 정해진 시간 대신 신고 사유가 뜰 때까지
+	await page.goto(U('/dev/chat?s=chat&sheet=report')); await page.locator('.reason').first().waitFor({ timeout: 20000 }); await page.waitForTimeout(300);
 	await page.screenshot({ path: `${SP}/sheet-${TAG}-chat-report.png` });
 	check('신고 시트: 사유 7개', (await page.locator('.reason').count()) === 7);
 	check('신고 버튼은 사유 고르기 전엔 꺼짐', await page.getByRole('button', { name: '신고하기' }).isDisabled());

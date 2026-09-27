@@ -14,14 +14,15 @@
 	import ReplyQuote from './ReplyQuote.svelte';
 	import Starters from './Starters.svelte';
 	import MatchScreen from './MatchScreen.svelte';
+	import ChatHeader from './ChatHeader.svelte';
+	import Banner from './Banner.svelte';
+	import VoteBanner, { isQuestion } from './VoteBanner.svelte';
 	import RateForm from './RateForm.svelte';
 	import type { Reason, Score } from '$lib/manner';
 	import { replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { pressGestures, swipeReply } from './gestures';
 	import { summarize } from './reactions';
-	import Avatar from '$lib/ui/Avatar.svelte';
-	import BackButton from '$lib/ui/BackButton.svelte';
 	import ReportPicker from '$lib/ui/ReportPicker.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import { backToSeek, goBack } from '$lib/nav';
@@ -101,7 +102,6 @@
 	const nextKind = $derived(nextHint?.kind ?? null);
 	const pinNext = $derived(!!snap?.pin_next);
 	const partnerHints = $derived(snap?.partner_hints ?? []);
-	const isQuestion = (k: string | null | undefined) => k === 'q1' || k === 'q2';
 	let hintDraft = $state('');
 	// 적는 차례가 바뀌면 칸을 비운다 (디플로마로 적은 글이 다음 공통 질문 칸에 남지 않게)
 	$effect(() => {
@@ -206,6 +206,21 @@
 	});
 	// 방 화면을 보고 있음(presence) > 앱이 켜져 있음(heartbeat) > 꺼짐
 	const partnerOnline = $derived(!!room && (room.partnerHere || !!room.snap?.partner_online));
+	const headerStatus = $derived(
+		!room?.snap
+			? ''
+			: closed
+				? '대화 종료'
+				: pending
+					? room.snap.partner_joined
+						? '곧 시작해요'
+						: '상대를 기다리는 중'
+					: room.partnerHere
+						? '지금 보고 있음'
+						: room.snap.partner_online
+							? '접속 중'
+							: '오프라인'
+	);
 
 	async function leave() {
 		sheet = null;
@@ -586,41 +601,19 @@
 	style:height={vvH ? `${vvH}px` : null}
 	style:--vv-top={`${vvTop}px`}
 >
-	<header class="topbar">
-		<BackButton href="/" history />
-
-		{#if room?.snap}
-			{@const alias = room.snap.partner_alias}
-			<button class="who" onclick={() => openSheet('profile')} aria-label="상대 프로필 보기">
-				<Avatar name={alias} size={32} online={partnerOnline && !closed} />
-				<span class="names">
-					<span class="alias">{alias}</span>
-					<span class="sub">
-						{#if closed}대화 종료{:else if pending}{room.snap.partner_joined ? '곧 시작해요' : '상대를 기다리는 중'}{:else if room.partnerHere}지금 보고 있음{:else if room.snap.partner_online}접속 중{:else}오프라인{/if}
-					</span>
-				</span>
-			</button>
-			{#if !closed && pinned}
-				<span class="pinned-tag" aria-label="고정한 대화">
-					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5h6l-1 5.5 3.5 3.5v1.5h-11V12.5L10 9 9 3.5zM12 14v6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" /></svg>
-					고정됨
-				</span>
-			{:else if !closed}
-				<span class="timer num" class:urgent={urgent && !paused} class:dim={pending || paused} aria-label={paused ? `멈춤 ${mmss}` : mmss}
-					>{#if paused}<svg class="pause-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>{/if}{mmss}</span
-				>
-			{/if}
-			{#if !closed}
-				<button class="more" onclick={() => openSheet('menu')} aria-label="메뉴">
-					<svg viewBox="0 0 24 24" aria-hidden="true">
-						<circle cx="5" cy="12" r="1.6" fill="currentColor" />
-						<circle cx="12" cy="12" r="1.6" fill="currentColor" />
-						<circle cx="19" cy="12" r="1.6" fill="currentColor" />
-					</svg>
-				</button>
-			{/if}
-		{/if}
-	</header>
+	<ChatHeader
+		alias={room?.snap?.partner_alias ?? null}
+		status={headerStatus}
+		online={partnerOnline}
+		{closed}
+		{pinned}
+		{paused}
+		{pending}
+		{urgent}
+		{mmss}
+		onprofile={() => openSheet('profile')}
+		onmenu={() => openSheet('menu')}
+	/>
 
 	{#if partnerHints.length && !closed}
 		<div class="hints" aria-label="공개된 힌트">
@@ -638,62 +631,13 @@
 	{/if}
 
 	{#if partnerGone && !voteOpen && !pinned}
-		<div class="extend">
-			<div class="q">
-				<strong>상대가 자리를 비운 것 같아요</strong>
-				<span>기다리거나 다른 사람과 대화할 수 있어요</span>
-			</div>
-			<div class="acts">
-				<button class="yes" onclick={skip}>다른 사람 찾기</button>
-			</div>
-		</div>
+		<Banner title="상대가 자리를 비운 것 같아요" sub="기다리거나 다른 사람과 대화할 수 있어요">
+			{#snippet actions()}<button class="yes" onclick={skip}>다른 사람 찾기</button>{/snippet}
+		</Banner>
 	{/if}
 
 	{#if voteOpen && snap}
-		<!-- 인스타 "메시지 요청" 배너 패턴 -->
-		<div class="extend">
-			<div class="q">
-				{#if snap.my_vote === true}
-					<strong>상대의 대답을 기다리는 중</strong>
-					<span>{pinNext ? '둘 다 원해야 고정돼요' : `둘 다 원해야 ${snap.extend_minutes}분 이어져요`}</span>
-				{:else if pinNext}
-					<strong>이 채팅을 고정하시겠습니까?</strong>
-					{#if snap.partner_vote === true}
-						<span class="want">상대가 고정을 원해요</span>
-					{:else}
-						<span>둘 다 고정하면 맨 위에 남고 사라지지 않아요</span>
-					{/if}
-				{:else}
-					<strong>{snap.extend_minutes}분 더 얘기할까요?</strong>
-					{#if snap.partner_vote === true}
-						<span class="want">상대가 연장을 원해요</span>
-					{:else if isQuestion(nextKind)}
-						<span>답을 적고 연장하면 서로의 답 공개</span>
-					{:else if nextHint}
-						<span>연장하면 서로의 {nextHint.label} 공개</span>
-					{:else}
-						<span>둘 다 원해야 이어져요</span>
-					{/if}
-				{/if}
-			</div>
-			{#if snap.my_vote !== true && nextHint?.typed && !pinNext}
-				{@const q = isQuestion(nextHint.kind)}
-				{#if q}<p class="question">Q. {nextHint.label}</p>{/if}
-				<input
-					class="hint-in"
-					bind:value={hintDraft}
-					maxlength={q ? 30 : 20}
-					placeholder={q ? '내 답' : `내 ${nextHint.label}`}
-					aria-label={q ? `공통 질문 ${nextHint.label} — 내 답` : `내 ${nextHint.label}`}
-				/>
-			{/if}
-			{#if snap.my_vote !== true}
-				<div class="acts">
-					<button class="no" onclick={() => vote(false)} disabled={room?.voting}>그만하기</button>
-					<button class="yes" onclick={() => vote(true)} disabled={room?.voting}>{pinNext ? '고정하기' : '더 얘기하기'}</button>
-				</div>
-			{/if}
-		</div>
+		<VoteBanner {snap} {pinNext} voting={!!room?.voting} bind:hintDraft onvote={vote} />
 	{/if}
 
 	{#if !room?.connected && !loading && !closed}
@@ -947,56 +891,6 @@
 		padding-bottom: 8px;
 	}
 
-	/* ── 헤더 ── */
-	.who {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		min-width: 0;
-		text-align: left;
-	}
-	.names {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-		line-height: 1.2;
-	}
-	.alias {
-		font-weight: 600;
-		font-size: 15px;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.sub {
-		font-size: 12px;
-		color: var(--text-2);
-	}
-	.timer {
-		margin-left: auto;
-		font-size: 15px;
-		font-weight: 600;
-	}
-	.pinned-tag {
-		margin-left: auto;
-		display: inline-flex;
-		align-items: center;
-		gap: 3px;
-		color: var(--accent);
-		font-size: 13px;
-		font-weight: 600;
-		white-space: nowrap;
-	}
-	.pinned-tag svg {
-		width: 16px;
-		height: 16px;
-	}
-	.timer .pause-ic {
-		width: 12px;
-		height: 12px;
-		margin-right: 3px;
-		vertical-align: -1px;
-	}
 	.hints {
 		display: flex;
 		flex-wrap: wrap;
@@ -1026,100 +920,9 @@
 		font-size: 12px;
 		text-align: center;
 	}
-	/* 공통 질문 — 배너 아래 한 줄 전체, 적는 칸 바로 위 */
-	.question {
-		order: 3;
-		flex-basis: 100%;
-		margin: -4px 0 -6px;
-		font-size: 14px;
-		font-weight: 600;
-	}
-	/* 디플로마 · 동아리 · 공통 질문 답 적는 칸 — 배너 아래 한 줄 전체 */
-	.hint-in {
-		order: 3;
-		flex-basis: 100%;
-		width: 100%;
-		margin-top: -2px;
-		padding: 9px 12px;
-		border: 1px solid var(--line);
-		border-radius: 10px;
-		background: var(--bg);
-		color: var(--text);
-		font-size: 14px;
-	}
 	.bubble.deleted {
 		font-style: italic;
 		opacity: 0.55;
-	}
-	.timer.urgent {
-		color: var(--danger);
-	}
-	.timer.dim {
-		color: var(--text-2);
-	}
-	.more {
-		display: grid;
-		place-items: center;
-		width: 28px;
-		height: 28px;
-		margin-right: -4px;
-	}
-	.more svg {
-		width: 22px;
-		height: 22px;
-	}
-
-	/* ── 연장 배너 ── */
-	.extend {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 12px;
-		padding: 10px var(--pad);
-		background: var(--surface);
-		border-bottom: 1px solid var(--line);
-	}
-	.q {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		line-height: 1.3;
-	}
-	.q strong {
-		font-size: 15px;
-		font-weight: 600;
-	}
-	.q span {
-		font-size: 12px;
-		color: var(--text-2);
-	}
-	.q .want {
-		color: var(--accent);
-		font-weight: 600;
-	}
-	.acts {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		flex: none;
-	}
-	.acts .no {
-		font-size: 14px;
-		font-weight: 600;
-		color: var(--text-2);
-	}
-	.acts .yes {
-		height: 32px;
-		padding: 0 12px;
-		border-radius: var(--r-sm);
-		background: var(--accent-fill-deep);
-		color: var(--on-accent);
-		font-size: 14px;
-		font-weight: 600;
-	}
-	.acts button:disabled {
-		opacity: 0.5;
 	}
 
 	/* ── 하단 시트 (모양은 Sheet · ReportPicker) ── */

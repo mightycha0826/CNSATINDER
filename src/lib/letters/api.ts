@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+import { rpc } from '../rpc';
 import { requestModeration } from '../moderation';
 import { notifyDm } from '../push';
 import { waitText } from '../time';
@@ -57,12 +58,6 @@ export type SendResult =
 	| { status: 'rate_limited'; retry_after_ms: number }
 	| { status: 'wait_reply'; thread_id?: number }
 	| { status: 'not_available' | 'restricted' | 'no_name' | 'bad_text' | 'closed' | 'not_found' };
-
-const rpc = async <T>(fn: string, args?: Record<string, unknown>): Promise<T> => {
-	const { data, error } = await supabase.rpc(fn, args);
-	if (error) throw error;
-	return data as T;
-};
 
 // ── 이름표 ──
 export const genderWord = (g: Gender | null | undefined) => (g === 'm' ? '남학생' : g === 'f' ? '여학생' : '학생');

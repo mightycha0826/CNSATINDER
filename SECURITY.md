@@ -131,6 +131,27 @@ Supabase 보안 점검기(Security Advisor).
 - `supabase/schema.sql` Phase 22 — 2026-09-25 Supabase 커넥터로 실DB 에 적용, Advisor 에서 `search_path` 8건 · 익명 실행 3건 경고가 사라진 것을 확인.
 - 적용 뒤 실제 학생 계정 권한으로 내 프로필 · 설정 · 대화 목록 · 공지 읽기가 되는지 확인(되돌린 트랜잭션 안에서).
 
+## 점검 기록 — 2026-09-27 (Phase 30~34)
+
+범위: 새로 생긴 학생 RPC(매너 온도 · 업적 · 편지함), 새 표 · 열 권한, 학생 RLS 정책, 실DB 권한(직접 조회), Supabase 보안 · 성능 점검기.
+
+| # | 발견 | 위험도 | 조치 |
+|---|---|---|---|
+| 1 | 화면에서 더는 부르지 않는 학생 RPC 14개(옛 공개 편지 게시판 10개 · `my_room` · `dm_inbox` · `dm_thread` · `dm_letter`)가 여전히 실행 가능했다 | 낮음 | **고침** — 실행 권한 회수 (Phase 34). 편지 답장은 `dm_reply_to` 안에서만 규칙(답 없이 3통 · 차단 · 필터)을 거쳐 보낸다 |
+| 2 | 트리거 함수 2개(`enforce_school_domain` · `strip_unconfirmed_password`)에 기본 PUBLIC 실행 권한 | 낮음 | **고침** — 회수 (트리거 발동은 이 권한을 보지 않음) |
+| 3 | 학생 RLS 정책 5개가 `auth.uid()` 를 줄마다 다시 계산 (성능 점검기 경고) | 성능 | **고침** — `(select auth.uid())` |
+| 4 | 평가를 바로 반영하면 대화 직후 온도 변화로 누가 낮게 줬는지 추측 가능 | 설계 | **막음** — 6시간 넘게 지난 평가를 매일 새벽에 모아 반영 (`private.apply_ratings`), 같은 사람을 7일 안에 또 평가하면 첫 평가만 |
+| 5 | 편지 받는 사람에게 보이는 성별은 보낼 때 프로필 성별(`dm_msgs.from_gender`) — 학생이 설정에서 성별을 바꿀 수 있으므로(온보딩 · 설정 기능) 바꾼 뒤 보내면 다른 성별로 보인다 | 정보 | 유지 — 보낸 뒤에 바꿔도 이미 보낸 편지는 그대로(스냅샷). 막으려면 성별 변경을 운영자만 하게 |
+| 6 | 사용자가 고른 테마 색은 대비를 보정하지 않는다 (기본 브랜드 색은 WCAG AA) | 정보 | 유지 — 본인 화면에만 적용 |
+
+확인한 것(문제 없음): 새 RPC 응답(`pending_ratings` · `partner_profile` · `my_achievements` · `dm_mailbox` · `dm_open`)에 상대 uuid · 이름(모르는 사이) 없음,
+새 표(`private.ratings` · `user_stats` · `achievement_defs` · `user_achievements`)는 학생 권한 없음(RPC 로만), `manner_temp` · `featured_badges` · `ach_seen_at` 은
+학생이 직접 못 고침(`set_featured_badges` 는 가진 업적만), RLS 꺼진 표 없음, 학생 definer 함수 전부 `search_path` 고정, 로그인 안 한 사람이 부를 수 있는 definer 함수 없음.
+
+### 실DB 반영
+- Phase 29~32, 34 — 2026-09-27 Supabase 커넥터로 적용. 실DB 함수 171개를 본문 해시(주석 · 공백 제외)로 레포와 대조해 모두 같음.
+  Advisor: 성능 경고(`auth_rls_initplan`) 사라짐. 남은 것은 정보 수준(옛 편지 표 · 아직 안 쓰인 새 색인)과 위 2절의 의도된 항목.
+
 ## 운영 체크리스트
 - [ ] Supabase → Authentication: **유출된 비밀번호 차단 켜기**, 비밀번호 최소 8자 · 영문+숫자
 - [ ] `ADMIN_SESSION_SECRET` · `VAPID_PRIVATE_KEY` · service_role 키는 Cloudflare Secret 으로만, 사람이 바뀌면 교체

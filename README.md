@@ -134,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 34 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (쓰지 않는 학생 RPC 14개 실행 권한 회수, 학생 RLS 정책 5개 `(select auth.uid())`,
+      `private.user_achievements(code)` 색인, 트리거 함수 2개 PUBLIC 권한 회수). 실DB 함수 171개 본문이 레포와 같음을 확인. 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 32 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (편지함 `dm_mailbox` · `dm_open` · `dm_reply_to` · `dm_unread`,
       `dm_msgs.from_gender` · `opened_at`, 채팅 모드 `dm_reply` · `dm_chat` 삭제, 알림 제목 "익명의 ○학생에게서 편지가 왔어요"). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 31 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (업적 `private.user_stats` · `achievement_defs` · `user_achievements`,
@@ -421,4 +423,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       연결 화면은 틴더 "It's a Match" 처럼 (두 얼굴 · 하트 · 손글씨 "연결됐어요!"). 프로필은 브랜드색 표지 + 걸친 아바타 카드. 시트는 손잡이 · 큰 모서리.
       접근성 점검(WCAG AA): 보조 글자 · 링크 · 위험색을 4.5:1 넘게, 작은 흰 글씨가 올라가는 배지는 진한 그라디언트(`--accent-fill-deep`),
       큰 버튼은 19px 굵게(큰 글씨 기준), 매너 온도 색은 라이트/다크 따로, 키보드 초점 테두리. 상단 바 색(`theme-color`)도 새 바탕색으로
+- [x] **Phase 34 — DB 스키마 · 보안 · 코드 점검** — `schema.sql` 에 단계마다 다시 정의되던 함수 33개를 처음 자리의 최종 정의 하나로 (겹친 정의 43개 삭제,
+      6952 → 5633줄, 맨 위 `check_function_bodies = off`). 정리 전후 PGlite 카탈로그(함수 · 열 · 제약 · 색인 · 트리거 · 정책 · 권한)가 같고, 실DB 함수 171개 본문도 레포와 같다.
+      화면에서 안 쓰는 학생 RPC 14개(옛 공개 편지 · `my_room` · 편지 줄기 `dm_inbox`/`dm_thread` · `dm_letter` 직접 호출) 실행 권한 회수 — 표 · 함수는 남긴다.
+      학생 RLS 정책 5개를 `(select auth.uid())` 로(Advisor `auth_rls_initplan`), 업적 색인, 트리거 함수 PUBLIC 권한 회수. 보안 점검 기록은 `SECURITY.md`.
+      코드: 흩어진 `rpc()` 도우미를 `src/lib/rpc.ts` 하나로, `ChatView` 에서 머리글(`ChatHeader`) · 알림 띠(`Banner`) · 연장/고정 투표 띠(`VoteBanner`)를 떼어 냄.
+      화면 테스트 `sheet` 의 오래된 실패(첫 화면을 정해진 시간만 기다림)를 고침 — 신고 사유가 뜰 때까지 기다림
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험
