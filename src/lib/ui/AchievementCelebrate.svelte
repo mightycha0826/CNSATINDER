@@ -8,6 +8,7 @@
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import Badge from './Badge.svelte';
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
 	import { whileVisible } from '$lib/visible';
@@ -23,8 +24,11 @@
 			fresh = preview;
 			return;
 		}
+		// fresh 를 읽고 쓰는 일은 추적하지 않는다 — 추적하면 빈 목록을 넣을 때마다 이 effect 가 다시 돌아 요청이 끝없이 나간다
 		const check = async () => {
-			if (!fresh.length) fresh = await fetchNewAchievements();
+			if (untrack(() => fresh.length)) return;
+			const got = await fetchNewAchievements();
+			if (got.length) fresh = got;
 		};
 		void check();
 		return whileVisible(() => void check(), 120_000);
