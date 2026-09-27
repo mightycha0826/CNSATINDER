@@ -47,7 +47,7 @@ export interface ChatTransport {
 	ack(roomId: string): Promise<RoomSnap>;
 	/** 만료됐으면 닫고, 언제나 최신 스냅샷을 돌려준다 (서버 시계 기준 판정) */
 	closeIfExpired(roomId: string): Promise<RoomSnap>;
-	/** hint = 동아리 · 디플로마 차례에 연장할 때 내가 적은 값 */
+	/** hint = 디플로마 · 동아리 · 공통 질문 차례에 연장할 때 내가 적은 값 */
 	vote(roomId: string, agree: boolean, hint?: string | null): Promise<{ result: VoteResult; snap: RoomSnap }>;
 	/** 대화 화면을 보고 있다(on) / 떠났다 — 둘 다 볼 때만 시간이 흐른다 (Phase 28) */
 	view(roomId: string, on: boolean): Promise<RoomSnap>;

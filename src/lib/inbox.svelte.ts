@@ -12,6 +12,8 @@ export type InboxRoom = {
 	round: number;
 	/** 한쪽이라도 대화 화면을 안 봐서 시간이 멈춤 (Phase 28) — 남은 시간 = expires_at - server_now */
 	paused?: boolean;
+	/** 둘 다 고정한 대화 (Phase 29) — 시간 제한 없음(expires_at = infinity), 목록 맨 위, 동시 대화 개수에 안 셈 */
+	pinned?: boolean;
 	/** 내가 이 방 화면을 한 번이라도 열었는지 — 아니면 "새 대화" */
 	joined: boolean;
 	partner_online: boolean;

@@ -134,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 29 적용** — 2026-09-27 Supabase 커넥터로 실DB 에 적용 (연장 공개 순서 · 공통 질문 · 대화 고정 `rooms.pinned`).
+      새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 28 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (메시지 삭제 · 둘 다 볼 때만 흐르는 시간 · 연장 힌트).
 - [x] **Phase 27 적용** — 2026-09-26 Supabase 커넥터로 실DB 에 적용 (편지 모드 `dm_threads.mode` · `dm_msgs.is_letter` · `dm_letter` · `dm_chat`).
       이미 채팅처럼 주고받던 편지는 채팅 모드로 옮김. 안 하면 편지는 예전처럼 채팅으로만 이어진다.
@@ -223,7 +225,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 
 ## 개발용 훅
 
-- `/dev/chat?s=chat|fresh|vote|waiting|pending|ended` — 대화방 화면 미리보기 (Supabase 불필요, 개발 모드 전용).
+- `/dev/chat?s=chat|fresh|vote|waiting|pending|ended|paused|hints|question|pin|pinned` — 대화방 화면 미리보기 (Supabase 불필요, 개발 모드 전용).
   `&matched` 연결 화면, `&incoming` 상대 새 메시지, `&sheet=menu|report|block|profile` 시트
 - `/dev/ai?s=ok|limit|full|off` — AI 대화 상대 화면 미리보기 (`&turns=2` 턴 한도, `&short` 20초 뒤 끝, `&down` AI 오류)
 - `AI_FAKE=1 npm run dev` — Workers AI 대신 정해진 답 (검열: 글에 `[flag:harassment]` 가 있으면 걸림 / 대화: "AI 답: …").
@@ -380,4 +382,13 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       · 대화 시간은 둘 다 대화 화면을 보고 있을 때만 준다: 앱이 10초마다 `room_view`, 한쪽이라도 끊기면 `rooms.paused_left` 에 얼림
         (그동안 `expires_at = infinity`), 둘 다 돌아오면 이어서. 멈춘 동안 타이머에 ⏸ · 목록에도 멈춘 시간. 하루 넘게 멈추면 닫힘
       · 연장할 때마다 서로 힌트 하나: 학년 → 성씨(명단) → 동아리 → 디플로마(그 차례에 연장하면서 직접 적음, 방마다 `private.room_hints`)
+- [x] **Phase 29 — 연장 공개 순서 · 공통 질문 · 대화 고정**
+      · 연장할 때 공개하는 것: 10분 째 학년 → 20분 공통 질문 → 30분 디플로마 → 40분 공통 질문 → 50분 동아리 (성씨는 뺐다).
+        공통 질문은 방마다 정해진 질문 하나(`private.room_question`, 둘에게 같은 질문 · 두 번째는 첫 번째와 다름)에 연장하면서 답을 적고(30자), 연장되면 서로의 답 공개
+      · 동아리까지 연장하고 10분 뒤(60분 째)에는 연장 대신 "이 채팅을 고정하시겠습니까?" — 둘 다 고정하면 `rooms.pinned`:
+        시간 제한 · 멈춤 없음(`expires_at = infinity`), 대화 목록 맨 위, 방이 닫히지 않으니 24시간 삭제도 없음, 동시 대화 개수에 안 셈(`private.open_rooms`).
+        한쪽이라도 안 하면 연장 거절처럼 끝난다. 고정한 대화도 나가기 · 신고 · 차단하면 닫히고 보통 대화처럼 지워진다
+      · 채팅 색 깜빡임 고침 — 빠르게 스크롤하면 내 말풍선이 잠깐 보라색으로 보이던 것. 말풍선 그라디언트 위치를 scroll 이벤트 → 다음 프레임 JS 로 고쳐서
+        몇 프레임씩 늦었고, 그 사이 그라디언트 밖으로 옛 기본색 보라(`#9a36e4`)가 비쳤다. 이제 CSS 스크롤 연동 애니메이션(`animation-timeline: view()`)이
+        말풍선 뒤판을 옮기고(미지원 브라우저만 JS), 그라디언트 위아래를 끝 색으로 늘려 어긋나도 테마 색 밖으로 나가지 않는다 (`--bubble-a/b/c`)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

@@ -32,7 +32,7 @@ export const fillOf = (c: ThemeColor) => `linear-gradient(180deg, ${c.stops[0]},
 
 export const THEME_COLOR = $state({ id: DEFAULT });
 
-const PROPS = ['--g-orange', '--g-coral', '--g-pink', '--bubble-fill', '--accent-fill', '--accent'];
+const PROPS = ['--g-orange', '--g-coral', '--g-pink', '--bubble-fill', '--bubble-a', '--bubble-b', '--bubble-c', '--accent-fill', '--accent'];
 
 function apply(id: string) {
 	const c = THEME_COLORS.find((x) => x.id === id);
@@ -47,6 +47,9 @@ function apply(id: string) {
 	root.setProperty('--g-coral', b);
 	root.setProperty('--g-pink', z);
 	root.setProperty('--bubble-fill', fillOf(c));
+	root.setProperty('--bubble-a', a);
+	root.setProperty('--bubble-b', b);
+	root.setProperty('--bubble-c', z);
 	root.setProperty('--accent-fill', `linear-gradient(110deg, ${a}, ${b} 55%, ${z})`);
 	if (c.accent) root.setProperty('--accent', c.accent);
 }

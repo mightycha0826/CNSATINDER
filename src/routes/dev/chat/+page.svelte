@@ -3,7 +3,7 @@
 	 * 개발 전용 — 대화방 화면 미리보기. Supabase 없이 가짜 전송 계층으로 상태를 재현한다.
 	 * 연장 배너처럼 실계정으로는 8분 넘게 기다려야 보이는 화면을 바로 확인하기 위한 것.
 	 *
-	 *   /dev/chat?s=chat | fresh | vote | waiting | pending | ended | paused | hints   (&sheet=menu|report|block|profile 로 시트 열기, &matched 로 연결 화면, &incoming 으로 상대 새 메시지)
+	 *   /dev/chat?s=chat | fresh | vote | waiting | pending | ended | paused | hints | question | pin | pinned   (&sheet=menu|report|block|profile 로 시트 열기, &matched 로 연결 화면, &incoming 으로 상대 새 메시지)
 	 *
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
@@ -13,7 +13,7 @@
 	import ChatView from '$lib/chat/ChatView.svelte';
 	import { toast } from '$lib/state.svelte';
 	import type { ChatTransport, TransportHandlers } from '$lib/chat/transport';
-	import type { MsgRow, ReactionKey, ReactionRow, RoomSnap } from '$lib/chat/types';
+	import type { Hint, MsgRow, ReactionKey, ReactionRow, RoomSnap } from '$lib/chat/types';
 
 	const ROOM = 'preview-room';
 	const scenario = page.url.searchParams.get('s') ?? 'chat';
@@ -38,6 +38,22 @@
 		close_reason: null,
 		server_now: new Date().toISOString()
 	};
+	const HINTS2 = {
+		partner: [
+			{ kind: 'grade', label: '학년', value: '2학년' },
+			{ kind: 'q1', label: '요즘 빠져 있는 것', value: '밴드 음악' }
+		],
+		mine: [
+			{ kind: 'grade', label: '학년', value: '1학년' },
+			{ kind: 'q1', label: '요즘 빠져 있는 것', value: '러닝' }
+		]
+	} satisfies Record<string, Hint[]>;
+	const HINTS5: Hint[] = [
+		...HINTS2.partner,
+		{ kind: 'diploma', label: '디플로마', value: 'IB' },
+		{ kind: 'q2', label: '좋아하는 계절', value: '가을' },
+		{ kind: 'club', label: '동아리', value: '밴드부' }
+	];
 	const SNAPS: Record<string, Partial<RoomSnap>> = {
 		chat: {},
 		fresh: { their_read_id: null },
@@ -47,20 +63,26 @@
 		ended: { status: 'closed', close_reason: 'expired', expires_at: sec(-1) },
 		// 상대가 화면을 안 보고 있어 시간이 멈춤 (Phase 28) — 남은 5:00 그대로
 		paused: { paused: true, expires_at: sec(300) },
-		// 두 번 연장해 학년 · 성씨가 공개됐고, 다음(동아리)은 연장할 때 직접 적는 차례
+		// 두 번 연장해 학년 · 공통 질문 답이 공개됐고, 다음(디플로마)은 연장할 때 직접 적는 차례 (Phase 29 순서)
 		hints: {
 			round: 3,
 			expires_at: sec(70),
-			partner_hints: [
-				{ kind: 'grade', label: '학년', value: '2학년' },
-				{ kind: 'surname', label: '성씨', value: '김씨' }
-			],
-			my_hints: [
-				{ kind: 'grade', label: '학년', value: '1학년' },
-				{ kind: 'surname', label: '성씨', value: '박씨' }
-			],
-			next_hint: { kind: 'club', label: '동아리', typed: true }
-		}
+			partner_hints: HINTS2.partner,
+			my_hints: HINTS2.mine,
+			next_hint: { kind: 'diploma', label: '디플로마', typed: true }
+		},
+		// 20분 째 — 공통 질문에 답하면서 연장하는 차례
+		question: {
+			round: 2,
+			expires_at: sec(70),
+			partner_hints: HINTS2.partner.slice(0, 1),
+			my_hints: HINTS2.mine.slice(0, 1),
+			next_hint: { kind: 'q1', label: '요즘 빠져 있는 것', typed: true }
+		},
+		// 60분 째 — 동아리까지 다 공개됐고, 연장 대신 "이 채팅을 고정하시겠습니까?"
+		pin: { round: 6, expires_at: sec(70), partner_vote: true, partner_hints: HINTS5, my_hints: HINTS5, next_hint: null, pin_next: true },
+		// 둘 다 고정한 대화 — 타이머 없이 "고정됨"
+		pinned: { round: 7, expires_at: 'infinity', partner_hints: HINTS5, my_hints: HINTS5, next_hint: null, pinned: true }
 	};
 
 	let id = 0;

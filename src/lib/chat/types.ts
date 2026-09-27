@@ -30,10 +30,15 @@ export type RoomRow = {
 	read2: number | null;
 	/** 멈춰 있으면 남은 시간 (Phase 28) — 그동안 expires_at 은 'infinity' */
 	paused_left?: string | null;
+	/** 둘 다 고정한 대화 (Phase 29) — 시간 제한 없음, expires_at 은 'infinity' */
+	pinned?: boolean;
 };
 
-/** 연장할 때마다 서로 하나씩 공개되는 힌트 (Phase 28) */
-export type Hint = { kind: 'grade' | 'surname' | 'club' | 'diploma'; label: string; value: string };
+/**
+ * 연장할 때마다 서로 하나씩 공개되는 힌트 (Phase 28 · 29) — 학년 → 공통 질문(q1) → 디플로마 → 공통 질문(q2) → 동아리.
+ * 공통 질문은 label 이 그 방의 질문 자체. (surname 은 Phase 28 때 순서 — 지금은 나오지 않는다)
+ */
+export type Hint = { kind: 'grade' | 'surname' | 'club' | 'diploma' | 'q1' | 'q2'; label: string; value: string };
 
 /** room_snapshot() RPC 응답 — 클라가 방에 대해 아는 모든 것. */
 export type RoomSnap = {
@@ -60,6 +65,10 @@ export type RoomSnap = {
 	server_now: string;
 	/** 한쪽이라도 대화 화면을 안 보고 있어 시간이 멈춤 (Phase 28 전 DB 면 없다) — expires_at - server_now = 남은 시간 */
 	paused?: boolean;
+	/** 둘 다 고정한 대화 — 시간 제한이 없다 (expires_at 은 'infinity'). Phase 29 전 DB 면 없다 */
+	pinned?: boolean;
+	/** 이번 투표가 연장이 아니라 "이 채팅을 고정하시겠습니까?" (동아리까지 연장한 다음 차례) */
+	pin_next?: boolean;
 	/** 지금까지 공개된 상대 · 내 힌트, 다음 연장 때 공개될 힌트 (typed = 연장할 때 직접 적는다) */
 	partner_hints?: Hint[];
 	my_hints?: Hint[];
@@ -69,7 +78,7 @@ export type RoomSnap = {
 /** extension_votes 행 — seat 만 있고 사용자 식별자는 없다 */
 export type VoteRow = { room_id: string; round: number; seat: 1 | 2; agree: boolean };
 
-export type VoteResult = 'waiting' | 'extended' | 'declined' | 'expired' | 'closed' | 'too_early' | 'max_rounds' | 'need_hint';
+export type VoteResult = 'waiting' | 'extended' | 'declined' | 'expired' | 'closed' | 'too_early' | 'max_rounds' | 'need_hint' | 'pinned';
 
 /** 대화 상대의 기본 정보 — partner_profile(room) 응답. ★ uuid·성별·선호는 없다. */
 export type PartnerProfile = {

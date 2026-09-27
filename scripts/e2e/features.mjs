@@ -176,16 +176,74 @@ try {
 	const a1 = await page.locator('.timer').innerText(); await page.waitForTimeout(2200);
 	check('둘 다 보고 있으면 평소처럼 흐른다', a1 !== (await page.locator('.timer').innerText()) && (await page.locator('.timer .pause-ic').count()) === 0);
 
-	console.log('[연장 힌트]');
+	console.log('[연장 공개 순서 — 학년 → 공통 질문 → 디플로마 → 공통 질문 → 동아리]');
 	await page.goto(U('/dev/chat?s=hints')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(300);
-	check('★ 공개된 상대 힌트: 학년 · 성씨', (await page.locator('.hint-chip').allInnerTexts()).map((x) => x.replace(/\s+/g, '')).join(',') === '학년2학년,성씨김씨', JSON.stringify(await page.locator('.hint-chip').allInnerTexts()));
-	check('연장 배너: "연장하면 서로의 동아리 공개" · 내 동아리 적는 칸', (await page.locator('.extend').innerText()).includes('서로의 동아리 공개') && (await page.getByRole('textbox', { name: '내 동아리' }).count()) === 1);
+	check('★ 공개된 상대 힌트: 학년 · 공통 질문 답', (await page.locator('.hint-chip').allInnerTexts()).map((x) => x.replace(/\s+/g, '')).join(',') === '학년2학년,요즘빠져있는것밴드음악', JSON.stringify(await page.locator('.hint-chip').allInnerTexts()));
+	check('연장 배너: "연장하면 서로의 디플로마 공개" · 내 디플로마 적는 칸', (await page.locator('.extend').innerText()).includes('서로의 디플로마 공개') && (await page.getByRole('textbox', { name: '내 디플로마' }).count()) === 1);
 	await page.screenshot({ path: `${SP}/feat-9-hints.png` });
 	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
-	check('★ 동아리를 안 적으면 연장이 안 된다', (await page.evaluate(() => (window.__votes ?? []).length)) === 0 && (await page.getByText('동아리을(를) 적어 주세요').isVisible()));
-	await page.getByRole('textbox', { name: '내 동아리' }).fill('밴드부');
+	check('★ 디플로마를 안 적으면 연장이 안 된다', (await page.evaluate(() => (window.__votes ?? []).length)) === 0 && (await page.getByText('디플로마을(를) 적어 주세요').isVisible()));
+	await page.getByRole('textbox', { name: '내 디플로마' }).fill('IB');
 	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
-	check('★ 적고 연장하면 그 값과 함께 투표', JSON.stringify(await page.evaluate(() => window.__votes)) === '[{"agree":true,"hint":"밴드부"}]', JSON.stringify(await page.evaluate(() => window.__votes)));
+	check('★ 적고 연장하면 그 값과 함께 투표', JSON.stringify(await page.evaluate(() => window.__votes)) === '[{"agree":true,"hint":"IB"}]', JSON.stringify(await page.evaluate(() => window.__votes)));
+
+	await page.goto(U('/dev/chat?s=question')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(300);
+	const qBox = page.getByRole('textbox', { name: '공통 질문 요즘 빠져 있는 것 — 내 답' });
+	check('★ 20분 째: 공통 질문과 내 답 칸', (await page.locator('.extend .question').innerText()) === 'Q. 요즘 빠져 있는 것' && (await qBox.count()) === 1 && (await qBox.getAttribute('maxlength')) === '30');
+	await page.screenshot({ path: `${SP}/feat-10-question.png` });
+	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
+	check('답을 안 적으면 연장이 안 된다', (await page.evaluate(() => (window.__votes ?? []).length)) === 0 && (await page.getByText('답을(를) 적어 주세요').isVisible()));
+	await qBox.fill('러닝');
+	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
+	check('답과 함께 투표', JSON.stringify(await page.evaluate(() => window.__votes)) === '[{"agree":true,"hint":"러닝"}]');
+
+	console.log('[대화 고정]');
+	await page.goto(U('/dev/chat?s=pin')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(300);
+	const pinBar = await page.locator('.extend').innerText();
+	check('★ 60분 째: "이 채팅을 고정하시겠습니까?" · 상대가 원함 · 적는 칸 없음', pinBar.includes('이 채팅을 고정하시겠습니까?') && pinBar.includes('상대가 고정을 원해요') && (await page.locator('.extend input').count()) === 0, pinBar);
+	check('공개된 힌트 다섯 가지', (await page.locator('.hint-chip').count()) === 5);
+	await page.screenshot({ path: `${SP}/feat-11-pin.png` });
+	await page.getByRole('button', { name: '고정하기' }).click(); await page.waitForTimeout(300);
+	check('고정하기 = 힌트 없이 동의', JSON.stringify(await page.evaluate(() => window.__votes)) === '[{"agree":true,"hint":null}]');
+	await page.goto(U('/dev/chat?s=pinned')); await bubble('안녕하세요!').waitFor(); await page.waitForTimeout(1200);
+	check('★ 고정한 대화: 타이머 대신 "고정됨" · 연장 배너 · 시간 종료 없음', (await page.locator('.pinned-tag').innerText()).includes('고정됨') && (await page.locator('.timer').count()) === 0 && (await page.locator('.extend').count()) === 0 && (await page.getByText('시간 종료').count()) === 0 && !(await page.locator('textarea').isDisabled()));
+	await page.getByRole('button', { name: '메뉴' }).click(); await page.getByRole('button', { name: '대화 나가기' }).click();
+	check('나가기 확인에 "고정한 대화" 안내', (await page.locator('.warn').innerText()).includes('고정한 대화'));
+	await page.screenshot({ path: `${SP}/feat-12-pinned.png` });
+
+	console.log('[내 말풍선 그라디언트 — 빠르게 스크롤해도 색이 튀지 않게]');
+	// 목록이 스크롤되도록 낮은 화면. 말풍선 뒤판의 그라디언트 위치 = -(말풍선이 목록 위 끝에서 떨어진 거리) 여야 한다
+	const sp = await (await browser.newContext({ viewport: { width: 390, height: 360 } })).newPage();
+	await sp.goto(U('/dev/chat?s=chat')); await sp.locator('.bubble', { hasText: '안녕하세요!' }).waitFor(); await sp.waitForTimeout(400);
+	// 스크롤한 뒤 말풍선마다 그라디언트 위치를 잰다 — scroll 이벤트 · JS 계산 없이 CSS 만으로
+	const drift = (y) => sp.evaluate((y) => new Promise((done) => {
+		const list = document.querySelector('.list');
+		list.scrollTop = y;
+		// 계산된 값은 다음 프레임의 타임라인 갱신 뒤에 읽힌다 (그리기는 그 프레임 안에서 이미 맞춰진다)
+		requestAnimationFrame(() => requestAnimationFrame(() => {
+		const top = list.getBoundingClientRect().top;
+		const H = list.clientHeight;
+		// 화면에 (조금이라도) 보이는 말풍선만 — 밖에 있는 것은 애니메이션 양 끝 값에 멈춰 있다 (보이지 않으니 상관없음)
+		const seen = [...document.querySelectorAll('.mine .bubble')].filter((b) => {
+			const y = b.getBoundingClientRect().top - top;
+			return y < H && y + b.offsetHeight > 0;
+		});
+		done(seen.length ? seen.map((b) => {
+			// 그림(3H)의 가운데 H 가 실제 그라디언트 → 말풍선이 목록 위에서 y 에 있으면 그림 위치는 -(H + y)
+			const want = -(H + b.getBoundingClientRect().top - top);
+			// 애니메이션 중간 값은 "calc(37.5% + 120px)" 꼴 — %는 (말풍선 높이 - 배경 높이 3H) 기준
+			const v = getComputedStyle(b, '::before').backgroundPositionY;
+			const k = b.offsetHeight - 3 * H, m = v.match(/^calc\((-?[\d.]+)% ([+-]) ([\d.]+)px\)$/);
+			const got = m ? (+m[1] / 100) * k + (m[2] === '-' ? -1 : 1) * +m[3] : v.endsWith('%') ? (parseFloat(v) / 100) * k : parseFloat(v);
+			return Math.abs(got - want);
+		}) : [Infinity]);
+		}));
+	}), y);
+	check('뒤판이 스크롤 연동 애니메이션으로 움직인다', (await sp.locator('.mine .bubble').first().evaluate((b) => getComputedStyle(b, '::before').animationName)) !== 'none');
+	let worst = 0;
+	for (const y of [9999, 500, 400, 300, 200, 9999]) worst = Math.max(worst, ...(await drift(y)));
+	check('★ 스크롤해도 말풍선마다 제 위치의 색 (어긋남 1px 미만)', worst < 1, `${worst}px`);
+	check('말풍선 바탕은 테마의 가운데 색 (옛 보라 #9a36e4 아님)', (await sp.locator('.mine .bubble').first().evaluate((b) => getComputedStyle(b).backgroundColor)) === 'rgb(238, 67, 96)');
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
 } finally { await browser.close(); vite.kill(); try { execSync("pkill -f 'vite dev --port 5192'"); } catch {} }
 console.log(`\n${pass} passed, ${fail} failed`);

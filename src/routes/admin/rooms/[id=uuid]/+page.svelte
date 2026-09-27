@@ -28,7 +28,8 @@
 		</h1>
 		<p class="a-sub">
 			{fmtTime(v.room.created_at)} 시작
-			{#if v.room.closed_at} · {fmtTime(v.room.closed_at)} 종료{:else} · {fmtTime(v.room.expires_at)} 마감{/if}
+			<!-- 멈춘 대화 · 고정한 대화는 마감이 없다 (expires_at = infinity) -->
+			{#if v.room.closed_at} · {fmtTime(v.room.closed_at)} 종료{:else if Number.isNaN(Date.parse(v.room.expires_at))} · 마감 없음 (멈춤 · 고정){:else} · {fmtTime(v.room.expires_at)} 마감{/if}
 			· 연장 {v.room.round - 1}회
 		</p>
 	</div>

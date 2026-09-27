@@ -57,7 +57,9 @@
 		if (page.state.ai) replaceHistory('', { ...page.state, ai: false });
 		seeker.start();
 	}
-	const full = $derived(inbox.rooms.length >= maxRooms);
+	// 고정한 대화(Phase 29)는 동시 대화 개수에 세지 않는다 — 서버(private.open_rooms)와 같은 규칙
+	const openCount = $derived(inbox.rooms.filter((r) => !r.pinned).length);
+	const full = $derived(openCount >= maxRooms);
 	let menuFor = $state<InboxRoom | null>(null);
 
 	$effect(() => {
@@ -153,7 +155,7 @@
 	{#if inbox.rooms.length}
 		<div class="head">
 			<h2>대화</h2>
-			<span class="muted num">{inbox.rooms.length}/{maxRooms}</span>
+			<span class="muted num">{openCount}/{maxRooms}</span>
 		</div>
 		<ul class="rooms">
 			{#each inbox.rooms as r (r.room_id)}
@@ -171,7 +173,12 @@
 							<span class="last" class:bold={r.unread > 0 || !r.joined}>{preview(r)}</span>
 						</span>
 						<span class="right">
-							{#if r.status === 'active'}
+							{#if r.pinned}
+								<!-- 둘 다 고정한 대화 — 시간 제한이 없고 목록 맨 위 (서버가 먼저 정렬해 준다) -->
+								<span class="pin" aria-label="고정한 대화">
+									<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5h6l-1 5.5 3.5 3.5v1.5h-11V12.5L10 9 9 3.5zM12 14v6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" /></svg>
+								</span>
+							{:else if r.status === 'active'}
 								<span class="time num" class:urgent={t.urgent} class:paused={r.paused}>{t.text}</span>
 							{/if}
 							{#if r.unread > 0}
@@ -490,6 +497,15 @@
 	.time {
 		font-size: 12px;
 		color: var(--text-2);
+	}
+	.pin {
+		display: grid;
+		place-items: center;
+		color: var(--accent);
+	}
+	.pin svg {
+		width: 16px;
+		height: 16px;
 	}
 	.time.paused {
 		opacity: 0.5;

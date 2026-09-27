@@ -54,7 +54,9 @@
 	// ── 시간 ─────────────────────────────────────────────────────
 	// 클라 시계 대신 서버 시계 기준 (skew 보정). 판정은 서버가 한다 — 여기는 표시용.
 	// 한쪽이라도 대화 화면을 안 보고 있으면 시간이 멈춘다 (Phase 28) — 멈춘 동안은 남은 시간 그대로
-	const paused = $derived(!!room?.snap?.paused && room.snap.status === 'active');
+	// 둘 다 고정한 대화는 시간 제한이 없다 (Phase 29) — 타이머 · 연장 투표 · 시간 종료가 없다
+	const pinned = $derived(!!room?.snap?.pinned && room.snap.status === 'active');
+	const paused = $derived(!pinned && !!room?.snap?.paused && room.snap.status === 'active');
 	const remainMs = $derived(
 		!room?.snap
 			? 0
@@ -62,9 +64,9 @@
 				? Math.max(0, Date.parse(room.snap.expires_at) - Date.parse(room.snap.server_now))
 				: Math.max(0, Date.parse(room.snap.expires_at) - room.serverNow(S.now))
 	);
-	const timeUp = $derived(!!room?.snap && room.snap.status !== 'closed' && !paused && remainMs <= 0);
+	const timeUp = $derived(!!room?.snap && room.snap.status !== 'closed' && !paused && !pinned && remainMs <= 0);
 	const mmss = $derived(fmtClock(Math.ceil(remainMs / 1000), true));
-	const urgent = $derived(remainMs > 0 && remainMs <= 60_000);
+	const urgent = $derived(!pinned && remainMs > 0 && remainMs <= 60_000);
 	const closed = $derived(room?.closed ?? false);
 	const pending = $derived(room?.snap?.status === 'pending');
 	// pending 방은 서버가 쓰기를 막는다(room_is_writable) — 화면도 맞춘다
@@ -84,21 +86,33 @@
 		!!snap &&
 			snap.status === 'active' &&
 			!paused &&
+			!pinned &&
 			remainMs > 0 &&
 			remainMs <= snap.vote_window_sec * 1000 &&
 			canExtendMore
 	);
 
-	// 연장할 때마다 서로 힌트 하나 (학년 → 성씨 → 동아리 → 디플로마). 동아리 · 디플로마는 연장하면서 직접 적는다
+	// 연장할 때마다 서로 하나씩 공개 (Phase 29): 10분 째 학년 → 20분 공통 질문 → 30분 디플로마 → 40분 공통 질문 → 50분 동아리.
+	// 학년은 명단에서, 나머지는 연장하면서 직접 적는다 (공통 질문은 그 방의 같은 질문에 각자 답).
+	// 동아리까지 연장한 다음 차례(60분 째)는 연장 대신 "이 채팅을 고정하시겠습니까?" — 둘 다 고정하면 시간 제한 없이 맨 위에.
 	const nextHint = $derived(snap?.next_hint ?? null);
+	const nextKind = $derived(nextHint?.kind ?? null);
+	const pinNext = $derived(!!snap?.pin_next);
 	const partnerHints = $derived(snap?.partner_hints ?? []);
+	const isQuestion = (k: string | null | undefined) => k === 'q1' || k === 'q2';
 	let hintDraft = $state('');
+	// 적는 차례가 바뀌면 칸을 비운다 (디플로마로 적은 글이 다음 공통 질문 칸에 남지 않게)
+	$effect(() => {
+		void nextKind;
+		hintDraft = '';
+	});
 	async function vote(agree: boolean) {
 		if (!room) return;
-		const typed = agree && !!nextHint?.typed;
-		if (typed && !hintDraft.trim()) return toast(`${nextHint!.label}을(를) 적어 주세요`);
+		const typed = agree && !!nextHint?.typed && !pinNext;
+		const what = isQuestion(nextKind) ? '답' : (nextHint?.label ?? '힌트');
+		if (typed && !hintDraft.trim()) return toast(`${what}을(를) 적어 주세요`);
 		const r = await room.vote(agree, typed ? hintDraft.trim() : null);
-		if (r === 'need_hint') toast(`${nextHint?.label ?? '힌트'}을(를) 다시 적어 주세요`);
+		if (r === 'need_hint') toast(`${what}을(를) 다시 적어 주세요`);
 		else if (r === 'too_early') toast('연장은 마감 직전부터 가능해요');
 		else if (r === 'max_rounds') toast('더 이상 연장할 수 없어요');
 		else if (r === null) toast('연결을 확인해 주세요');
@@ -228,7 +242,7 @@
 		// 고르기 줄이 열려 있는 동안 사람의 손가락·휠은 가림막(ReactionPicker 의 scrim)이 받아서 닫는다.
 		// 그래도 scroll 이 오면 목록이 저절로 움직인 것(상대 입력 중 표시가 사라짐 · 새 메시지) — 닫지 않고 따라간다.
 		followPicker();
-		paintSoon();
+		if (!cssGradient) paintSoon();
 		fromBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight;
 		atBottom = fromBottom < 48;
 		if (atBottom) room?.markRead();
@@ -240,8 +254,12 @@
 		paintSoon();
 	}
 	// ── 내 말풍선 그라디언트 ─────────────────────────────────────
-	// 인스타 DM 처럼 화면 위쪽 말풍선은 보라, 아래쪽은 분홍. 그라디언트 하나를 목록 화면에 깔고
+	// 인스타 DM 처럼 화면 위쪽 말풍선과 아래쪽 말풍선의 색이 다르다. 그라디언트 하나를 목록 화면에 깔고
 	// 말풍선마다 자기 위치만큼 밀어서 보여준다. (background-attachment: fixed 는 iOS 가 무시해서 직접 계산)
+	// 미는 일은 CSS 스크롤 연동 애니메이션(animation-timeline: view())이 스크롤과 같은 프레임에 한다.
+	// 예전엔 scroll 이벤트 → 다음 프레임에 JS 로 위치를 고쳤는데, 빠르게 스크롤하면 몇 프레임씩 늦어
+	// 말풍선이 그라디언트 바깥(엉뚱한 바탕색)을 보여 색이 잠깐 바뀌었다. JS 계산은 지원하지 않는 브라우저에서만.
+	const cssGradient = typeof CSS !== 'undefined' && !!CSS.supports?.('animation-timeline: view()');
 	let painting = false;
 	function paintSoon() {
 		if (painting) return;
@@ -249,11 +267,12 @@
 		requestAnimationFrame(() => {
 			painting = false;
 			if (!listEl) return;
+			listEl.style.setProperty('--lh', listEl.clientHeight + 'px');
+			if (cssGradient) return;
 			const top = listEl.getBoundingClientRect().top;
 			const els = listEl.querySelectorAll<HTMLElement>('.mine .bubble');
 			// 읽기를 먼저 모두 끝내고 쓴다 (레이아웃 재계산 반복 방지)
 			const ys = Array.from(els, (el) => el.getBoundingClientRect().top - top);
-			listEl.style.setProperty('--lh', listEl.clientHeight + 'px');
 			els.forEach((el, i) => el.style.setProperty('--by', -ys[i] + 'px'));
 		});
 	}
@@ -547,10 +566,17 @@
 					</span>
 				</span>
 			</button>
-			{#if !closed}
+			{#if !closed && pinned}
+				<span class="pinned-tag" aria-label="고정한 대화">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3.5h6l-1 5.5 3.5 3.5v1.5h-11V12.5L10 9 9 3.5zM12 14v6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" /></svg>
+					고정됨
+				</span>
+			{:else if !closed}
 				<span class="timer num" class:urgent={urgent && !paused} class:dim={pending || paused} aria-label={paused ? `멈춤 ${mmss}` : mmss}
 					>{#if paused}<svg class="pause-ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="3" stroke-linecap="round" /></svg>{/if}{mmss}</span
 				>
+			{/if}
+			{#if !closed}
 				<button class="more" onclick={() => openSheet('menu')} aria-label="메뉴">
 					<svg viewBox="0 0 24 24" aria-hidden="true">
 						<circle cx="5" cy="12" r="1.6" fill="currentColor" />
@@ -571,7 +597,7 @@
 		<div class="paused-bar">둘 다 보고 있을 때만 시간이 흘러요</div>
 	{/if}
 
-	{#if partnerGone && !voteOpen}
+	{#if partnerGone && !voteOpen && !pinned}
 		<div class="extend">
 			<div class="q">
 				<strong>상대가 자리를 비운 것 같아요</strong>
@@ -589,11 +615,20 @@
 			<div class="q">
 				{#if snap.my_vote === true}
 					<strong>상대의 대답을 기다리는 중</strong>
-					<span>둘 다 원해야 {snap.extend_minutes}분 이어져요</span>
+					<span>{pinNext ? '둘 다 원해야 고정돼요' : `둘 다 원해야 ${snap.extend_minutes}분 이어져요`}</span>
+				{:else if pinNext}
+					<strong>이 채팅을 고정하시겠습니까?</strong>
+					{#if snap.partner_vote === true}
+						<span class="want">상대가 고정을 원해요</span>
+					{:else}
+						<span>둘 다 고정하면 맨 위에 남고 사라지지 않아요</span>
+					{/if}
 				{:else}
 					<strong>{snap.extend_minutes}분 더 얘기할까요?</strong>
 					{#if snap.partner_vote === true}
 						<span class="want">상대가 연장을 원해요</span>
+					{:else if isQuestion(nextKind)}
+						<span>답을 적고 연장하면 서로의 답 공개</span>
 					{:else if nextHint}
 						<span>연장하면 서로의 {nextHint.label} 공개</span>
 					{:else}
@@ -601,13 +636,21 @@
 					{/if}
 				{/if}
 			</div>
-			{#if snap.my_vote !== true && nextHint?.typed}
-				<input class="hint-in" bind:value={hintDraft} maxlength="20" placeholder="내 {nextHint.label}" aria-label="내 {nextHint.label}" />
+			{#if snap.my_vote !== true && nextHint?.typed && !pinNext}
+				{@const q = isQuestion(nextHint.kind)}
+				{#if q}<p class="question">Q. {nextHint.label}</p>{/if}
+				<input
+					class="hint-in"
+					bind:value={hintDraft}
+					maxlength={q ? 30 : 20}
+					placeholder={q ? '내 답' : `내 ${nextHint.label}`}
+					aria-label={q ? `공통 질문 ${nextHint.label} — 내 답` : `내 ${nextHint.label}`}
+				/>
 			{/if}
 			{#if snap.my_vote !== true}
 				<div class="acts">
 					<button class="no" onclick={() => vote(false)} disabled={room?.voting}>그만하기</button>
-					<button class="yes" onclick={() => vote(true)} disabled={room?.voting}>더 얘기하기</button>
+					<button class="yes" onclick={() => vote(true)} disabled={room?.voting}>{pinNext ? '고정하기' : '더 얘기하기'}</button>
 				</div>
 			{/if}
 		</div>
@@ -806,7 +849,7 @@
 			<button class="item" onclick={() => openSheet('leave')}>대화 나가기</button>
 			<button class="item" onclick={() => (sheet = null)}>취소</button>
 		{:else if sheet === 'leave'}
-			<p class="warn">나가면 대화가 끝나요.</p>
+			<p class="warn">{pinned ? '고정한 대화예요. 나가면 대화가 끝나고 내용도 사라져요.' : '나가면 대화가 끝나요.'}</p>
 			<button class="item danger" onclick={leave}>나가기</button>
 			<button class="item" onclick={() => (sheet = null)}>취소</button>
 		{:else if sheet === 'block'}
@@ -883,6 +926,20 @@
 		font-size: 15px;
 		font-weight: 600;
 	}
+	.pinned-tag {
+		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		gap: 3px;
+		color: var(--accent);
+		font-size: 13px;
+		font-weight: 600;
+		white-space: nowrap;
+	}
+	.pinned-tag svg {
+		width: 16px;
+		height: 16px;
+	}
 	.timer .pause-ic {
 		width: 12px;
 		height: 12px;
@@ -918,7 +975,15 @@
 		font-size: 12px;
 		text-align: center;
 	}
-	/* 동아리 · 디플로마 적는 칸 — 배너 아래 한 줄 전체 */
+	/* 공통 질문 — 배너 아래 한 줄 전체, 적는 칸 바로 위 */
+	.question {
+		order: 3;
+		flex-basis: 100%;
+		margin: -4px 0 -6px;
+		font-size: 14px;
+		font-weight: 600;
+	}
+	/* 디플로마 · 동아리 · 공통 질문 답 적는 칸 — 배너 아래 한 줄 전체 */
 	.hint-in {
 		order: 3;
 		flex-basis: 100%;
@@ -1082,13 +1147,43 @@
 	}
 	/* 나(오른쪽) 묶음: 오른쪽 인접 모서리를 줄인다 */
 	.mine .bubble {
-		/* 목록 높이만큼의 그라디언트를 말풍선 위치(--by)만큼 올려서 보여준다 — 위 paintSoon() */
-		background-color: #9a36e4;
-		background-image: var(--bubble-fill);
-		background-size: 100% var(--lh, 100%);
-		background-position: 0 var(--by, 0);
-		background-repeat: no-repeat;
+		position: relative;
+		isolation: isolate;
+		/* 예전엔 여기 옛 기본색 보라(#9a36e4)가 있어서, 그라디언트 위치가 스크롤을 못 따라간 순간 보라가 비쳐 색이 바뀌어 보였다 */
+		background-color: var(--bubble-b);
 		color: var(--on-accent);
+	}
+	/* 목록 높이 H(--lh)의 그라디언트를 말풍선 위치만큼 올려서 보여준다 — 위 paintSoon().
+	   그림은 3H 높이: 가운데 H 가 실제 그라디언트, 위아래 H 는 끝 색 그대로 — 위치가 한 화면 가까이 어긋나도
+	   (빠른 스크롤에서 그리기가 늦는 프레임) 말풍선이 그라디언트 밖의 엉뚱한 색을 보이지 않는다.
+	   말풍선 자신이 아니라 뒤판에 두어 반짝임(flash) 애니메이션과 서로 덮어쓰지 않게 */
+	.mine .bubble::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		border-radius: inherit;
+		background-image: linear-gradient(180deg, var(--bubble-a) 33.333%, var(--bubble-b) 51.667%, var(--bubble-c) 66.667%);
+		background-size: 100% calc(3 * var(--lh, 100%));
+		background-position: 0 calc(var(--by, 0px) - var(--lh, 0px));
+		background-repeat: no-repeat;
+		pointer-events: none;
+	}
+	/* 스크롤 연동: 말풍선 윗변이 목록 아래 끝(y = H)에서 위 끝을 지나 사라질 때(y = -h)까지
+	   그림을 -(H + y) 에 둔다 = -2H → h - H. 배경이 3H 라 100% = h - 3H, 그래서 끝은 100% + 2H */
+	@supports (animation-timeline: view()) {
+		.mine .bubble::before {
+			animation: bubble-grad linear both;
+			animation-timeline: view();
+		}
+	}
+	@keyframes bubble-grad {
+		from {
+			background-position: 0 calc(-2 * var(--lh, 0px));
+		}
+		to {
+			background-position: 0 calc(100% + 2 * var(--lh, 0px));
+		}
 	}
 	.mine .bubble:not(.first) {
 		border-top-right-radius: 4px;

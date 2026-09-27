@@ -250,12 +250,18 @@ export class ChatRoom {
 			s.partner_vote = null;
 		}
 		if (wasPending && r.status === 'active') s.partner_joined = true;
-		// 새 라운드(힌트 공개) · 시간이 멈추거나 다시 흐름 — 행에는 남은 시간 · 힌트가 없으니 스냅샷을 다시 받는다
-		const paused = r.paused_left != null || Number.isNaN(Date.parse(r.expires_at));
-		if (r.round !== s.round || paused || !!s.paused !== paused) void this.#lightSync();
+		// 새 라운드(힌트 공개 · 고정) · 시간이 멈추거나 다시 흐름 — 행에는 남은 시간 · 힌트가 없으니 스냅샷을 다시 받는다
+		// 고정한 대화도 expires_at 이 'infinity' 지만 멈춘 게 아니다 (Phase 29)
+		const pinned = !!r.pinned;
+		const paused = !pinned && (r.paused_left != null || Number.isNaN(Date.parse(r.expires_at)));
+		if (r.round !== s.round || paused || !!s.paused !== paused || pinned !== !!s.pinned) void this.#lightSync();
 		s.status = r.status;
 		s.round = r.round;
-		if (!paused) {
+		if (pinned) {
+			s.pinned = true;
+			s.pin_next = false;
+			s.paused = false;
+		} else if (!paused) {
 			s.expires_at = r.expires_at;
 			s.paused = false;
 		}
@@ -274,7 +280,7 @@ export class ChatRoom {
 	// ── 타임박스 ─────────────────────────────────────────────────
 	voting = $state(false);
 
-	/** hint = 동아리 · 디플로마 차례에 연장하면서 적은 내 값 */
+	/** hint = 디플로마 · 동아리 · 공통 질문 차례에 연장하면서 적은 내 값. 고정을 묻는 차례면 agree = 고정하기 */
 	async vote(agree: boolean, hint: string | null = null): Promise<VoteResult | null> {
 		if (!this.snap || this.voting) return null;
 		this.voting = true;

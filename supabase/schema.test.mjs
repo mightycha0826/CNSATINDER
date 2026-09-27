@@ -525,8 +525,9 @@ console.log('\n[14] 연장 투표 — 정상 흐름');
 	check('★ 새 라운드에서는 이전 표가 섞이지 않는다 (my_vote=null)', snap2.my_vote === null && snap2.partner_vote === null);
 
 	await setExpiry(r, 60);
-	const b3 = await rpcAs(B, 'vote_extension', r, true);
-	const a3 = await rpcAs(A, 'vote_extension', r, true);
+	// 두 번째 연장은 공통 질문 차례 (Phase 29) — 답을 적으면서 연장한다
+	const b3 = await rpcAs(B, 'vote_extension', r, true, '러닝');
+	const a3 = await rpcAs(A, 'vote_extension', r, true, '밴드 음악');
 	check('두 번째 연장도 된다 (무제한 기본값)', b3.result === 'waiting' && a3.result === 'extended' && (await roomRow(r)).round === 3);
 }
 
@@ -2642,32 +2643,100 @@ console.log('\n[76] 랜덤 채팅 — 메시지 삭제 · 둘 다 볼 때만 흐
 	check('하루 넘게 멈춰 있던 대화는 닫힌다', (await one(`select status from public.rooms where id = $1`, [room])).status === 'closed');
 	void left0;
 
-	console.log('  [연장 힌트]');
+	console.log('  [연장 공개 순서 — Phase 29: 학년 → 공통 질문 → 디플로마 → 공통 질문 → 동아리]');
 	room = await open();
 	await rpcAs(A.id, 'room_view', room, true); await rpcAs(B.id, 'room_view', room, true);
-	const toWindow = () => db.query(`update public.rooms set expires_at = now() + interval '20 seconds' where id = $1`, [room]);
+	const toWindow = (id = room) => db.query(`update public.rooms set expires_at = now() + interval '20 seconds' where id = $1`, [id]);
+	const lastSys = async () => (await one(`select body from public.messages where room_id = $1 and sender_seat = 0 order by id desc limit 1`, [room])).body;
 	await toWindow();
 	snap = await rpcAs(A.id, 'room_snapshot', room);
-	check('처음엔 공개된 힌트 없음 · 다음 힌트 = 학년', snap.partner_hints.length === 0 && snap.next_hint?.kind === 'grade' && snap.next_hint.typed === false);
+	check('처음엔 공개된 힌트 없음 · 다음 힌트 = 학년', snap.partner_hints.length === 0 && snap.next_hint?.kind === 'grade' && snap.next_hint.typed === false && snap.pin_next === false && snap.pinned === false);
 	await rpcAs(A.id, 'vote_extension', room, true);
 	let v = await rpcAs(B.id, 'vote_extension', room, true);
-	check('★ 1번째 연장 → 서로의 학년', v.result === 'extended' && JSON.stringify(v.snap.partner_hints) === JSON.stringify([{ kind: 'grade', label: '학년', value: '2학년' }]), JSON.stringify(v.snap.partner_hints));
+	check('★ 10분 째 연장 → 서로의 학년', v.result === 'extended' && JSON.stringify(v.snap.partner_hints) === JSON.stringify([{ kind: 'grade', label: '학년', value: '2학년' }]), JSON.stringify(v.snap.partner_hints));
 	check('내 쪽 공개 힌트도 안다', (await rpcAs(A.id, 'room_snapshot', room)).my_hints[0].value === '2학년' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[0].value === '1학년');
-	check('연장 안내 메시지에 힌트 이름', (await one(`select body from public.messages where room_id = $1 and sender_seat = 0 order by id desc limit 1`, [room])).body.includes('학년 공개'));
-	await toWindow();
-	await rpcAs(A.id, 'vote_extension', room, true); v = await rpcAs(B.id, 'vote_extension', room, true);
-	check('★ 2번째 연장 → 성씨 (명단 이름 첫 글자)', v.snap.partner_hints[1]?.value === '김씨' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[1].value === '박씨');
+	check('연장 안내 메시지에 힌트 이름', (await lastSys()).includes('학년 공개'));
+
 	await toWindow();
 	snap = await rpcAs(A.id, 'room_snapshot', room);
-	check('3번째는 동아리 — 직접 적는 차례', snap.next_hint?.kind === 'club' && snap.next_hint.typed === true);
-	check('★ 동아리를 안 적으면 연장할 수 없다', (await rpcAs(A.id, 'vote_extension', room, true)).result === 'need_hint');
-	check('신상정보가 들어간 힌트는 안 된다', (await rpcAs(A.id, 'vote_extension', room, true, '010-1234-5678')).result === 'need_hint');
-	await rpcAs(A.id, 'vote_extension', room, true, '밴드부'); v = await rpcAs(B.id, 'vote_extension', room, true, '방송부');
-	check('★ 3번째 연장 → 서로가 적은 동아리', v.result === 'extended' && v.snap.partner_hints[2]?.value === '밴드부' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[2].value === '방송부');
+	const q1 = snap.next_hint?.label;
+	check('★ 20분 째는 공통 질문 — 직접 답하는 차례, 둘에게 같은 질문', snap.next_hint?.kind === 'q1' && snap.next_hint.typed === true && !!q1 && q1 === (await rpcAs(B.id, 'room_snapshot', room)).next_hint?.label, JSON.stringify(snap.next_hint));
+	check('성씨는 순서에서 빠졌다', !JSON.stringify(snap).includes('성씨'));
+	check('★ 답을 안 적으면 연장할 수 없다', (await rpcAs(A.id, 'vote_extension', room, true)).result === 'need_hint');
+	check('신상정보가 들어간 답은 안 된다', (await rpcAs(A.id, 'vote_extension', room, true, '010-1234-5678')).result === 'need_hint');
+	check('30자 넘는 답은 안 된다', (await rpcAs(A.id, 'vote_extension', room, true, '가'.repeat(31))).result === 'need_hint');
+	await rpcAs(A.id, 'vote_extension', room, true, '밴드 음악 듣기 요즘 완전 빠졌어요'); v = await rpcAs(B.id, 'vote_extension', room, true, '러닝');
+	check('★ 연장 → 서로의 공통 질문 답 공개 (이름표 = 그 질문)', v.result === 'extended' && v.snap.partner_hints[1]?.kind === 'q1' && v.snap.partner_hints[1].label === q1 && v.snap.partner_hints[1].value === '밴드 음악 듣기 요즘 완전 빠졌어요' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[1].value === '러닝', JSON.stringify(v.snap.partner_hints));
+	check('안내: 공통 질문 답 공개', (await lastSys()).includes('공통 질문 답 공개'));
+
 	await toWindow();
+	snap = await rpcAs(A.id, 'room_snapshot', room);
+	check('★ 30분 째는 디플로마 — 직접 적는 차례', snap.next_hint?.kind === 'diploma' && snap.next_hint.typed === true);
+	check('디플로마를 안 적으면 연장할 수 없다', (await rpcAs(A.id, 'vote_extension', room, true)).result === 'need_hint');
 	await rpcAs(A.id, 'vote_extension', room, true, 'IB'); v = await rpcAs(B.id, 'vote_extension', room, true, '과학');
-	check('4번째 → 디플로마, 그 뒤로는 힌트 없음', v.snap.partner_hints.length === 4 && v.snap.partner_hints[3].value === 'IB' && v.snap.next_hint === null);
+	check('★ 연장 → 서로가 적은 디플로마', v.result === 'extended' && v.snap.partner_hints[2]?.kind === 'diploma' && v.snap.partner_hints[2].value === 'IB' && (await rpcAs(A.id, 'room_snapshot', room)).partner_hints[2].value === '과학');
+
+	await toWindow();
+	snap = await rpcAs(A.id, 'room_snapshot', room);
+	check('★ 40분 째는 두 번째 공통 질문 — 첫 질문과 다르다', snap.next_hint?.kind === 'q2' && snap.next_hint.typed === true && snap.next_hint.label !== q1, JSON.stringify(snap.next_hint));
+	await rpcAs(A.id, 'vote_extension', room, true, '가을'); v = await rpcAs(B.id, 'vote_extension', room, true, '겨울');
+	check('연장 → 두 번째 답 공개', v.result === 'extended' && v.snap.partner_hints[3]?.value === '가을');
+
+	await toWindow();
+	snap = await rpcAs(A.id, 'room_snapshot', room);
+	check('★ 50분 째는 동아리', snap.next_hint?.kind === 'club' && snap.next_hint.typed === true && snap.pin_next === false);
+	await rpcAs(A.id, 'vote_extension', room, true, '밴드부'); v = await rpcAs(B.id, 'vote_extension', room, true, '방송부');
+	check('★ 연장 → 서로의 동아리 · 다섯 가지 전부 공개', v.result === 'extended' && v.snap.partner_hints.length === 5 && v.snap.partner_hints[4].value === '밴드부' && v.snap.next_hint === null, JSON.stringify(v.snap.partner_hints));
 	await expectError('힌트 보관함은 학생이 못 읽는다', () => rowsAs(A.id, 'select * from private.room_hints'), 'permission denied');
+
+	console.log('  [대화 고정 — Phase 29]');
+	snap = await rpcAs(A.id, 'room_snapshot', room);
+	check('동아리 다음 차례는 연장이 아니라 고정 여부', snap.pin_next === true && snap.next_hint === null && snap.pinned === false);
+	check('마감 직전 전에는 고정도 못 누른다', (await rpcAs(A.id, 'vote_extension', room, true)).result === 'too_early');
+	await toWindow();
+	check('고정 차례에는 적을 것이 없다 (힌트 없이 동의)', (await rpcAs(A.id, 'vote_extension', room, true)).result === 'waiting');
+	check('상대 화면: 고정을 원한다는 표', (await rpcAs(B.id, 'room_snapshot', room)).partner_vote === true);
+	v = await rpcAs(B.id, 'vote_extension', room, true);
+	const pr = await one(`select pinned, pinned_at is not null as at, expires_at = 'infinity' as inf, paused_left is null as np from public.rooms where id = $1`, [room]);
+	check('★ 둘 다 고정 → 고정됨 · 시간 제한 없음', v.result === 'pinned' && v.snap.pinned === true && v.snap.pin_next === false && pr.pinned && pr.at && pr.inf && pr.np, JSON.stringify(pr));
+	check('안내: 둘 다 고정했어요', (await lastSys()).includes('고정'));
+	check('고정 뒤에도 공개된 힌트는 그대로', v.snap.partner_hints.length === 5 && v.snap.next_hint === null);
+	check('고정한 대화에 또 투표할 수 없다', (await rpcAs(A.id, 'vote_extension', room, true)).result === 'pinned');
+	check('고정한 대화는 쓸 수 있다', (await rowsAs(A.id, `select public.room_is_writable($1) w`, [room]))[0].w === true);
+	snap = await rpcAs(B.id, 'room_view', room, false);
+	check('★ 한쪽이 떠나도 멈추지 않는다 (시간이 없으니)', snap.paused === false && (await one(`select paused_left is null as np from public.rooms where id = $1`, [room])).np);
+	await db.query(`update public.room_members set viewing_until = now() - interval '5 seconds' where room_id = $1`, [room]);
+	await db.query(`update public.rooms set paused_since = now() - interval '3 days' where id = $1`, [room]);
+	await db.query('select public.sweep_rooms()');
+	check('★ 스위퍼가 닫지 않는다 (며칠 지나도)', (await one(`select status from public.rooms where id = $1`, [room])).status === 'active');
+	await db.query(`update public.rooms set paused_since = null where id = $1`, [room]);
+
+	// 고정한 대화가 목록 맨 위 — 나중에 연 대화에 새 메시지가 있어도
+	// (dev_open_room 은 두 사람의 열린 방을 닫으므로 여기서는 직접 만든다)
+	const C = await named('이민수', 3);
+	const rawRoom = async (u1, u2) => {
+		const id = (await one(`insert into public.rooms (status, armed_at, expires_at, alias1, alias2) values ('active', now(), now() + interval '10 minutes', '가람', '나래') returning id`)).id;
+		await db.query(`insert into public.room_members (room_id, user_id, seat, joined_at) values ($1, $2, 1, now()), ($1, $3, 2, now())`, [id, u1, u2]);
+		return id;
+	};
+	const other = await rawRoom(A.id, C.id);
+	await db.query(`insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, 2, '방금', gen_random_uuid())`, [other]);
+	const list = (await rpcAs(A.id, 'my_rooms')).rooms;
+	check('★ 대화 목록: 고정한 대화가 맨 위', list[0]?.room_id === room && list[0].pinned === true && list.some((r) => r.room_id === other && r.pinned === false), JSON.stringify(list.map((r) => [r.room_id === room, r.pinned])));
+	check('★ 고정한 대화는 동시 대화 개수에 세지 않는다', (await one(`select private.open_rooms($1) n`, [A.id])).n === 1);
+	await expectError('동시 대화 개수 함수는 학생이 부를 수 없다', () => rowsAs(A.id, 'select private.open_rooms($1)', [A.id]), 'permission denied');
+
+	// 고정을 거절하면 연장 거절과 같이 끝난다
+	const r2 = await rawRoom(B.id, C.id);
+	await db.query(`update public.rooms set round = 6, expires_at = now() + interval '20 seconds' where id = $1`, [r2]);
+	check('다른 방: 고정 차례', (await rpcAs(B.id, 'room_snapshot', r2)).pin_next === true);
+	await rpcAs(B.id, 'vote_extension', r2, true);
+	v = await rpcAs(C.id, 'vote_extension', r2, false);
+	check('★ 한쪽이 고정하지 않으면 대화가 끝난다', v.result === 'declined' && (await one(`select pinned from public.rooms where id = $1`, [r2])).pinned === false);
+
+	// 고정한 대화도 나가면 닫힌다 (그때부터는 보통 대화처럼 24시간 뒤 지워진다)
+	await rpcAs(A.id, 'leave_room', room, false);
+	check('고정한 대화도 나가면 닫힌다', (await one(`select status from public.rooms where id = $1`, [room])).status === 'closed');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

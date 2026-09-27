@@ -25,6 +25,10 @@
 	--accent: #e23e68;
 	/* 내 말풍선 — 화면 위(주황)에서 아래(핑크)로. 인스타 DM 처럼 말풍선 위치에 따라 색이 변한다 */
 	--bubble-fill: linear-gradient(180deg, #f2603f, #ee4360 55%, #d92868);
+	/* 위 그라디언트의 세 점 — 대화 화면이 그라디언트 위아래를 끝 색으로 늘려 쓴다 (ChatView) */
+	--bubble-a: #f2603f;
+	--bubble-b: #ee4360;
+	--bubble-c: #d92868;
 	--on-accent: #ffffff;
 	--danger: #ed4956;
 	/* 설정식 묶음 목록 (아이폰 설정 앱) — 회색 바탕 위 흰 카드 */
