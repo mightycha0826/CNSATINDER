@@ -57,13 +57,24 @@ export const IN_APP_NAME: Record<InApp, string> = {
 };
 
 /**
- * 인앱 브라우저에서 바깥 브라우저로 여는 링크. 방법이 없으면 null (→ 링크 복사로 안내).
+ * 안드로이드는 Chrome 으로만 설치하게 한다.
+ * 삼성 인터넷이 만드는 설치 앱(WebAPK)은 옛 Android 버전용으로 만들어져, Android 14+ 에서
+ * Play 프로텍트가 "안전하지 않은 앱 차단됨"으로 막는다 (Chrome 이 만든 것은 괜찮다).
+ * https://github.com/SamsungInternet/support/issues/123
+ * 앱 코드·manifest 로는 못 고친다 — Chrome 으로 보내는 수밖에 없다.
+ */
+export function needsChrome(env: Env): boolean {
+	return env.os === 'android' && !env.inApp && env.browser !== 'chrome';
+}
+
+/**
+ * 지금 브라우저에서 다른 브라우저로 여는 링크. 방법이 없으면 null (→ 링크 복사로 안내).
  *  · 카카오톡: 공식 스킴이 iOS·안드로이드 모두 기본 브라우저로 연다
- *  · 안드로이드 그 밖: intent 로 Chrome 을 연다
+ *  · 안드로이드 그 밖 (인앱 · 삼성 인터넷 등): intent 로 Chrome 을 연다
  */
 export function openExternalUrl(env: Env, url: string): string | null {
 	if (env.inApp === 'kakao') return `kakaotalk://web/openExternal?url=${encodeURIComponent(url)}`;
-	if (env.os === 'android' && env.inApp) {
+	if (env.os === 'android' && (env.inApp || needsChrome(env))) {
 		const u = new URL(url);
 		return `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=https;package=com.android.chrome;end`;
 	}

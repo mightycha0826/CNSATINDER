@@ -35,11 +35,12 @@ const UA = {
 	androidKakao:
 		'Mozilla/5.0 (Linux; Android 14; SM-S918N Build/UP1A.231005.007; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/138.0.0.0 Mobile Safari/537.36 KAKAOTALK 25060',
 	androidSamsung:
-		'Mozilla/5.0 (Linux; Android 14; SM-S918N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0.0.0 Mobile Safari/537.36'
+		'Mozilla/5.0 (Linux; Android 14; SM-S918N) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/125.0.0.0 Mobile Safari/537.36',
+	androidFirefox: 'Mozilla/5.0 (Android 14; Mobile; rv:142.0) Gecko/142.0 Firefox/142.0'
 };
 
 try {
-	const { detectEnv, openExternalUrl } = await import(pathToFileURL(out).href);
+	const { detectEnv, openExternalUrl, needsChrome } = await import(pathToFileURL(out).href);
 	const e = (ua, platform = '', touch = 0) => detectEnv(ua, platform, touch);
 	const URL_ = 'https://cnsatinder.mightycha0826.workers.dev/';
 
@@ -64,6 +65,16 @@ try {
 	check('안드로이드 카카오톡 → kakao', v.os === 'android' && v.inApp === 'kakao', JSON.stringify(v));
 	v = e(UA.androidSamsung);
 	check('삼성 인터넷 → samsung, 인앱 아님', v.browser === 'samsung' && v.inApp === null, JSON.stringify(v));
+	check('★ 삼성 인터넷 → Chrome 으로 설치 (Play 프로텍트 차단 회피)', needsChrome(v), JSON.stringify(v));
+	check(
+		'★ 삼성 인터넷 → Chrome intent',
+		openExternalUrl(v, URL_) === 'intent://cnsatinder.mightycha0826.workers.dev/#Intent;scheme=https;package=com.android.chrome;end',
+		openExternalUrl(v, URL_)
+	);
+	check('안드로이드 Chrome → 그대로 설치', !needsChrome(e(UA.androidChrome)) && openExternalUrl(e(UA.androidChrome), URL_) === null);
+	check('iOS Safari · 인앱은 needsChrome 아님', !needsChrome(e(UA.iosSafari, 'iPhone', 5)) && !needsChrome(e(UA.androidKakao)));
+	v = e(UA.androidFirefox);
+	check('안드로이드 Firefox → Chrome 으로', v.browser === 'firefox' && needsChrome(v), JSON.stringify(v));
 	const intent = openExternalUrl({ os: 'android', browser: 'chrome', inApp: 'webview' }, URL_);
 	check('안드로이드 인앱 → Chrome intent', intent === 'intent://cnsatinder.mightycha0826.workers.dev/#Intent;scheme=https;package=com.android.chrome;end', intent);
 } catch (err) {

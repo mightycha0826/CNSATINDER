@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { UI, promptInstall, toast } from '$lib/state.svelte';
-	import { detectEnv, openExternalUrl, IN_APP_NAME } from '$lib/platform';
+	import { detectEnv, needsChrome, openExternalUrl, IN_APP_NAME } from '$lib/platform';
 
 	const env =
 		typeof navigator === 'undefined'
 			? detectEnv('')
 			: detectEnv(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
 	const ios = env.os === 'ios';
+	// 삼성 인터넷 등으로 설치하면 Play 프로텍트가 막는다 — Chrome 으로 (platform.ts needsChrome)
+	const toChrome = needsChrome(env);
 	// 링크는 항상 첫 화면으로 — 설치 후 아이콘이 여기서부터 시작한다
 	const appUrl = typeof location === 'undefined' ? '' : location.origin + '/';
 	const external = openExternalUrl(env, appUrl);
@@ -74,6 +76,12 @@
 		{/if}
 		<button class="btn-ghost" onclick={copyLink}>링크 복사하기</button>
 		<p class="url muted">{appUrl}</p>
+	{:else if toChrome}
+		<h1>Chrome에서 설치해 주세요</h1>
+		<p class="muted note">{env.browser === 'samsung' ? '삼성 인터넷' : '이 브라우저'}로 설치하면 Play 프로텍트가 막아요.</p>
+		{#if external}<a class="btn" href={external}>Chrome으로 열기</a>{/if}
+		<button class="btn-ghost" onclick={copyLink}>링크 복사하기</button>
+		<p class="url muted">{appUrl}</p>
 	{:else if ios}
 		<h1>앱을 설치해야 시작할 수 있어요</h1>
 
@@ -114,10 +122,7 @@
 		{:else}
 			<ol class="steps">
 				<li>브라우저 메뉴 <strong>⋮</strong> 또는 <strong>≡</strong> 를 누르세요</li>
-				<li>
-					<strong>앱 설치</strong> 또는 <strong>홈 화면에 추가</strong>를 선택하세요
-					<span class="sub">삼성 인터넷은 <strong>현재 페이지 추가 → 홈 화면</strong></span>
-				</li>
+				<li><strong>앱 설치</strong> 또는 <strong>홈 화면에 추가</strong>를 선택하세요</li>
 				<li>홈 화면에 생긴 <strong>CNSATINDER</strong> 아이콘으로 들어오세요</li>
 			</ol>
 		{/if}
