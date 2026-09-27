@@ -175,19 +175,52 @@
 </div>
 
 <style>
+	/* 첫 화면 — 위쪽에 브랜드색 빛 두 덩어리가 천천히 떠다닌다 */
 	.login {
+		position: relative;
 		justify-content: center;
 		gap: 14px;
 		padding-top: calc(24px + var(--safe-top));
 		padding-bottom: 40px;
+		isolation: isolate;
+		overflow: hidden;
+	}
+	.login::before,
+	.login::after {
+		content: '';
+		position: absolute;
+		z-index: -1;
+		width: 340px;
+		height: 340px;
+		border-radius: 50%;
+		filter: blur(60px);
+		opacity: 0.45;
+		animation: drift 12s ease-in-out infinite alternate;
+	}
+	.login::before {
+		top: -120px;
+		left: -120px;
+		background: var(--g-orange);
+	}
+	.login::after {
+		top: -60px;
+		right: -160px;
+		background: var(--g-pink);
+		animation-delay: -6s;
+	}
+	@keyframes drift {
+		to {
+			transform: translate(40px, 50px) scale(1.15);
+		}
 	}
 	.appicon {
 		margin-bottom: 2px;
+		box-shadow: var(--glow);
 	}
 	.mark {
-		font-size: 30px;
-		font-weight: 800;
-		letter-spacing: -0.04em;
+		font-size: 36px;
+		font-weight: 900;
+		letter-spacing: -0.05em;
 		margin-bottom: 4px;
 	}
 	section {
@@ -221,9 +254,10 @@
 
 	.spam {
 		margin: -4px 0 4px;
-		padding: 10px 12px;
-		border-radius: var(--r-sm);
+		padding: 12px 14px;
+		border-radius: var(--r-md);
 		background: var(--surface);
+		box-shadow: var(--shadow-1);
 		font-size: 13px;
 		line-height: 1.6;
 	}
@@ -235,20 +269,27 @@
 	.emailfield {
 		display: flex;
 		align-items: center;
-		height: 44px;
-		border: 1px solid var(--line);
-		border-radius: var(--r-sm);
-		background: var(--surface);
+		height: 52px;
+		border: 1.5px solid transparent;
+		border-radius: var(--r-md);
+		background: var(--field);
 		overflow: hidden;
+		transition:
+			border-color 0.15s,
+			box-shadow 0.15s,
+			background 0.15s;
 	}
 	.emailfield:focus-within {
-		border-color: var(--text-2);
+		border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+		background: var(--surface);
+		box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
 	}
 	.local {
 		flex: 1;
 		min-width: 0;
 		height: 100%;
-		padding: 0 12px;
+		padding: 0 16px;
+		font-size: 16px;
 		border: 0;
 		background: none;
 		outline: none;

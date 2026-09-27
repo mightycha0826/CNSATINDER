@@ -63,17 +63,17 @@
 	.t1 {
 		--metal: conic-gradient(from 200deg, #8a5329, #e6a877, #a4652f, #f3c89c, #8a5329);
 		--face: radial-gradient(circle at 35% 30%, #f7d2ad, #c98a55 60%, #9a5f30);
-		--tier: #b8733e;
+		--tier: #9a5a2b; /* 등급 글씨 바탕 — 흰 글씨 4.5:1 넘게 (금속색보다 진하게) */
 	}
 	.t2 {
 		--metal: conic-gradient(from 200deg, #7f8994, #eef2f6, #98a3ae, #ffffff, #7f8994);
 		--face: radial-gradient(circle at 35% 30%, #ffffff, #cfd6de 60%, #9aa4ae);
-		--tier: #7f8994;
+		--tier: #66707b;
 	}
 	.t3 {
 		--metal: conic-gradient(from 200deg, #a8740a, #ffe38a, #c8900f, #fff4c2, #a8740a);
 		--face: radial-gradient(circle at 35% 30%, #fff3c4, #f2c14e 60%, #c48a0c);
-		--tier: #c48a0c;
+		--tier: #9b6c05;
 	}
 	.t0 {
 		--metal: linear-gradient(var(--field), var(--field));

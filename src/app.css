@@ -1,18 +1,20 @@
 /* ────────────────────────────────────────────────────────────
-   CNSATINDER — 디자인 토큰
-   레퍼런스: 인스타그램 DM (구조·밀도·회색 스케일만)
-   원칙: 바탕은 순수 흑백 · 서체 하나 · 그림자 없음
-   색: 앱 아이콘의 그라디언트(주황→코랄→핑크)를 "포인트"에만 쓴다.
-       채운 버튼·내 말풍선·로고·찾는 중 점 정도. 면·글자·선은 흑백 그대로.
+   CNSATINDER — 디자인 토큰 (Phase 33 리디자인)
+   방향: 브랜드 그라디언트(주황 → 코랄 → 핑크)는 그대로, 인스타 · 틴더처럼 따뜻하고 입체적으로.
+     · 바탕은 순백 대신 아주 옅은 따뜻한 흰색, 탭 첫 화면 위쪽엔 브랜드색 빛 번짐(--ambient)
+     · 카드는 흰 면 + 부드러운 그림자, 모서리는 크게 (24px) · 버튼은 알약 + 브랜드 빛(--glow)
+     · 머리글 · 탭바는 반투명 유리(--glass) — 탭바는 화면 아래에 떠 있는 알약
+     · 서체는 Pretendard (자체 호스팅), 제목은 굵고 촘촘하게
    ──────────────────────────────────────────────────────────── */
 
 :root {
-	--bg: #ffffff;
-	--surface: #fafafa;
-	--field: #efefef;
-	--line: #dbdbdb;
-	--text: #000000;
-	--text-2: #8e8e8e;
+	--bg: #fbf9f7;
+	--surface: #ffffff;
+	--field: #f2eeea;
+	--line: #e9e3de;
+	--text: #16100e;
+	/* 보조 글자 — 바탕 · 입력칸 위에서 4.5:1 넘게 (WCAG AA) */
+	--text-2: #736a65;
 	/* 아이콘에서 뽑은 색 (왼쪽 위 주황 → 오른쪽 아래 핑크) */
 	--g-orange: #ff7a50;
 	--g-coral: #fb5c68;
@@ -21,21 +23,23 @@
 	--brand: linear-gradient(45deg, var(--g-orange), var(--g-coral) 50%, var(--g-pink));
 	/* 흰 글씨가 올라가는 면 — 가장 밝은 주황은 살짝 죽여서 글씨가 읽히게 */
 	--accent-fill: linear-gradient(110deg, #f2603f, #ee4360 55%, #d92868);
-	/* 글자·링크·아이콘용 단색 */
-	--accent: #e23e68;
+	/* 글자·링크·아이콘용 단색 — 밝은 바탕 위 4.5:1 넘게 */
+	--accent: #cf2f5a;
 	/* 내 말풍선 — 화면 위(주황)에서 아래(핑크)로. 인스타 DM 처럼 말풍선 위치에 따라 색이 변한다 */
 	--bubble-fill: linear-gradient(180deg, #f2603f, #ee4360 55%, #d92868);
 	/* 위 그라디언트의 세 점 — 대화 화면이 그라디언트 위아래를 끝 색으로 늘려 쓴다 (ChatView) */
 	--bubble-a: #f2603f;
 	--bubble-b: #ee4360;
 	--bubble-c: #d92868;
+	/* 작은 흰 글씨(배지 · 칩 · 스티커)가 올라가는 면 — 흰 글씨와 4.7:1 넘게 (큰 글씨 버튼은 --accent-fill 그대로) */
+	--accent-fill-deep: linear-gradient(110deg, #cf4128, #d23356 55%, #b91f55);
 	--on-accent: #ffffff;
-	--danger: #ed4956;
-	/* 설정식 묶음 목록 (아이폰 설정 앱) — 회색 바탕 위 흰 카드 */
-	--group-bg: #f2f2f7;
+	--danger: #cf2d3d;
+	/* 설정식 묶음 목록 — 옅은 바탕 위 흰 카드 */
+	--group-bg: #f6f3f0;
 	--cell: #ffffff;
-	--cell-line: #e3e3e8;
-	--switch-off: #e9e9eb;
+	--cell-line: #efe9e4;
+	--switch-off: #e8e3de;
 	/* 편지지 — 따뜻한 미색 종이 · 먹색 글씨 */
 	--paper: #fffaf0;
 	--paper-ink: #2b2620;
@@ -49,61 +53,82 @@
 	--desk: radial-gradient(120% 60% at 10% 0%, rgb(255 122 80 / 0.14), transparent 60%),
 		radial-gradient(90% 50% at 100% 30%, rgb(240 57 110 / 0.12), transparent 60%);
 	--hand: 'Nanum Pen Script', var(--sans);
-	--r-card: 22px;
+	/* 탭 첫 화면 위쪽의 빛 번짐 */
+	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.16), transparent 70%),
+		radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.13), transparent 70%);
+	/* 유리 (머리글 · 탭바) */
+	--glass: color-mix(in srgb, var(--bg) 74%, transparent);
+	--glass-line: color-mix(in srgb, var(--line) 70%, transparent);
+	/* 그림자 — 1: 카드, 2: 떠 있는 것(탭바 · 시트), glow: 브랜드 버튼 빛 */
+	--shadow-1: 0 1px 2px rgb(40 20 10 / 0.05), 0 6px 18px -8px rgb(40 20 10 / 0.12);
+	--shadow-2: 0 2px 6px rgb(40 20 10 / 0.06), 0 18px 40px -14px rgb(40 20 10 / 0.28);
+	--glow: 0 10px 28px -8px rgb(238 67 96 / 0.55);
 
-	--r-sm: 8px;
+	--r-card: 24px;
+	--r-md: 16px;
+	--r-sm: 12px;
 	--r-bubble: 22px;
 	--pad: 16px;
-	--header-h: 44px;
+	--header-h: 48px;
 	/* 아이폰 상태바(시계·배터리) 높이 — 홈 화면 앱은 black-translucent 라 화면이 상태바 밑까지 올라간다 */
 	--safe-top: env(safe-area-inset-top, 0px);
-	--tabbar-h: 54px;
+	/* 떠 있는 탭바 — 알약 높이 64 + 아래 여백 10 + 위 틈 10 (그 위로 버튼 · 알림을 띄운다) */
+	--tabbar-pill: 64px;
+	--tabbar-h: 84px;
 
-	--sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Apple SD Gothic Neo',
-		'Noto Sans KR', 'Malgun Gothic', sans-serif;
+	--sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
+		'Malgun Gothic', 'Segoe UI', Roboto, sans-serif;
 }
 
 /* 다크는 기본적으로 시스템 설정을 따른다 (인스타와 동일). 설정 > 화면에서 고르면 <html data-theme> 가 이긴다. */
 @media (prefers-color-scheme: dark) {
 	:root:not([data-theme='light']) {
-		--bg: #000000;
-		--surface: #121212;
-		--field: #262626;
-		--line: #262626;
-		--text: #f5f5f5;
-		--text-2: #a8a8a8;
+		--bg: #0c0a0b;
+		--surface: #171416;
+		--field: #251f22;
+		--line: #2c2629;
+		--text: #f6f1ef;
+		--text-2: #a39995;
 		--accent: #ff7a7f;
-		--group-bg: #000000;
-		--cell: #1c1c1e;
-		--cell-line: #38383a;
-		--switch-off: #39393d;
+		--group-bg: #0c0a0b;
+		--cell: #19161a;
+		--cell-line: #2e282b;
+		--switch-off: #3a3336;
 		--paper: #1f1c17;
 		--paper-ink: #ece5d8;
 		--paper-edge: #34302a;
 		--paper-rule: rgb(236 229 216 / 0.1);
 		--env-paper: #e6d9c2;
 		--env-shade: #d4c3a6;
+		--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.13), transparent 70%),
+			radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.12), transparent 70%);
+		--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -8px rgb(0 0 0 / 0.6);
+		--shadow-2: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 40px -14px rgb(0 0 0 / 0.8);
 	}
 }
 
 :root[data-theme='dark'] {
-	--bg: #000000;
-	--surface: #121212;
-	--field: #262626;
-	--line: #262626;
-	--text: #f5f5f5;
-	--text-2: #a8a8a8;
+	--bg: #0c0a0b;
+	--surface: #171416;
+	--field: #251f22;
+	--line: #2c2629;
+	--text: #f6f1ef;
+	--text-2: #a39995;
 	--accent: #ff7a7f;
-	--group-bg: #000000;
-	--cell: #1c1c1e;
-	--cell-line: #38383a;
-	--switch-off: #39393d;
+	--group-bg: #0c0a0b;
+	--cell: #19161a;
+	--cell-line: #2e282b;
+	--switch-off: #3a3336;
 	--paper: #1f1c17;
 	--paper-ink: #ece5d8;
 	--paper-edge: #34302a;
 	--paper-rule: rgb(236 229 216 / 0.1);
 	--env-paper: #e6d9c2;
 	--env-shade: #d4c3a6;
+	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.13), transparent 70%),
+		radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.12), transparent 70%);
+	--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -8px rgb(0 0 0 / 0.6);
+	--shadow-2: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 40px -14px rgb(0 0 0 / 0.8);
 }
 
 * {
@@ -121,6 +146,7 @@ body {
 	font-family: var(--sans);
 	font-size: 15px;
 	line-height: 1.45;
+	letter-spacing: -0.011em;
 	-webkit-font-smoothing: antialiased;
 	overscroll-behavior-y: none;
 }
@@ -187,6 +213,12 @@ a {
 	text-decoration: none;
 }
 
+/* 키보드로 옮겨 다닐 때만 보이는 초점 테두리 (손가락 · 마우스로 누를 때는 안 보임) */
+:where(button, a, [role='tab'], [role='radio'], summary):focus-visible {
+	outline: 2.5px solid var(--accent);
+	outline-offset: 2px;
+}
+
 /* ── 공통 요소 ───────────────────────────────────────────── */
 
 .hair {
@@ -201,47 +233,54 @@ a {
 	font-variant-numeric: tabular-nums;
 }
 
-/* 채운 액센트 버튼 — 인스타 기본 CTA */
+/* 채운 액센트 버튼 — 알약 + 브랜드 빛. 누르면 살짝 눌린다 */
 .btn {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	gap: 6px;
 	width: 100%;
-	height: 44px;
-	border-radius: var(--r-sm);
+	height: 54px;
+	border-radius: 999px;
 	background: var(--accent-fill);
 	color: var(--on-accent);
-	font-weight: 600;
-	font-size: 15px;
+	font-weight: 800;
+	/* 19px 굵게 = WCAG 의 "큰 글씨" — 밝은 브랜드 그라디언트 위에서도 3:1 을 넘는다 */
+	font-size: 19px;
+	letter-spacing: -0.02em;
+	box-shadow: var(--glow);
 	transition:
-		opacity 0.12s,
+		transform 0.15s cubic-bezier(0.3, 0.7, 0.3, 1.4),
+		box-shadow 0.15s,
 		filter 0.12s;
 }
-.btn:active {
-	filter: brightness(0.9);
+.btn:active:not(:disabled) {
+	transform: scale(0.97);
+	box-shadow: 0 4px 14px -6px rgb(238 67 96 / 0.6);
 }
-/* 비활성은 그라디언트를 빼고 흑백으로 — 누를 수 있는 것만 색을 갖는다 */
+/* 비활성은 그라디언트 · 빛을 빼고 흑백으로 — 누를 수 있는 것만 색을 갖는다 */
 .btn:disabled {
 	background: var(--field);
 	color: var(--text-2);
+	box-shadow: none;
 	cursor: default;
 }
 
-/* 보조 버튼 — 테두리만 */
+/* 보조 버튼 — 옅은 면 알약 */
 .btn-ghost {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	width: 100%;
-	height: 44px;
-	border-radius: var(--r-sm);
-	border: 1px solid var(--line);
-	font-weight: 600;
+	height: 50px;
+	border-radius: 999px;
+	background: var(--field);
+	font-weight: 700;
 	font-size: 15px;
+	transition: transform 0.15s;
 }
 .btn-ghost:active {
-	background: var(--field);
+	transform: scale(0.97);
 }
 
 /* 텍스트 버튼 */
@@ -257,18 +296,25 @@ a {
 
 .field {
 	width: 100%;
-	height: 44px;
-	padding: 0 12px;
-	border-radius: var(--r-sm);
-	border: 1px solid var(--line);
-	background: var(--surface);
+	height: 52px;
+	padding: 0 16px;
+	border-radius: var(--r-md);
+	border: 1.5px solid transparent;
+	background: var(--field);
+	font-size: 16px;
 	outline: none;
+	transition:
+		border-color 0.15s,
+		box-shadow 0.15s,
+		background 0.15s;
 }
 .field::placeholder {
 	color: var(--text-2);
 }
 .field:focus {
-	border-color: var(--text-2);
+	border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+	background: var(--surface);
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 /* 화면 상단 헤더 — 44px + hairline. 위쪽 안전영역만큼 더 높이고 그만큼 내용을 내린다 (상태바와 겹치지 않게) */
@@ -282,14 +328,17 @@ a {
 	gap: 10px;
 	height: calc(var(--header-h) + var(--safe-top));
 	padding: var(--safe-top) var(--pad) 0;
-	background: var(--bg);
-	border-bottom: 1px solid var(--line);
+	/* 반투명 유리 — 아래로 흐르는 내용이 흐릿하게 비친다 */
+	background: var(--glass);
+	-webkit-backdrop-filter: saturate(180%) blur(20px);
+	backdrop-filter: saturate(180%) blur(20px);
+	border-bottom: 1px solid var(--glass-line);
 }
 
 .title {
-	font-weight: 700;
-	font-size: 17px;
-	letter-spacing: -0.02em;
+	font-weight: 800;
+	font-size: 18px;
+	letter-spacing: -0.03em;
 }
 
 /* 로고 글자 — 그라디언트를 글자에만 입힌다 */
@@ -365,6 +414,7 @@ a {
 	overflow: hidden;
 	border-radius: var(--r-card);
 	background: var(--cell);
+	box-shadow: var(--shadow-1);
 }
 .g-card + .g-card,
 .g-foot + .g-card {
@@ -484,21 +534,25 @@ button.g-row:active:not(:disabled) {
 	outline-offset: 2px;
 }
 
-/* 하단 탭바 — 익명편지 · 채팅 (src/routes/(app)/+layout.svelte)
-   인스타그램처럼 흑백 아이콘, 선택된 탭만 채운 아이콘 + 진한 글자. 색 포인트는 쓰지 않는다. */
+/* 하단 탭바 — 익명편지 · 채팅 · 프로필 (src/routes/(app)/+layout.svelte)
+   화면 아래에 떠 있는 유리 알약. 고른 탭은 브랜드색 아이콘 + 뒤에 옅은 알약. */
 .tabbar {
 	position: fixed;
 	left: 50%;
-	bottom: 0;
+	bottom: calc(10px + env(safe-area-inset-bottom));
 	transform: translateX(-50%);
 	z-index: 20; /* 헤더(10) 위, 시트(50)·토스트(100) 아래 */
 	display: flex;
-	width: 100%;
-	max-width: 520px;
-	height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
-	padding-bottom: env(safe-area-inset-bottom);
-	background: var(--bg);
-	border-top: 1px solid var(--line);
+	width: calc(100% - 28px);
+	max-width: 480px;
+	height: var(--tabbar-pill);
+	padding: 0 6px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--surface) 78%, transparent);
+	-webkit-backdrop-filter: saturate(180%) blur(22px);
+	backdrop-filter: saturate(180%) blur(22px);
+	border: 1px solid var(--glass-line);
+	box-shadow: var(--shadow-2);
 }
 .tab {
 	flex: 1;
@@ -509,11 +563,35 @@ button.g-row:active:not(:disabled) {
 	gap: 2px;
 	color: var(--text-2);
 	font-size: 11px;
-	font-weight: 500;
+	font-weight: 600;
+	transition: color 0.2s;
 }
 .tab svg {
-	width: 26px;
-	height: 26px;
+	position: relative;
+	width: 25px;
+	height: 25px;
+	transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.3, 1.5);
+}
+.tab > span:not(.tab-dot) {
+	position: relative;
+}
+/* 고른 탭 — 뒤에 옅은 브랜드색 알약 */
+.tab.on::before {
+	content: '';
+	position: absolute;
+	inset: 7px 6px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--accent) 12%, transparent);
+	animation: tab-in 0.25s cubic-bezier(0.3, 0.7, 0.3, 1.3);
+}
+@keyframes tab-in {
+	from {
+		transform: scale(0.6);
+		opacity: 0;
+	}
+}
+.tab:active svg {
+	transform: scale(0.88);
 }
 /* 안 읽은 편지 — 아이콘 오른쪽 위 빨간 점 */
 .tab {
@@ -521,7 +599,7 @@ button.g-row:active:not(:disabled) {
 }
 .tab-dot {
 	position: absolute;
-	top: 7px;
+	top: 9px;
 	left: calc(50% + 8px);
 	width: 9px;
 	height: 9px;
@@ -531,8 +609,8 @@ button.g-row:active:not(:disabled) {
 	box-sizing: content-box;
 }
 .tab.on {
-	color: var(--text);
-	font-weight: 700;
+	color: var(--accent);
+	font-weight: 800;
 }
 .tabbar-space {
 	flex: none;
@@ -552,14 +630,24 @@ button.g-row:active:not(:disabled) {
 	pointer-events: none;
 }
 .toast {
-	padding: 10px 14px;
-	border-radius: var(--r-sm);
-	background: var(--text);
+	padding: 11px 18px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--text) 88%, transparent);
+	-webkit-backdrop-filter: blur(12px);
+	backdrop-filter: blur(12px);
 	color: var(--bg);
 	font-size: 14px;
-	font-weight: 500;
+	font-weight: 600;
+	box-shadow: var(--shadow-2);
 	opacity: 1;
+	animation: toast-in 0.3s cubic-bezier(0.3, 0.7, 0.3, 1.3);
 	transition: opacity 0.26s;
+}
+@keyframes toast-in {
+	from {
+		transform: translateY(10px) scale(0.95);
+		opacity: 0;
+	}
 }
 .toast.out {
 	opacity: 0;

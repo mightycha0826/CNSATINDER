@@ -86,7 +86,7 @@
 	}
 	.new {
 		right: -4px;
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		color: var(--on-accent);
 	}
 	.tag {

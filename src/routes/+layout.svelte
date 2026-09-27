@@ -1,4 +1,6 @@
 <script lang="ts">
+	// 서체 — Pretendard (자체 호스팅, 쓰는 글자만 나눠 받는 동적 서브셋 · CSP font-src 'self' 그대로)
+	import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
 	import '../app.css';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';

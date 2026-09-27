@@ -130,7 +130,7 @@
 		gap: 12px;
 		padding: 18px 20px;
 		border-radius: var(--r-card);
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		color: var(--on-accent);
 	}
 	.big {
@@ -305,7 +305,7 @@
 		display: block;
 		height: 100%;
 		border-radius: inherit;
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 	}
 	.prog {
 		font-size: 11px;
@@ -318,7 +318,7 @@
 		right: 10px;
 		padding: 1px 6px;
 		border-radius: 999px;
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		color: var(--on-accent);
 		font-size: 9px;
 		font-weight: 800;

@@ -114,7 +114,7 @@
 		transform: scale(0.95);
 	}
 	.face.on {
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		color: var(--on-accent);
 	}
 	.emo {

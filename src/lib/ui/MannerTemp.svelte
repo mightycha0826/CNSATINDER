@@ -13,11 +13,11 @@
 </script>
 
 {#if size === 'chip'}
-	<span class="chip num" style:--c={look.color} aria-label="매너 온도 {fmtTemp(t)}">
+	<span class="chip num" style:--c={look.color} style:--cd={look.dark} aria-label="매너 온도 {fmtTemp(t)}">
 		<span aria-hidden="true">{look.face}</span>{fmtTemp(t)}
 	</span>
 {:else}
-	<div class="temp" style:--c={look.color} role="group" aria-label="매너 온도 {fmtTemp(t)}, {look.label}">
+	<div class="temp" style:--c={look.color} style:--cd={look.dark} role="group" aria-label="매너 온도 {fmtTemp(t)}, {look.label}">
 		<div class="row">
 			<span class="label">매너 온도</span>
 			<span class="val num"><span class="face" aria-hidden="true">{look.face}</span>{fmtTemp(t)}</span>
@@ -28,14 +28,27 @@
 {/if}
 
 <style>
+	/* 밝은 바탕은 --c, 어두운 바탕은 --cd (설정의 화면 모드 · 기기 설정 둘 다) */
+	.chip,
+	.temp {
+		--col: var(--c);
+	}
+	:global(:root[data-theme='dark']) :is(.chip, .temp) {
+		--col: var(--cd);
+	}
+	@media (prefers-color-scheme: dark) {
+		:global(:root:not([data-theme='light'])) :is(.chip, .temp) {
+			--col: var(--cd);
+		}
+	}
 	.chip {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
 		padding: 3px 10px;
 		border-radius: 999px;
-		background: color-mix(in srgb, var(--c) 14%, transparent);
-		color: var(--c);
+		background: color-mix(in srgb, var(--col) 14%, transparent);
+		color: var(--col);
 		font-size: 13px;
 		font-weight: 700;
 	}
@@ -60,7 +73,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-		color: var(--c);
+		color: var(--col);
 		font-size: 18px;
 		font-weight: 800;
 		letter-spacing: -0.02em;
@@ -78,7 +91,7 @@
 		display: block;
 		height: 100%;
 		border-radius: inherit;
-		background: var(--c);
+		background: var(--col);
 		transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 	.say {

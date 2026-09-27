@@ -76,8 +76,8 @@ try {
 	const meHeads = await heads();
 	check('프로필 = 소개 · 관심사 · MBTI · 상대 (알림 · 비밀번호 · 로그아웃 없음)',
 		meHeads.join(',') === '소개,관심사,MBTI,이런 사람과 이야기할래요' && (await page.getByRole('button', { name: '로그아웃' }).count()) === 0, meHeads.join(','));
-	check('프로필: 설정식 — 회색 바탕 위 둥근 카드', (await page.locator('.page.grouped').evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgb(242, 242, 247)'
-		&& (await page.locator('.g-card').first().evaluate((e) => getComputedStyle(e).borderTopLeftRadius)) === '22px');
+	check('프로필: 설정식 — 회색 바탕 위 둥근 카드', (await page.locator('.page.grouped').evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgb(246, 243, 240)'
+		&& (await page.locator('.g-card').first().evaluate((e) => getComputedStyle(e).borderTopLeftRadius)) === '24px');
 	check('상대 고르기 = 체크 표시 줄 (지금 고른 것 하나)', (await page.getByRole('radio', { checked: true }).count()) === 1);
 	await page.screenshot({ path: `${SP}/profile.png`, fullPage: true });
 	await back(); await page.waitForTimeout(300);
@@ -118,9 +118,9 @@ try {
 	await page.evaluate(() => document.documentElement.style.setProperty('--safe-top', '47px')); await page.waitForTimeout(100);
 	const tb = await page.locator('.topbar').first().boundingBox();
 	const lg = await page.locator('a.logo').boundingBox();
-	check('★ 머리글 = 상태바 47 + 44, 로고는 상태바 아래', Math.round(tb.height) === 91 && lg.y >= 47, `${tb.height} ${lg.y}`);
+	check('★ 머리글 = 상태바 47 + 48, 로고는 상태바 아래', Math.round(tb.height) === 95 && lg.y >= 47, `${tb.height} ${lg.y}`);
 	await page.evaluate(() => document.documentElement.style.removeProperty('--safe-top'));
-	check('안전영역이 없으면 44 그대로', Math.round((await page.locator('.topbar').first().boundingBox()).height) === 44);
+	check('안전영역이 없으면 48 그대로', Math.round((await page.locator('.topbar').first().boundingBox()).height) === 48);
 
 	console.log('[설정 · 테마 색상]');
 	const fill = () => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--bubble-fill').trim());
@@ -209,18 +209,18 @@ try {
 		return row.getBoundingClientRect().height < 60 && lab.right < gr.left && g.innerText.trim() === '' && g.querySelectorAll('svg').length === 3;
 	}));
 	await mode('다크 모드').click(); await page.waitForTimeout(200);
-	check('★ 다크 모드를 고르면 폰이 라이트여도 바로 어두워진다', (await bg()) === 'rgb(0, 0, 0)' && (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark');
-	check('상단 바 색도 검정', (await bar()) === '#000000,#000000', await bar());
+	check('★ 다크 모드를 고르면 폰이 라이트여도 바로 어두워진다', (await bg()) === 'rgb(12, 10, 11)' && (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark');
+	check('상단 바 색도 어둡게', (await bar()) === '#0c0a0b,#0c0a0b', await bar());
 	check('이 기기에 저장', (await page.evaluate(() => localStorage.getItem('theme-v1'))) === 'dark');
 	await page.screenshot({ path: `${SP}/settings-theme-dark.png` });
 	await page.reload(); await page.getByRole('radiogroup', { name: '화면' }).waitFor({ timeout: 8000 });
 	check('★ 다시 켜도 그대로 (첫 화면부터)', (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark' && (await mode('다크 모드').getAttribute('aria-checked')) === 'true');
 	await page.emulateMedia({ colorScheme: 'dark' });
 	await mode('라이트 모드').click(); await page.waitForTimeout(200);
-	check('★ 라이트 모드 — 폰이 다크여도 밝게', (await bg()) === 'rgb(255, 255, 255)' && (await bar()) === '#ffffff,#ffffff', await bar());
+	check('★ 라이트 모드 — 폰이 다크여도 밝게', (await bg()) === 'rgb(251, 249, 247)' && (await bar()) === '#fbf9f7,#fbf9f7', await bar());
 	await mode('기기 설정 따르기').click(); await page.waitForTimeout(200);
-	check('기기 설정 따르기 → 폰 설정(다크)대로 · 저장값 지움', (await bg()) === 'rgb(0, 0, 0)' && (await page.evaluate(() => localStorage.getItem('theme-v1'))) === null
-		&& (await page.evaluate(() => document.documentElement.dataset.theme)) === undefined && (await bar()) === '#ffffff,#000000', await bar());
+	check('기기 설정 따르기 → 폰 설정(다크)대로 · 저장값 지움', (await bg()) === 'rgb(12, 10, 11)' && (await page.evaluate(() => localStorage.getItem('theme-v1'))) === null
+		&& (await page.evaluate(() => document.documentElement.dataset.theme)) === undefined && (await bar()) === '#fbf9f7,#0c0a0b', await bar());
 	await page.emulateMedia({ colorScheme: 'light' });
 	check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
 } finally { await browser.close(); }

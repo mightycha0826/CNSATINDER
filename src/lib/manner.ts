@@ -31,14 +31,17 @@ export const BAD_REASONS: { k: Reason; label: string }[] = [
 ];
 export const reasonsFor = (s: Score) => (s === 'bad' ? BAD_REASONS : GOOD_REASONS);
 
-/** 온도 → 색 · 말 · 표정 (당근식 온도계 톤: 차가울수록 파랑, 따뜻할수록 주황 · 빨강) */
+/**
+ * 온도 → 색 · 말 · 표정 (당근식 온도계 톤: 차가울수록 파랑, 따뜻할수록 주황 · 빨강).
+ * color = 밝은 바탕용(흰 바탕 위 4.5:1), dark = 어두운 바탕용 — 한 색으로는 두 바탕 모두에서 읽히게 할 수 없다.
+ */
 export function tempLook(t: number) {
-	if (t < 30) return { color: '#2f6fdb', label: '차가워요', face: '🥶' };
-	if (t < 36.5) return { color: '#3b8af6', label: '조금 서늘해요', face: '😶' };
-	if (t < 40.5) return { color: '#12a594', label: '보통이에요', face: '🙂' };
-	if (t < 44) return { color: '#2f9e44', label: '따뜻해요', face: '😊' };
-	if (t < 50) return { color: '#f08a24', label: '아주 따뜻해요', face: '😄' };
-	return { color: '#e5484d', label: '뜨거워요', face: '🥰' };
+	if (t < 30) return { color: '#1f58c2', dark: '#6ea1ff', label: '차가워요', face: '🥶' };
+	if (t < 36.5) return { color: '#2267d8', dark: '#6aa6ff', label: '조금 서늘해요', face: '😶' };
+	if (t < 40.5) return { color: '#0e8577', dark: '#2cc7b3', label: '보통이에요', face: '🙂' };
+	if (t < 44) return { color: '#26843a', dark: '#4fcb67', label: '따뜻해요', face: '😊' };
+	if (t < 50) return { color: '#b45a09', dark: '#ffa04d', label: '아주 따뜻해요', face: '😄' };
+	return { color: '#d13438', dark: '#ff7074', label: '뜨거워요', face: '🥰' };
 }
 
 /** 막대 채움 (%) — 20도 ~ 60도를 막대 전체로 (40도 = 가운데) */

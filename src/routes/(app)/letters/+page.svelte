@@ -187,7 +187,7 @@
 		height: 18px;
 		padding: 0 5px;
 		border-radius: 9px;
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		color: var(--on-accent);
 		font-size: 11px;
 		line-height: 18px;
@@ -241,7 +241,7 @@
 		height: 52px;
 		padding: 0 20px 0 16px;
 		border-radius: 999px;
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		color: var(--on-accent);
 		font-size: 15px;
 		font-weight: 800;

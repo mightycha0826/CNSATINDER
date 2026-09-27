@@ -1113,7 +1113,7 @@
 		height: 32px;
 		padding: 0 12px;
 		border-radius: var(--r-sm);
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		color: var(--on-accent);
 		font-size: 14px;
 		font-weight: 600;
@@ -1482,10 +1482,18 @@
 		display: flex;
 		align-items: flex-end;
 		gap: 8px;
-		min-height: 44px;
-		padding: 6px 8px 6px 16px;
-		border: 1px solid var(--line);
-		border-radius: var(--r-bubble);
+		min-height: 48px;
+		padding: 7px 8px 7px 18px;
+		border: 1.5px solid transparent;
+		border-radius: 26px;
+		background: var(--field);
+		transition:
+			border-color 0.15s,
+			background 0.15s;
+	}
+	.pill:focus-within {
+		border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+		background: var(--surface);
 	}
 	.pill.disabled {
 		background: var(--surface);

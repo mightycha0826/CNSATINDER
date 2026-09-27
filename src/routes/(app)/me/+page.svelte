@@ -115,7 +115,8 @@
 <div class="page grouped me">
 	{#if S.profile?.nickname}
 		<section class="who">
-			<Avatar name={S.profile.nickname} size={84} online />
+			<div class="cover" aria-hidden="true"></div>
+			<span class="who-ring"><Avatar name={S.profile.nickname} size={92} online /></span>
 			<p class="nick">{S.profile.nickname}</p>
 			<p class="muted small">대화 상대에게는 이 이름으로만 보여요 · 바꿀 수 없어요</p>
 			<div class="temp"><MannerTemp temp={S.profile.manner_temp} /></div>
@@ -210,14 +211,35 @@
 		font-size: 13px;
 	}
 
-	/* 맨 위 — 아이폰 설정의 계정 머리처럼 가운데 큰 아바타 */
+	/* 맨 위 — 브랜드색 표지 위에 걸친 큰 아바타 · 이름 · 매너 온도 (카드 한 장) */
 	.who {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 6px;
-		padding: 12px 16px 4px;
+		margin: 4px 16px 0;
+		padding: 58px 20px 20px;
+		border-radius: var(--r-card);
+		background: var(--cell);
+		box-shadow: var(--shadow-1);
 		text-align: center;
+		overflow: hidden;
+	}
+	.cover {
+		position: absolute;
+		inset: 0 0 auto;
+		height: 96px;
+		background:
+			radial-gradient(60% 120% at 20% 0%, rgb(255 255 255 / 0.35), transparent 60%),
+			var(--brand);
+	}
+	.who-ring {
+		position: relative;
+		padding: 4px;
+		border-radius: 50%;
+		background: var(--cell);
+		box-shadow: var(--shadow-1);
 	}
 	.who p {
 		margin: 0;
@@ -227,9 +249,10 @@
 		flex-direction: column;
 		gap: 12px;
 		margin: 14px 16px 0;
-		padding: 14px 16px 16px;
-		border-radius: 18px;
+		padding: 16px 16px 18px;
+		border-radius: var(--r-card);
 		background: var(--cell);
+		box-shadow: var(--shadow-1);
 		color: inherit;
 		text-decoration: none;
 	}
@@ -270,9 +293,9 @@
 	}
 	.nick {
 		margin-top: 6px !important;
-		font-size: 24px;
-		font-weight: 700;
-		letter-spacing: -0.02em;
+		font-size: 26px;
+		font-weight: 900;
+		letter-spacing: -0.04em;
 	}
 
 	.g-head span {

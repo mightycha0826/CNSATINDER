@@ -49,7 +49,7 @@ try {
 	const reduced = await rp.evaluate(() => [...document.querySelectorAll('*')].map((e) => getComputedStyle(e)).filter((c) => c.animationName !== 'none').map((c) => c.animationDuration + '/' + c.animationIterationCount));
 	check('애니메이션이 사실상 0초', reduced.length > 0 && reduced.every((x) => parseFloat(x) < 0.001 && x.endsWith('/1')), reduced.join());
 	await rp.waitForTimeout(1900);
-	check('연결 화면은 그래도 닫힌다', (await rp.locator('text=님과 연결됐어요').count()) === 0);
+	check('연결 화면은 그래도 닫힌다', (await rp.locator('.match').count()) === 0);
 	// 타이핑 점 3개는 멈춘 채로 보인다
 	check('타이핑 표시는 남아 있다', (await rp.locator('.typing i').count()) === 3);
 	// 답장 인용 → 이동: 즉시 스크롤, 반짝임은 커지지 않고 어두워지기만

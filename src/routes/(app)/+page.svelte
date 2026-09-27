@@ -90,6 +90,9 @@
 	}
 	// 고정한 대화(Phase 29)는 동시 대화 개수에 세지 않는다 — 서버(private.open_rooms)와 같은 규칙
 	const openCount = $derived(inbox.rooms.filter((r) => !r.pinned).length);
+	// 고정한 대화는 위쪽 "스토리" 줄에 (인스타처럼 그라디언트 테두리), 아래 목록은 시간이 흐르는 대화만
+	const pinnedRooms = $derived(inbox.rooms.filter((r) => r.pinned));
+	const liveRooms = $derived(inbox.rooms.filter((r) => !r.pinned));
 	const full = $derived(openCount >= maxRooms);
 	let menuFor = $state<InboxRoom | null>(null);
 
@@ -198,14 +201,27 @@
 		</section>
 	{/if}
 
+	{#if pinnedRooms.length}
+		<!-- 고정한 대화 — 스토리처럼 동그란 얼굴 줄 -->
+		<section class="stories" aria-label="고정한 대화">
+			{#each pinnedRooms as r (r.room_id)}
+				<button class="story" onclick={() => goto(`/chat/${r.room_id}`)} use:longpress={() => (menuFor = r)} aria-label="{r.partner_alias} (고정한 대화){r.unread ? `, 새 메시지 ${r.unread}개` : ''}">
+					<span class="story-ring" class:fresh={r.unread > 0}><Avatar name={r.partner_alias} size={58} online={r.partner_online} /></span>
+					<span class="story-name">{r.partner_alias}</span>
+					{#if r.unread > 0}<span class="story-badge num">{r.unread > 99 ? '99+' : r.unread}</span>{/if}
+				</button>
+			{/each}
+		</section>
+	{/if}
+
 	<!-- 대화 목록 -->
-	{#if inbox.rooms.length}
+	{#if liveRooms.length}
 		<div class="head">
 			<h2>대화</h2>
 			<span class="muted num">{openCount}/{maxRooms}</span>
 		</div>
 		<ul class="rooms">
-			{#each inbox.rooms as r (r.room_id)}
+			{#each liveRooms as r (r.room_id)}
 				{@const t = remain(r)}
 				<li>
 					<!-- 아직 안 열어 본 새 대화(상대가 나를 잡아감)면 연결 화면부터 -->
@@ -238,10 +254,20 @@
 				</li>
 			{/each}
 		</ul>
-	{:else if inbox.loaded && !seeker.seeking}
+	{:else if inbox.loaded && seeker.seeking}
+		<!-- 찾는 중 — 내 얼굴을 가운데 두고 퍼져 나가는 물결 (틴더식 레이더) -->
+		<div class="radar" aria-hidden="true">
+			<i></i><i></i><i></i>
+			<span class="me-ring"><Avatar name={S.profile?.nickname ?? '나'} size={96} /></span>
+		</div>
+	{:else if inbox.loaded}
 		<div class="hero">
-			<div class="big num">{minutes}:00</div>
-			<h1>모르는 사람과 {minutes}분</h1>
+			<div class="orb" aria-hidden="true"></div>
+			<div class="hero-card">
+				<div class="big num">{minutes}:00</div>
+				<h1>모르는 사람과 {minutes}분</h1>
+				<p>둘 다 원할 때만 이어져요</p>
+			</div>
 		</div>
 	{/if}
 
@@ -341,7 +367,7 @@
 		padding: 14px 40px 14px 14px;
 		border-radius: var(--r-card);
 		background: var(--surface);
-		border: 1px solid var(--line);
+		box-shadow: var(--shadow-1);
 	}
 	.rate-q {
 		display: flex;
@@ -417,8 +443,9 @@
 		position: sticky;
 		bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
 		margin-top: auto;
-		padding: 12px 0;
-		background: var(--bg);
+		padding: 18px 0 8px;
+		/* 아래 목록이 버튼 뒤로 스며들게 — 바탕색으로 서서히 */
+		background: linear-gradient(to bottom, transparent, var(--bg) 40%);
 		z-index: 5;
 	}
 
@@ -426,16 +453,124 @@
 		gap: 14px;
 		padding-top: 12px;
 		padding-bottom: 0; /* 아래 안전영역은 탭바가 맡는다 · 버튼 여백은 .cta 가 */
+		background: var(--ambient) no-repeat;
+	}
+
+	/* 고정한 대화 — 스토리 줄 */
+	.stories {
+		display: flex;
+		gap: 14px;
+		margin: 0 calc(-1 * var(--pad));
+		padding: 4px var(--pad) 6px;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	.stories::-webkit-scrollbar {
+		display: none;
+	}
+	.story {
+		position: relative;
+		flex: none;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+		width: 72px;
+	}
+	.story-ring {
+		padding: 3px;
+		border-radius: 50%;
+		background: var(--line);
+	}
+	.story-ring.fresh {
+		background: conic-gradient(from 210deg, var(--g-orange), var(--g-pink), #ffb347, var(--g-orange));
+	}
+	.story-ring :global(.av) {
+		border: 3px solid var(--bg);
+	}
+	.story-name {
+		max-width: 100%;
+		overflow: hidden;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		font-size: 12px;
+		font-weight: 600;
+	}
+	.story-badge {
+		position: absolute;
+		top: 0;
+		right: 2px;
+		min-width: 20px;
+		height: 20px;
+		padding: 0 6px;
+		border-radius: 10px;
+		background: var(--accent-fill-deep);
+		color: #fff;
+		font-size: 11px;
+		font-weight: 800;
+		line-height: 20px;
+		border: 2px solid var(--bg);
+		box-sizing: content-box;
+	}
+
+	/* 찾는 중 — 레이더 */
+	.radar {
+		position: relative;
+		flex: 1;
+		display: grid;
+		place-items: center;
+		min-height: 300px;
+	}
+	.radar i {
+		position: absolute;
+		width: 110px;
+		height: 110px;
+		border-radius: 50%;
+		background: radial-gradient(circle, color-mix(in srgb, var(--g-coral) 30%, transparent), transparent 70%);
+		border: 1.5px solid color-mix(in srgb, var(--g-pink) 45%, transparent);
+		animation: ripple 2.7s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+	}
+	.radar i:nth-child(2) {
+		animation-delay: 0.9s;
+	}
+	.radar i:nth-child(3) {
+		animation-delay: 1.8s;
+	}
+	@keyframes ripple {
+		from {
+			transform: scale(0.8);
+			opacity: 0.9;
+		}
+		to {
+			transform: scale(3);
+			opacity: 0;
+		}
+	}
+	.me-ring {
+		position: relative;
+		padding: 4px;
+		border-radius: 50%;
+		background: var(--brand);
+		box-shadow: var(--glow);
+		animation: breathe 2.7s ease-in-out infinite;
+	}
+	.me-ring :global(.av) {
+		border: 4px solid var(--bg);
+	}
+	@keyframes breathe {
+		50% {
+			transform: scale(1.05);
+		}
 	}
 
 	.nudge {
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
-		padding: 10px 12px;
-		border-radius: var(--r-sm);
+		padding: 12px 16px;
+		border-radius: var(--r-md);
 		background: var(--surface);
-		border: 1px solid var(--line);
+		box-shadow: var(--shadow-1);
 		text-align: left;
 		font-size: 13px;
 	}
@@ -445,22 +580,23 @@
 	}
 
 	.notice {
-		padding: 10px 12px;
-		border: 1px solid var(--line);
-		border-radius: var(--r-sm);
+		padding: 12px 16px;
+		border-radius: var(--r-md);
 		background: var(--surface);
+		box-shadow: var(--shadow-1);
 		font-size: 13px;
 	}
 
-	/* 찾는 중 — 버튼 자리에 그대로 들어간다 */
+	/* 찾는 중 — 버튼 자리에 그대로 들어간다 (유리 알약) */
 	.seek {
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		min-height: 44px;
-		padding: 10px 12px;
-		border-radius: var(--r-sm);
-		border: 1px solid var(--line);
+		min-height: 54px;
+		padding: 10px 12px 10px 18px;
+		border-radius: 999px;
+		background: var(--surface);
+		box-shadow: var(--shadow-2);
 	}
 	.seek-text {
 		flex: 1;
@@ -475,9 +611,12 @@
 	}
 	.stop {
 		flex: none;
+		height: 36px;
+		padding: 0 14px;
+		border-radius: 999px;
+		background: var(--field);
 		font-size: 14px;
-		font-weight: 600;
-		color: var(--text-2);
+		font-weight: 700;
 	}
 	.ai-btn {
 		display: flex;
@@ -485,9 +624,9 @@
 		justify-content: center;
 		gap: 8px;
 		width: 100%;
-		min-height: 44px;
+		min-height: 48px;
 		margin-top: 8px;
-		border-radius: var(--r-sm);
+		border-radius: 999px;
 		background: var(--field);
 		font-size: 14px;
 		font-weight: 600;
@@ -546,24 +685,30 @@
 	}
 	h2 {
 		margin: 0;
-		font-size: 16px;
-		font-weight: 700;
+		font-size: 20px;
+		font-weight: 800;
+		letter-spacing: -0.03em;
 	}
 	.head span {
 		font-size: 13px;
 	}
+	/* 대화 목록 — 흰 카드 한 장 안에 줄들 */
 	.rooms {
 		list-style: none;
-		margin: 0 calc(-1 * var(--pad));
-		padding: 0;
+		margin: 0;
+		padding: 6px 0;
+		border-radius: var(--r-card);
+		background: var(--surface);
+		box-shadow: var(--shadow-1);
 	}
 	.room {
 		display: flex;
 		align-items: center;
 		gap: 12px;
 		width: 100%;
-		padding: 8px var(--pad);
+		padding: 9px 14px;
 		text-align: left;
+		transition: background 0.15s;
 	}
 	.room:active {
 		background: var(--field);
@@ -576,7 +721,8 @@
 		gap: 1px;
 	}
 	.name {
-		font-size: 14px;
+		font-size: 15px;
+		font-weight: 600;
 	}
 	.last {
 		font-size: 13px;
@@ -620,7 +766,7 @@
 		height: 20px;
 		padding: 0 6px;
 		border-radius: 10px;
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		color: var(--on-accent);
 		font-size: 11px;
 		font-weight: 700;
@@ -632,23 +778,58 @@
 		width: 9px;
 		height: 9px;
 		border-radius: 50%;
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 	}
 
-	/* 빈 상태 */
+	/* 빈 상태 — 천천히 도는 브랜드색 빛 덩어리 위에 유리 카드 */
 	.hero {
+		position: relative;
 		flex: 1;
+		display: grid;
+		place-items: center;
+		min-height: 320px;
+		padding-bottom: 20px;
+	}
+	.orb {
+		position: absolute;
+		width: 260px;
+		height: 260px;
+		border-radius: 50%;
+		background: conic-gradient(from 0deg, var(--g-orange), var(--g-pink), #ffb347, var(--g-coral), var(--g-orange));
+		filter: blur(42px);
+		opacity: 0.55;
+		animation:
+			spin 14s linear infinite,
+			breathe 6s ease-in-out infinite;
+	}
+	@keyframes spin {
+		to {
+			rotate: 360deg;
+		}
+	}
+	.hero-card {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		justify-content: center;
-		gap: 10px;
+		gap: 8px;
+		padding: 30px 34px 26px;
+		border-radius: 32px;
+		background: color-mix(in srgb, var(--surface) 62%, transparent);
+		-webkit-backdrop-filter: blur(24px) saturate(160%);
+		backdrop-filter: blur(24px) saturate(160%);
+		border: 1px solid color-mix(in srgb, var(--surface) 60%, transparent);
+		box-shadow: var(--shadow-2);
 		text-align: center;
-		padding-bottom: 40px;
+	}
+	.hero-card p {
+		margin: 0;
+		font-size: 13px;
+		color: var(--text-2);
 	}
 	.big {
-		font-size: 52px;
-		font-weight: 800;
+		font-size: 64px;
+		font-weight: 900;
 		letter-spacing: -0.05em;
 		line-height: 1;
 		/* 이 앱의 정체성인 숫자에 그라디언트 */
@@ -660,8 +841,8 @@
 	}
 	h1 {
 		margin: 6px 0 0;
-		font-size: 18px;
-		font-weight: 700;
-		letter-spacing: -0.02em;
+		font-size: 20px;
+		font-weight: 800;
+		letter-spacing: -0.03em;
 	}
 </style>

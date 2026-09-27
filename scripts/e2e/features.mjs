@@ -134,10 +134,10 @@ try {
 	console.log('[연결 화면]');
 	await page.goto(U('/dev/chat?s=fresh&matched'));
 	await page.locator('.match').waitFor({ timeout: 5000 });
-	check('새로 매칭된 방: "새벽수달님과 연결됐어요"', (await page.locator('.match').innerText()).replace(/\s+/g, ' ').includes('새벽수달님과 연결됐어요'));
+	check('새로 매칭된 방: "연결됐어요!" · 새벽수달님과 10분', (await page.locator('.match').innerText()).replace(/\s+/g, ' ').includes('연결됐어요!') && (await page.locator('.match').innerText()).includes('새벽수달님과 10분'));
 	await page.waitForTimeout(250); await page.screenshot({ path: `${SP}/feat-5-match.png` });
-	await page.waitForTimeout(1700);
-	check('1.6초 뒤 저절로 닫힘', (await page.locator('.match').count()) === 0);
+	await page.waitForTimeout(1900);
+	check('1.8초 뒤 저절로 닫힘', (await page.locator('.match').count()) === 0);
 	await page.goto(U('/dev/chat?s=fresh&matched')); await page.locator('.match').waitFor();
 	await page.locator('.match').click(); await page.waitForTimeout(150);
 	check('누르면 바로 닫힘', (await page.locator('.match').count()) === 0);

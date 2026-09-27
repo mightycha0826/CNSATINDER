@@ -315,7 +315,7 @@
 		bottom: 0.85em;
 		padding: 0.2em 0.55em;
 		border-radius: 0.3em;
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		color: #fff;
 		font-size: 0.6em;
 		font-weight: 800;
@@ -362,7 +362,7 @@
 	.paper-in i:first-child {
 		width: 45%;
 		height: 0.14em;
-		background: var(--accent-fill);
+		background: var(--accent-fill-deep);
 		opacity: 0.6;
 	}
 	.back[data-paper='peek'] .paper-in {
