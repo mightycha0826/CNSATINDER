@@ -49,6 +49,8 @@ export const S = $state({
 	session: null as Session | null,
 	profile: null as Profile | null,
 	settings: null as Settings | null,
+	/** 로그인 직후 프로필 · 설정을 불러오는 중 — 이 동안은 스플래시 (홈이 "계정 정보를 불러오지 못함"으로 번쩍이지 않게) */
+	profileLoading: false,
 	/** 비밀번호를 설정했는지 — 안 했으면 다음 로그인도 인증 코드로 해야 한다 */
 	hasPassword: null as boolean | null,
 	/**
@@ -164,9 +166,14 @@ let loadedFor: string | null = null;
 async function afterLogin(uid: string) {
 	if (loadedFor === uid) return;
 	loadedFor = uid;
-	// 트리거가 못 만든 경우를 대비한 폴백 (gyeol ensureProfile 패턴). 익명 이름도 여기서 보장된다.
-	await supabase.rpc('ensure_self');
-	await Promise.all([loadProfile(), loadSettings(), loadAccount()]);
+	S.profileLoading = true;
+	try {
+		// 트리거가 못 만든 경우를 대비한 폴백 (gyeol ensureProfile 패턴). 익명 이름도 여기서 보장된다.
+		await supabase.rpc('ensure_self');
+		await Promise.all([loadProfile(), loadSettings(), loadAccount()]);
+	} finally {
+		S.profileLoading = false;
+	}
 	void beat(true);
 	// 이미 알림을 허락한 기기면 이 계정으로 구독을 다시 저장 (기기 주인이 바뀌었을 수도 있다)
 	void syncPush().catch(() => {});

@@ -38,9 +38,12 @@ export async function loadNotices(force = false) {
 	NOTICES.loaded = true;
 }
 
-/** 공지 화면을 열면 — 맨 위(최신) 공지까지 본 것으로 */
-export async function markNoticesSeen() {
-	const top = NOTICES.list[0]?.id ?? 0;
+/**
+ * 본 것으로 저장 — 공지 목록을 열면 맨 위(최신)까지, 공지 하나를 열면 그 공지까지(upTo).
+ * 더 새 공지를 못 본 채 옛 공지 하나만 열었을 때 새 공지까지 본 것으로 치지 않는다.
+ */
+export async function markNoticesSeen(upTo?: number) {
+	const top = upTo ?? NOTICES.list[0]?.id ?? 0;
 	if (top <= NOTICES.lastSeen) return;
 	NOTICES.lastSeen = top; // 점은 바로 끈다. 저장이 실패하면 다음 불러오기 때 다시 뜬다.
 	await supabase.rpc('mark_notices_seen', { p_id: top });

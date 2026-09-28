@@ -35,10 +35,13 @@
 		room,
 		loading,
 		initialSheet = null,
-		matched = false
+		matched = false,
+		onretry
 	}: {
 		room: ChatRoom | null;
 		loading: boolean;
+		/** 방을 여는 데 실패(네트워크) — 있으면 쫓아내지 않고 그 자리에 "다시 시도" */
+		onretry?: () => void;
 		/** 방금 매칭돼서 들어왔다 — 연결 화면을 한 번 */
 		matched?: boolean;
 		/** 개발용 미리보기에서만 사용 */
@@ -79,6 +82,16 @@
 	const mmss = $derived(fmtClock(Math.ceil(remainMs / 1000), true));
 	const urgent = $derived(!pinned && remainMs > 0 && remainMs <= 60_000);
 	const closed = $derived(room?.closed ?? false);
+	// "연결 중…" 막대는 1.5초 넘게 끊겨 있을 때만 — 방을 열 때마다(구독이 붙기 전 잠깐) 번쩍이던 것 (Phase 39)
+	let showConn = $state(false);
+	$effect(() => {
+		if (room?.connected || loading || closed || !room) {
+			showConn = false;
+			return;
+		}
+		const t = setTimeout(() => (showConn = true), 1500);
+		return () => clearTimeout(t);
+	});
 	const pending = $derived(room?.snap?.status === 'pending');
 	// pending 방은 서버가 쓰기를 막는다(room_is_writable) — 화면도 맞춘다
 	const locked = $derived(closed || timeUp || pending);
@@ -365,8 +378,9 @@
 	async function submit() {
 		const text = draft;
 		if (!text.trim() || !room || locked) return;
-		if (text.length > (S.settings?.msg_max_len ?? 500)) {
-			toast('500자까지 보낼 수 있어요');
+		const max = S.settings?.msg_max_len ?? 500;
+		if (text.length > max) {
+			toast(`${max}자까지 보낼 수 있어요`);
 			return;
 		}
 		const to = replyTo?.id ?? null;
@@ -649,13 +663,18 @@
 		<VoteBanner {snap} {pinNext} voting={!!room?.voting} bind:hintDraft onvote={vote} />
 	{/if}
 
-	{#if !room?.connected && !loading && !closed}
+	{#if showConn}
 		<div class="conn">연결 중…</div>
 	{/if}
 
 	<div class="sr-only" aria-live="polite">{announce}</div>
 	<div class="list" bind:this={listEl} onscroll={onScroll} role="region" aria-label="대화 내용">
-		{#if loading}
+		{#if onretry}
+			<div class="load-fail" role="alert">
+				<p>대화를 불러오지 못했어요<br /><span class="muted">연결을 확인하고 다시 시도해 주세요</span></p>
+				<button class="btn-ghost" onclick={onretry}>다시 시도</button>
+			</div>
+		{:else if loading}
 			<!-- 말풍선 모양 빈 자리 — 최근 대화가 놓일 아래쪽에. 불러오면 그 자리에 실제 대화가 들어선다 -->
 			<p class="sr-only">불러오는 중…</p>
 			<div class="sk" aria-hidden="true">
@@ -966,6 +985,29 @@
 		padding: 12px var(--pad) 8px;
 		display: flex;
 		flex-direction: column;
+	}
+	/* 방을 열지 못함 (네트워크) — 가운데에 이유와 다시 시도 */
+	.load-fail {
+		margin: auto 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 14px;
+		text-align: center;
+	}
+	.load-fail p {
+		margin: 0;
+		font-size: 15px;
+		font-weight: 600;
+		line-height: 1.6;
+	}
+	.load-fail .muted {
+		font-size: 13px;
+		font-weight: 400;
+	}
+	.load-fail .btn-ghost {
+		width: auto;
+		padding: 0 28px;
 	}
 	/* 불러오는 동안 — 한 줄 말풍선(.bubble)과 같은 높이 · 모서리 */
 	.sk {

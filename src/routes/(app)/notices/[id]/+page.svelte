@@ -4,7 +4,8 @@
 	 * 목록을 거치지 않고 바로 들어와도(새로고침 · 알림) 불러와서 보여 준다.
 	 */
 	import { page } from '$app/state';
-	import { NOTICES, loadNotices } from '$lib/notices.svelte';
+	import { untrack } from 'svelte';
+	import { NOTICES, loadNotices, markNoticesSeen } from '$lib/notices.svelte';
 	import { S } from '$lib/state.svelte';
 	import { agoText } from '$lib/time';
 	import BackButton from '$lib/ui/BackButton.svelte';
@@ -14,6 +15,11 @@
 
 	$effect(() => {
 		if (!NOTICES.loaded) void loadNotices(true);
+	});
+	// 이 공지까지 본 것으로 — 알림(하트)에서 곧장 들어와도 빨간 점이 꺼진다 (Phase 39)
+	$effect(() => {
+		const n = notice?.id;
+		if (n) untrack(() => void markNoticesSeen(n));
 	});
 </script>
 

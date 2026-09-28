@@ -1,5 +1,6 @@
 <script lang="ts">
 	import {
+		S,
 		SCHOOL_DOMAIN,
 		UI,
 		errMsg,
@@ -28,6 +29,8 @@
 	let code = $state('');
 	let busy = $state(false);
 	let resendAt = $state(0);
+	// 코드 다시 받기까지 남은 초 — S.now(1초 틱)로 세어야 버튼이 저절로 다시 켜진다 (Date.now() 는 반응하지 않는다)
+	const resendLeft = $derived(Math.max(0, Math.ceil((resendAt - S.now) / 1000)));
 
 	// 학교 이메일의 앞부분만 받는다. 도메인은 고정 표시 — 오타를 구조적으로 없앤다.
 	// (실제 강제는 DB 트리거가 한다. 여기는 UX 용.)
@@ -165,8 +168,8 @@
 
 		<div class="row">
 			<button class="btn-text" onclick={() => (sent = false)}>이메일 다시 입력</button>
-			<button class="btn-text" onclick={onSend} disabled={busy || Date.now() < resendAt}>
-				코드 다시 받기
+			<button class="btn-text" onclick={onSend} disabled={busy || resendLeft > 0}>
+				코드 다시 받기{resendLeft > 0 ? ` (${resendLeft}초)` : ''}
 			</button>
 		</div>
 		<button class="btn-text back" onclick={() => go('login')}>로그인으로 돌아가기</button>

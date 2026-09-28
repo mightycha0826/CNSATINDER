@@ -162,7 +162,8 @@
 			<code>.env.example</code> 을 복사하면 됩니다.
 		</p>
 	</div>
-{:else if !S.booted}
+{:else if !S.booted || (S.session && S.profileLoading)}
+	<!-- 부팅 중 · 로그인 직후 계정을 불러오는 중 (홈이 잠깐 보였다가 온보딩으로 튀지 않게) -->
 	<div class="splash">
 		<img class="appicon" src="/icon-192.png" alt="" width="72" height="72" />
 		<span class="wordmark">CNSATINDER</span>

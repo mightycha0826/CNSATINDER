@@ -4,6 +4,7 @@
 
 - 전체 설계: `~/.claude/plans/dynamic-purring-acorn.md`
 - 스택: SvelteKit 2 + Svelte 5 (runes) + Supabase + Cloudflare Pages
+- **UX 가이드라인: [`docs/UX-GUIDELINES.md`](docs/UX-GUIDELINES.md)** — 화면을 만들거나 고칠 때의 기준 (누름 영역 44px · 누름 반응 · 네 가지 상태 · 뒤로가기 · 입력 보존 · 요청 예산 · 검토 매트릭스)
 
 ## 설계 원칙 (코드를 고칠 때 반드시 지킬 것)
 
@@ -226,7 +227,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `node scripts/vapid-keys.mjs` | 푸시 알림용 VAPID 키를 만들어 `.env` 에 추가 (이미 있으면 그대로) |
 | `node scripts/import-roster.mjs <csv> [--dry-run]` | 학번-이름 명렬표를 DB 에 반영 (관리자 화면의 이메일 확인 옆 이름 표시용) |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
-| `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 20묶음 — `scripts/e2e/`. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `cnsatinder-e2e/` |
+| `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 23묶음 — `scripts/e2e/`. `hit`(누름 영역 44px) · `ux`(흐름이 말없이 끊기지 않는지)는 UX 가이드라인 검사. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `cnsatinder-e2e/` |
 | `node scripts/generate-badge.mjs` | 알림 배지(`static/badge-96.png`) 재생성 — 앱 아이콘의 흰 로고만 남기고 바탕은 투명 (안드로이드는 배지의 투명도만 써서 컬러 아이콘이면 흰 네모가 된다) |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.*`(png/webp/jpg 아무거나) (헤드리스 Chrome 사용) |
 

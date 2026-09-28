@@ -29,7 +29,7 @@
 	// ★ 프로필을 아직(또는 못) 불러왔을 때를 정지로 착각하지 않는다 — 예전엔 profile 이 null 이면
 	//   status !== 'active' 가 참이 되어 멀쩡한 계정에 "이용이 제한된 계정"이 떴다.
 	const suspended = $derived(!!S.profile && isRestricted(S.profile, S.now));
-	const profileMissing = $derived(S.booted && !!S.session && !S.profile);
+	const profileMissing = $derived(S.booted && !!S.session && !S.profile && !S.profileLoading);
 	const suspendedUntil = $derived(
 		S.profile?.status === 'active' && S.profile?.suspended_until
 			? new Date(S.profile.suspended_until).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })
@@ -110,18 +110,22 @@
 	const full = $derived(openCount >= maxRooms);
 	let menuFor = $state<InboxRoom | null>(null);
 
+	// ★ 본문 전체를 untrack — 화면에 들어올 때 한 번만 돈다. 예전엔 page.url(AI 대화를 뒤로 닫으면 새 객체가 된다)과
+	//   seeker.seeking(start 가 읽고 쓴다)을 추적해서 다시 돌았고, 그때 cleanup 이 찾기를 말없이 멈췄다 (Phase 39)
 	$effect(() => {
-		inbox.start();
-		void inbox.load();
-		// 대화가 끝나고 "새 대화 찾기"로 왔으면 바로 찾기 시작
-		if (untrack(() => UI.seekOnHome)) {
-			UI.seekOnHome = false;
-			seeker.start();
-		} else if (page.url.searchParams.has('seek')) {
-			// 옛 주소(/?seek) 호환 — 주소만 정리
-			void goto('/', { replaceState: true, keepFocus: true, noScroll: true, state: page.state });
-			seeker.start();
-		}
+		untrack(() => {
+			inbox.start();
+			void inbox.load();
+			// 대화가 끝나고 "새 대화 찾기"로 왔으면 바로 찾기 시작
+			if (UI.seekOnHome) {
+				UI.seekOnHome = false;
+				seeker.start();
+			} else if (page.url.searchParams.has('seek')) {
+				// 옛 주소(/?seek) 호환 — 주소만 정리
+				void goto('/', { replaceState: true, keepFocus: true, noScroll: true, state: page.state });
+				seeker.start();
+			}
+		});
 		return () => {
 			inbox.stop();
 			seeker.cancel(); // 화면을 떠나면 찾기 목록에서 빠진다
@@ -163,7 +167,7 @@
 		const r = await enablePush();
 		doneAsking();
 		if (r === 'granted') toast('알림 켜짐');
-		else if (r === 'denied') toast('알림이 꺼져 있어요. 내 프로필에서 다시 켤 수 있어요');
+		else if (r === 'denied') toast('알림이 꺼져 있어요. 설정에서 다시 켤 수 있어요');
 	}
 
 	function preview(r: InboxRoom) {
