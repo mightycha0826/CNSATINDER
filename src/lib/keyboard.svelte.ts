@@ -10,6 +10,11 @@
  *   --vv-top 보이는 영역이 밀려 내려간 만큼 (px) — 그 창을 그만큼 내려서 보이는 영역에 딱 맞춘다
  *   --kb     키보드가 레이아웃 아래를 가린 높이 (px, 아이폰만 0 보다 크다) — 아래에 붙은 것을 그만큼 올린다
  *   html.kb-open  입력칸에 들어가 키보드가 떠 있다 — 탭바를 숨긴다 (좁아진 화면을 탭바가 더 먹지 않게)
+ *
+ * 키보드 내리기 (Phase 46, dismissOnTap · dismissKeyboard) — 아이폰은 버튼을 눌러도 입력칸에서 초점이 빠지지 않고,
+ * 입력칸이 화면에서 사라져도 키보드가 그대로 남는다 (찾기 → 고르기 뒤에 찾을 때의 키보드가 떠 있던 것).
+ * 그래서 입력 중에 버튼 · 링크 · 고르기 항목을 누르면 직접 내리고, 다른 화면으로 갈 때도 내린다.
+ * 계속 쳐야 하는 곳(대화 입력 줄 · 공감 고르기 줄 · 편지 서식 막대)은 data-keep-kb 로 뺀다 — 거기 버튼은 스스로 입력칸에 초점을 돌려준다.
  */
 import { untrack } from 'svelte';
 
@@ -17,6 +22,30 @@ export const KB = $state({ open: false, h: 0 });
 
 const editable = (el: Element | null) =>
 	!!el && (el.matches('textarea, select, [contenteditable="true"]') || (el.matches('input') && !/^(checkbox|radio|button|submit|range|color|file)$/.test((el as HTMLInputElement).type)));
+
+/** 입력칸에 있으면 나온다 — 키보드가 내려간다 */
+export function dismissKeyboard() {
+	const a = document.activeElement;
+	if (editable(a)) (a as HTMLElement).blur();
+}
+
+/** 이것들을 누르면 입력이 끝난 것으로 본다. 빈 곳 · 말풍선을 누르는 건 그대로 둔다 (두 번 톡 · 길게 누르기를 흔들지 않게) */
+const TAPPABLE = 'button, a[href], [role="button"], [role="option"], [role="radio"], [role="tab"], [role="switch"], [role="menuitem"], summary';
+
+/** 입력 중에 버튼 · 링크 · 고르기 항목을 누르면 키보드를 내린다 — 운영자 화면도 같이 (루트 레이아웃이 켠다) */
+export function dismissOnTap(): () => void {
+	// click · 잡기 단계 — 누른 것이 정해진 뒤라 키보드가 내려가며 화면이 움직여도 엉뚱한 것이 눌리지 않고,
+	// 버튼 자신의 처리보다 먼저라 그 처리가 다른 입력칸에 초점을 주면 그대로 된다
+	const onclick = (e: MouseEvent) => {
+		const a = document.activeElement;
+		if (!editable(a)) return;
+		const t = e.target instanceof Element ? e.target.closest(TAPPABLE) : null;
+		if (!t || editable(t) || a!.contains(t) || t.closest('[data-keep-kb]')) return;
+		(a as HTMLElement).blur();
+	};
+	document.addEventListener('click', onclick, true);
+	return () => document.removeEventListener('click', onclick, true);
+}
 
 export function trackKeyboard(): () => void {
 	const vv = window.visualViewport;

@@ -285,7 +285,7 @@
 		{/if}
 	</div>
 
-	<div class="composer">
+	<div class="composer" data-keep-kb>
 		{#if phase === 'live'}
 			{#if showStarters}
 				<Starters roomId={chat.id} onpick={(t) => ((draft = t), inputEl?.focus())} />

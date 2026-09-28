@@ -761,7 +761,8 @@
 	</div>
 
 	{#if !closed}
-		<div class="composer">
+		<!-- 입력 줄의 버튼(보내기 · 첫마디 · 답장 취소)은 키보드를 내리지 않는다 (lib/keyboard.svelte.ts) -->
+		<div class="composer" data-keep-kb>
 			{#if showStarters && room}
 				<Starters roomId={room.roomId} mine={S.profile?.interests ?? []} theirs={profile?.interests ?? []} onpick={useStarter} />
 			{/if}

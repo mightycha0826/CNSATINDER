@@ -120,7 +120,9 @@ try {
 	check('질문 3개 · 첫째는 상대 관심사', chips.length === 3 && chips[0] === '밴드 좋아하시는구나! 언제부터예요?', JSON.stringify(chips));
 	check('★ 신상을 묻는 질문 없음', !chips.some((c) => /학년|반이|이름|학번|인스타|번호/.test(c)));
 	await page.screenshot({ path: `${SP}/feat-4-starters.png` });
-	await page.locator('.starters .more').click(); await page.waitForTimeout(100);
+	await page.locator('textarea').focus();
+	await page.locator('.starters .more').evaluate((b) => b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))); await page.waitForTimeout(100);
+	check('입력 줄의 단추(↻ 다른 질문)는 키보드를 내리지 않는다 (data-keep-kb, Phase 46)', await page.locator('textarea').evaluate((e) => e === document.activeElement));
 	const chips2 = await page.locator('.starters .chip').allInnerTexts();
 	check('↻ 다른 질문', chips2.length === 3 && chips2.join() !== chips.join(), JSON.stringify(chips2));
 	await page.locator('.starters .chip').first().click(); await page.waitForTimeout(100);
@@ -192,8 +194,11 @@ try {
 	await dip.fill('ㅁㄹ'); await page.waitForTimeout(200);
 	check('초성으로도 찾는다 (ㅁㄹ → 물리학)', (await page.locator('#dip-list [role=option]').allInnerTexts()).join(',') === '물리학');
 	await dip.fill('물리'); await page.waitForTimeout(150);
-	await page.locator('#dip-list [role=option]', { hasText: '물리학' }).click(); await page.waitForTimeout(150);
+	// 아이폰은 버튼을 눌러도 입력칸에서 초점이 빠지지 않는다 — 초점을 옮기지 않는 click 으로 흉내 (Phase 46)
+	await page.locator('#dip-list [role=option]', { hasText: '물리학' }).evaluate((b) => b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+	await page.waitForTimeout(150);
 	check('고르면 칸에 채워지고 목록이 닫힌다', (await dip.inputValue()) === '물리학' && (await page.locator('#dip-list').count()) === 0);
+	check('★ 검색해서 고르면 검색 키보드를 내린다 (칸에서 초점이 빠진다)', await dip.evaluate((e) => e !== document.activeElement));
 	await page.getByRole('button', { name: '더 얘기하기' }).click(); await page.waitForTimeout(300);
 	check('★ 고르고 연장하면 그 값과 함께 투표', JSON.stringify(await page.evaluate(() => window.__votes)) === '[{"agree":true,"hint":"물리학"}]', JSON.stringify(await page.evaluate(() => window.__votes)));
 

@@ -55,7 +55,9 @@
 				UndoRedo,
 				Placeholder.configure({ placeholder })
 			],
-			autofocus: 'end',
+			// 바로 쓰게 커서를 두는 건 마우스 · 키보드가 있는 기기만. 폰은 두지 않는다 — 봉투 연출 동안 키보드가 올라와(찾기 칸의 키보드가 그대로 남아)
+			// 화면을 반으로 줄였다. 폰에서는 편지지를 눌러야 키보드가 올라온다
+			autofocus: matchMedia('(hover: hover) and (pointer: fine)').matches ? 'end' : false,
 			editorProps: {
 				attributes: { class: 'le-doc', role: 'textbox', 'aria-multiline': 'true', 'aria-label': '편지 내용', spellcheck: 'false' },
 				// 붙여넣기는 글자만 — 줄마다 문단으로
@@ -113,7 +115,8 @@
 	const keep = (e: PointerEvent) => e.preventDefault();
 </script>
 
-<div class="le">
+<!-- 서식 단추는 편지지에 초점을 돌려주며 쓴다 — 키보드를 내리지 않는다 (lib/keyboard.svelte.ts) -->
+<div class="le" data-keep-kb>
 	<div class="bar" role="toolbar" aria-label="서식">
 		<button class="t" class:on={is('bold')} onpointerdown={keep} onclick={() => cmd().toggleBold().run()} aria-label="굵게" title="굵게"><b>B</b></button>
 		<button class="t" class:on={is('italic')} onpointerdown={keep} onclick={() => cmd().toggleItalic().run()} aria-label="기울임" title="기울임"><i>I</i></button>

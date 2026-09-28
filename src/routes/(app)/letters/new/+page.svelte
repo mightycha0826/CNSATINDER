@@ -37,6 +37,13 @@
 		return () => clearTimeout(t);
 	});
 
+	// 폰 키보드 내리기 — 찾기 칸이 화면에서 사라져도 키보드는 저절로 내려가지 않는다(아이폰). 고르거나 "검색"을 누르면 직접 내린다
+	const hideKeyboard = () => (document.activeElement as HTMLElement | null)?.blur?.();
+	function pick(p: DmPerson) {
+		hideKeyboard();
+		to = p;
+	}
+
 	const send = (body: string, fmt: LetterFmt | null, nick: string | null) => (to ? deliver(() => sendLetter(to!.id, body, fmt, nick)) : Promise.resolve(false));
 </script>
 
@@ -73,6 +80,7 @@
 				aria-label="편지 받을 학생 찾기"
 				autocomplete="off"
 				enterkeyhint="search"
+				onkeydown={(e) => e.key === 'Enter' && !e.isComposing && hideKeyboard()}
 			/>
 		</label>
 
@@ -87,7 +95,7 @@
 			<ul class="people">
 				{#each results as p (p.id)}
 					<li>
-						<button class="person" onclick={() => (to = p)}>
+						<button class="person" onclick={() => pick(p)}>
 							<Avatar name={p.name} size={44} />
 							<span class="who">
 								<b>{p.name}</b>

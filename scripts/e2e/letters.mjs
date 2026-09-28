@@ -209,6 +209,7 @@ try {
 	check('★ 이름으로 찾기 — 동명이인은 학년 · 학번으로 구분', people.length === 2 && people[0].includes('2학년') && people[0].includes('학번 20314') && people[1].includes('학번 20522'), JSON.stringify(people));
 	await page.locator('.person').first().click();
 	await page.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'write', null, { timeout: 4000 });
+	check('마우스 · 키보드가 있는 기기는 편지지에 바로 커서', await page.evaluate(() => !!document.activeElement?.closest('.le-doc')));
 	check('★ 편지지: To. 박받음 2학년 · From. 서명 칸 (비우면 익명의 남학생)', (await page.locator('.letter-paper .lp-to').innerText()).replace(/\s+/g, '').startsWith('To.박받음2학년')
 		&& (await page.locator('.letter-paper .nick').getAttribute('placeholder')) === '익명의 남학생');
 	await page.waitForTimeout(700);
@@ -345,6 +346,39 @@ try {
 	await two.page.waitForURL(`${BASE}/`, { timeout: 8000 }).catch(() => {});
 	check('★ 적으면 저장하고 홈으로', called(w2, 'set_my_name').at(-1)?.[1]?.p_name === '이외부' && new URL(two.page.url()).pathname === '/', two.page.url());
 	check('페이지 오류 없음 (둘째)', two.errors.length === 0, two.errors.join(' / '));
+
+	console.log('[폰 키보드 — 찾기 → 고르기 (Phase 46)]');
+	const w6 = world();
+	const r6 = await openApp(browser, w6, { isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+	const p6 = r6.page;
+	await p6.goto(`${BASE}/letters/new`);
+	const s6 = p6.getByRole('searchbox', { name: '편지 받을 학생 찾기' });
+	await s6.waitFor(); await s6.fill('박받'); await p6.waitForTimeout(700);
+	check('폰 흉내: 손가락 기기 (hover 없음 · 굵은 포인터)', await p6.evaluate(() => !matchMedia('(hover: hover) and (pointer: fine)').matches));
+	check('찾는 동안 찾기 칸에 초점 (키보드가 떠 있다)', await s6.evaluate((e) => e === document.activeElement));
+	await s6.press('Enter'); await p6.waitForTimeout(100);
+	check('★ 키보드의 "검색"을 누르면 키보드를 내린다 (결과가 가려지지 않게)', await p6.evaluate(() => document.activeElement === document.body) && (await p6.locator('.person').count()) === 2);
+	await s6.focus();
+	// 아이폰은 버튼을 눌러도 입력칸에서 초점이 빠지지 않는다 — 초점을 옮기지 않는 click 으로 흉내
+	await p6.locator('.person').first().evaluate((b) => b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+	await p6.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'write', null, { timeout: 4000 });
+	await p6.waitForTimeout(400);
+	check('★ 받는 사람을 고르면 찾기 키보드가 내려가고, 폰은 편지지에 저절로 커서를 두지 않는다', await p6.evaluate(() => document.activeElement === document.body),
+		await p6.evaluate(() => document.activeElement?.outerHTML.slice(0, 80)));
+	await p6.getByRole('textbox', { name: '편지 내용' }).tap(); await p6.waitForTimeout(150);
+	check('편지지를 누르면 그때 쓴다', await p6.evaluate(() => !!document.activeElement?.closest('.le-doc')));
+	await p6.getByRole('button', { name: '굵게' }).evaluate((b) => b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+	check('서식 단추는 키보드를 내리지 않는다 (data-keep-kb)', await p6.evaluate(() => !!document.activeElement?.closest('.le-doc')));
+	await p6.goto(`${BASE}/me`); await p6.locator('textarea.area').waitFor();
+	await p6.locator('textarea.area').focus();
+	await p6.locator('.mbti .chip', { hasText: 'INFP' }).evaluate((b) => b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+	check('★ 입력 중 다른 버튼을 누르면 키보드를 내린다 (프로필 소개 → MBTI)', await p6.evaluate(() => document.activeElement === document.body));
+	await p6.locator('textarea.area').focus();
+	await p6.locator('a.tab[href="/letters"]').evaluate((a) => a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })));
+	await p6.waitForURL('**/letters'); await p6.waitForTimeout(200);
+	check('★ 입력 중 다른 화면으로 가면 키보드를 내린다', await p6.evaluate(() => !document.activeElement || document.activeElement === document.body));
+	check('페이지 오류 없음 (폰 키보드)', r6.errors.length === 0, r6.errors.join(' / '));
+	await r6.ctx.close();
 
 	console.log('[인스타 스토리]');
 	const w5 = world();

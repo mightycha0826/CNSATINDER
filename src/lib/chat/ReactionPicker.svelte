@@ -41,8 +41,10 @@
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 
 <div class="rx-scrim" role="presentation" onpointerdown={onclose}></div>
+<!-- data-keep-kb: 입력 중에 열었으면 공감 · 답장을 눌러도 키보드를 내리지 않는다 (답장은 입력칸에 초점을 준다, lib/keyboard.svelte.ts) -->
 <div
 	class="rx-pick"
+	data-keep-kb
 	out:fade={{ duration: reducedMotion() ? 0 : 120 }}
 	role="menu"
 	aria-label="공감"
