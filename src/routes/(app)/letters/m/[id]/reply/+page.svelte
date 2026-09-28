@@ -5,13 +5,12 @@
 	 *  · 내 편지에 온 답장에 다시 답장: To. 그 사람 이름 · From. 익명의 나 — 서명을 적을 수 있다 (지난번 서명을 미리 채움, Phase 35)
 	 * 보내면 보낸 편지함으로.
 	 */
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import EnvelopeCompose from '$lib/letters/EnvelopeCompose.svelte';
 	import type { LetterFmt } from '$lib/letters/rich';
-	import { anonName, fromLabel, openLetter, replyToLetter, sendError, type Letter } from '$lib/letters/api';
-	import { LIST } from '$lib/letters/unread.svelte';
+	import { anonName, fromLabel, openLetter, replyToLetter, type Letter } from '$lib/letters/api';
+	import { afterSent, deliver } from '$lib/letters/send';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 
 	const id = $derived(Number(page.params.id));
@@ -36,26 +35,8 @@
 	const anonSide = $derived(!!letter?.from_name);
 	const from = $derived(anonSide ? anonName(S.profile?.gender) : (S.me?.name ?? '나'));
 
-	async function send(body: string, fmt: LetterFmt | null, nick: string | null) {
-		if (!letter) return false;
-		try {
-			const r = await replyToLetter(letter.id, body, fmt, nick);
-			const err = sendError(r);
-			if (err) {
-				toast(err);
-				return false;
-			}
-			return true;
-		} catch (e) {
-			toast(errMsg(e));
-			return false;
-		}
-	}
-	function done() {
-		LIST.tab = 'sent';
-		toast('답장을 보냈어요');
-		void goto('/letters', { replaceState: true });
-	}
+	const send = (body: string, fmt: LetterFmt | null, nick: string | null) =>
+		letter ? deliver(() => replyToLetter(letter!.id, body, fmt, nick)) : Promise.resolve(false);
 </script>
 
 <div class="topbar">
@@ -73,7 +54,7 @@
 		nick={letter.my_nick ?? ''}
 		placeholder={'받은 편지에 답장을 적어 보세요.\n답장도 봉투에 담겨 전해져요.'}
 		onsend={send}
-		ondone={done}
+		ondone={() => afterSent('답장을 보냈어요')}
 	/>
 {/if}
 

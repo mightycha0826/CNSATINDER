@@ -326,7 +326,7 @@
 						<button class="btn-text" onclick={sendCode} disabled={busy}>
 							비밀번호를 잊었다면 · 인증 코드 받기
 						</button>
-						<button class="cancel" onclick={() => (pwStep = 'idle')}>취소</button>
+						<button class="cancel u-tap" onclick={() => (pwStep = 'idle')}>취소</button>
 					</div>
 				{:else if pwStep === 'code'}
 					<p class="step muted"><strong>{codeSentTo}</strong> 으로 보낸 인증 코드를 입력해 주세요. 안 보이면 스팸함을 확인해 주세요.</p>
@@ -345,7 +345,7 @@
 					</button>
 					<div class="pwfoot">
 						<button class="btn-text" onclick={sendCode} disabled={busy || S.now < resendAt}>코드 다시 받기</button>
-						<button class="cancel" onclick={() => (pwStep = 'idle')}>취소</button>
+						<button class="cancel u-tap" onclick={() => (pwStep = 'idle')}>취소</button>
 					</div>
 				{:else}
 					<p class="step muted">{S.hasPassword ? '새 비밀번호를 정해 주세요.' : '로그인에 쓸 비밀번호를 정해 주세요.'}</p>
@@ -355,7 +355,7 @@
 					</button>
 					<div class="pwfoot">
 						<span></span>
-						<button class="cancel" onclick={() => (pwStep = 'idle')}>취소</button>
+						<button class="cancel u-tap" onclick={() => (pwStep = 'idle')}>취소</button>
 					</div>
 				{/if}
 			</div>
@@ -503,11 +503,6 @@
 		padding: 0 8px;
 		font-size: 14px;
 		color: var(--text-2);
-		transition: opacity 0.2s;
-	}
-	.cancel:active {
-		opacity: 0.55;
-		transition-duration: 0.08s;
 	}
 
 	/* 약관 및 정책 — 아이콘 · 제목 · 한 줄 설명 · › */

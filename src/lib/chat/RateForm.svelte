@@ -66,7 +66,7 @@
 		</div>
 	{/if}
 	<button aria-busy={busy} class="btn send" onclick={send} disabled={!score || busy}>{busy ? '보내는 중…' : '평가 보내기'}</button>
-	{#if onskip}<button class="skip" onclick={onskip}>나중에 할게요</button>{/if}
+	{#if onskip}<button class="skip u-tap" onclick={onskip}>나중에 할게요</button>{/if}
 </div>
 
 <style>
@@ -160,9 +160,6 @@
 	.send {
 		width: 100%;
 		margin-top: 4px;
-	}
-	.skip:active {
-		opacity: 0.55;
 	}
 	.skip {
 		height: 44px;

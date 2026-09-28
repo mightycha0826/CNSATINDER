@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 import { hasSupabase, supabase } from './supabase';
+import { rpc } from './rpc';
 import { disablePush, syncPush } from './push';
 
 /** 내 프로필. 상대에게는 nickname·bio·interests·mbti 만 partner_profile() 을 거쳐 보인다 (성별·선호·상태는 안 보인다). */
@@ -223,9 +224,7 @@ export async function loadAccount() {
 
 /** 명렬표에 없는 사람만 — 이름을 한 번 적는다 */
 export async function saveMyName(name: string) {
-	const { data, error } = await supabase.rpc('set_my_name', { p_name: name });
-	if (error) throw error;
-	const st = (data as { status: string }).status;
+	const { status: st } = await rpc<{ status: string }>('set_my_name', { p_name: name });
 	if (st !== 'ok' && st !== 'already' && st !== 'roster') throw new Error(st);
 	await loadAccount();
 }
@@ -389,12 +388,7 @@ export async function signOut() {
 
 // ── 프로필 ────────────────────────────────────────────────────────────
 export async function saveProfile(bio: string, interests: string[], mbti: string | null) {
-	const { error } = await supabase.rpc('update_my_profile', {
-		p_bio: bio,
-		p_interests: interests,
-		p_mbti: mbti ?? ''
-	});
-	if (error) throw error;
+	await rpc('update_my_profile', { p_bio: bio, p_interests: interests, p_mbti: mbti ?? '' });
 	await loadProfile();
 }
 

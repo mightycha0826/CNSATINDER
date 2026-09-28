@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { UI, promptInstall, toast } from '$lib/state.svelte';
-	import { detectEnv, needsChrome, openExternalUrl, IN_APP_NAME } from '$lib/platform';
+	import { detectEnv, needsChrome, openExternalUrl } from '$lib/platform';
 
 	const env =
 		typeof navigator === 'undefined'

@@ -10,10 +10,11 @@
 	import { navigateFromOverlay } from '$lib/overlay.svelte';
 	import { page } from '$app/state';
 	import BackButton from '$lib/ui/BackButton.svelte';
+	import MoreButton from '$lib/ui/MoreButton.svelte';
 	import Envelope from '$lib/letters/Envelope.svelte';
 	import LetterSheet from '$lib/letters/LetterSheet.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
-	import { anonName, borderOf, fromLabel, openLetter, paperDate, stampDate, toLabel, type Letter } from '$lib/letters/api';
+	import { borderOf, iAmRecipient, myLabel, openLetter, otherLabel, paperDate, stampDate, toLabel, type Letter } from '$lib/letters/api';
 	import { DM, LIST, refreshUnread } from '$lib/letters/unread.svelte';
 	import { markOpened } from '$lib/letters/mailbox.svelte';
 	import { clearNotifications } from '$lib/push';
@@ -30,8 +31,7 @@
 	let phase = $state<Phase>('front');
 	let stop = () => {};
 	onDestroy(() => stop());
-	let vw = $state(390);
-	const w = $derived(envWidth(vw));
+	const w = $derived(envWidth());
 
 	$effect(() => {
 		const target = id;
@@ -75,34 +75,24 @@
 	}
 
 	// 이름표 — 받은 편지: To. 나 / From. 서명 · 익명의 ○학생(또는 답장한 사람 이름). 보낸 편지: To. 받는 사람 / From. 나
-	const myName = $derived(S.me?.name ?? '나');
-	const anonMe = $derived(letter?.my_nick ?? anonName(S.profile?.gender));
+	//   나 = 모르는 사람과 주고받은 편지면 내 이름, 내가 익명으로 보낸 편지(와 그 답장)면 내 서명 · 익명의 나 (myLabel)
 	const names = $derived.by(() => {
 		if (!letter) return { to: '', toSub: '', from: '' };
-		if (letter.role === 'received') {
-			// 모르는 사람이 보낸 편지는 내 이름으로, 내가 보낸 편지의 답장은 (나는 익명이었으니) 내 서명 · 익명의 나로
-			const to = letter.from_name ? anonMe : myName;
-			return { to, toSub: '', from: fromLabel(letter) };
-		}
-		const from = letter.to_name ? anonMe : myName;
-		return { to: toLabel(letter), toSub: letter.to_grade ? `${letter.to_grade}학년` : '', from };
+		const me = myLabel(letter, letter.role, { name: S.me?.name, gender: S.profile?.gender });
+		const other = otherLabel(letter, letter.role);
+		return letter.role === 'received'
+			? { to: me, toSub: '', from: other }
+			: { to: other, toSub: letter.to_grade ? `${letter.to_grade}학년` : '', from: me };
 	});
 	const staging = $derived(phase !== 'read');
 </script>
 
-<svelte:window bind:innerWidth={vw} />
 
 <div class="topbar">
 	<BackButton href="/letters" history />
 	<span class="title">{letter?.role === 'sent' ? '보낸 편지' : '받은 편지'}</span>
 	{#if letter}
-		<button class="more" onclick={() => (menu = true)} aria-label="메뉴">
-			<svg viewBox="0 0 24 24" aria-hidden="true">
-				<circle cx="5" cy="12" r="1.6" fill="currentColor" />
-				<circle cx="12" cy="12" r="1.6" fill="currentColor" />
-				<circle cx="19" cy="12" r="1.6" fill="currentColor" />
-			</svg>
-		</button>
+		<MoreButton onclick={() => (menu = true)} push />
 	{/if}
 </div>
 
@@ -176,8 +166,8 @@
 
 {#if menu && letter}
 	<LetterMenu
-		thread={{ id: letter.thread_id, recipient: letter.role === 'received' ? !letter.from_name : !letter.to_name }}
-		title={letter.role === 'received' ? names.from : names.to}
+		thread={{ id: letter.thread_id, recipient: iAmRecipient(letter, letter.role) }}
+		title={otherLabel(letter, letter.role)}
 		onclose={() => (menu = false)}
 		ondone={() => {
 			// 메뉴 시트를 닫으며 이동 — 시트의 뒤로가기 칸과 이동이 서로 취소하지 않게 (lib/overlay.svelte.ts)
@@ -188,23 +178,6 @@
 {/if}
 
 <style>
-	.more {
-		display: grid;
-		place-items: center;
-		width: 44px;
-		height: 44px;
-		margin: 0 -12px 0 auto;
-		transition: opacity 0.2s, transform 0.2s;
-	}
-	.more:active {
-		opacity: 0.55;
-		transform: scale(0.9);
-		transition-duration: 0.08s;
-	}
-	.more svg {
-		width: 22px;
-		height: 22px;
-	}
 	.center {
 		margin: 48px auto;
 		text-align: center;

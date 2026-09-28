@@ -477,4 +477,12 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       "공지사항" 화면(`/notices` 는 알림으로 넘김) · "공지 ·" 머리말 없이 시간순으로 섞이고, 개인 공지는 그 자리에서 펼쳐 읽는다.
       아바타는 글자 한 자 대신 이름으로 뽑은 메시 그라데이션 구슬(이름의 색 낱말 → 그 색 계열). 테마 색: 회색(검정) → 인스타 그라데이션,
       초록은 한 톤 연하게. 한글 줄바꿈을 낱말 단위로(`word-break: keep-all`), 프로필 "안 적을래요" 선택을 테두리로.
+- [x] **Phase 41 — 키보드** — 아이폰이 16px 보다 작은 입력칸에서 화면을 확대해 비율이 깨지던 것(입력칸 16px · `maximum-scale=1`),
+      키보드 대응을 `lib/keyboard.svelte.ts` 하나로 (`--vvh` · `--vv-top` · `--kb` · `html.kb-open`).
+- [x] **Phase 42 — 전체 리팩토링** (동작 변경 없음 · DB 변경 없음)
+      같은 일을 하는 코드를 하나로: 대화 메뉴(대화 목록 길게 누르기 · 대화방 ⋯ → `RoomActions`), 말 입력 알약(대화방 · AI 대화 → `MessageInput`
+      — AI 대화도 칸이 자라고 초점 테두리 · 누름 반응이 생김), 봉투 더미(편지함 · 보관함 → `MailStack`), 편지 보내기(`letters/send.ts`),
+      ⋯ 단추(`MoreButton`), 누름 반응 12곳을 `.u-tap`, 신고 사유 목록, 봉투에 적힌 나 · 상대(`myLabel` · `otherLabel`).
+      홈을 나눔: 고정한 대화(`PinnedStories`) · 대화 목록(`RoomList`) · 매너 평가 대기(`RateQueue`) · 알림 안내(`PushAsk`) — 844 → 494줄.
+      `rpc()` 도우미를 직접 짜던 곳(채팅 전송 계층 · 프로필 · 이름)도 쓰게, 창 폭은 `svelte/reactivity/window`. 안 쓰는 코드(`IN_APP_NAME` · `.hair`) 삭제.
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

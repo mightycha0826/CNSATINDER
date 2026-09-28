@@ -51,8 +51,7 @@
 
 	type Phase = 'enter' | 'opened' | 'rising' | 'write' | 'fold' | 'tuck' | 'close' | 'seal' | 'flip' | 'fly';
 	let phase = $state<Phase>('enter');
-	let vw = $state(390);
-	const w = $derived(envWidth(vw, 320));
+	const w = $derived(envWidth(320));
 	const now = new Date().toISOString();
 
 	let stop = play([
@@ -95,7 +94,6 @@
 
 </script>
 
-<svelte:window bind:innerWidth={vw} />
 
 <div class="compose" data-phase={phase}>
 	<div class="desk" aria-hidden="true"></div>

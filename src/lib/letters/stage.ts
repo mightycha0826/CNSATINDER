@@ -1,3 +1,4 @@
+import { innerWidth } from 'svelte/reactivity/window';
 import { reducedMotion } from '../motion';
 
 /**
@@ -13,5 +14,8 @@ export function play(steps: [number, () => void][]): () => void {
 	return () => timers.forEach(clearTimeout);
 }
 
-/** 화면 폭에 맞춘 봉투 너비 — 양옆 여백을 두고 최대 max */
-export const envWidth = (vw: number, max = 340, gutter = 48) => Math.max(240, Math.min(max, vw - gutter));
+/** 화면 폭에 맞춘 봉투 너비 — 양옆 여백을 두고 최대 max. 창 폭(innerWidth)을 읽으므로 $derived 안에서 부르면 화면을 돌려도 따라 바뀐다 */
+export const envWidth = (max = 340, gutter = 48) => Math.max(240, Math.min(max, (innerWidth.current ?? 390) - gutter));
+
+/** 봉투를 살짝씩 비뚤게 — 책상 위에 막 도착한 편지처럼 (편지함 · 보관함) */
+export const tilt = (i: number) => [-1.6, 1.2, -0.6, 1.8, -1.2, 0.8][i % 6];

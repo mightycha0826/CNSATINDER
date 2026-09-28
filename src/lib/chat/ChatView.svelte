@@ -8,7 +8,7 @@
 	import { tick, untrack } from 'svelte';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import type { ChatRoom } from './room.svelte';
-	import type { Msg, PartnerProfile, ReactionKey, ReportReason } from './types';
+	import type { Msg, PartnerProfile, ReactionKey } from './types';
 	import ChatIntro from './ChatIntro.svelte';
 	import PartnerCard from './PartnerCard.svelte';
 	import ReactionBadge from './ReactionBadge.svelte';
@@ -25,7 +25,8 @@
 	import { page } from '$app/state';
 	import { pressGestures, swipeReply } from './gestures';
 	import { summarize } from './reactions';
-	import ReportPicker from '$lib/ui/ReportPicker.svelte';
+	import MessageInput from '$lib/ui/MessageInput.svelte';
+	import RoomActions, { type RoomActionFns, type RoomStep } from './RoomActions.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import { backToSeek, goBack } from '$lib/nav';
 	import { mmss as fmtClock } from '$lib/time';
@@ -193,18 +194,19 @@
 	}
 
 	// ── 메뉴 · 신고 · 차단 ───────────────────────────────────────
-	// 시트는 한 번에 한 화면: menu → (leave | block | report) 확인
-	let sheet = $state<null | 'menu' | 'leave' | 'block' | 'report' | 'profile'>(untrack(() => initialSheet));
-	let reportReason = $state<ReportReason | null>(null);
-	let reportNote = $state('');
-	let acting = $state(false);
+	// 시트는 한 번에 한 화면: menu → (leave | block | report) 확인 (RoomActions — 대화 목록 길게 누르기와 같은 내용) · 또는 프로필
+	let sheet = $state<null | RoomStep | 'profile'>(untrack(() => initialSheet));
 
 	function openSheet(s: typeof sheet) {
 		sheet = s;
-		reportReason = null;
-		reportNote = '';
 		if (s === 'profile') void loadProfile();
 	}
+	const roomActions: RoomActionFns = {
+		// 시트는 바로 닫는다 — 방이 "대화 종료"로 바뀌는 것이 곧 결과다
+		leave: () => void room?.leave(false),
+		block: async () => !!room && (await room.block()),
+		report: async (reason, note) => !!room && (await room.report(reason, note))
+	};
 
 	// ── 상대 프로필 ──────────────────────────────────────────────
 	// 헤더의 아바타·이름을 누르면 상대의 기본 정보. 같은 방 멤버만 서버가 돌려준다.
@@ -245,29 +247,6 @@
 							? '접속 중'
 							: '오프라인'
 	);
-
-	async function leave() {
-		sheet = null;
-		await room?.leave(false);
-	}
-
-	async function block() {
-		if (!room || acting) return;
-		acting = true;
-		const ok = await room.block();
-		acting = false;
-		sheet = null;
-		toast(ok ? '차단 완료 · 다시는 만나지 않아요' : '연결을 확인해 주세요');
-	}
-
-	async function report() {
-		if (!room || !reportReason || acting) return;
-		acting = true;
-		const ok = await room.report(reportReason, reportNote.trim());
-		acting = false;
-		sheet = null;
-		toast(ok ? '신고 접수 · 운영진이 확인할게요' : '연결을 확인해 주세요');
-	}
 
 	// 도배 제한에 걸리면 한 번만 알려준다
 	let warnedRate = false;
@@ -381,20 +360,6 @@
 			toast(errMsg(res.blocked));
 		}
 	}
-	function onKey(e: KeyboardEvent) {
-		// 한글 조합 중 Enter 는 무시 (IME)
-		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-			e.preventDefault();
-			void submit();
-		}
-	}
-	$effect(() => {
-		// 입력창 자동 높이
-		void draft;
-		if (!inputEl) return;
-		inputEl.style.height = 'auto';
-		inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
-	});
 
 	// ── 버블 그룹핑 (인스타식) ───────────────────────────────────
 	// 같은 사람이 연달아 보낸 메시지는 인접 모서리를 4px 로 줄여 하나의 묶음으로 보인다.
@@ -806,21 +771,19 @@
 						<b>{replyTo.sender_seat === room?.seat ? '내 메시지에 답장' : `${room?.snap?.partner_alias ?? '상대'}에게 답장`}</b>
 						<span>{replyTo.body}</span>
 					</div>
-					<button class="replying-x" onclick={() => (replyTo = null)} aria-label="답장 취소">✕</button>
+					<button class="replying-x u-tap" onclick={() => (replyTo = null)} aria-label="답장 취소">✕</button>
 				</div>
 			{/if}
-			<div class="pill" class:disabled={locked}>
-				<textarea
-					bind:this={inputEl}
-					bind:value={draft}
-					rows="1"
-					placeholder={pending ? '둘 다 들어오면 시작돼요' : locked ? '대화할 수 없어요' : '메시지 보내기…'}
-					disabled={locked || loading}
-					oninput={() => room?.onInput()}
-					onkeydown={onKey}
-				></textarea>
-				<button class="send" onclick={submit} disabled={!draft.trim() || locked}>보내기</button>
-			</div>
+			<MessageInput
+				bind:value={draft}
+				bind:el={inputEl}
+				placeholder={pending ? '둘 다 들어오면 시작돼요' : locked ? '대화할 수 없어요' : '메시지 보내기…'}
+				disabled={locked || loading}
+				dim={locked}
+				canSend={!!draft.trim() && !locked}
+				oninput={() => room?.onInput()}
+				onsubmit={submit}
+			/>
 		</div>
 	{/if}
 </div>
@@ -853,31 +816,16 @@
 		{#if sheet === 'profile'}
 			<PartnerCard alias={room?.snap?.partner_alias ?? null} {profile} loading={profileLoading} />
 			<button class="item" onclick={() => (sheet = null)}>닫기</button>
-		{:else if sheet === 'menu'}
-			<button class="item" onclick={() => openSheet('profile')}>프로필 보기</button>
-			<button class="item danger" onclick={() => openSheet('report')}>신고하기</button>
-			<button class="item danger" onclick={() => openSheet('block')}>차단하기</button>
-			<button class="item" onclick={() => openSheet('leave')}>대화 나가기</button>
-			<button class="item" onclick={() => (sheet = null)}>취소</button>
-		{:else if sheet === 'leave'}
-			<p class="warn">{pinned ? '고정한 대화예요. 나가면 대화가 끝나고 내용도 사라져요.' : '나가면 대화가 끝나요.'}</p>
-			<button class="item danger" onclick={leave}>나가기</button>
-			<button class="item" onclick={() => (sheet = null)}>취소</button>
-		{:else if sheet === 'block'}
-			<p class="warn">차단하면 다시 연결되지 않아요.</p>
-			<button class="item danger" onclick={block} disabled={acting}>차단하기</button>
-			<button class="item" onclick={() => (sheet = null)}>취소</button>
-		{:else if sheet === 'report'}
-			<ReportPicker
-				bind:reason={reportReason}
-				bind:note={reportNote}
-				title="무엇이 문제였나요?"
-				intro="신고하면 자동으로 차단돼요."
+		{:else}
+			<RoomActions
+				step={sheet}
+				{pinned}
+				actions={roomActions}
+				leaveToast={null}
+				onprofile={() => openSheet('profile')}
+				onclose={() => (sheet = null)}
+				ondone={() => (sheet = null)}
 			/>
-			<button class="item danger" onclick={report} disabled={!reportReason || acting}>
-				{acting ? '신고하는 중…' : '신고하기'}
-			</button>
-			<button class="item" onclick={() => (sheet = null)}>취소</button>
 		{/if}
 	</Sheet>
 {/if}
@@ -1174,11 +1122,6 @@
 		border-radius: 50%;
 		color: var(--text-2);
 		font-size: 14px;
-		transition: opacity 0.2s;
-	}
-	.replying-x:active {
-		opacity: 0.55;
-		transition-duration: 0.08s;
 	}
 
 	/* ── 공감 ── */
@@ -1351,61 +1294,5 @@
 		padding: 8px var(--pad) calc(8px + env(safe-area-inset-bottom));
 		background: var(--bg);
 	}
-	.pill {
-		display: flex;
-		align-items: flex-end;
-		gap: 8px;
-		min-height: 48px;
-		padding: 7px 8px 7px 18px;
-		border: 1.5px solid transparent;
-		border-radius: 26px;
-		background: var(--field);
-		transition:
-			border-color 0.15s,
-			background 0.15s;
-	}
-	.pill:focus-within {
-		border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-		background: var(--surface);
-	}
-	.pill.disabled {
-		background: var(--surface);
-	}
-	textarea {
-		flex: 1;
-		min-width: 0;
-		padding: 6px 0;
-		border: 0;
-		outline: none;
-		resize: none;
-		background: none;
-		/* 16px 미만이면 아이폰이 입력칸에 들어갈 때 화면을 확대하고 그대로 둔다 (Phase 41) */
-		font-size: 16px;
-		line-height: 1.38;
-		max-height: 120px;
-	}
-	textarea::placeholder {
-		color: var(--text-2);
-	}
-	/* 보내기 — 누름 높이 44, 알약 안쪽 여백으로 파고들어 알약 높이(48)는 그대로 */
-	.send {
-		flex: none;
-		min-height: 44px;
-		margin: -5px -4px -5px 0;
-		padding: 0 10px;
-		transition: opacity 0.2s, transform 0.2s;
-		color: var(--accent);
-		font-weight: 600;
-		font-size: 15px;
-	}
-	.send:active:not(:disabled) {
-		opacity: 0.55;
-		transform: scale(0.94);
-		transition-duration: 0.08s;
-	}
-	.send:disabled {
-		color: var(--text-2);
-		opacity: 0.6;
-		cursor: default;
-	}
+	/* 입력 알약 모양은 MessageInput */
 </style>

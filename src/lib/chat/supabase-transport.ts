@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
+import { rpc } from '../rpc';
 import { notifyReaction, notifySent } from '../push';
 import { requestModeration } from '../moderation';
 import { ratePartner, type Reason, type Score } from '../manner';
@@ -184,58 +185,42 @@ export class SupabaseTransport implements ChatTransport {
 		return (data as unknown as MsgRow[] | null) ?? [];
 	}
 
-	async snapshot(roomId: string): Promise<RoomSnap> {
-		const { data, error } = await supabase.rpc('room_snapshot', { p_room: roomId });
-		if (error) throw error;
-		return data as RoomSnap;
-	}
-
-	async #rpcSnap(fn: string, args: Record<string, unknown>): Promise<RoomSnap> {
-		const { data, error } = await supabase.rpc(fn, args);
-		if (error) throw error;
-		return data as RoomSnap;
+	snapshot(roomId: string) {
+		return rpc<RoomSnap>('room_snapshot', { p_room: roomId });
 	}
 
 	ack(roomId: string) {
-		return this.#rpcSnap('ack_room', { p_room: roomId });
+		return rpc<RoomSnap>('ack_room', { p_room: roomId });
 	}
 
 	closeIfExpired(roomId: string) {
-		return this.#rpcSnap('close_if_expired', { p_room: roomId });
+		return rpc<RoomSnap>('close_if_expired', { p_room: roomId });
 	}
 
 	leave(roomId: string, skip: boolean) {
-		return this.#rpcSnap('leave_room', { p_room: roomId, p_skip: skip });
+		return rpc<RoomSnap>('leave_room', { p_room: roomId, p_skip: skip });
 	}
 
-	async vote(roomId: string, agree: boolean, hint: string | null = null) {
+	vote(roomId: string, agree: boolean, hint: string | null = null) {
 		// 힌트는 적을 차례일 때만 보낸다 (Phase 28 전 DB 에는 p_hint 가 없다)
 		const args = hint ? { p_room: roomId, p_agree: agree, p_hint: hint } : { p_room: roomId, p_agree: agree };
-		const { data, error } = await supabase.rpc('vote_extension', args);
-		if (error) throw error;
-		return data as { result: VoteResult; snap: RoomSnap };
+		return rpc<{ result: VoteResult; snap: RoomSnap }>('vote_extension', args);
 	}
 
 	view(roomId: string, on: boolean) {
-		return this.#rpcSnap('room_view', { p_room: roomId, p_on: on });
+		return rpc<RoomSnap>('room_view', { p_room: roomId, p_on: on });
 	}
 
 	async deleteMessage(messageId: number) {
-		const { data, error } = await supabase.rpc('delete_message', { p_msg: messageId });
-		if (error) throw error;
-		return (data as { status: 'ok' | 'closed' | 'not_found' }).status;
+		return (await rpc<{ status: 'ok' | 'closed' | 'not_found' }>('delete_message', { p_msg: messageId })).status;
 	}
 
-	async report(roomId: string, reason: ReportReason, note: string) {
-		const { data, error } = await supabase.rpc('report_partner', { p_room: roomId, p_reason: reason, p_note: note });
-		if (error) throw error;
-		return data as { status: 'ok' | 'already'; snap: RoomSnap };
+	report(roomId: string, reason: ReportReason, note: string) {
+		return rpc<{ status: 'ok' | 'already'; snap: RoomSnap }>('report_partner', { p_room: roomId, p_reason: reason, p_note: note });
 	}
 
 	async block(roomId: string) {
-		const { data, error } = await supabase.rpc('block_partner', { p_room: roomId });
-		if (error) throw error;
-		return (data as { snap: RoomSnap }).snap;
+		return (await rpc<{ snap: RoomSnap }>('block_partner', { p_room: roomId })).snap;
 	}
 
 	async markRead(roomId: string, lastId: number) {
@@ -269,10 +254,8 @@ export class SupabaseTransport implements ChatTransport {
 		return ratePartner(roomId, score, reasons);
 	}
 
-	async partnerProfile(roomId: string) {
-		const { data, error } = await supabase.rpc('partner_profile', { p_room: roomId });
-		if (error) throw error;
-		return data as PartnerProfile;
+	partnerProfile(roomId: string) {
+		return rpc<PartnerProfile>('partner_profile', { p_room: roomId });
 	}
 
 	typing(seat: 1 | 2) {

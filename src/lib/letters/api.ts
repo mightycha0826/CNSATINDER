@@ -74,6 +74,17 @@ export const anonName = (g: Gender | null | undefined) => `익명의 ${genderWor
 export const fromLabel = (l: Pick<MailItem, 'from_name' | 'from_gender' | 'from_nick'>) => l.from_name ?? l.from_nick ?? anonName(l.from_gender);
 /** 보낸 편지의 To. (학년은 따로) */
 export const toLabel = (l: Pick<MailItem, 'to_name' | 'to_gender' | 'to_nick'>) => l.to_name ?? l.to_nick ?? anonName(l.to_gender);
+/** 봉투의 상대 — 받은 편지면 From., 보낸 편지면 To. */
+export const otherLabel = (l: Pick<MailItem, 'from_name' | 'from_gender' | 'from_nick' | 'to_name' | 'to_gender' | 'to_nick'>, box: Box) =>
+	box === 'received' ? fromLabel(l) : toLabel(l);
+/**
+ * 봉투에 적힌 나 (받은 편지의 To. · 보낸 편지의 From.) — 모르는 사람과 주고받은 편지면 내 이름,
+ * 내가 익명으로 보낸 편지(와 그 답장)면 그때 쓴 내 서명 · 없으면 익명의 나
+ */
+export const myLabel = (l: Pick<MailItem, 'from_name' | 'to_name' | 'my_nick'>, box: Box, me: { name?: string | null; gender?: Gender | null }) =>
+	(box === 'received' ? l.from_name : l.to_name) ? (l.my_nick ?? anonName(me.gender)) : (me.name ?? '나');
+/** 상대가 나를 이름으로 찾아 보낸 쪽인가 (그 편지를 버리면 상대는 다시 못 보낸다) */
+export const iAmRecipient = (l: Pick<MailItem, 'from_name' | 'to_name'>, box: Box) => !(box === 'received' ? l.from_name : l.to_name);
 /** 봉투 테두리 — 받은 편지는 보낸 사람 성별 색(여학생 붉은색 · 남학생 푸른색), 이름으로 온 답장 · 보낸 편지는 테마 색 */
 export const borderOf = (l: Pick<MailItem, 'from_name' | 'from_gender'>, box: Box) =>
 	box === 'received' && !l.from_name ? (l.from_gender === 'f' ? 'f' : l.from_gender === 'm' ? 'm' : 'x') : 'brand';

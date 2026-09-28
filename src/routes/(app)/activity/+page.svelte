@@ -163,7 +163,7 @@
 
 	{#if !ready}
 		<ul class="list" aria-label="불러오는 중">
-			{#each [0, 1, 2] as i (i)}<li class="skel"><i></i><span><b></b><em></em></span></li>{/each}
+			{#each [0, 1, 2] as i (i)}<li class="skel"><i class="skeleton"></i><span><b class="skeleton"></b><em class="skeleton"></em></span></li>{/each}
 		</ul>
 	{:else}
 		<h2>새 알림</h2>
@@ -350,7 +350,6 @@
 		width: 46px;
 		height: 46px;
 		border-radius: 50%;
-		background: var(--field);
 	}
 	.skel span {
 		flex: 1;
@@ -358,20 +357,14 @@
 		flex-direction: column;
 		gap: 6px;
 	}
+	/* 모양만 — 색 · 숨 쉬기는 app.css .skeleton (G4) */
 	.skel b,
 	.skel em {
 		height: 10px;
 		width: 60%;
 		border-radius: 5px;
-		background: var(--field);
-		animation: pulse 1.2s ease-in-out infinite;
 	}
 	.skel em {
 		width: 35%;
-	}
-	@keyframes pulse {
-		50% {
-			opacity: 0.5;
-		}
 	}
 </style>

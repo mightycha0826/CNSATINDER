@@ -4,13 +4,12 @@
 	 * 받는 사람에게 나는 "익명의 ○학생"(성별만) 또는 내가 적은 서명으로만 보인다 (Phase 35). 받기를 끈 사람 · 차단한 사이는 검색에 나오지 않는다.
 	 * 찾기 결과에는 학년 · 학번 — 같은 학년 동명이인을 구분한다.
 	 */
-	import { goto } from '$app/navigation';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import EnvelopeCompose from '$lib/letters/EnvelopeCompose.svelte';
 	import type { LetterFmt } from '$lib/letters/rich';
-	import { anonName, searchPeople, sendError, sendLetter, type DmPerson } from '$lib/letters/api';
-	import { LIST } from '$lib/letters/unread.svelte';
+	import { anonName, searchPeople, sendLetter, type DmPerson } from '$lib/letters/api';
+	import { afterSent, deliver } from '$lib/letters/send';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 
 	let q = $state('');
@@ -38,33 +37,12 @@
 		return () => clearTimeout(t);
 	});
 
-	async function send(body: string, fmt: LetterFmt | null, nick: string | null) {
-		if (!to) return false;
-		try {
-			const r = await sendLetter(to.id, body, fmt, nick);
-			const err = sendError(r);
-			if (err) {
-				toast(err);
-				return false;
-			}
-			return true;
-		} catch (e) {
-			toast(errMsg(e));
-			return false;
-		}
-	}
-	function done() {
-		LIST.tab = 'sent';
-		toast('편지를 보냈어요');
-		void goto('/letters', { replaceState: true });
-	}
+	const send = (body: string, fmt: LetterFmt | null, nick: string | null) => (to ? deliver(() => sendLetter(to!.id, body, fmt, nick)) : Promise.resolve(false));
 </script>
 
 <div class="topbar">
 	{#if to}
-		<button class="x" onclick={() => (to = null)} aria-label="받는 사람 다시 고르기">
-			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-		</button>
+		<BackButton onclick={() => (to = null)} label="받는 사람 다시 고르기" />
 	{:else}
 		<BackButton href="/letters" history />
 	{/if}
@@ -79,7 +57,7 @@
 		nickable
 		placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.\n내 이름은 보이지 않고, 아래 서명(비우면 성별)만 전해져요.`}
 		onsend={send}
-		ondone={done}
+		ondone={() => afterSent('편지를 보냈어요')}
 	/>
 {:else}
 	<div class="page pick">
@@ -126,23 +104,6 @@
 {/if}
 
 <style>
-	.x {
-		display: grid;
-		place-items: center;
-		width: 44px;
-		height: 44px;
-		margin: 0 -6px 0 -12px;
-		transition: opacity 0.2s, transform 0.2s;
-	}
-	.x:active {
-		opacity: 0.55;
-		transform: scale(0.9);
-		transition-duration: 0.08s;
-	}
-	.x svg {
-		width: 24px;
-		height: 24px;
-	}
 	.pick {
 		gap: 10px;
 		padding-top: 12px;

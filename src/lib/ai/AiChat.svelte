@@ -7,6 +7,7 @@
 	 * 대화 내용은 이 화면의 메모리에만 있다 (닫으면 사라지고, 서버·DB 에 남기지 않는다).
 	 */
 	import { tick } from 'svelte';
+	import MessageInput from '$lib/ui/MessageInput.svelte';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import { mmss as fmtClock } from '$lib/time';
 	import { scrollBehavior } from '$lib/motion';
@@ -130,19 +131,13 @@
 		if (phase === 'ready') inputEl?.focus();
 	}
 
-	function onKey(e: KeyboardEvent) {
-		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-			e.preventDefault();
-			void send();
-		}
-	}
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 
 <div class="ai" role="dialog" aria-modal="true" aria-label="AI 와 대화" tabindex="-1" use:focustrap>
 	<header class="topbar">
-		<button class="close" onclick={onclose} aria-label="AI 대화 닫기">
+		<button class="close u-tap icon" onclick={onclose} aria-label="AI 대화 닫기">
 			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
 				<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
 			</svg>
@@ -193,17 +188,7 @@
 
 	{#if phase === 'ready'}
 		<div class="composer">
-			<div class="pill">
-				<textarea
-					bind:this={inputEl}
-					bind:value={draft}
-					rows="1"
-					maxlength="500"
-					placeholder="AI 에게 말하기…"
-					onkeydown={onKey}
-				></textarea>
-				<button class="send" onclick={send} disabled={!draft.trim() || sending}>보내기</button>
-			</div>
+			<MessageInput bind:value={draft} bind:el={inputEl} placeholder="AI 에게 말하기…" maxlength={500} canSend={!!draft.trim() && !sending} onsubmit={send} />
 			<p class="fine muted">
 				AI 는 틀린 말을 할 수 있어요{#if chat} · <span class="num">{turns}/{chat.maxTurns}</span>{/if}
 			</p>
@@ -237,12 +222,6 @@
 		width: 44px;
 		height: 44px;
 		margin: 0 -6px 0 -12px;
-		transition: opacity 0.2s, transform 0.2s;
-	}
-	.close:active {
-		opacity: 0.55;
-		transform: scale(0.9);
-		transition-duration: 0.08s;
 	}
 	.close svg {
 		width: 22px;
@@ -382,43 +361,6 @@
 	}
 	.composer .btn {
 		width: 100%;
-	}
-	.pill {
-		display: flex;
-		align-items: flex-end;
-		gap: 8px;
-		min-height: 44px;
-		padding: 6px 8px 6px 16px;
-		border: 1px solid var(--line);
-		border-radius: var(--r-bubble);
-	}
-	textarea {
-		flex: 1;
-		min-width: 0;
-		padding: 6px 0;
-		border: 0;
-		outline: none;
-		resize: none;
-		background: none;
-		/* 16px 미만이면 아이폰이 입력칸에 들어갈 때 화면을 확대한다 (Phase 41) */
-		font-size: 16px;
-		line-height: 1.38;
-		max-height: 120px;
-	}
-	textarea::placeholder {
-		color: var(--text-2);
-	}
-	.send {
-		flex: none;
-		padding: 6px 6px 7px;
-		color: var(--accent);
-		font-weight: 600;
-		font-size: 15px;
-	}
-	.send:disabled {
-		color: var(--text-2);
-		opacity: 0.6;
-		cursor: default;
 	}
 	.fine {
 		margin: 6px 4px 0;

@@ -50,7 +50,7 @@
 			<span class="ring"><Avatar name={p.partner_alias} size={76} /></span>
 		</div>
 		{#if !done}
-			<button class="x" onclick={skip} aria-label="나중에 하기">
+			<button class="x u-tap icon" onclick={skip} aria-label="나중에 하기">
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
 			</button>
 			<p class="kicker">{p.pinned ? '고정한 대화' : '방금 끝난 대화'}</p>
@@ -174,17 +174,11 @@
 		border-radius: 50%;
 		background: rgb(255 255 255 / 0.28);
 		color: #fff;
-		transition: opacity 0.2s, transform 0.2s;
 	}
 	.x::after {
 		content: '';
 		position: absolute;
 		inset: -5px;
-	}
-	.x:active {
-		opacity: 0.55;
-		transform: scale(0.9);
-		transition-duration: 0.08s;
 	}
 	.x svg {
 		width: 18px;

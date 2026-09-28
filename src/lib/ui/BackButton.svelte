@@ -3,19 +3,26 @@
 	 * 상단 바 왼쪽 뒤로가기.
 	 * history = true 면 브라우저 뒤로가기(스크롤 자리 유지 · 기록이 쌓이지 않음), 들어온 기록이 없으면(알림으로 바로 열림)
 	 * href 로 바꿔 끼운다 — lib/nav.ts goBack. false 면 href 로 이동.
+	 * onclick 을 주면 이동 대신 그것만 (한 화면 안에서 앞 단계로 — 예: 편지 쓰기에서 받는 사람 다시 고르기).
 	 */
 	import { goto } from '$app/navigation';
 	import { goBack } from '$lib/nav';
 
-	let { href = '/', history: useHistory = false }: { href?: string; history?: boolean } = $props();
+	let {
+		href = '/',
+		history: useHistory = false,
+		onclick,
+		label = '뒤로'
+	}: { href?: string; history?: boolean; onclick?: () => void; label?: string } = $props();
 
 	function back() {
-		if (useHistory) goBack(href);
+		if (onclick) onclick();
+		else if (useHistory) goBack(href);
 		else void goto(href);
 	}
 </script>
 
-<button class="back" onclick={back} aria-label="뒤로">
+<button class="back u-tap icon" onclick={back} aria-label={label}>
 	<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		<path d="M15 19l-7-7 7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 	</svg>
@@ -31,20 +38,12 @@
 		width: 44px;
 		height: 44px;
 		margin: 0 -8px 0 -12px;
-		transition:
-			opacity 0.2s,
-			transform 0.2s;
 	}
 	/* 설정 화면의 둥근 40칸 단추(.topbar.ios)도 누름은 44 */
 	.back::after {
 		content: '';
 		position: absolute;
 		inset: min(0px, calc(50% - 22px));
-	}
-	.back:active {
-		opacity: 0.55;
-		transform: scale(0.92);
-		transition-duration: 0.08s;
 	}
 	svg {
 		width: 24px;

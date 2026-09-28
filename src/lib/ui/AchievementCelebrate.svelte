@@ -126,7 +126,7 @@
 			{#if fresh.length > top.length}<p class="more muted">외 {fresh.length - top.length}개</p>{/if}
 			<div class="acts">
 				<button class="btn" onclick={() => close(true)}>업적 보러 가기</button>
-				<button class="later" onclick={() => close()}>닫기</button>
+				<button class="later u-tap" onclick={() => close()}>닫기</button>
 			</div>
 		</div>
 	</div>
@@ -330,9 +330,6 @@
 		width: 100%;
 		margin-top: 8px;
 		animation: up 0.5s 0.8s ease-out both;
-	}
-	.later:active {
-		opacity: 0.55;
 	}
 	.later {
 		height: 44px;

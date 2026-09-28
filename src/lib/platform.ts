@@ -47,15 +47,6 @@ export function detectEnv(ua: string, platform = '', maxTouchPoints = 0): Env {
 	return { os, browser, inApp };
 }
 
-export const IN_APP_NAME: Record<InApp, string> = {
-	kakao: '카카오톡',
-	instagram: '인스타그램',
-	facebook: '페이스북',
-	naver: '앱',
-	line: '라인',
-	webview: '앱'
-};
-
 /**
  * 안드로이드는 Chrome 으로만 설치하게 한다.
  * 삼성 인터넷이 만드는 설치 앱(WebAPK)은 옛 Android 버전용으로 만들어져, Android 14+ 에서

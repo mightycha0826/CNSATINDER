@@ -9,16 +9,11 @@
 	import { goto } from '$app/navigation';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import Envelope from '$lib/letters/Envelope.svelte';
-	import MailboxItem from '$lib/letters/MailboxItem.svelte';
-	import LetterMenu from '$lib/letters/LetterMenu.svelte';
-	import { anonName, borderOf, fromLabel, stampDate, toLabel, type MailItem } from '$lib/letters/api';
-	import { BOX, PAGE, dropThread, pollMailbox, refreshMailbox } from '$lib/letters/mailbox.svelte';
-	import { envWidth } from '$lib/letters/stage';
+	import MailStack from '$lib/letters/MailStack.svelte';
+	import { borderOf, myLabel, otherLabel, stampDate } from '$lib/letters/api';
+	import { BOX, PAGE, pollMailbox, refreshMailbox } from '$lib/letters/mailbox.svelte';
 	import { whileVisible } from '$lib/visible';
 	import { S } from '$lib/state.svelte';
-
-	let vw = $state(390);
-	const w = $derived(envWidth(vw, 340, 56));
 
 	$effect(() => {
 		refreshMailbox();
@@ -39,13 +34,9 @@
 	// 한 통이라도 있으면 겹겹이 쌓인 느낌이 나게 최소 네 장
 	const pileSize = $derived(readCount + sentCount ? Math.min(7, Math.max(4, readCount + sentCount + 1)) : 0);
 	const loaded = $derived(BOX.loaded.received && BOX.loaded.sent);
+	// 봉투에 적힌 나 (받은 편지의 To. · 보낸 편지의 From.)
+	const me = (it: (typeof BOX.received)[number], box: 'received' | 'sent') => myLabel(it, box, { name: S.me?.name, gender: S.profile?.gender });
 
-	// 받은 편지의 To. 는 나 — 모르는 사람의 편지면 내 이름, 내 편지에 온 답장이면 (나는 익명이었으니) 내 서명 · 익명의 나
-	const myName = $derived(S.me?.name ?? '나');
-	const anonMe = (it: MailItem) => it.my_nick ?? anonName(S.profile?.gender);
-	const meFor = (it: MailItem) => (it.from_name ? anonMe(it) : myName);
-	// 봉투를 살짝씩 비뚤게 — 책상 위에 막 도착한 편지처럼
-	const tilt = (i: number) => [-1.6, 1.2, -0.6, 1.8, -1.2, 0.8][i % 6];
 	// 서류 더미 — 한 장씩 조금씩 어긋나게 (맨 아래일수록 크게)
 	const LAYERS = [
 		{ r: -7, x: -14, y: 10, kind: 'paper' },
@@ -55,11 +46,7 @@
 		{ r: -5, x: -12, y: 3, kind: 'env' },
 		{ r: 3, x: 6, y: 1, kind: 'paper' }
 	];
-
-	let menuFor = $state<MailItem | null>(null);
 </script>
-
-<svelte:window bind:innerWidth={vw} />
 
 <div class="topbar">
 	<span class="title display">익명편지</span>
@@ -72,9 +59,7 @@
 		{#if unread.length}<span class="count num" aria-label="안 읽은 편지 {unread.length}통">{unread.length}</span>{/if}
 	</div>
 
-	{#if !BOX.loaded.received}
-		<div class="ghost" style:--w="{w}px" aria-label="편지함을 여는 중"></div>
-	{:else if unread.length === 0}
+	{#if BOX.loaded.received && unread.length === 0}
 		<div class="none">
 			<svg viewBox="0 0 48 36" aria-hidden="true">
 				<rect x="3" y="5" width="42" height="27" rx="3" fill="var(--env-paper)" stroke="var(--line)" stroke-width="1.5" />
@@ -84,21 +69,7 @@
 			<small class="muted">편지가 오면 여기에 봉인된 채로 도착해요</small>
 		</div>
 	{:else}
-		<ul class="stack">
-			{#each unread as it, i (it.id)}
-				<li class="arrive" style:--i={i}>
-					<MailboxItem
-						item={it}
-						box="received"
-						me={meFor(it)}
-						{w}
-						tilt={tilt(i)}
-						onopen={() => goto(`/letters/m/${it.id}`)}
-						onmenu={() => (menuFor = it)}
-					/>
-				</li>
-			{/each}
-		</ul>
+		<MailStack items={unread} box="received" loading={!BOX.loaded.received} />
 	{/if}
 
 	<!-- 편지 보관함 — 갈색 책상 위 서류 더미 -->
@@ -111,8 +82,8 @@
 				{#if top}
 					<span class="top-env">
 						<Envelope
-							to={top.box === 'received' ? meFor(top.it) : toLabel(top.it)}
-							from={top.box === 'received' ? fromLabel(top.it) : top.it.to_name ? anonMe(top.it) : myName}
+							to={top.box === 'received' ? me(top.it, top.box) : otherLabel(top.it, top.box)}
+							from={top.box === 'received' ? otherLabel(top.it, top.box) : me(top.it, top.box)}
 							date={stampDate(top.it.created_at)}
 							border={borderOf(top.it, top.box)}
 							postmark={stampDate(top.it.created_at)}
@@ -142,20 +113,6 @@
 	<span>편지 쓰기</span>
 </a>
 
-{#if menuFor}
-	<LetterMenu
-		thread={{ id: menuFor.thread_id, recipient: !menuFor.from_name }}
-		title={fromLabel(menuFor)}
-		item={menuFor}
-		box="received"
-		onclose={() => (menuFor = null)}
-		ondone={() => {
-			const t = menuFor?.thread_id;
-			menuFor = null;
-			if (t != null) dropThread(t);
-		}}
-	/>
-{/if}
 
 <style>
 	.mailbox {
@@ -188,41 +145,6 @@
 		font-weight: 800;
 		line-height: 20px;
 		text-align: center;
-	}
-	.stack {
-		display: flex;
-		flex-direction: column;
-		gap: 26px;
-		margin: 6px 0 4px;
-		padding: 0;
-		list-style: none;
-	}
-	/* 도착 — 위에서 살짝 떨어져 내려앉는다 (한 통씩 조금 늦게) */
-	.arrive {
-		animation: arrive 0.6s calc(var(--i) * 70ms) cubic-bezier(0.2, 0.9, 0.3, 1.08) both;
-	}
-	@keyframes arrive {
-		from {
-			opacity: 0;
-			transform: translateY(-18px) rotate(-2deg);
-		}
-	}
-	/* 불러오는 동안 — 봉투 모양 빈 자리가 은은히 숨 쉰다 */
-	.ghost {
-		align-self: center;
-		width: var(--w);
-		height: calc(var(--w) * 0.62);
-		border-radius: 8px;
-		background: linear-gradient(100deg, var(--field) 30%, var(--surface) 50%, var(--field) 70%) 0 0 / 300% 100%;
-		animation: shimmer 1.4s ease-in-out infinite;
-	}
-	@keyframes shimmer {
-		from {
-			background-position: 100% 0;
-		}
-		to {
-			background-position: 0 0;
-		}
 	}
 	.none {
 		display: flex;

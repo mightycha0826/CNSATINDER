@@ -5,6 +5,7 @@
 	 */
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
+	import MoreButton from '$lib/ui/MoreButton.svelte';
 
 	let {
 		alias,
@@ -37,7 +38,7 @@
 	<BackButton href="/" history />
 
 	{#if alias}
-		<button class="who" onclick={onprofile} aria-label="상대 프로필 보기">
+		<button class="who u-tap" onclick={onprofile} aria-label="상대 프로필 보기">
 			<Avatar name={alias} size={32} online={online && !closed} />
 			<span class="names">
 				<span class="alias">{alias}</span>
@@ -55,13 +56,7 @@
 			>
 		{/if}
 		{#if !closed}
-			<button class="more" onclick={onmenu} aria-label="메뉴">
-				<svg viewBox="0 0 24 24" aria-hidden="true">
-					<circle cx="5" cy="12" r="1.6" fill="currentColor" />
-					<circle cx="12" cy="12" r="1.6" fill="currentColor" />
-					<circle cx="19" cy="12" r="1.6" fill="currentColor" />
-				</svg>
-			</button>
+			<MoreButton onclick={onmenu} />
 		{/if}
 	{/if}
 </header>
@@ -74,11 +69,6 @@
 		min-width: 0;
 		min-height: 44px;
 		text-align: left;
-		transition: opacity 0.2s;
-	}
-	.who:active {
-		opacity: 0.55;
-		transition-duration: 0.08s;
 	}
 	.names {
 		display: flex;
@@ -129,21 +119,4 @@
 		height: 16px;
 	}
 	/* 누름 44 — 점 세 개 자리는 예전(32칸, -6)과 같게 */
-	.more {
-		display: grid;
-		place-items: center;
-		width: 44px;
-		height: 44px;
-		margin-right: -12px;
-		transition: opacity 0.2s, transform 0.2s;
-	}
-	.more:active {
-		opacity: 0.55;
-		transform: scale(0.9);
-		transition-duration: 0.08s;
-	}
-	.more svg {
-		width: 22px;
-		height: 22px;
-	}
 </style>
