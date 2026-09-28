@@ -148,6 +148,7 @@
 			{sealed}
 			stamping={phase === 'seal'}
 			postmark="보냄"
+			{body}
 			{w}
 		/>
 	</div>

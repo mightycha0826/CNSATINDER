@@ -36,6 +36,7 @@
 		sticker = '',
 		stamping = false,
 		border = 'brand',
+		body = undefined,
 		w = 320
 	}: {
 		to: string;
@@ -54,6 +55,8 @@
 		/** 봉인이 막 찍히는 중 — 도장이 내려와 쿵 찍는 움직임 (1.2s) */
 		stamping?: boolean;
 		border?: Border;
+		/** 봉투 안 편지지에 비칠 본문 — 읽는 편지 · 보내는 편지의 첫 줄들 (손글씨). 빈 글이면 빈 줄 편지지, 없으면(목록) 알아볼 수 없는 손글씨 획 */
+		body?: string | null;
 		w?: number;
 	} = $props();
 
@@ -121,8 +124,23 @@
 	<!-- 뒷면 (덮개 쪽) -->
 	<div class="face back" class:open data-paper={paper}>
 		<div class="wall"></div>
+		<!-- 봉투 안의 편지지 — 읽는 편지지(.letter-paper)를 줄인 모양: 종이 결 · 바랜 가장자리 · 두 줄 여백선 · 테마 색 줄 ·
+		     마스킹 테이프 · 학교 로고 물자국, 그리고 세 번 접었던 자국. To. · From. 은 봉투와 같은 손글씨,
+		     본문은 편지의 첫 줄들(꺼내 펼치면 그대로 이어진다) — 본문을 모르는 곳(목록)에서는 알아볼 수 없는 손글씨 획 -->
 		<div class="paper-in">
-			<i></i><i></i><i></i><i></i><i></i><i></i>
+			<span class="tape"></span>
+			<span class="pi-head">
+				<span class="pi-to"><span class="en">To.</span> <span class="hand">{to}</span></span>
+				<span class="pi-date num">{date}</span>
+			</span>
+			<span class="pi-lines">
+				{#if body === undefined}<i></i><i></i><i></i><i></i><i></i>{:else}<span class="pi-text">{body}</span>{/if}
+			</span>
+			<span class="pi-from">
+				<svg class="doodle" viewBox="0 0 24 24"><path d="M12 19.5c-3.8-2.6-7.4-5.6-7.4-9.2 0-2.3 1.8-4 3.9-4 1.5 0 2.7.8 3.5 2.1.8-1.3 2-2.1 3.5-2.1 2.1 0 3.9 1.7 3.9 4 0 3.6-3.6 6.6-7.4 9.2z" /></svg>
+				<span class="en">From.</span> <span class="hand">{from}</span>
+			</span>
+			<svg class="pi-logo" viewBox={LOGO_VIEWBOX}><path d={LOGO_PATH} /></svg>
 		</div>
 		<div class="pocket grain">
 			<i class="side l"></i>
@@ -520,8 +538,14 @@
 			0 0.3em 1em -0.1em rgb(40 20 10 / 0.22),
 			0 0.06em 0.15em rgb(40 20 10 / 0.14);
 	}
-	/* 봉투 안의 편지지 — 줄 친 미색 종이, 윗단에 테마 색 띠 */
+	/* ── 봉투 안의 편지지 — 꺼내 펼치면 되는 읽는 편지지(app.css .letter-paper)와 같은 종이를 봉투 크기로 ──
+	   종이는 봉투처럼 다크 모드에서도 밝은 미색 그대로 */
 	.paper-in {
+		--pi-ink: #2b2620;
+		--pi-edge: #efe4cf;
+		--pi-rule: color-mix(in srgb, var(--accent) 16%, rgb(90 70 50 / 0.14));
+		--pi-margin: color-mix(in srgb, var(--accent) 40%, transparent);
+		--pi-line: 1.15em;
 		position: absolute;
 		left: 0.9em;
 		right: 0.9em;
@@ -529,34 +553,149 @@
 		height: 88%;
 		display: flex;
 		flex-direction: column;
-		gap: 0.55em;
-		padding: 1.1em 1.2em;
+		padding: 1em 0.95em 0.7em 1.75em;
 		border-radius: 0.18em;
-		background:
-			linear-gradient(90deg, transparent 0.8em, rgb(240 57 110 / 0.25) 0.8em 0.86em, transparent 0.86em),
-			#fffdf8;
-		box-shadow: 0 0.1em 0.4em rgb(0 0 0 / 0.15);
+		color: var(--pi-ink);
+		text-align: left;
+		background-color: #fffaf0;
+		background-image:
+			/* 세 번 접었던 자국 — 1/3 은 골(그늘 → 빛), 2/3 은 마루(빛 → 그늘) */
+			linear-gradient(180deg, transparent calc(33.3% - 0.4em), rgb(90 60 30 / 0.07) calc(33.3% - 0.03em), rgb(255 255 255 / 0.75) 33.3%, transparent calc(33.3% + 0.35em)),
+			linear-gradient(180deg, transparent calc(66.6% - 0.35em), rgb(255 255 255 / 0.65) 66.6%, rgb(90 60 30 / 0.08) calc(66.6% + 0.03em), transparent calc(66.6% + 0.4em)),
+			/* 두 줄 여백선 (테마 색) */
+			linear-gradient(90deg, transparent 1.05em, var(--pi-margin) 1.05em 1.1em, transparent 1.1em 1.25em, var(--pi-margin) 1.25em 1.3em, transparent 1.3em),
+			/* 가장자리가 살짝 바랜 빛 */
+			radial-gradient(140% 100% at 50% 35%, transparent 55%, color-mix(in srgb, var(--pi-edge) 75%, transparent)),
+			/* 종이 결 */
+			url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .42 0 0 0 0 .32 0 0 0 0 .22 0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+		background-size: auto, auto, auto, auto, 6em;
+		box-shadow:
+			0 0 0 0.04em var(--pi-edge),
+			0 0.1em 0.4em rgb(0 0 0 / 0.15);
 		transform: translateY(0);
 		transition: transform 0.75s cubic-bezier(0.22, 0.9, 0.3, 1);
 		z-index: 2;
 	}
-	.paper-in::before {
-		content: '';
+	/* 마스킹 테이프 — 반투명 테마 색 · 사선 무늬 · 양 끝은 손으로 뜯은 톱니 (읽는 편지지와 같은 조각) */
+	.tape {
 		position: absolute;
-		inset: 0 0 auto;
-		height: 0.14em;
-		border-radius: 0.18em 0.18em 0 0;
-		background: var(--accent-fill);
+		top: -0.38em;
+		left: 50%;
+		width: 4.4em;
+		height: 1em;
+		translate: -50% 0;
+		rotate: -2.5deg;
+		background:
+			repeating-linear-gradient(-45deg, rgb(255 255 255 / 0.22) 0 0.22em, transparent 0.22em 0.44em),
+			var(--accent-fill);
+		opacity: 0.75;
+		box-shadow: 0 0.04em 0.1em rgb(0 0 0 / 0.12);
+		clip-path: polygon(0 8%, 4% 0, 8% 10%, 12% 0, 88% 0, 92% 12%, 96% 0, 100% 10%, 100% 92%, 96% 100%, 92% 88%, 88% 100%, 12% 100%, 8% 90%, 4% 100%, 0 90%);
+	}
+	.pi-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5em;
+	}
+	.pi-to,
+	.pi-from {
+		display: flex;
+		align-items: baseline;
+		gap: 0.3em;
+		min-width: 0;
+		white-space: nowrap;
+	}
+	.pi-to .hand,
+	.pi-from .hand {
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.pi-date {
+		flex: none;
+		font-size: 0.5em;
+		font-weight: 700;
+		opacity: 0.5;
+	}
+	/* 본문 — 테마 색 줄 위에 알아볼 수 없는 손글씨 획 (봉투를 열기 전에는 내용이 보이지 않게). 줄마다 길이 · 시작점이 다르다 */
+	.pi-lines {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		margin: 0.2em -0.95em 0 -1.75em;
+		padding: 0 0.95em 0 1.75em;
+		overflow: hidden;
+		background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--pi-line) - 0.05em), var(--pi-rule) calc(var(--pi-line) - 0.05em) var(--pi-line));
+	}
+	/* 편지의 첫 줄들 — 읽는 편지지와 같은 손글씨, 줄 높이 = 줄 간격이라 글줄이 줄 위에 앉는다. 넘치는 뒷부분은 접힌 종이 속으로 */
+	.pi-text {
+		font-family: var(--hand);
+		font-size: 0.86em;
+		line-height: calc(var(--pi-line) / 0.86);
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+		color: color-mix(in srgb, var(--pi-ink) 88%, transparent);
+		/* 손글씨 글꼴은 글자가 줄 칸 위쪽에 떠 있다 — 조금 내려 줄 위에 앉힌다 */
+		translate: 0 0.32em;
+	}
+	.pi-lines i {
+		flex: none;
+		height: var(--pi-line);
+		background: color-mix(in srgb, var(--pi-ink) 42%, transparent);
+		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 10'%3E%3Cpath d='M1 6.5c1.4-3.2 2.9-3.4 3.4-.4s1.8 3.1 2.9.3 1.6-3.8 3.1-.8 1.1 3.2 2.7.6 1.3-2.4 2.6-.2M19 6.2c1.1-2.8 2.6-3.3 3.5-.6s1.6 3 3 .4 2.1-3.3 3.1-.6 1.4 2.8 3 .2 1.2-1.9 2.4.1M37 6.4c1.3-3 2.7-3.1 3.2 0s1.5 2.9 2.8.3 1.7-2.6 3.3-.3' fill='none' stroke='black' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 0 92% / 3.9em 0.7em repeat-x;
+		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 10'%3E%3Cpath d='M1 6.5c1.4-3.2 2.9-3.4 3.4-.4s1.8 3.1 2.9.3 1.6-3.8 3.1-.8 1.1 3.2 2.7.6 1.3-2.4 2.6-.2M19 6.2c1.1-2.8 2.6-3.3 3.5-.6s1.6 3 3 .4 2.1-3.3 3.1-.6 1.4 2.8 3 .2 1.2-1.9 2.4.1M37 6.4c1.3-3 2.7-3.1 3.2 0s1.5 2.9 2.8.3 1.7-2.6 3.3-.3' fill='none' stroke='black' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 0 92% / 3.9em 0.7em repeat-x;
+	}
+	.pi-lines i:nth-child(1) {
+		width: 88%;
+	}
+	.pi-lines i:nth-child(2) {
+		width: 96%;
+		-webkit-mask-position: -1.4em 92%;
+		mask-position: -1.4em 92%;
+	}
+	.pi-lines i:nth-child(3) {
+		width: 74%;
+		-webkit-mask-position: -2.5em 92%;
+		mask-position: -2.5em 92%;
+	}
+	.pi-lines i:nth-child(4) {
+		width: 92%;
+		-webkit-mask-position: -0.8em 92%;
+		mask-position: -0.8em 92%;
+	}
+	.pi-lines i:nth-child(5) {
+		width: 46%;
+		-webkit-mask-position: -3.1em 92%;
+		mask-position: -3.1em 92%;
+	}
+	.pi-from {
+		align-self: flex-end;
+		max-width: 80%;
+		margin-top: 0.15em;
+	}
+	/* 서명 옆 작은 하트 낙서 — 테마 색 펜 */
+	.doodle {
+		flex: none;
+		width: 0.85em;
+		height: 0.85em;
+		align-self: center;
+		fill: none;
+		stroke: var(--accent);
+		stroke-width: 2.2;
+		stroke-linejoin: round;
+		rotate: -12deg;
 		opacity: 0.8;
 	}
-	.paper-in i {
-		height: 0.07em;
-		background: rgb(59 47 36 / 0.13);
-	}
-	.paper-in i:first-child {
-		width: 42%;
-		height: 0.12em;
-		background: rgb(59 47 36 / 0.35);
+	/* 오른쪽 아래 학교 로고 물자국 */
+	.pi-logo {
+		position: absolute;
+		right: 1em;
+		bottom: 1.9em;
+		width: 2.6em;
+		height: 3em;
+		fill: #8a6f55;
+		opacity: 0.08;
+		pointer-events: none;
 	}
 	.back[data-paper='peek'] .paper-in {
 		transform: translateY(-42%);

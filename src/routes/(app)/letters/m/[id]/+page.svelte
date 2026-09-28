@@ -115,6 +115,7 @@
 					open={phase === 'open' || phase === 'out' || phase === 'unfold'}
 					paper={phase === 'out' || phase === 'unfold' ? 'out' : 'in'}
 					glow={phase === 'front'}
+					body={letter.removed ? '' : (letter.body ?? '')}
 					{w}
 				/>
 			</span>

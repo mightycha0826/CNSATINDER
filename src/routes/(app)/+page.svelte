@@ -147,7 +147,7 @@
 			<div class="hero-card">
 				<div class="big num">{minutes}:00</div>
 				<h1>모르는 사람과 {minutes}분</h1>
-				<p>둘 다 원할 때만 이어져요</p>
+				<p>서로 이어져요</p>
 			</div>
 		</div>
 	{/if}
