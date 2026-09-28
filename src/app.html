@@ -46,7 +46,10 @@
 		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 		<meta name="mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
-		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<!-- 아이폰 상태바 (Phase 43-2) — default: 화면이 상태바 아래에서 시작하고, 상태바는 theme-color(라이트 #fbf9f7 · 다크 #0c0a0b)에
+		     맞춰 글자색이 바뀐다 (라이트면 검은 글씨). 예전 black-translucent 는 글씨가 늘 흰색이라 라이트 모드에서 시계가 안 보였다.
+		     이 값은 홈 화면에 추가할 때 저장되므로, 예전에 추가한 앱은 app.css 의 상태바 바탕이 대신 받쳐 준다 -->
+		<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 		<meta name="apple-mobile-web-app-title" content="CNSATINDER" />
 		<title>CNSATINDER</title>
 		%sveltekit.head%
