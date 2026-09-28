@@ -1,38 +1,38 @@
 <script lang="ts">
 	/**
-	 * 편지 보관함 (Phase 35) — 편지함 아래 서류 더미를 누르면. 지금까지 받은 편지 · 보낸 편지를 한 줄씩 읽기 쉽게.
-	 * 한 줄 = 작은 봉투(받은 편지는 보낸 사람 성별 색 테두리) · 누구 · 날짜 · 상태(안 읽음 · 읽음 · 답장 옴).
+	 * 편지 보관함 (Phase 35 · 37) — 편지함 아래 서류 더미를 누르면. 지금까지 받은 편지 · 보낸 편지.
+	 * 편지함처럼 큰 봉투가 한 장씩 비스듬히 놓여 있다 (Phase 37 — 예전엔 작은 봉투 한 줄씩).
+	 *   받은 편지 = 덮개 쪽(보낸 사람 성별 색 테두리 · 안 연 편지는 봉인) / 보낸 편지 = 주소 쪽(To. · 우표 · 소인 · 읽음/답장 옴 스티커).
 	 * 누르면 그 편지를 연다. 길게 누르면 신고 · 차단 · 나가기 (LetterMenu).
 	 */
 	import { goto } from '$app/navigation';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
-	import { anonName, borderOf, fromLabel, toLabel, type Box, type MailItem } from '$lib/letters/api';
+	import MailboxItem from '$lib/letters/MailboxItem.svelte';
+	import { anonName, fromLabel, toLabel, type Box, type MailItem } from '$lib/letters/api';
 	import { BOX, dropThread, loadMore, refreshMailbox } from '$lib/letters/mailbox.svelte';
 	import { LIST } from '$lib/letters/unread.svelte';
-	import { longpress } from '$lib/longpress';
+	import { envWidth } from '$lib/letters/stage';
 	import { S } from '$lib/state.svelte';
 
 	$effect(() => refreshMailbox());
+
+	let vw = $state(390);
+	const w = $derived(envWidth(vw, 340, 56));
 
 	const tab = $derived(LIST.tab);
 	const list = $derived(BOX[tab]);
 	let menuFor = $state<{ it: MailItem; box: Box } | null>(null);
 	let busy = $state(false);
 
+	// 봉투에 적힌 나 — 받은 편지의 To. / 보낸 편지의 From.
+	//   모르는 사람과 주고받은 편지면 내 이름, 내가 익명으로 보낸 편지(와 그 답장)면 내 서명 · 익명의 나
 	const myName = $derived(S.me?.name ?? '나');
+	const anonMe = (it: MailItem) => it.my_nick ?? anonName(S.profile?.gender);
+	const meFor = (it: MailItem, box: Box) => ((box === 'received' ? it.from_name : it.to_name) ? anonMe(it) : myName);
 	const who = (it: MailItem, box: Box) => (box === 'received' ? fromLabel(it) : toLabel(it));
-	const status = (it: MailItem, box: Box) =>
-		it.removed ? '내려진 편지' : box === 'received' ? (it.opened ? '' : '안 읽음') : it.replied ? '답장 옴' : it.opened ? '읽음' : '전해짐';
-
-	const when = (iso: string) => {
-		const d = new Date(iso);
-		const today = new Date();
-		const same = d.toDateString() === today.toDateString();
-		return same
-			? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
-			: d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' });
-	};
+	// 봉투를 살짝씩 비뚤게 — 편지함과 같은 느낌
+	const tilt = (i: number) => [-1.6, 1.2, -0.6, 1.8, -1.2, 0.8][i % 6];
 
 	async function more() {
 		if (busy) return;
@@ -41,6 +41,8 @@
 		busy = false;
 	}
 </script>
+
+<svelte:window bind:innerWidth={vw} />
 
 <div class="topbar">
 	<BackButton href="/letters" history />
@@ -55,37 +57,28 @@
 	</div>
 
 	{#if !BOX.loaded[tab] && list.length === 0}
-		<ul class="rows" aria-label="불러오는 중">
-			{#each [0, 1, 2, 3] as i (i)}<li class="row skel"><i></i><span><b></b><em></em></span></li>{/each}
-		</ul>
+		<div class="ghost" style:--w="{w}px" aria-label="불러오는 중"></div>
+		<div class="ghost" style:--w="{w}px" aria-hidden="true"></div>
 	{:else if list.length === 0}
 		<p class="muted center">{tab === 'received' ? '아직 받은 편지가 없어요' : '아직 보낸 편지가 없어요'}</p>
 	{:else}
-		<ul class="rows">
-			{#each list as it (it.id)}
-				{@const st = status(it, tab)}
-				<li>
-					<button class="row" onclick={() => goto(`/letters/m/${it.id}`)} use:longpress={() => (menuFor = { it, box: tab })}>
-						<span class="mini b-{borderOf(it, tab)}" class:sealed={tab === 'received' && !it.opened} aria-hidden="true"><i></i></span>
-						<span class="mid">
-							<span class="name" class:bold={tab === 'received' && !it.opened}>
-								{tab === 'received' ? 'From.' : 'To.'} {who(it, tab)}
-								{#if tab === 'sent' && it.to_grade}<small>{it.to_grade}학년</small>{/if}
-							</span>
-							<span class="sub">
-								{it.is_reply ? '답장' : '편지'} · {tab === 'received'
-									? `To. ${it.from_name ? (it.my_nick ?? anonName(S.profile?.gender)) : myName}`
-									: `From. ${it.to_name ? (it.my_nick ?? anonName(S.profile?.gender)) : myName}`}
-							</span>
-						</span>
-						<span class="right">
-							<time class="num">{when(it.created_at)}</time>
-							{#if st}<span class="st" class:new={st === '안 읽음'} class:replied={st === '답장 옴'}>{st}</span>{/if}
-						</span>
-					</button>
-				</li>
-			{/each}
-		</ul>
+		{#key tab}
+			<ul class="stack">
+				{#each list as it, i (it.id)}
+					<li class="arrive" style:--i={Math.min(i, 8)}>
+						<MailboxItem
+							item={it}
+							box={tab}
+							me={meFor(it, tab)}
+							{w}
+							tilt={tilt(i)}
+							onopen={() => goto(`/letters/m/${it.id}`)}
+							onmenu={() => (menuFor = { it, box: tab })}
+						/>
+					</li>
+				{/each}
+			</ul>
+		{/key}
 		{#if BOX.more[tab]}<button class="more" onclick={more} disabled={busy}>{busy ? '가져오는 중…' : '지난 편지 더 보기'}</button>{/if}
 	{/if}
 </div>
@@ -105,9 +98,10 @@
 
 <style>
 	.archive {
-		gap: 14px;
+		gap: 16px;
 		padding-top: 12px;
-		padding-bottom: calc(28px + env(safe-area-inset-bottom));
+		padding-bottom: calc(40px + env(safe-area-inset-bottom));
+		background: var(--desk);
 	}
 	/* 두 칸 분할 버튼 — 고른 쪽 아래로 흰 알약이 미끄러진다 */
 	.seg {
@@ -145,162 +139,40 @@
 	.thumb.right {
 		transform: translateX(100%);
 	}
-	.rows {
+	/* 큰 봉투 목록 — 편지함(/letters)의 새 편지와 같은 모양 */
+	.stack {
 		display: flex;
 		flex-direction: column;
-		margin: 0;
+		gap: 26px;
+		margin: 10px 0 4px;
 		padding: 0;
 		list-style: none;
-		border-radius: var(--r-card);
-		background: var(--surface);
-		box-shadow: var(--shadow-1);
-		overflow: hidden;
-		animation: fade-up 0.35s ease-out both;
 	}
-	@keyframes fade-up {
+	/* 탭을 바꾸거나 들어오면 한 통씩 조금 늦게 내려앉는다 */
+	.arrive {
+		animation: arrive 0.55s calc(var(--i) * 60ms) cubic-bezier(0.2, 0.9, 0.3, 1.08) both;
+	}
+	@keyframes arrive {
 		from {
 			opacity: 0;
-			transform: translateY(6px);
+			transform: translateY(-16px) rotate(-2deg);
 		}
 	}
-	.rows li + li .row,
-	.rows li.row + li.row {
-		border-top: 1px solid var(--cell-line);
+	.ghost {
+		align-self: center;
+		width: var(--w);
+		height: calc(var(--w) * 0.62);
+		margin-top: 10px;
+		border-radius: 8px;
+		background: linear-gradient(100deg, var(--field) 30%, var(--surface) 50%, var(--field) 70%) 0 0 / 300% 100%;
+		animation: shimmer 1.4s ease-in-out infinite;
 	}
-	.row {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		width: 100%;
-		min-height: 68px;
-		padding: 10px 14px;
-		text-align: left;
-		transition: background 0.2s;
-	}
-	.row:active {
-		background: var(--field);
-	}
-	/* 작은 봉투 — 항공우편 줄무늬 테두리 (받은 편지는 보낸 사람 성별 색) */
-	.mini {
-		--s1: var(--g-orange);
-		--s2: var(--g-pink);
-		position: relative;
-		flex: none;
-		width: 46px;
-		height: 30px;
-		padding: 3px;
-		border-radius: 3px;
-		background: repeating-linear-gradient(-45deg, var(--s1) 0 4px, var(--env-paper) 4px 6px, var(--s2) 6px 10px, var(--env-paper) 10px 12px);
-		box-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
-	}
-	.mini i {
-		display: block;
-		width: 100%;
-		height: 100%;
-		background:
-			linear-gradient(to bottom right, transparent calc(50% - 0.6px), rgb(80 60 40 / 0.3) 50%, transparent calc(50% + 0.6px)) left top / 50% 70% no-repeat,
-			linear-gradient(to bottom left, transparent calc(50% - 0.6px), rgb(80 60 40 / 0.3) 50%, transparent calc(50% + 0.6px)) right top / 50% 70% no-repeat,
-			var(--env-paper);
-	}
-	.mini.b-f {
-		--s1: #d8313b;
-		--s2: #9d1830;
-	}
-	.mini.b-m {
-		--s1: #2f6fd6;
-		--s2: #173f8c;
-	}
-	/* 안 연 편지 — 가운데 밀랍 점 */
-	.mini.sealed::after {
-		content: '';
-		position: absolute;
-		left: 50%;
-		top: 58%;
-		width: 9px;
-		height: 9px;
-		margin: -4.5px 0 0 -4.5px;
-		border-radius: 50%;
-		background: radial-gradient(circle at 35% 30%, #e2455f, #b8142f 55%, #6d0718);
-	}
-	.mid {
-		flex: 1;
-		min-width: 0;
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-	}
-	.name {
-		font-size: 15px;
-		font-weight: 600;
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.name.bold {
-		font-weight: 800;
-	}
-	.name small {
-		margin-left: 4px;
-		font-size: 12px;
-		color: var(--text-2);
-	}
-	.sub {
-		font-size: 12.5px;
-		color: var(--text-2);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	}
-	.right {
-		flex: none;
-		display: flex;
-		flex-direction: column;
-		align-items: flex-end;
-		gap: 4px;
-		font-size: 12px;
-		color: var(--text-2);
-	}
-	.st {
-		padding: 2px 8px;
-		border-radius: 999px;
-		background: var(--field);
-		font-size: 11px;
-		font-weight: 700;
-	}
-	.st.new {
-		background: var(--accent-fill-deep);
-		color: var(--on-accent);
-	}
-	.st.replied {
-		color: var(--accent);
-	}
-	.skel i {
-		flex: none;
-		width: 46px;
-		height: 30px;
-		border-radius: 3px;
-		background: var(--field);
-	}
-	.skel span {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-	}
-	.skel b,
-	.skel em {
-		height: 10px;
-		width: 55%;
-		border-radius: 5px;
-		background: var(--field);
-		animation: pulse 1.2s ease-in-out infinite;
-	}
-	.skel em {
-		width: 35%;
-	}
-	@keyframes pulse {
-		50% {
-			opacity: 0.5;
+	@keyframes shimmer {
+		from {
+			background-position: 100% 0;
+		}
+		to {
+			background-position: 0 0;
 		}
 	}
 	.center {
@@ -310,6 +182,7 @@
 	.more {
 		align-self: center;
 		height: 38px;
+		margin-top: 6px;
 		padding: 0 16px;
 		border-radius: 999px;
 		background: var(--field);
