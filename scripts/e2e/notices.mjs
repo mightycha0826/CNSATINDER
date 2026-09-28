@@ -1,6 +1,6 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
 import { chromium } from 'playwright-core';
-// 학생 앱 공지사항 — 종 아이콘 · 빨간 점 · /notices (가짜 Supabase 를 브라우저 요청 가로채기로)
+// 학생 앱 공지 — 하트 · 빨간 점 · 알림 화면에 다른 알림과 섞여 나온다 (Phase 40) · 공지 한 개 화면 (가짜 Supabase 를 브라우저 요청 가로채기로)
 const SP = OUT;
 const BASE = 'http://localhost:5199';
 let pass = 0, fail = 0;
@@ -61,24 +61,22 @@ try {
 	check('점 위치: 하트의 오른쪽 위', dot && dot.x + dot.width / 2 > b.x + b.width / 2 && dot.y + dot.height / 2 < b.y + b.height / 2, JSON.stringify({ dot, b }));
 	check('점 색은 빨강', (await page.locator('button.heart .dot').evaluate((e) => getComputedStyle(e).backgroundColor)) === 'rgb(255, 48, 64)');
 
-	console.log('[공지 화면]');
+	console.log('[알림 화면 — 공지도 다른 알림과 같은 줄]');
 	await bell.click();
 	await page.waitForURL('**/activity');
-	check('★ 하트 → 알림 화면에 새 공지', await page.getByText('공지 · 시험 기간 운영 안내').isVisible().catch(() => false) || (await page.getByText('공지 · 시험 기간 운영 안내').waitFor({ timeout: 4000 }).then(() => true, () => false)));
-	await page.locator('a.all').click();
-	await page.waitForURL('**/notices');
-	await page.getByText('시험 기간 운영 안내').waitFor();
+	const row = page.locator('button.row', { hasText: '시험 기간 운영 안내' });
+	await row.waitFor({ timeout: 4000 });
 	await page.waitForTimeout(400);
-	await page.screenshot({ path: `${SP}/notice-2-list.png` });
-	const items = await page.locator('li').allInnerTexts();
-	check('최신 공지가 위', items[0]?.includes('시험 기간 운영 안내') && items[1]?.includes('처음 공지'), items.join(' | '));
-	check('처음 보는 공지에만 "새"', (await page.locator('li').nth(0).locator('.new').count()) === 1 && (await page.locator('li').nth(1).locator('.new').count()) === 0);
-	check('★ 목록에는 제목만 (내용은 안 보임)', !items[0].includes('밤 10시') && (await page.locator('li .body').count()) === 0, items[0]);
-	check('★ 열면 맨 위 공지까지 봤다고 저장', marks.at(-1) === 2, JSON.stringify(marks));
-	check('시간 표시', /30분 전/.test(items[0]), items[0]);
+	await page.screenshot({ path: `${SP}/notice-2-activity.png` });
+	check('★ 하트 → 알림에 새 공지 — "공지 ·" 머리말 없이, 새 알림 칸에', (await row.innerText()).startsWith('시험 기간 운영 안내') && (await page.getByText('공지 · ').count()) === 0
+		&& (await row.evaluate((e) => e.classList.contains('unread'))));
+	check('★ "공지사항" 따로 가는 링크 없음', (await page.locator('a.all').count()) === 0 && (await page.getByText('공지사항').count()) === 0);
+	check('공지 줄도 다른 알림처럼 내용 한 줄 · 시간', (await row.locator('.body').innerText()).includes('밤 10시') && /30분 전/.test(await row.innerText()));
+	check('지난 공지는 지난 알림 칸에', (await page.locator('button.row:not(.unread)', { hasText: '처음 공지' }).count()) === 1);
+	check('★ 알림을 열면 맨 위 공지까지 봤다고 저장', marks.at(-1) === 2, JSON.stringify(marks));
 
 	console.log('[공지 내용]');
-	await page.locator('li a').first().click();
+	await row.click();
 	await page.waitForURL('**/notices/2');
 	await page.locator('article h1').waitFor();
 	await page.screenshot({ path: `${SP}/notice-2b-detail.png` });
@@ -87,15 +85,18 @@ try {
 	check('줄바꿈 유지', (await page.locator('article .body').innerText()).includes('\n'));
 	check('내용 화면에서도 탭바는 숨김', (await page.locator('nav.tabbar').count()) === 0);
 	await page.locator('button.back').click();
-	await page.waitForURL(/\/notices$/);
-	await page.locator('li').first().waitFor(); await page.waitForTimeout(300);
-	check('★ 뒤로 → 목록, "새" 표시 그대로', (await page.locator('li').nth(0).locator('.new').count()) === 1);
+	await page.waitForURL(/\/activity$/);
+	await page.locator('button.row').first().waitFor(); await page.waitForTimeout(300);
+	check('★ 뒤로 → 알림, 방금 본 공지는 이번엔 새 알림 칸 그대로', await page.locator('button.row', { hasText: '시험 기간 운영 안내' }).evaluate((e) => e.classList.contains('unread')));
 	await page.goto(`${BASE}/notices/1`);
 	await page.locator('article h1').waitFor({ timeout: 8000 }).catch(() => {});
 	check('바로 들어와도 보인다 (내용 없는 공지는 제목만)', (await page.locator('article h1').innerText().catch(() => '')) === '처음 공지' && (await page.locator('article .body').count()) === 0);
 	await page.goto(`${BASE}/notices/99`);
 	await page.getByText('공지를 찾을 수 없어요').waitFor({ timeout: 8000 }).catch(() => {});
 	check('없는 공지', await page.getByText('공지를 찾을 수 없어요').isVisible());
+	await page.goto(`${BASE}/notices`);
+	await page.waitForURL('**/activity', { timeout: 4000 }).catch(() => {});
+	check('★ 예전 공지사항 주소(푸시 알림) → 알림 화면', page.url().endsWith('/activity'), page.url());
 	await page.goto(`${BASE}/`); await page.locator('button.heart').waitFor(); await page.waitForTimeout(400);
 
 	check('★ 돌아오면 빨간 점 꺼짐', (await page.locator('button.heart .dot').count()) === 0);
@@ -114,24 +115,19 @@ try {
 	check('익명편지 화면에도 하트 + 점', (await page.locator('button.heart .dot').count()) === 1);
 	await page.locator('button.heart').click();
 	await page.waitForURL('**/activity');
-	await page.locator('a.all').click();
-	await page.waitForURL('**/notices');
-	await page.getByText('새로 올린 공지').waitFor();
+	await page.locator('button.row', { hasText: '새로 올린 공지' }).waitFor();
 	await page.waitForTimeout(300);
-	check('이번엔 3번만 "새"', (await page.locator('.new').count()) === 1 && (await page.locator('li').nth(0).locator('.new').count()) === 1);
+	check('이번엔 3번만 새 알림 칸', (await page.locator('button.row.unread').count()) === 1 && (await page.locator('button.row.unread').innerText()).includes('새로 올린 공지'));
 	check('탭바는 숨김', (await page.locator('nav.tabbar').count()) === 0);
 	await page.locator('button.back').click();
 	await page.waitForTimeout(500);
-	check('뒤로 → 알림 화면', page.url().endsWith('/activity'), page.url());
-	await page.locator('button.back').click();
-	await page.waitForTimeout(500);
-	check('한 번 더 뒤로 → 익명편지로', page.url().endsWith('/letters'), page.url());
+	check('뒤로 → 익명편지로', page.url().endsWith('/letters'), page.url());
 
 	console.log('[공지 없음]');
 	notices = []; lastSeen = 0;
-	await page.goto(`${BASE}/notices`);
-	await page.getByText('아직 공지가 없어요').waitFor({ timeout: 8000 }).catch(() => {});
-	check('빈 화면 안내', await page.getByText('아직 공지가 없어요').isVisible());
+	await page.goto(`${BASE}/activity`);
+	await page.getByText('새 알림을 모두 확인했어요').waitFor({ timeout: 8000 }).catch(() => {});
+	check('빈 화면 안내', await page.getByText('새 알림을 모두 확인했어요').isVisible());
 	await page.goto(`${BASE}/`); await page.locator('button.heart').waitFor(); await page.waitForTimeout(400);
 	check('공지가 없으면 점 없음', (await page.locator('button.heart .dot').count()) === 0);
 	check('페이지 오류 없음', errors.length === 0, errors.join(' / '));

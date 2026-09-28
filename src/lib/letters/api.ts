@@ -77,6 +77,11 @@ export const toLabel = (l: Pick<MailItem, 'to_name' | 'to_gender' | 'to_nick'>) 
 /** 봉투 테두리 — 받은 편지는 보낸 사람 성별 색(여학생 붉은색 · 남학생 푸른색), 이름으로 온 답장 · 보낸 편지는 테마 색 */
 export const borderOf = (l: Pick<MailItem, 'from_name' | 'from_gender'>, box: Box) =>
 	box === 'received' && !l.from_name ? (l.from_gender === 'f' ? 'f' : l.from_gender === 'm' ? 'm' : 'x') : 'brand';
+/** 받침에 맞는 조사 — josa('익명의 여학생', '과', '와') → '익명의 여학생과'. 한글이 아니면 받침 없는 쪽 */
+export function josa(word: string, withFinal: string, withoutFinal: string) {
+	const c = (word.trim().at(-1) ?? '').charCodeAt(0) - 0xac00;
+	return word + (c >= 0 && c < 11172 && c % 28 !== 0 ? withFinal : withoutFinal);
+}
 /** 서명 — 12자 */
 export const NICK_MAX = 12;
 

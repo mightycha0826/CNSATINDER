@@ -3,7 +3,7 @@
 	 * 익명편지 탭 = 편지함 (Phase 32 · 35).
 	 *   위: 아직 안 연 받은 편지만 — 봉인된 봉투가 비스듬히 쌓여 있다 (누르면 봉투를 연다).
 	 *   아래: 갈색 책상 위 서류 더미 = 편지 보관함. 읽은 편지 · 보낸 편지가 겹겹이 쌓여 있고, 누르면 지금까지 받은 · 쓴 편지 전부 (/letters/archive).
-	 * 오른쪽 아래 버튼으로 새 편지. 봉투를 길게 누르면 신고 · 차단 · 나가기 (LetterMenu).
+	 * 오른쪽 아래 버튼으로 새 편지. 봉투를 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 — 열기 · 답장 · 버리기 · 차단 · 신고 (LetterMenu).
 	 * 목록은 앱 안에서 기억해 두고(mailbox.svelte.ts) 다시 들어오면 바로 그린 뒤 뒤에서 새로 읽는다.
 	 */
 	import { goto } from '$app/navigation';
@@ -146,6 +146,8 @@
 	<LetterMenu
 		thread={{ id: menuFor.thread_id, recipient: !menuFor.from_name }}
 		title={fromLabel(menuFor)}
+		item={menuFor}
+		box="received"
 		onclose={() => (menuFor = null)}
 		ondone={() => {
 			const t = menuFor?.thread_id;

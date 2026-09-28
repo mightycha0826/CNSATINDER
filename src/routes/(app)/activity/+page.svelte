@@ -1,38 +1,80 @@
 <script lang="ts">
 	/**
-	 * 알림 (Phase 35 — 상단 하트) — 새 메시지 · 새 편지 · 나에게 온 개인 공지 · 공지를 한곳에 (인스타 "활동"처럼).
+	 * 알림 (Phase 35 — 상단 하트) — 새 메시지 · 새 편지 · 공지 · 나에게 온 개인 공지를 한 목록에 (인스타 "활동"처럼).
+	 * Phase 40: 공지를 따로 나누지 않는다 — "공지사항" 화면 · "공지 ·" 머리말 없이 다른 알림과 같은 줄로, 시간순으로 섞인다.
 	 *   새 알림: 안 읽은 대화 · 안 연 편지 · 안 읽은 개인 공지 · 안 본 공지 — 최근 것부터
 	 *   지난 알림: 최근에 연 편지 · 읽은 개인 공지 · 지난 공지 몇 개
-	 * 누르면 그 화면으로. 목록은 앱이 기억해 둔 것(INBOX · 편지함 · 공지)부터 바로 그리고 뒤에서 새로 읽는다.
+	 * 누르면 그 화면으로 (공지는 공지 한 개 화면, 개인 공지는 그 자리에서 펼쳐 읽는다).
+	 * 이 화면을 열면 공지는 본 것으로 저장한다 (하트의 빨간 점이 꺼진다). 다만 이번에 연 동안은 "새 알림"에 그대로 둔다.
+	 * 목록은 앱이 기억해 둔 것(INBOX · 편지함 · 공지)부터 바로 그리고 뒤에서 새로 읽는다.
 	 */
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import { INBOX } from '$lib/inbox.svelte';
 	import { BOX, refreshMailbox } from '$lib/letters/mailbox.svelte';
-	import { fromLabel } from '$lib/letters/api';
-	import { NOTICES, loadNotices } from '$lib/notices.svelte';
+	import { borderOf, fromLabel } from '$lib/letters/api';
+	import { NOTICES, loadNotices, markNoticesSeen, readPersonal } from '$lib/notices.svelte';
+	import { clearNotifications } from '$lib/push';
 	import { S } from '$lib/state.svelte';
 	import { agoText } from '$lib/time';
+
+	// 화면을 열 때까지 본 공지 번호 · 안 읽었던 개인 공지 — 열자마자 본 것으로 저장해도 이번에는 "새 알림"에 남게
+	let seen = $state<{ notice: number; personal: number[] } | null>(null);
+	// 공지를 보고 뒤로 돌아와도 그대로 (SvelteKit snapshot)
+	export const snapshot = {
+		capture: () => seen,
+		restore: (v: typeof seen) => (seen = v)
+	};
+	const snap = () => ({ notice: NOTICES.lastSeen, personal: NOTICES.personal.filter((n) => !n.read).map((n) => n.id) });
 
 	$effect(() => {
 		void INBOX.load();
 		refreshMailbox();
-		void loadNotices(true);
+		untrack(() => {
+			if (NOTICES.loaded && !seen) seen = snap();
+		});
+		void (async () => {
+			await loadNotices(true);
+			untrack(() => (seen ??= snap()));
+			await markNoticesSeen();
+			void clearNotifications('pn-', true);
+		})();
 	});
+
+	const newNotice = (id: number) => id > (seen?.notice ?? NOTICES.lastSeen);
+	const newPersonal = (n: { id: number; read: boolean }) => (seen ? seen.personal.includes(n.id) : !n.read);
+	// 펼쳐 읽는 개인 공지
+	let openP = $state<number | null>(null);
+	function togglePersonal(id: number) {
+		openP = openP === id ? null : id;
+		if (openP === id) void readPersonal(id);
+	}
 
 	type Item = {
 		key: string;
-		kind: 'chat' | 'letter' | 'warning' | 'notice';
+		kind: 'chat' | 'letter' | 'warning' | 'notice' | 'staff';
 		title: string;
 		body: string;
 		at: string;
-		url: string;
+		/** 누르면 갈 곳 (없으면 그 자리에서 펼친다 — 개인 공지) */
+		url?: string;
+		pid?: number;
 		badge?: number;
 		face?: string;
 		border?: 'f' | 'm' | 'x' | 'brand';
 	};
 	const byTime = (a: Item, b: Item) => Date.parse(b.at) - Date.parse(a.at);
+	const notice = (n: (typeof NOTICES.list)[number]): Item => ({ key: `n${n.id}`, kind: 'notice', title: n.title, body: n.body, at: n.created_at, url: `/notices/${n.id}` });
+	const personal = (n: (typeof NOTICES.personal)[number]): Item => ({
+		key: `p${n.id}`,
+		kind: n.kind === 'warning' ? 'warning' : 'staff',
+		title: n.kind === 'warning' ? `경고 · ${n.title}` : n.title,
+		body: n.body,
+		at: n.created_at,
+		pid: n.id
+	});
 
 	const fresh = $derived.by(() => {
 		const out: Item[] = [];
@@ -58,26 +100,20 @@
 				body: '봉투를 열어 확인해 보세요',
 				at: l.created_at,
 				url: `/letters/m/${l.id}`,
-				border: !l.from_name ? (l.from_gender === 'f' ? 'f' : l.from_gender === 'm' ? 'm' : 'x') : 'brand'
+				border: borderOf(l, 'received')
 			});
 		}
-		for (const n of NOTICES.personal) {
-			if (!n.read) out.push({ key: `p${n.id}`, kind: 'warning', title: n.kind === 'warning' ? `운영진 경고 · ${n.title}` : `운영진 · ${n.title}`, body: n.body, at: n.created_at, url: '/notices' });
-		}
-		for (const n of NOTICES.list) {
-			if (n.id > NOTICES.lastSeen) out.push({ key: `n${n.id}`, kind: 'notice', title: `공지 · ${n.title}`, body: n.body, at: n.created_at, url: `/notices/${n.id}` });
-		}
+		for (const n of NOTICES.personal) if (newPersonal(n)) out.push(personal(n));
+		for (const n of NOTICES.list) if (newNotice(n.id)) out.push(notice(n));
 		return out.sort(byTime);
 	});
 
 	const past = $derived.by(() => {
 		const out: Item[] = [];
 		for (const l of BOX.received.filter((x) => x.opened && !x.removed).slice(0, 5))
-			out.push({ key: `l${l.id}`, kind: 'letter', title: `${fromLabel(l)}의 ${l.is_reply ? '답장' : '편지'}`, body: '다시 읽기', at: l.created_at, url: `/letters/m/${l.id}` });
-		for (const n of NOTICES.personal.filter((x) => x.read).slice(0, 3))
-			out.push({ key: `p${n.id}`, kind: 'warning', title: `운영진 · ${n.title}`, body: n.body, at: n.created_at, url: '/notices' });
-		for (const n of NOTICES.list.filter((x) => x.id <= NOTICES.lastSeen).slice(0, 5))
-			out.push({ key: `n${n.id}`, kind: 'notice', title: `공지 · ${n.title}`, body: n.body, at: n.created_at, url: `/notices/${n.id}` });
+			out.push({ key: `l${l.id}`, kind: 'letter', title: `${fromLabel(l)}의 ${l.is_reply ? '답장' : '편지'}`, body: '다시 읽기', at: l.created_at, url: `/letters/m/${l.id}`, border: borderOf(l, 'received') });
+		for (const n of NOTICES.personal.filter((x) => !newPersonal(x)).slice(0, 5)) out.push(personal(n));
+		for (const n of NOTICES.list.filter((x) => !newNotice(x.id)).slice(0, 8)) out.push(notice(n));
 		return out.sort(byTime);
 	});
 	const ready = $derived(INBOX.loaded || BOX.loaded.received || NOTICES.loaded);
@@ -86,33 +122,42 @@
 <div class="topbar">
 	<BackButton href="/" history />
 	<span class="title">알림</span>
-	<a class="all" href="/notices">공지사항</a>
 </div>
 
 <div class="page activity">
-	{#snippet row(it: Item, i: number)}
+	{#snippet row(it: Item, i: number, isNew: boolean)}
+		{@const expanded = it.pid != null && openP === it.pid}
 		<li style:--i={i}>
-			<button class="row" class:unread={fresh.includes(it)} onclick={() => goto(it.url)}>
+			<button
+				class="row"
+				class:unread={isNew}
+				class:expanded
+				onclick={() => (it.url ? goto(it.url) : togglePersonal(it.pid!))}
+				aria-expanded={it.url ? undefined : expanded}
+			>
 				<span class="ico {it.kind} b-{it.border ?? 'brand'}" aria-hidden="true">
 					{#if it.kind === 'chat' && it.face}
 						<Avatar name={it.face} size={46} />
 					{:else if it.kind === 'letter'}
 						<svg viewBox="0 0 24 24"><path d="M3.5 6.5A2 2 0 0 1 5.5 4.5h13a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" fill="currentColor" /><path d="M4.5 7l7.5 5.5L19.5 7" fill="none" stroke="rgb(120 20 50 / .55)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg>
 					{:else if it.kind === 'warning'}
-						<svg viewBox="0 0 24 24"><path d="M12 3.5l9 16H3z" fill="currentColor" /><path d="M12 10v4.5M12 17.2v.1" stroke="#fff" stroke-width="2" stroke-linecap="round" /></svg>
+						<svg viewBox="0 0 24 24"><path d="M12 3.5l9 16H3z" fill="currentColor" /><path d="M12 10v4.5M12 17.2v.1" stroke="rgb(150 20 30)" stroke-width="2" stroke-linecap="round" /></svg>
+					{:else if it.kind === 'staff'}
+						<svg viewBox="0 0 24 24"><path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 17h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z" fill="currentColor" /><path d="M8 10h8M8 13h5" stroke="rgb(0 0 0 / .28)" stroke-width="1.6" stroke-linecap="round" /></svg>
 					{:else}
-						<svg viewBox="0 0 24 24"><path d="M4 10v4h3l6 4V6L7 10z" fill="currentColor" /><path d="M16.5 9a4 4 0 0 1 0 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+						<svg viewBox="0 0 24 24"><path d="M4 10v4h3l6 4V6L7 10z" fill="currentColor" /><path d="M16.5 9a4 4 0 0 1 0 6M18.8 6.8a7 7 0 0 1 0 10.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
 					{/if}
 				</span>
 				<span class="mid">
 					<strong>{it.title}</strong>
-					{#if it.body}<span class="body">{it.body}</span>{/if}
+					{#if it.body && !expanded}<span class="body">{it.body}</span>{/if}
 				</span>
 				<span class="right">
 					<time class="num">{agoText(it.at, S.now)}</time>
-					{#if it.badge}<span class="badge num">{it.badge > 99 ? '99+' : it.badge}</span>{/if}
+					{#if it.badge}<span class="badge num">{it.badge > 99 ? '99+' : it.badge}</span>{:else if isNew}<span class="new-dot"></span>{/if}
 				</span>
 			</button>
+			{#if expanded && it.body}<p class="full selectable">{it.body}</p>{/if}
 		</li>
 	{/snippet}
 
@@ -123,7 +168,7 @@
 	{:else}
 		<h2>새 알림</h2>
 		{#if fresh.length}
-			<ul class="list">{#each fresh as it, i (it.key)}{@render row(it, i)}{/each}</ul>
+			<ul class="list">{#each fresh as it, i (it.key)}{@render row(it, i, true)}{/each}</ul>
 		{:else}
 			<div class="none">
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.3s-7.6-4.6-7.6-10.3A4.4 4.4 0 0 1 12 7.2a4.4 4.4 0 0 1 7.6 2.8c0 5.7-7.6 10.3-7.6 10.3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" /></svg>
@@ -132,26 +177,12 @@
 		{/if}
 		{#if past.length}
 			<h2>지난 알림</h2>
-			<ul class="list">{#each past as it, i (it.key)}{@render row(it, i)}{/each}</ul>
+			<ul class="list">{#each past as it, i (it.key)}{@render row(it, i, false)}{/each}</ul>
 		{/if}
 	{/if}
 </div>
 
 <style>
-	.all {
-		display: inline-flex;
-		align-items: center;
-		min-height: 44px;
-		margin: 0 -8px 0 auto;
-		padding: 0 8px;
-		font-size: 14px;
-		font-weight: 700;
-		transition: opacity 0.2s;
-	}
-	.all:active {
-		opacity: 0.55;
-		transition-duration: 0.08s;
-	}
 	.activity {
 		gap: 8px;
 		padding-top: 6px;
@@ -214,13 +245,15 @@
 	.ico.letter.b-m {
 		background: linear-gradient(135deg, #3a7ae0, #173f8c);
 	}
-	.ico.warning {
-		background: color-mix(in srgb, var(--danger) 14%, transparent);
-		color: var(--danger);
+	/* 공지 · 운영진 연락도 다른 알림과 같은 꼴 — 색 동그라미 + 흰 그림 (테마 색을 따른다) */
+	.ico.notice,
+	.ico.staff {
+		background: var(--accent-fill-deep);
+		color: #fff;
 	}
-	.ico.notice {
-		background: var(--field);
-		color: var(--text);
+	.ico.warning {
+		background: linear-gradient(135deg, #f0525c, #b3122a);
+		color: #fff;
 	}
 	.mid {
 		flex: 1;
@@ -257,6 +290,28 @@
 		gap: 4px;
 		font-size: 12px;
 		color: var(--text-2);
+	}
+	.new-dot {
+		width: 8px;
+		height: 8px;
+		margin: 6px 6px 0 0;
+		border-radius: 50%;
+		background: #ff3040;
+	}
+	.row.expanded .mid strong {
+		-webkit-line-clamp: unset;
+		line-clamp: unset;
+	}
+	/* 펼친 개인 공지 — 아이콘 옆 글줄에 맞춰 */
+	.full {
+		margin: -4px 4px 8px 62px;
+		padding: 12px 14px;
+		border-radius: 14px;
+		background: var(--field);
+		font-size: 14px;
+		line-height: 1.6;
+		white-space: pre-wrap;
+		animation: in 0.25s var(--ease-out) both;
 	}
 	.badge {
 		min-width: 20px;

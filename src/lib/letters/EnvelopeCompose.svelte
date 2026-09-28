@@ -2,7 +2,7 @@
 	/**
 	 * 편지 쓰기 연출 (Phase 32 · 35) — 새 편지 · 답장이 같이 쓴다.
 	 *   들어올 때: 봉투가 올라와 덮개가 열리고 → 편지지가 솟아올라 → 화면 가득 펼쳐지며 편지 쓰는 칸이 된다 (봉투는 아래로 내려가 숨는다).
-	 *   보낼 때: 편지지가 접혀 봉투로 들어가고 → 덮개가 닫히고 → 밀랍 봉인이 찍히고 → 봉투를 뒤집어 주소 면(소인 "보냄") → 날아간다.
+	 *   보낼 때: 편지지가 접혀 봉투로 들어가고 → 덮개가 닫히고 → 밀랍이 떨어지고 놋쇠 도장이 쿵 찍힌다(진동) → 봉투를 뒤집어 주소 면(소인 "보냄") → 날아간다.
 	 * 쓰는 동안에는 봉투를 화면에서 치운다 — 휴대폰 키보드가 올라와 화면이 줄어도 편지지 · 보내기 단추를 가리지 않게 (Phase 35).
 	 * 보내기 단추 줄은 화면 아래(키보드 위)에 붙는다.
 	 * nickable 이면 From. 칸에 서명(닉네임)을 직접 적는다 — 비우면 anon("익명의 ○학생") 그대로.
@@ -13,6 +13,7 @@
 	import LetterEditor from './LetterEditor.svelte';
 	import type { LetterFmt } from './rich';
 	import { envWidth, play } from './stage';
+	import * as haptic from '../haptics';
 	import { NICK_MAX, paperDate, stampDate } from './api';
 
 	let {
@@ -77,10 +78,12 @@
 		stop = play([
 			[200, () => (phase = 'tuck')],
 			[900, () => (phase = 'close')],
-			[1550, () => (phase = 'seal')],
-			[2250, () => (phase = 'flip')],
-			[3150, () => (phase = 'fly')],
-			[3850, ondone]
+			[1500, () => (phase = 'seal')],
+			// 도장이 닿는 순간 (Envelope 의 찍기 1.2s 중 45%)
+			[1500 + 540, haptic.confirm],
+			[2800, () => (phase = 'flip')],
+			[3700, () => (phase = 'fly')],
+			[4400, ondone]
 		]);
 	}
 

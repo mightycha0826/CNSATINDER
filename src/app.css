@@ -153,6 +153,14 @@ body {
 	letter-spacing: -0.011em;
 	-webkit-font-smoothing: antialiased;
 	overscroll-behavior-y: none;
+	/* 한글은 낱말(띄어쓰기) 단위로 줄을 바꾼다 — "사라지/고"처럼 낱말 중간에서 끊기지 않게 (Phase 40).
+	   띄어쓰기 없이 긴 줄(ㅋㅋㅋ… · 주소)은 칸을 넘지 않게 아무 데서나 */
+	word-break: keep-all;
+	overflow-wrap: break-word;
+}
+/* 문단 끝에 한 글자만 외따로 남지 않게 */
+p {
+	text-wrap: pretty;
 }
 
 /*
@@ -985,7 +993,7 @@ button.g-row:active:not(:disabled) {
 	font-size: 24px;
 	line-height: var(--rule-h);
 	white-space: pre-wrap;
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 	background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-h) - 1px), var(--paper-line) calc(var(--rule-h) - 1px) var(--rule-h));
 	background-attachment: local;
 }

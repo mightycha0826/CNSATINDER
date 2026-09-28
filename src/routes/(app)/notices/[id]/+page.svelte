@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * 공지 한 개 — 공지사항 목록에서 제목을 누르면 오는 화면. 제목 · 올린 시각 · 내용.
+	 * 공지 한 개 — 알림(하트)에서 공지를 누르면 오는 화면. 제목 · 올린 시각 · 내용.
 	 * 목록을 거치지 않고 바로 들어와도(새로고침 · 알림) 불러와서 보여 준다.
 	 */
 	import { page } from '$app/state';
@@ -24,8 +24,8 @@
 </script>
 
 <div class="topbar">
-	<BackButton href="/notices" history />
-	<span class="title">공지사항</span>
+	<BackButton href="/activity" history />
+	<span class="title">공지</span>
 </div>
 
 <div class="page notice">

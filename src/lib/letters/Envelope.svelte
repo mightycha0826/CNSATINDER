@@ -10,10 +10,13 @@
 	/**
 	 * 우편 봉투 한 장 (Phase 32 · 35 다시 그림) — 편지함 · 봉투 열기 · 편지 쓰기 연출이 같이 쓴다.
 	 *   앞면(front): 항공우편 줄무늬 테두리 · 보내는 사람(From.) · 항공 표시 · 학교 로고 우표 · 소인 · 받는 사람(To.) · 우편번호 칸
-	 *   뒷면(back) : 안감 · 편지지 · 양옆/아래 주머니(접힌 선 · 그늘) · 덮개(그림자) · 밀랍 봉인(학교 로고 양각) · 가장자리 줄무늬
+	 *   뒷면(back) : 안감 · 편지지 · 양옆/아래 주머니(접힌 선 · 그늘) · 덮개(그림자) · 밀랍 봉인(학교 로고 양각, 덮개 끝에 붙음) · 가장자리 줄무늬
 	 * 받은 편지는 보낸 사람의 성별로 테두리 색이 다르다 (border — 여학생 붉은색, 남학생 푸른색).
 	 * 크기는 w 하나로 — 안쪽은 전부 em (1em = w / 20) 이라 목록의 작은 봉투와 연출의 큰 봉투가 같은 모양이다.
-	 * 움직임은 부모가 상태(side · sealed · broken · open · paper)를 바꾸면 CSS 전환으로. 동작 줄이기면 app.css 가 전환을 끈다.
+	 * 움직임은 부모가 상태(side · sealed · stamping · cracked · open · paper)를 바꾸면 CSS 전환으로. 동작 줄이기면 app.css 가 전환을 끈다.
+	 *   stamping: 밀랍이 떨어지고 → 놋쇠 도장이 화면 앞에서 내려와 쿵 찍고(밀랍이 눌려 퍼짐 · 충격 파문 · 봉투가 눌림) → 들린다 (1.2s, Phase 40)
+	 *   cracked : 봉인이 부르르 떨며 덮개 선을 따라 금이 가고 부스러기가 떨어진다 → open 이면 봉인이 덮개에 붙은 채 함께 들린다 (Phase 40 —
+	 *             예전의 "두 쪽으로 갈라져 날아가기"를 대신한다)
 	 */
 	import '@fontsource/nanum-pen-script/index.css';
 	import { LOGO_FACES, LOGO_PATH, LOGO_VIEWBOX } from '$lib/ui/schoolLogo';
@@ -25,7 +28,7 @@
 		date,
 		side = 'front',
 		sealed = true,
-		broken = false,
+		cracked = false,
 		open = false,
 		paper = 'in',
 		postmark = '',
@@ -41,13 +44,14 @@
 		date: string;
 		side?: Side;
 		sealed?: boolean;
-		broken?: boolean;
+		/** 봉인에 금이 감 (봉투를 여는 중) */
+		cracked?: boolean;
 		open?: boolean;
 		paper?: PaperPos;
 		postmark?: string;
 		glow?: boolean;
 		sticker?: string;
-		/** 봉인이 막 찍히는 중 — 위에서 눌러 찍는 움직임 */
+		/** 봉인이 막 찍히는 중 — 도장이 내려와 쿵 찍는 움직임 (1.2s) */
 		stamping?: boolean;
 		border?: Border;
 		w?: number;
@@ -60,7 +64,7 @@
 		'M20 2.2c2.6-.2 3.9 1.9 6.3 2.4 2.5.5 4.9-.9 6.6 1.1 1.6 1.9.4 4.4 1.3 6.6.9 2.3 3.5 3.3 3.6 5.9.1 2.7-2.6 3.7-3.3 6.1-.7 2.4.8 4.9-.8 6.9-1.5 1.9-4.2 1.4-6.3 2.4-1.2.6-1.6 2-1.8 3.5-.2 1.4-.9 2.6-2.1 2.6s-1.8-1.2-2-2.6c-.1-1-.5-1.9-1.4-2.2-2.4-.8-5.2.2-7.1-1.6-1.9-1.9-.9-4.6-1.8-7-.8-2.3-3.5-3.4-3.6-6-.1-2.7 2.7-3.6 3.5-6 .8-2.4-.6-4.9 1.1-6.9 1.7-1.9 4.3-1.1 6.6-1.8C16.5 4 17.6 2.4 20 2.2z';
 </script>
 
-<div class="env b-{border}" class:show-back={side === 'back'} class:glow style:--w="{w}px" aria-hidden="true">
+<div class="env b-{border}" class:show-back={side === 'back'} class:glow class:thud={stamping} style:--w="{w}px" aria-hidden="true">
 	<!-- 앞면 (주소 쪽) -->
 	<div class="face front">
 		<div class="inner grain">
@@ -129,41 +133,73 @@
 		</div>
 		<div class="flap">
 			<div class="flap-face"></div>
-		</div>
-		<i class="edge"></i>
-		{#if sealed}
-			<div class="seal" class:broken class:stamping>
-				{#each ['l', 'r'] as half (half)}
-					<span class="half {half}">
+			<!-- 밀랍 봉인 — 덮개 끝에 붙어 있다. 열면 금이 간 채로 덮개와 함께 들린다 (Phase 40) -->
+			{#if sealed}
+				<div class="seal" class:cracked class:stamping>
+					<div class="wax">
 						<svg viewBox="0 0 40 44">
 							<defs>
-								<radialGradient id="wax-{uid}-{half}" cx="36%" cy="30%" r="75%">
+								<radialGradient id="wax-{uid}" cx="36%" cy="30%" r="75%">
 									<stop offset="0" stop-color="#e2455f" />
 									<stop offset=".45" stop-color="#b8142f" />
 									<stop offset="1" stop-color="#6d0718" />
 								</radialGradient>
-								<radialGradient id="pool-{uid}-{half}" cx="50%" cy="50%" r="50%">
+								<radialGradient id="pool-{uid}" cx="50%" cy="50%" r="50%">
 									<stop offset=".7" stop-color="#000" stop-opacity="0" />
 									<stop offset="1" stop-color="#000" stop-opacity=".28" />
 								</radialGradient>
 							</defs>
-							<path d={WAX} fill="url(#wax-{uid}-{half})" />
-							<!-- 눌러 찍은 자리 — 가운데가 살짝 꺼지고 테두리가 솟는다 -->
-							<circle cx="20" cy="20.5" r="11.8" fill="url(#pool-{uid}-{half})" />
-							<circle cx="20" cy="20.5" r="11.8" fill="none" stroke="rgb(255 190 200 / .35)" stroke-width=".7" />
-							<circle cx="20" cy="20.5" r="10.4" fill="none" stroke="rgb(70 0 12 / .35)" stroke-width=".6" />
-							<!-- 학교 로고 양각: 밝은 윤곽을 살짝 위에, 어두운 면을 그 위에 -->
-							<g transform="translate(13.2 12.6) scale(.068)">
-								<path d={LOGO_PATH} fill="rgb(255 200 208 / .45)" transform="translate(-10 -12)" />
-								<path d={LOGO_PATH} fill="rgb(92 0 18 / .6)" />
+							<path d={WAX} fill="url(#wax-{uid})" />
+							<!-- 눌러 찍은 자리 — 가운데가 살짝 꺼지고 테두리가 솟는다 (찍히는 순간 나타난다) -->
+							<g class="emboss">
+								<circle cx="20" cy="20.5" r="11.8" fill="url(#pool-{uid})" />
+								<circle cx="20" cy="20.5" r="11.8" fill="none" stroke="rgb(255 190 200 / .35)" stroke-width=".7" />
+								<circle cx="20" cy="20.5" r="10.4" fill="none" stroke="rgb(70 0 12 / .35)" stroke-width=".6" />
+								<!-- 학교 로고 양각: 밝은 윤곽을 살짝 위에, 어두운 면을 그 위에 -->
+								<g transform="translate(13.2 12.6) scale(.068)">
+									<path d={LOGO_PATH} fill="rgb(255 200 208 / .45)" transform="translate(-10 -12)" />
+									<path d={LOGO_PATH} fill="rgb(92 0 18 / .6)" />
+								</g>
 							</g>
 							<!-- 빛 반사 -->
 							<ellipse cx="14" cy="10" rx="5" ry="2.4" fill="#fff" opacity=".28" transform="rotate(-24 14 10)" />
+							<!-- 덮개 선을 따라 가는 금 — 봉투를 열 때 그어진다 -->
+							<g class="crack" fill="none" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M3.5 21.6l4.6-1.4 3.1 2.2 4.4-2.6 3.6 1.9 3.9-1.7 3.4 2.3 4.2-2 3.6 1.3 3.2-.8" pathLength="1" stroke="rgb(255 185 195 / .45)" stroke-width="1.1" transform="translate(0 .7)" />
+								<path d="M3.5 21.6l4.6-1.4 3.1 2.2 4.4-2.6 3.6 1.9 3.9-1.7 3.4 2.3 4.2-2 3.6 1.3 3.2-.8" pathLength="1" stroke="#3a0310" stroke-width=".9" />
+							</g>
 						</svg>
-					</span>
-				{/each}
-			</div>
-		{/if}
+					</div>
+					<!-- 금이 갈 때 떨어지는 밀랍 부스러기 -->
+					<i class="crumb c1"></i><i class="crumb c2"></i><i class="crumb c3"></i>
+					{#if stamping}
+						<!-- 봉인 도장 — 위(화면 앞)에서 내려와 쿵 찍고 들린다. 그림자가 가까워질수록 작고 진해진다 -->
+						<i class="shock"></i>
+						<i class="stamp-shadow"></i>
+						<svg class="stamper" viewBox="0 0 40 40">
+							<defs>
+								<radialGradient id="brass-{uid}" cx="34%" cy="28%" r="78%">
+									<stop offset="0" stop-color="#fff3c4" />
+									<stop offset=".3" stop-color="#e6bb5c" />
+									<stop offset=".72" stop-color="#a8752a" />
+									<stop offset="1" stop-color="#5f3f10" />
+								</radialGradient>
+								<radialGradient id="wood-{uid}" cx="38%" cy="32%" r="72%">
+									<stop offset="0" stop-color="#b98356" />
+									<stop offset=".55" stop-color="#6e3f22" />
+									<stop offset="1" stop-color="#3a1f0d" />
+								</radialGradient>
+							</defs>
+							<circle cx="20" cy="20" r="19.4" fill="url(#brass-{uid})" />
+							<circle cx="20" cy="20" r="16.2" fill="none" stroke="rgb(80 50 8 / .5)" stroke-width=".8" />
+							<circle cx="20" cy="20" r="12.6" fill="url(#wood-{uid})" />
+							<ellipse cx="15.6" cy="13.8" rx="4.6" ry="2.5" fill="#fff" opacity=".32" transform="rotate(-32 15.6 13.8)" />
+						</svg>
+					{/if}
+				</div>
+			{/if}
+		</div>
+		<i class="edge"></i>
 	</div>
 </div>
 
@@ -640,59 +676,305 @@
 	.b-brand .edge {
 		opacity: 0;
 	}
-	/* 밀랍 봉인 — 깨지면 두 반쪽이 떨어져 나간다 */
+	/* ── 밀랍 봉인 — 덮개 끝(뾰족한 곳)에 붙어 있다. 덮개가 열리면 함께 들리고, 반쯤 넘어가면 덮개 뒤로 사라진다 ── */
 	.seal {
 		position: absolute;
 		left: 50%;
-		top: 62%;
+		top: 100%;
 		width: 3.2em;
 		height: 3.52em;
 		margin: -2em 0 0 -1.6em;
-		z-index: 6;
 		filter: drop-shadow(0 0.1em 0.12em rgb(70 0 15 / 0.4));
+		transition:
+			transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+			opacity 0s;
 	}
-	.half {
+	.back.open .seal {
+		opacity: 0;
+		transition-delay: 0s, 0.33s;
+	}
+	.wax {
 		position: absolute;
 		inset: 0;
-		transition:
-			transform 0.6s cubic-bezier(0.3, 0, 0.6, 1),
-			opacity 0.5s 0.1s;
+		/* 밀랍 동그라미의 가운데 (viewBox 40×44 에서 20, 20.5) */
+		transform-origin: 50% 46.6%;
 	}
-	.half svg {
+	.wax svg {
+		display: block;
 		width: 100%;
 		height: 100%;
 	}
-	.half.l {
-		clip-path: polygon(0 0, 54% 0, 44% 30%, 57% 52%, 46% 78%, 50% 100%, 0 100%);
+
+	/* 찍기 (1.2s) — 0~20% 녹은 밀랍이 떨어져 퍼지고 · 30% 도장이 다가와 · 37% 살짝 들었다가 · 45% 쿵 · 60% 누른 채 · 85% 들려 사라진다 */
+	.seal.stamping .wax {
+		animation: pour 1.2s both;
 	}
-	.half.r {
-		clip-path: polygon(54% 0, 100% 0, 100% 100%, 50% 100%, 46% 78%, 57% 52%, 44% 30%);
-	}
-	.seal.stamping {
-		animation: stamp 0.55s cubic-bezier(0.2, 1.3, 0.4, 1) both;
-	}
-	@keyframes stamp {
+	@keyframes pour {
 		0% {
-			transform: translateY(-1.2em) scale(1.9) rotate(-16deg);
+			transform: scale(0.25);
 			opacity: 0;
+			animation-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1.2);
 		}
-		55% {
-			transform: scale(0.9) rotate(2deg);
+		8% {
 			opacity: 1;
 		}
-		75% {
-			transform: scale(1.04) rotate(-1deg);
+		22%,
+		44% {
+			transform: scale(0.74);
 		}
+		/* 도장에 눌려 옆으로 퍼진다 */
+		47% {
+			transform: scale(1.16, 0.9);
+			animation-timing-function: cubic-bezier(0.3, 0, 0.3, 1);
+		}
+		58% {
+			transform: scale(0.96, 1.04);
+		}
+		66% {
+			transform: scale(1.02, 0.99);
+		}
+		76%,
 		100% {
 			transform: none;
 		}
 	}
-	.seal.broken .half.l {
-		transform: translate(-1.3em, 2.2em) rotate(-38deg);
+	/* 로고 양각은 찍힌 순간부터 */
+	.seal.stamping .emboss {
+		animation: emboss 1.2s both;
+	}
+	@keyframes emboss {
+		0%,
+		45% {
+			opacity: 0;
+		}
+		47%,
+		100% {
+			opacity: 1;
+		}
+	}
+	/* 놋쇠 도장 (위에서 내려다본 모습 — 손잡이 나무 · 놋쇠 테) */
+	.stamper,
+	.stamp-shadow,
+	.shock {
+		position: absolute;
+		left: 50%;
+		top: 46.6%;
+		border-radius: 50%;
+		pointer-events: none;
+	}
+	.stamper {
+		/* 머리는 양각 자리(로고 둘레)만큼 — 밀랍이 도장 둘레로 밀려 나오는 게 보이게 */
+		width: 2.3em;
+		height: 2.3em;
+		margin: -1.15em 0 0 -1.15em;
+		opacity: 0;
+		animation: stamper 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+	@keyframes stamper {
+		0%,
+		10% {
+			transform: translate(0.5em, -1.2em) scale(2.6);
+			opacity: 0;
+		}
+		30% {
+			transform: translate(0.1em, -0.25em) scale(1.45);
+			opacity: 1;
+			animation-timing-function: ease-in-out;
+		}
+		/* 치기 전에 살짝 들어 올린다 (예비 동작) */
+		37% {
+			transform: translate(0.14em, -0.32em) scale(1.62);
+			animation-timing-function: cubic-bezier(0.6, 0, 1, 0.5);
+		}
+		/* 쿵 */
+		45% {
+			transform: none;
+			opacity: 1;
+			animation-timing-function: ease-out;
+		}
+		50% {
+			transform: scale(0.96);
+		}
+		62% {
+			transform: scale(0.97);
+			opacity: 1;
+			animation-timing-function: cubic-bezier(0.4, 0, 0.8, 0.5);
+		}
+		86%,
+		100% {
+			transform: translate(-0.2em, -0.9em) scale(1.9);
+			opacity: 0;
+		}
+	}
+	/* 도장 그림자 — 멀면 크고 흐리고 비껴 있고, 닿으면 작고 진하다 */
+	.stamp-shadow {
+		width: 2.3em;
+		height: 2.3em;
+		margin: -1.15em 0 0 -1.15em;
+		background: radial-gradient(closest-side, rgb(40 5 10 / 0.6), rgb(40 5 10 / 0.25) 70%, transparent);
+		opacity: 0;
+		animation: stamp-shadow 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+	}
+	@keyframes stamp-shadow {
+		0%,
+		10% {
+			transform: translate(1.6em, 2em) scale(1.9);
+			opacity: 0;
+		}
+		30% {
+			transform: translate(0.6em, 0.8em) scale(1.3);
+			opacity: 0.35;
+			animation-timing-function: ease-in-out;
+		}
+		37% {
+			transform: translate(0.75em, 1em) scale(1.4);
+			opacity: 0.3;
+			animation-timing-function: cubic-bezier(0.6, 0, 1, 0.5);
+		}
+		45%,
+		62% {
+			transform: translate(0.06em, 0.1em) scale(1.06);
+			opacity: 0.7;
+			animation-timing-function: cubic-bezier(0.4, 0, 0.8, 0.5);
+		}
+		86%,
+		100% {
+			transform: translate(1.4em, 1.8em) scale(1.8);
+			opacity: 0;
+		}
+	}
+	/* 충격 파문 — 쿵 하는 순간 밀랍 둘레로 퍼진다 */
+	.shock {
+		width: 3em;
+		height: 3em;
+		margin: -1.5em 0 0 -1.5em;
+		border: 0.1em solid rgb(184 20 47 / 0.55);
+		box-shadow: 0 0 0.3em rgb(255 255 255 / 0.5) inset;
+		opacity: 0;
+		animation: shock 1.2s cubic-bezier(0.1, 0.7, 0.3, 1) both;
+	}
+	@keyframes shock {
+		0%,
+		45% {
+			transform: scale(0.75);
+			opacity: 0;
+		}
+		47% {
+			opacity: 0.9;
+		}
+		78%,
+		100% {
+			transform: scale(2.1);
+			opacity: 0;
+		}
+	}
+	/* 쿵 — 봉투 전체가 한 번 눌렸다 돌아온다 (뒤집기 transform 과 겹치지 않게 scale · translate 속성으로) */
+	.env.thud {
+		animation: thud 1.2s both;
+	}
+	@keyframes thud {
+		0%,
+		44.5% {
+			scale: 1;
+			translate: 0 0;
+		}
+		47.5% {
+			scale: 0.972;
+			translate: 0 0.14em;
+			animation-timing-function: cubic-bezier(0.3, 0, 0.3, 1.4);
+		}
+		62%,
+		100% {
+			scale: 1;
+			translate: 0 0;
+		}
+	}
+
+	/* 열기 — 봉인이 부르르 떨고, 덮개 선을 따라 금이 가고, 부스러기가 떨어진다. 그다음 덮개와 함께 들린다 */
+	.crack path {
+		stroke-dasharray: 1;
+		stroke-dashoffset: 1;
+	}
+	.seal.cracked .crack path {
+		animation: crack 0.32s 0.16s cubic-bezier(0.5, 0, 0.2, 1) forwards;
+	}
+	@keyframes crack {
+		to {
+			stroke-dashoffset: 0;
+		}
+	}
+	.seal.cracked .wax {
+		animation: tremble 0.42s ease-in-out;
+	}
+	@keyframes tremble {
+		20% {
+			transform: rotate(-4deg) scale(1.02);
+		}
+		40% {
+			transform: rotate(3.5deg);
+		}
+		60% {
+			transform: rotate(-2deg);
+		}
+		80% {
+			transform: rotate(1deg);
+		}
+	}
+	/* 떨어진 뒤에는 살짝 들떠 있다 (그늘이 조금 깊어진다) */
+	.seal.cracked {
+		transform: translateY(-0.05em) scale(1.03);
+		transition-delay: 0.45s, 0s;
+	}
+	.back.open .seal.cracked {
+		transition-delay: 0s, 0.33s;
+	}
+	.crumb {
+		position: absolute;
+		width: 0.34em;
+		height: 0.28em;
+		background: radial-gradient(circle at 35% 30%, #e0465e, #8a0c20 70%);
+		clip-path: polygon(10% 20%, 60% 0, 100% 45%, 75% 100%, 20% 85%, 0 50%);
 		opacity: 0;
 	}
-	.seal.broken .half.r {
-		transform: translate(1.4em, 2.5em) rotate(32deg);
-		opacity: 0;
+	.c1 {
+		left: 10%;
+		top: 46%;
+		--dx: -0.7em;
+		--dy: 1.3em;
+		--r: -140deg;
+	}
+	.c2 {
+		left: 80%;
+		top: 49%;
+		--dx: 0.8em;
+		--dy: 1.1em;
+		--r: 160deg;
+	}
+	.c3 {
+		left: 58%;
+		top: 52%;
+		width: 0.24em;
+		height: 0.2em;
+		--dx: 0.25em;
+		--dy: 1.5em;
+		--r: 90deg;
+	}
+	.seal.cracked .crumb {
+		animation: crumb 0.5s 0.3s cubic-bezier(0.35, 0, 0.8, 0.6) both;
+	}
+	/* 톡 튀었다가 떨어진다 */
+	@keyframes crumb {
+		0% {
+			opacity: 1;
+			transform: none;
+		}
+		30% {
+			opacity: 1;
+			transform: translate(calc(var(--dx) * 0.35), -0.3em) rotate(calc(var(--r) * 0.3));
+		}
+		100% {
+			opacity: 0;
+			transform: translate(var(--dx), var(--dy)) rotate(var(--r));
+		}
 	}
 </style>

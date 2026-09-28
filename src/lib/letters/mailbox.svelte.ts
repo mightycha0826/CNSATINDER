@@ -46,7 +46,7 @@ export async function loadMore(box: Box) {
 	BOX.more[box] = r.length === PAGE;
 }
 
-/** 나가기 · 차단 · 신고로 편지 줄기를 지웠을 때 — 목록에서 바로 빼고 새로 읽는다 */
+/** 버리기 · 차단 · 신고로 편지 줄기를 지웠을 때 — 목록에서 바로 빼고 새로 읽는다 */
 export function dropThread(threadId: number) {
 	BOX.received = BOX.received.filter((x) => x.thread_id !== threadId);
 	BOX.sent = BOX.sent.filter((x) => x.thread_id !== threadId);

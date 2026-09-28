@@ -1,9 +1,9 @@
 <script lang="ts">
 	/**
 	 * 편지 한 통 (Phase 32) — 봉투를 열어 읽는다.
-	 * 처음 여는 받은 편지는 연출: 주소 면 → 뒤집기 → 밀랍 봉인이 깨지고 → 덮개가 열리고 → 편지지가 나와 → 펼쳐 읽는다.
+	 * 처음 여는 받은 편지는 연출: 주소 면 → 뒤집기 → 밀랍 봉인에 금이 가고 → 봉인이 붙은 채 덮개가 열리고 → 편지지가 나와 → 펼쳐 읽는다.
 	 * 이미 열어 본 편지 · 내가 보낸 편지는 연출 없이 편지지만 펼친다. 화면을 누르면 연출을 건너뛴다.
-	 * 아래: 받은 편지면 "답장 쓰기", 보낸 편지면 읽음 · 답장 여부. ⋯ 는 신고 · 차단 · 나가기 (LetterMenu).
+	 * 아래: 받은 편지면 "답장 쓰기", 보낸 편지면 읽음 · 답장 여부. ⋯ 는 편지 버리기 · 차단 · 신고 (LetterMenu).
 	 */
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -18,6 +18,7 @@
 	import { markOpened } from '$lib/letters/mailbox.svelte';
 	import { clearNotifications } from '$lib/push';
 	import { envWidth, play } from '$lib/letters/stage';
+	import * as haptic from '$lib/haptics';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 
 	const id = $derived(Number(page.params.id));
@@ -54,11 +55,11 @@
 				stop = first
 					? play([
 							[700, () => (phase = 'back')],
-							[1450, () => (phase = 'crack')],
-							[1850, () => (phase = 'open')],
-							[2350, () => (phase = 'out')],
-							[3000, () => (phase = 'unfold')],
-							[3450, () => (phase = 'read')]
+							[1500, () => ((phase = 'crack'), haptic.select())],
+							[2150, () => (phase = 'open')],
+							[2650, () => (phase = 'out')],
+							[3300, () => (phase = 'unfold')],
+							[3750, () => (phase = 'read')]
 						])
 					: play([[0, () => (phase = 'read')]]);
 			} catch (e) {
@@ -120,7 +121,7 @@
 					side={phase === 'front' ? 'front' : 'back'}
 					border={borderOf(letter, letter.role)}
 					sealed
-					broken={phase !== 'front' && phase !== 'back'}
+					cracked={phase !== 'front' && phase !== 'back'}
 					open={phase === 'open' || phase === 'out' || phase === 'unfold'}
 					paper={phase === 'out' || phase === 'unfold' ? 'out' : 'in'}
 					glow={phase === 'front'}

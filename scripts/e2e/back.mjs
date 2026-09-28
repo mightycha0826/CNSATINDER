@@ -116,11 +116,11 @@ try {
 	await page.waitForTimeout(2300);
 
 	console.log('[다른 화면에서 돌아오기]');
-	await page.locator('button.heart').click(); await page.waitForURL('**/activity'); await page.locator('a.all').click(); await page.waitForURL('**/notices'); await page.waitForTimeout(300);
+	await page.locator('button.heart').click(); await page.waitForURL('**/activity'); await page.locator('button.row').first().click(); await page.waitForURL('**/notices/*'); await page.waitForTimeout(300);
 	await page.locator('button.back').click(); await page.waitForURL('**/activity'); await page.waitForTimeout(300);
 	await page.locator('button.back').click(); await page.waitForURL(`${BASE}/`); await page.waitForTimeout(500);
 	check('공지 → 뒤로 → 알림 → 뒤로 → 홈, 기록 늘지 않음', (await idx()) === 1, String(await idx()));
-	await page.locator('button.heart').click(); await page.waitForURL('**/activity'); await page.locator('a.all').click(); await page.waitForURL('**/notices'); await page.waitForTimeout(300);
+	await page.locator('button.heart').click(); await page.waitForURL('**/activity'); await page.locator('button.row').first().click(); await page.waitForURL('**/notices/*'); await page.waitForTimeout(300);
 	await back(); await back();
 	check('휴대폰 뒤로가기로 돌아와도 같음 (안내 없이 홈)', new URL(page.url()).pathname === '/' && (await idx()) === 1);
 

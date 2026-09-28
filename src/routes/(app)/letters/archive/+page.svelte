@@ -3,7 +3,7 @@
 	 * 편지 보관함 (Phase 35 · 37) — 편지함 아래 서류 더미를 누르면. 지금까지 받은 편지 · 보낸 편지.
 	 * 편지함처럼 큰 봉투가 한 장씩 비스듬히 놓여 있다 (Phase 37 — 예전엔 작은 봉투 한 줄씩).
 	 *   받은 편지 = 덮개 쪽(보낸 사람 성별 색 테두리 · 안 연 편지는 봉인) / 보낸 편지 = 주소 쪽(To. · 우표 · 소인 · 읽음/답장 옴 스티커).
-	 * 누르면 그 편지를 연다. 길게 누르면 신고 · 차단 · 나가기 (LetterMenu).
+	 * 누르면 그 편지를 연다. 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 — 열기 · 답장 · 버리기 · 차단 · 신고 (LetterMenu).
 	 */
 	import { goto } from '$app/navigation';
 	import BackButton from '$lib/ui/BackButton.svelte';
@@ -87,6 +87,8 @@
 	<LetterMenu
 		thread={{ id: menuFor.it.thread_id, recipient: menuFor.box === 'received' ? !menuFor.it.from_name : !menuFor.it.to_name }}
 		title={who(menuFor.it, menuFor.box)}
+		item={menuFor.it}
+		box={menuFor.box}
 		onclose={() => (menuFor = null)}
 		ondone={() => {
 			const t = menuFor?.it.thread_id;

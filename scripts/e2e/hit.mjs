@@ -103,7 +103,7 @@ const SCREENS = [
 	['achievements', '/me/achievements', null, true],
 	['settings', '/settings', null, true],
 	['activity', '/activity', null, true],
-	['notices', '/notices', null, true],
+	['notice', '/notices/1', null, true],
 	['chat', '/dev/chat?s=chat', null, false],
 	['chat-menu', '/dev/chat?s=chat&sheet=menu', null, false],
 	['chat-vote', '/dev/chat?s=vote', null, false]

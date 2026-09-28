@@ -4,7 +4,7 @@
 	 *   받은 편지 — 덮개 쪽(뒷면): 안 연 편지는 밀랍 봉인이 그대로 · 은은히 빛난다 / 연 편지는 봉인이 없다. From. · 날짜
 	 *              테두리 줄무늬 = 보낸 사람 성별 (여학생 붉은색 · 남학생 푸른색, Phase 35)
 	 *   보낸 편지 — 주소 쪽(앞면): To. · 우표 · 소인(날짜) · 스티커(읽음 · 답장 옴)
-	 * 누르면 그 편지를 연다. 길게 누르면(마우스는 오른쪽 클릭) 신고 · 차단 · 나가기.
+	 * 누르면 그 편지를 연다. 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 (LetterMenu).
 	 */
 	import Envelope from './Envelope.svelte';
 	import { borderOf, fromLabel, stampDate, toLabel, type Box, type MailItem } from './api';

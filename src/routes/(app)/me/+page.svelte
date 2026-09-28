@@ -399,6 +399,12 @@
 		color: var(--bg);
 		font-weight: 600;
 	}
+	/* "안 적을래요"는 고르지 않은 상태 — 카드 폭 가득한 검은 막대가 화면에서 가장 무겁게 보이지 않게 테두리로만 (Phase 40) */
+	.chip.none.on {
+		background: var(--field);
+		color: var(--text);
+		box-shadow: inset 0 0 0 1.5px var(--text);
+	}
 
 	.save {
 		margin-top: 18px;

@@ -3,8 +3,8 @@
  * 로고 · 채운 버튼 · 링크/아이콘 색 · 내 말풍선 · 연결 화면 등 app.css 의 포인트 색 토큰을 한꺼번에 바꾼다
  *   --g-orange/--g-coral/--g-pink(→ --brand), --accent-fill, --accent, --bubble-fill
  * 이 기기에만 저장한다 (localStorage). 상대 화면에는 영향이 없고, 서버에도 보내지 않는다.
- * 흰 글씨가 올라가므로 밝은 색은 넣지 않는다. 회색은 다크 모드의 검은 바탕에서도 보이는 밝기로.
- * 없어진 색(예전의 '베리')을 저장해 둔 기기는 기본 색으로 돌아간다.
+ * 흰 글씨가 올라가므로 아주 밝은 색은 넣지 않는다 (인스타의 노랑처럼 밝은 끝은 fill 의 가장자리에만).
+ * 없어진 색(예전의 '베리' · '회색')을 저장해 둔 기기는 기본 색으로 돌아간다.
  * 예전 이름이 "채팅 색상"이라 저장 키는 그대로 둔다 (이미 고른 색이 유지되게).
  */
 export type ThemeColor = {
@@ -14,6 +14,8 @@ export type ThemeColor = {
 	stops: [string, string, string];
 	/** 글자 · 아이콘용 단색 — 흰 바탕과 검은 바탕 모두에서 읽히는 중간 톤 (기본은 app.css 의 라이트/다크 값) */
 	accent: string | null;
+	/** 채운 면(버튼 · 말풍선 · 색 동그라미)에 쓸 더 긴 그라데이션 — 없으면 stops 세 점 */
+	fill?: string[];
 };
 
 export const THEME_COLORS: ThemeColor[] = [
@@ -21,14 +23,25 @@ export const THEME_COLORS: ThemeColor[] = [
 	{ id: 'sunset', label: '기본', stops: ['#f2603f', '#ee4360', '#d92868'], accent: null }, // 주황 → 핑크
 	{ id: 'purple', label: '보라', stops: ['#7059f5', '#9b57e6', '#c04fd8'], accent: '#8b5cf6' }, // 보라 → 자주
 	{ id: 'ocean', label: '파랑', stops: ['#3b8af6', '#3b8af6', '#3b8af6'], accent: '#3b8af6' }, // 단색
-	{ id: 'mint', label: '초록', stops: ['#3aa757', '#14a37f', '#0e8f9c'], accent: '#14a37f' }, // 초록 → 청록
-	{ id: 'graphite', label: '회색', stops: ['#7a7a80', '#4a4a4f', '#2c2c2e'], accent: '#8e8e93' } // 밝은 회색 → 먹색
+	// Phase 40: 한 톤 연하게 (예전 #3aa757 → #0e8f9c 는 너무 짙었다). 흰 글씨가 올라가는 면은 --accent-fill-deep 이 한 번 더 눌러 준다
+	{ id: 'mint', label: '초록', stops: ['#5fd08a', '#34c3a0', '#33b7c2'], accent: '#22b38e' }, // 연두 → 청록
+	// Phase 40: 회색(검은색)을 빼고 인스타 그라데이션 — 노랑 · 주황 · 핑크 · 자주 · 보라 (가운데 셋이 그라데이션 세 점, 양 끝은 채운 면에만)
+	{
+		id: 'insta',
+		label: '인스타',
+		stops: ['#f77737', '#e1306c', '#833ab4'],
+		accent: '#d62976',
+		fill: ['#feda75', '#fa7e1e', '#d62976', '#962fbf', '#4f5bd5']
+	} // 노랑 → 보라
 ];
 const DEFAULT = THEME_COLORS[0].id;
 const KEY = 'chat-color-v1';
 
+/** n 개 색을 고르게 펼친 그라데이션 */
+const spread = (dir: string, cs: string[]) => `linear-gradient(${dir}, ${cs.map((x, i) => `${x} ${Math.round((i / (cs.length - 1)) * 100)}%`).join(', ')})`;
 /** 세로 그라데이션 (말풍선 · 색 동그라미) */
-export const fillOf = (c: ThemeColor) => `linear-gradient(180deg, ${c.stops[0]}, ${c.stops[1]} 55%, ${c.stops[2]})`;
+export const fillOf = (c: ThemeColor) =>
+	c.fill ? spread('200deg', c.fill) : `linear-gradient(180deg, ${c.stops[0]}, ${c.stops[1]} 55%, ${c.stops[2]})`;
 
 export const THEME_COLOR = $state({ id: DEFAULT });
 
@@ -53,12 +66,13 @@ function apply(id: string) {
 	root.setProperty('--g-orange', a);
 	root.setProperty('--g-coral', b);
 	root.setProperty('--g-pink', z);
-	root.setProperty('--bubble-fill', fillOf(c));
+	// 말풍선에는 흰 글씨가 올라가므로 가장 밝은 끝(인스타의 노랑)은 뺀다 — 노랑은 색 동그라미에서만
+	root.setProperty('--bubble-fill', c.fill ? spread('200deg', c.fill.slice(1)) : fillOf(c));
 	root.setProperty('--bubble-a', a);
 	root.setProperty('--bubble-b', b);
 	root.setProperty('--bubble-c', z);
-	root.setProperty('--accent-fill', `linear-gradient(110deg, ${a}, ${b} 55%, ${z})`);
-	root.setProperty('--accent-fill-deep', `linear-gradient(110deg, ${deep(a)}, ${deep(b)} 55%, ${deep(z)})`);
+	root.setProperty('--accent-fill', c.fill ? spread('60deg', c.fill.slice(1)) : `linear-gradient(110deg, ${a}, ${b} 55%, ${z})`);
+	root.setProperty('--accent-fill-deep', c.fill ? spread('60deg', c.fill.slice(1).map(deep)) : `linear-gradient(110deg, ${deep(a)}, ${deep(b)} 55%, ${deep(z)})`);
 	root.setProperty('--glow', `0 10px 28px -8px ${tint(b, 55)}`);
 	root.setProperty('--ambient', `radial-gradient(90% 38% at 0% 0%, ${tint(a, 16)}, transparent 70%), radial-gradient(80% 34% at 100% 6%, ${tint(z, 13)}, transparent 70%)`);
 	root.setProperty('--desk', `radial-gradient(120% 60% at 10% 0%, ${tint(a, 14)}, transparent 60%), radial-gradient(90% 50% at 100% 30%, ${tint(z, 12)}, transparent 60%)`);
