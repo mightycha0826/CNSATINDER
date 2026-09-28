@@ -11,6 +11,7 @@
 	import { mmss as fmtClock } from '$lib/time';
 	import { scrollBehavior } from '$lib/motion';
 	import { focustrap } from '$lib/focustrap';
+	import { backClose } from '$lib/overlay.svelte';
 	import { aiApi, GREETING, type AiApi, type Line } from './api';
 
 	let {
@@ -23,6 +24,8 @@
 		seeking?: string | null;
 		api?: AiApi;
 	} = $props();
+	// 안드로이드 뒤로가기로 닫힌다 (창 하나 = 기록 한 칸, lib/overlay.svelte.ts)
+	backClose(() => onclose());
 
 	let phase = $state<'starting' | 'ready' | 'ended' | 'unavailable'>('starting');
 	let notice = $state('');

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { goto, pushState as pushHistory, replaceState as replaceHistory } from '$app/navigation';
+	import { goto } from '$app/navigation';
+	import { navigateFromOverlay } from '$lib/overlay.svelte';
 	import { page } from '$app/state';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import { INBOX, type InboxRoom } from '$lib/inbox.svelte';
@@ -83,23 +84,28 @@
 		else pending = pending.filter((x) => x.room_id !== p.room_id);
 	}
 	const seeker = new Seeker(
-		// AI 대화가 열려 있었으면 그 기록 자리를 대화방으로 바꿔 끼운다 (대화방에서 뒤로 → AI 가 아니라 홈)
-		(roomId) => void goto(`/chat/${roomId}`, { state: { matched: true }, replaceState: !!page.state.ai }),
+		// AI 대화 · 시트가 열려 있었으면 그 기록 자리를 대화방으로 바꿔 끼운다 (대화방에서 뒤로 → 홈, lib/overlay.svelte.ts)
+		(roomId) => void navigateFromOverlay(`/chat/${roomId}`, { state: { matched: true } }),
 		(msg) => toast(msg)
 	);
 
 	// ── AI 대화 상대 — 찾는 동안만. 홈 위에 덮어 띄운다(홈이 살아 있어야 찾기가 계속된다) ──
 	// 얕은 기록 하나를 쌓아서 열고, 뒤로가기(또는 닫기)로 걷어서 닫는다
-	const aiOpen = $derived(!!page.state.ai);
+	// 뒤로가기로 닫기는 AiChat 이 스스로 (backClose)
+	let aiOpen = $state(false);
 	function openAi() {
-		pushHistory('', { ...page.state, ai: true });
+		aiOpen = true;
 	}
 	function closeAi() {
-		if (page.state.ai) history.back();
+		aiOpen = false;
 	}
-	/** 찾기를 새로 시작 — 전에 열어 둔 AI 기록 표시가 남아 있으면 지운다 (찾기 시작과 동시에 AI 가 튀어나오지 않게) */
+	// 찾기가 끝나면(매칭 · 상한 · 서비스 닫힘) AI 창도 접는다 — 다음에 찾기를 시작할 때 저절로 튀어나오지 않게
+	$effect(() => {
+		if (!seeker.seeking) untrack(() => (aiOpen = false));
+	});
+	/** 찾기를 새로 시작 */
 	function startSeek() {
-		if (page.state.ai) replaceHistory('', { ...page.state, ai: false });
+		aiOpen = false;
 		seeker.start();
 	}
 	// 고정한 대화(Phase 29)는 동시 대화 개수에 세지 않는다 — 서버(private.open_rooms)와 같은 규칙
@@ -332,7 +338,7 @@
 	/>
 {/if}
 
-{#if toRate && !askPush && !aiOpen}
+{#if toRate && !askPush && !aiOpen && !UI.celebrating}
 	<!-- 방금 대화한 사람 평가 — 화면 가운데 큰 카드 안에서 끝낸다 (Phase 35) -->
 	{#key toRate.room_id}
 		{@const p = toRate}
@@ -340,7 +346,7 @@
 	{/key}
 {/if}
 
-{#if askPush}
+{#if askPush && !UI.celebrating}
 	<!-- 처음 한 번 — 알림 권한 안내. 바깥을 눌러 닫지 않는다 (둘 중 하나를 골라야 다시 묻지 않는다) -->
 	<Sheet label="알림 받기">
 		<div class="ask">

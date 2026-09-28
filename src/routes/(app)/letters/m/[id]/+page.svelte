@@ -7,6 +7,7 @@
 	 */
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { navigateFromOverlay } from '$lib/overlay.svelte';
 	import { page } from '$app/state';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import Envelope from '$lib/letters/Envelope.svelte';
@@ -178,8 +179,9 @@
 		title={letter.role === 'received' ? names.from : names.to}
 		onclose={() => (menu = false)}
 		ondone={() => {
+			// 메뉴 시트를 닫으며 이동 — 시트의 뒤로가기 칸과 이동이 서로 취소하지 않게 (lib/overlay.svelte.ts)
+			void navigateFromOverlay('/letters', { replaceState: true });
 			menu = false;
-			void goto('/letters', { replaceState: true });
 		}}
 	/>
 {/if}

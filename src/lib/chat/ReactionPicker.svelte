@@ -4,6 +4,9 @@
 	 * react = false 면(끝난 대화 · 시스템 안내) "복사"만. 대화 중에는 "답장"도. ondelete 가 있으면(내 말) "삭제"도.
 	 */
 	import { REACTIONS, type ReactionKey } from './types';
+	import { backClose } from '$lib/overlay.svelte';
+	import { fade } from 'svelte/transition';
+	import { reducedMotion } from '$lib/motion';
 
 	let {
 		at,
@@ -24,6 +27,7 @@
 		ondelete?: () => void;
 		onclose: () => void;
 	} = $props();
+	backClose(() => onclose());
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
@@ -31,6 +35,7 @@
 <div class="rx-scrim" role="presentation" onpointerdown={onclose}></div>
 <div
 	class="rx-pick"
+	out:fade={{ duration: reducedMotion() ? 0 : 120 }}
 	role="menu"
 	aria-label="공감"
 	style:top="{at.top}px"

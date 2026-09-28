@@ -14,7 +14,8 @@
 	import { listenServiceWorker } from '$lib/push';
 	import { notifyInApp } from '$lib/inapp.svelte';
 	import InAppBanner from '$lib/ui/InAppBanner.svelte';
-	import { onNavigate } from '$app/navigation';
+	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
+	import { markNavigating, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { reducedMotion } from '$lib/motion';
 
 	let { children } = $props();
@@ -32,6 +33,12 @@
 	$effect(() => {
 		if (!isAdmin) void init();
 	});
+
+	// 겹친 창(시트 등)이 열린 채 다른 화면으로 가면 — 사라지는 창이 history.back() 으로 그 이동을 취소하지 않게 (lib/overlay.svelte.ts)
+	beforeNavigate((nav) => {
+		if (nav.type !== 'popstate' && nav.type !== 'leave') markNavigating(true);
+	});
+	afterNavigate(() => markNavigating(false));
 
 	// iOS WebKit 은 문서에 touchstart 리스너가 있어야 :active 를 그린다 — 빈 리스너 하나로 모든 누름 반응을 켠다 (UX G2)
 	$effect(() => {
@@ -67,7 +74,7 @@
 					{ key: n.tag, title: n.title, body: n.body, url: n.url, kind: n.kind === 'other' ? 'notice' : n.kind },
 					`${n.tag}|${n.body.slice(0, 60)}`
 				),
-			open: (url) => void goto(url)
+			open: (url) => void navigateFromOverlay(url)
 		});
 	});
 

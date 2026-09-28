@@ -1,4 +1,5 @@
 import { goto } from '$app/navigation';
+import { page } from '$app/state';
 import { UI } from './state.svelte';
 
 /**
@@ -9,7 +10,9 @@ import { UI } from './state.svelte';
  *   알림으로 대화방을 바로 연 경우처럼 뒤로 갈 곳이 없으면 그 자리를 홈으로 바꾼다.
  */
 export function goBack(fallback = '/') {
-	if (history.length > 1) history.back();
+	// 겹친 창(시트 등)이 열려 있으면 그 기록 칸들까지 한 번에 건너 앞 화면으로 (lib/overlay.svelte.ts)
+	const open = page.state.ov?.length ?? 0;
+	if (history.length > 1 + open) history.go(-(open + 1));
 	else void goto(fallback, { replaceState: true });
 }
 

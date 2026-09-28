@@ -6,7 +6,7 @@ import { chromium } from 'playwright-core';
 //  · 찾는 중 AI 대화를 닫아도, 끝난 대화에서 "새 대화 찾기"로 와도 찾기가 이어진다
 //  · 대화방을 열다 네트워크가 끊기면 쫓아내지 않고 그 자리에서 "다시 시도"
 //  · 공지 하나를 열면 그 공지까지만 본 것으로
-const PORT = 5183;
+const PORT = Number(process.env.E2E_PORT) || 5183;
 const BASE = `http://localhost:${PORT}`;
 const env = { ...process.env, PUBLIC_SUPABASE_URL: 'https://fake-proj.supabase.co', PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_testtesttesttesttest' };
 const vite = spawn('npx', ['vite', 'dev', '--port', String(PORT), '--strictPort'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
@@ -149,6 +149,73 @@ try {
 		await page.waitForTimeout(1500);
 		check('다시 시도하면 대화가 열린다', (await page.getByRole('region', { name: '대화 내용' }).count()) === 1 && !(await retry.isVisible().catch(() => false)));
 		check('페이지 오류 없음', errs.length === 0, errs.join(' | '));
+		await ctx.close();
+	}
+
+	console.log('[겹친 창과 뒤로가기 (G5.1)]');
+	{
+		const { ctx, page, errs } = await open();
+		await page.goto(`${BASE}/dev/chat?s=ended`);
+		await page.goto(`${BASE}/dev/chat?s=chat`);
+		const more = page.getByRole('button', { name: '메뉴' });
+		await more.waitFor({ timeout: 20000 });
+		await page.waitForTimeout(600);
+		const sheet = page.locator('.sheet');
+		await more.click();
+		await sheet.waitFor();
+		check('시트가 열리면 기록 한 칸 (ov)', (await page.evaluate(() => history.state?.['sveltekit:states']?.ov?.length ?? 0)) === 1);
+		await page.goBack();
+		await page.waitForTimeout(500);
+		check('★ 뒤로가기 → 시트만 닫힌다 (대화방 그대로)', (await sheet.count()) === 0 && page.url().includes('s=chat'), page.url());
+		await more.click();
+		await sheet.waitFor();
+		await page.locator('.sheet .item', { hasText: '취소' }).click();
+		await page.waitForTimeout(600);
+		check('취소 버튼으로 닫아도 시트 칸이 걷힌다', (await page.evaluate(() => history.state?.['sveltekit:states']?.ov?.length ?? 0)) === 0);
+		await more.click();
+		await sheet.waitFor();
+		await page.waitForTimeout(400);
+		const g = await page.locator('.sheet .grab').boundingBox();
+		await page.mouse.move(g.x + g.width / 2, g.y + 8);
+		await page.mouse.down();
+		for (let i = 1; i <= 8; i++) await page.mouse.move(g.x + g.width / 2, g.y + 8 + i * 16);
+		await page.mouse.up();
+		await page.waitForTimeout(600);
+		check('★ 손잡이를 아래로 끌면 닫힌다', (await sheet.count()) === 0);
+		check('끌어 닫아도 시트 칸이 걷힌다', (await page.evaluate(() => history.state?.['sveltekit:states']?.ov?.length ?? 0)) === 0);
+		await more.click();
+		await sheet.waitFor();
+		await page.waitForTimeout(300);
+		await page.mouse.move(g.x + g.width / 2, g.y + 8);
+		await page.mouse.down();
+		for (let i = 1; i <= 4; i++) { await page.mouse.move(g.x + g.width / 2, g.y + 8 + i * 8); await page.waitForTimeout(60); } // 천천히 (튕기면 닫힌다)
+		await page.mouse.up();
+		await page.waitForTimeout(600);
+		check('조금만 끌면 제자리로', (await sheet.count()) === 1);
+		await page.locator('.sheet .item', { hasText: '취소' }).click();
+		await page.waitForTimeout(600);
+		await page.goBack();
+		await page.waitForTimeout(1200);
+		check('★ 시트를 닫은 뒤 뒤로가기는 앞 화면으로 (칸이 남지 않았다)', page.url().includes('s=ended'), page.url());
+		check('페이지 오류 없음', errs.length === 0, errs.join(' | '));
+		await ctx.close();
+	}
+
+	console.log('[찾는 중 AI 대화를 뒤로가기로 닫아도]');
+	{
+		const { ctx, page, log, count } = await open();
+		await login(page);
+		await page.getByRole('button', { name: '새 대화 찾기' }).click();
+		await page.waitForTimeout(600);
+		await page.getByRole('button', { name: /AI 와 얘기하기/ }).click();
+		await page.getByRole('dialog', { name: 'AI 와 대화' }).waitFor();
+		await page.waitForTimeout(800);
+		await page.goBack();
+		await page.waitForTimeout(600);
+		check('★ 뒤로가기로 AI 창이 닫힌다 (홈 그대로)', (await page.getByRole('dialog', { name: 'AI 와 대화' }).count()) === 0 && page.url() === `${BASE}/`, page.url());
+		const m0 = log.length;
+		await page.waitForTimeout(8500);
+		check('★ 계속 찾는다', count('rpc/request_match', m0) >= 2 && count('rpc/stop_seeking') === 0, `${count('rpc/request_match', m0)} / stop ${count('rpc/stop_seeking')}`);
 		await ctx.close();
 	}
 

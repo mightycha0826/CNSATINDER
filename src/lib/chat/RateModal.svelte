@@ -5,6 +5,7 @@
 	 * ✕ · 바깥 · Esc = 나중에 (이 대화는 다시 묻지 않는다 — 부르는 쪽이 skipRating). 카드가 다 닫힌 뒤 onclose 로 알린다.
 	 */
 	import { focustrap } from '$lib/focustrap';
+	import { backClose } from '$lib/overlay.svelte';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import RateForm from './RateForm.svelte';
 	import type { PendingRating, Reason, Score } from '$lib/manner';
@@ -21,6 +22,8 @@
 		onclose: (how: 'sent' | 'skip') => void;
 	} = $props();
 	const skip = () => close(() => onclose('skip'));
+	// 저절로 뜨는 카드 — 누른 적이 있는 화면에서만 뒤로가기 기록을 쌓는다 (auto)
+	backClose(skip, { auto: true });
 
 	let done = $state(false);
 	let leaving = $state(false);

@@ -11,8 +11,12 @@ declare global {
 			matched?: boolean;
 			/** 홈 위에 AI 대화 상대가 열려 있다 — 뒤로가기로 닫힌다 ((app)/+page.svelte) */
 			ai?: boolean;
-			/** 편지 쓰기 — 검색에서 고른 받는 사람 (letters/new). 새로고침하면 사라져 다시 고르게 한다 */
-			to?: { id: string; name: string; grade: number | null; checked: boolean };
+			/** 열려 있는 겹친 창들 (시트 · 고르기 · 모달) — 뒤로가기로 맨 위부터 닫힌다 (lib/overlay.svelte.ts) */
+			ov?: string[];
+			/** 편지 쓰기 단계 — 뒤로가기로 받는 사람 고르기로 돌아간다 (letters/new) */
+			compose?: boolean;
+			/** 알림으로 앱을 새로 열어 깊은 화면에 곧장 들어왔다 — 뒤로가기는 홈으로 (lib/nav.ts) */
+			deep?: boolean;
 		}
 		/** Cloudflare Workers — 응답 뒤에도 작업(푸시 발송)을 마저 하기 위해 · Workers AI 바인딩(wrangler.jsonc "ai") */
 		interface Platform {

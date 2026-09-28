@@ -6,13 +6,14 @@
 	 * 색종이가 메달에서 위로 터졌다가 제각각 흔들리며 떨어진다 (조각마다 방향 · 속도 · 회전이 다르다).
 	 * 동작 줄이기면 app.css 가 애니메이션을 끄고 그대로 멈춰 보인다.
 	 */
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { focustrap } from '$lib/focustrap';
+	import { backClose, navigateFromOverlay } from '$lib/overlay.svelte';
 	import Badge from './Badge.svelte';
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
 	import { whileVisible } from '$lib/visible';
+	import { UI } from '$lib/state.svelte';
 
 	let { preview = null }: { preview?: BadgeLite[] | null } = $props();
 
@@ -36,13 +37,23 @@
 	});
 
 	async function close(view = false) {
+		if (leaving) return;
 		leaving = true;
 		await new Promise((r) => setTimeout(r, 240));
+		// 보러 가기 — 이 창의 뒤로가기 칸을 업적 화면으로 바꿔 끼운다 (창을 닫으며 이동, lib/overlay.svelte.ts)
+		if (view) void navigateFromOverlay('/me/achievements');
 		fresh = [];
 		leaving = false;
 		if (!preview) await markAchievementsSeen().catch(() => {});
-		if (view) void goto('/me/achievements');
 	}
+	const showing = $derived(!!fresh.length && (onRoot || !!preview));
+	// 떠 있는 동안 다른 저절로 뜨는 창(매너 평가 · 알림 권한)은 기다린다
+	$effect(() => {
+		UI.celebrating = showing;
+		return () => (UI.celebrating = false);
+	});
+	// 안드로이드 뒤로가기로 닫힌다 — 저절로 뜨는 창이라 누른 적이 있는 화면에서만 기록을 쌓는다
+	backClose(() => void close(), { auto: true, open: () => showing });
 	const top = $derived(fresh.slice(0, 6));
 	const one = $derived(fresh.length === 1);
 
@@ -75,7 +86,7 @@
 
 <svelte:window onkeydown={fresh.length ? onkey : undefined} />
 
-{#if fresh.length && (onRoot || preview)}
+{#if showing}
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="scrim" class:leaving role="presentation" onclick={() => close()}>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->

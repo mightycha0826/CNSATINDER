@@ -69,6 +69,8 @@ export const UI = $state({
 	busy: false,
 	/** 로그인 직후 갈 곳 — 비밀번호 찾기로 들어왔으면 새 비밀번호 화면으로 */
 	afterLogin: null as string | null,
+	/** 새 업적 축하가 떠 있다 — 저절로 뜨는 창은 한 번에 하나 (축하 > 매너 평가 > 알림 권한, UX G8) */
+	celebrating: false,
 	/** 대화방에서 "새 대화 찾기"로 홈에 돌아왔다 — 홈이 바로 찾기를 시작한다 (lib/nav.ts backToSeek) */
 	seekOnHome: false
 });

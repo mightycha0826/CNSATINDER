@@ -3,7 +3,9 @@
 	 * 앱 안 알림 띠 (Phase 35) — 화면 위에서 내려오는 유리 카드. 누르면 그 화면으로, 위로 밀면 닫힌다.
 	 * 새 알림이 오면 같은 자리에서 내용이 바뀐다 (쌓이지 않는다). 동작 줄이기면 app.css 가 움직임을 끈다.
 	 */
-	import { goto } from '$app/navigation';
+	import { navigateFromOverlay } from '$lib/overlay.svelte';
+	import { fly } from 'svelte/transition';
+	import { reducedMotion } from '$lib/motion';
 	import { INAPP, dismissInApp, holdInApp } from '$lib/inapp.svelte';
 	import Avatar from './Avatar.svelte';
 
@@ -15,7 +17,7 @@
 		const n = INAPP.cur;
 		if (!n) return;
 		dismissInApp();
-		void goto(n.url);
+		void navigateFromOverlay(n.url); // 시트가 열려 있어도 이동이 취소되지 않게
 	}
 	function down(e: PointerEvent) {
 		startY = e.clientY;
@@ -38,7 +40,7 @@
 {#if INAPP.cur}
 	{@const n = INAPP.cur}
 	{#key n.key}
-		<div class="wrap inapp" role="status" aria-live="polite">
+		<div class="wrap inapp" role="status" aria-live="polite" out:fly={{ y: -24, duration: reducedMotion() ? 0 : 180 }}>
 			<button
 				class="card"
 				class:drag={dragging}
