@@ -9,6 +9,7 @@
 	import { S } from '$lib/state.svelte';
 	import { agoText } from '$lib/time';
 	import BackButton from '$lib/ui/BackButton.svelte';
+	import LoadError from '$lib/ui/LoadError.svelte';
 
 	const id = $derived(Number(page.params.id));
 	const notice = $derived(NOTICES.list.find((n) => n.id === id));
@@ -35,6 +36,8 @@
 			<span class="muted when">{agoText(notice.created_at, S.now)}</span>
 			{#if notice.body}<p class="body selectable">{notice.body}</p>{/if}
 		</article>
+	{:else if !NOTICES.loaded && NOTICES.failed}
+		<LoadError title="공지를 불러오지 못했어요" onretry={() => loadNotices(true)} />
 	{:else if !NOTICES.loaded}
 		<!-- 제목 · 시각 · 본문 자리 (알림을 눌러 곧바로 들어온 경우) -->
 		<p class="sr-only">불러오는 중…</p>

@@ -40,6 +40,8 @@ const DEBOUNCE_MS = 300;
 export class Inbox {
 	rooms = $state<InboxRoom[]>([]);
 	loaded = $state(false);
+	/** 한 번도 받아 오지 못했다(네트워크) — 홈이 "대화가 없다"처럼 보이지 않게 "다시 시도"를 보여 준다 (UX G4) */
+	failed = $state(false);
 	/** serverNow - clientNow (ms) — 남은 시간 표시용 */
 	skew = $state(0);
 	/** 마지막으로 불러온 서버 시각 (ms) — 멈춘 방의 남은 시간 계산용 */
@@ -76,7 +78,12 @@ export class Inbox {
 
 	async load() {
 		const { data, error } = await supabase.rpc('my_rooms');
-		if (this.#stopped || error || !data) return;
+		if (this.#stopped) return;
+		if (error || !data) {
+			if (!this.loaded) this.failed = true;
+			return;
+		}
+		this.failed = false;
 		const res = data as { rooms: InboxRoom[]; server_now: string };
 		this.skew = Date.parse(res.server_now) - Date.now();
 		this.serverAt = Date.parse(res.server_now);

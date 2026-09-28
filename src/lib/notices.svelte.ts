@@ -12,7 +12,9 @@ export const NOTICES = $state({
 	list: [] as Notice[],
 	personal: [] as PersonalNotice[],
 	lastSeen: 0,
-	loaded: false
+	loaded: false,
+	/** 한 번도 받아 오지 못했다(네트워크) — 공지 화면이 "다시 시도"를 보여 준다 (UX G4) */
+	failed: false
 });
 
 /** 아직 안 본 전체 공지가 있는가 */
@@ -31,7 +33,11 @@ export async function loadNotices(force = false) {
 	const { data, error } = await supabase.rpc('my_notices');
 	const d = data as { notices?: Notice[]; last_seen?: number; personal?: PersonalNotice[] } | null;
 	// 모양이 다르면(아직 schema.sql 을 반영하지 않은 DB 등) 조용히 넘어간다 — 하트만 점 없이 보인다
-	if (error || !Array.isArray(d?.notices)) return;
+	if (error || !Array.isArray(d?.notices)) {
+		if (!NOTICES.loaded) NOTICES.failed = true;
+		return;
+	}
+	NOTICES.failed = false;
 	NOTICES.list = d.notices.map((n) => ({ ...n, id: Number(n.id) }));
 	NOTICES.personal = (d.personal ?? []).map((n) => ({ ...n, id: Number(n.id) }));
 	NOTICES.lastSeen = Number(d.last_seen);

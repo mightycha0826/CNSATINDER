@@ -37,7 +37,7 @@ async function open(opts = {}) {
 	const page = await ctx.newPage();
 	const log = [];
 	const errs = []; page.on('pageerror', (e) => errs.push(String(e)));
-	const st = { flakyFails: opts.flakyFails ?? 0, marks: [] };
+	const st = { flakyFails: opts.flakyFails ?? 0, marks: [], unread: opts.unread, dm: opts.dm };
 	await ctx.route('https://fake-proj.supabase.co/**', async (route) => { // 창 전체 (알림으로 새 창을 여는 시나리오)
 		const req = route.request(); const u = new URL(req.url()); const p = u.pathname;
 		log.push(p.replace('/rest/v1/', ''));
@@ -46,7 +46,11 @@ async function open(opts = {}) {
 		if (p === '/auth/v1/token') return json(session);
 		if (p.startsWith('/auth/v1/')) return json({});
 		if (p.endsWith('rpc/my_account')) return json({ has_password: true });
-		if (p.endsWith('rpc/my_rooms')) return json({ rooms: [room(LIVE, '새벽수달'), room(ENDED, '끝난고래'), room(FLAKY, '느린거북')], server_now: iso() });
+		if (st.offline && /rpc\/(dm_mailbox|my_notices|my_rooms)$/.test(p)) return route.abort('internetdisconnected');
+		if (p.endsWith('rpc/my_rooms')) return json({ rooms: [{ ...room(LIVE, '새벽수달'), unread: st.unread ?? 0 }, room(ENDED, '끝난고래'), room(FLAKY, '느린거북')], server_now: iso() });
+		if (p.endsWith('rpc/dm_unread')) return json(st.dm ?? 0);
+		if (p.endsWith('rpc/dm_mailbox')) return json({ letters: [] });
+		if (p.endsWith('rpc/update_my_profile')) { st.saved = body(); return json(null); }
 		if (p.endsWith('rpc/letter_feed')) return json({ letters: [], server_now: iso() });
 		if (p.endsWith('rpc/my_notices')) return json({ notices: [{ id: 3, title: '세 번째 공지', body: '본문', created_at: iso(-60) }, { id: 2, title: '두 번째 공지', body: '본문', created_at: iso(-3600) }], last_seen: 1 });
 		if (p.endsWith('rpc/mark_notices_seen')) { st.marks.push(body().p_id); return json(body().p_id); }
@@ -61,13 +65,19 @@ async function open(opts = {}) {
 		}
 		if (p === '/rest/v1/profiles') {
 			if (opts.slowProfile) await new Promise((r) => setTimeout(r, opts.slowProfile));
-			return json({ id: uid, nickname: '푸른고래', bio: '', interests: [], mbti: null, gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true });
+			return json({ id: uid, nickname: '푸른고래', bio: st.saved?.p_bio ?? '', interests: st.saved?.p_interests ?? [], mbti: st.saved?.p_mbti || null, gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true });
 		}
 		if (p === '/rest/v1/app_settings') return json({ is_open: true, notice: '', room_minutes: 10, extend_minutes: 10, vote_window_sec: 90, join_grace_sec: 60, max_rounds: 0, heartbeat_sec: 15, presence_ttl_sec: 45, msg_max_len: 500, max_open_rooms: 5, letter_max_len: 1000, comment_max_len: 300, ai_moderation: false, ai_chat: true, ai_chat_per_user: 3 });
 		if (p.startsWith('/rest/v1/rpc/')) return json(null);
 		return json([]);
 	});
-	await ctx.addInitScript(() => { try { localStorage.setItem('push-asked-v1', '1'); } catch {} });
+	await ctx.addInitScript(() => {
+		try { localStorage.setItem('push-asked-v1', '1'); } catch {}
+		// 앱 아이콘 배지 — 부른 값을 적어 둔다 (G10.4)
+		window.__badge = [];
+		navigator.setAppBadge = (n) => (window.__badge.push(n ?? 'dot'), Promise.resolve());
+		navigator.clearAppBadge = () => (window.__badge.push(0), Promise.resolve());
+	});
 	const count = (path, from = 0) => log.slice(from).filter((x) => x === path).length;
 	return { ctx, page, log, errs, st, count };
 }
@@ -259,6 +269,98 @@ try {
 		await page.getByRole('heading', { name: '두 번째 공지' }).waitFor({ timeout: 10000 });
 		await page.waitForTimeout(400);
 		check('기록이 있으면 (앱 안에서 왔으면) deep 칸을 쌓지 않는다', !(await page.evaluate(() => history.state?.['sveltekit:states']?.deep)));
+		await ctx.close();
+	}
+
+	console.log('[배지 (G10)]');
+	{
+		const { ctx, page, st } = await open({ unread: 3, dm: 2 });
+		await login(page);
+		await page.waitForTimeout(600);
+		const num = page.locator('.tab-num');
+		check('★ 채팅 탭 = 답할 대화 수 (안 읽은 말 3개가 있는 방 하나 → 1)', (await num.innerText()) === '1' && (await num.getAttribute('aria-label')) === '답할 대화 1개');
+		check('★ 앱 아이콘 = 답할 대화 1 + 안 읽은 편지 2', (await page.evaluate(() => window.__badge.at(-1))) === 3, JSON.stringify(await page.evaluate(() => window.__badge)));
+		// 보면 지워진다 — 서버가 0 으로 돌려주고 목록을 다시 읽으면
+		st.unread = 0; st.dm = 0;
+		await page.goto(`${BASE}/letters`); await page.waitForTimeout(500);
+		await page.goto(`${BASE}/`); await page.locator('button.heart').waitFor(); await page.waitForTimeout(900);
+		check('다 읽으면 채팅 탭 숫자가 사라지고 아이콘 배지도 지운다', (await num.count()) === 0 && (await page.evaluate(() => window.__badge.at(-1))) === 0, JSON.stringify(await page.evaluate(() => window.__badge)));
+		await ctx.close();
+	}
+
+	console.log('[프로필 소개 자동 초안 (G5.5)]');
+	{
+		const { ctx, page, st } = await open();
+		await login(page);
+		await page.goto(`${BASE}/me`);
+		const bio = page.getByRole('textbox', { name: '소개' });
+		await bio.waitFor();
+		await bio.fill('밴드 음악 좋아해요');
+		await page.getByRole('button', { name: 'ENFP' }).click();
+		await page.goto(`${BASE}/letters`); await page.waitForTimeout(400); // 저장하지 않고 다른 탭으로
+		await page.goto(`${BASE}/me`); await bio.waitFor(); await page.waitForTimeout(400);
+		check('★ 저장하지 않고 떠났다 와도 고치던 소개 · MBTI 가 그대로', (await bio.inputValue()) === '밴드 음악 좋아해요' && (await page.getByRole('button', { name: 'ENFP' }).getAttribute('class')).includes('on'));
+		check('"저장하지 않은 소개를 이어서 고쳐요" 안내 · 저장 버튼 켜짐', (await page.locator('.toast').allInnerTexts()).some((t) => t.includes('이어서 고쳐요')) && (await page.getByRole('button', { name: '저장', exact: true }).isEnabled()));
+		await page.getByRole('button', { name: '저장', exact: true }).click(); await page.waitForTimeout(500);
+		check('★ 저장하면 초안을 지운다', st.saved?.p_bio === '밴드 음악 좋아해요' && (await page.evaluate(() => !Object.keys(localStorage).some((k) => k.includes(':profile:')))));
+		await ctx.close();
+	}
+
+	console.log('[불러오지 못함 (G4)]');
+	{
+		const { ctx, page, st } = await open();
+		await login(page);
+		st.offline = true;
+		await page.goto(`${BASE}/letters`);
+		const err = page.getByRole('alert').filter({ hasText: '편지함을 불러오지 못했어요' });
+		await err.waitFor({ timeout: 8000 });
+		check('★ 편지함을 못 불러오면 "없어요"가 아니라 이유 + 다시 시도', (await page.getByText('새로 온 편지가 없어요').count()) === 0 && (await page.getByText('아직 쌓인 편지가 없어요').count()) === 0 && (await err.getByRole('button', { name: '다시 시도' }).count()) === 1);
+		st.offline = false;
+		await err.getByRole('button', { name: '다시 시도' }).click();
+		await page.getByText('새로 온 편지가 없어요').waitFor({ timeout: 5000 });
+		check('다시 시도 → 편지함', (await err.count()) === 0);
+		st.offline = true;
+		await page.goto(`${BASE}/notices`);
+		const nerr = page.getByRole('alert').filter({ hasText: '공지를 불러오지 못했어요' });
+		await nerr.waitFor({ timeout: 8000 });
+		check('★ 공지를 못 불러오면 끝없는 빈 줄 대신 다시 시도', (await nerr.getByRole('button', { name: '다시 시도' }).count()) === 1);
+		st.offline = false;
+		await nerr.getByRole('button', { name: '다시 시도' }).click();
+		await page.getByText('세 번째 공지').waitFor({ timeout: 5000 });
+		check('다시 시도 → 공지 목록', (await nerr.count()) === 0);
+		await ctx.close();
+	}
+	{
+		// 앱을 열 때부터 대화 목록을 못 받는다
+		const { ctx, page, st } = await open();
+		st.offline = true;
+		await login(page);
+		const herr = page.getByRole('alert').filter({ hasText: '대화 목록을 불러오지 못했어요' });
+		await herr.waitFor({ timeout: 8000 });
+		check('★ 홈: 대화 목록을 못 받으면 "대화 없음"처럼 비워 두지 않고 다시 시도', (await page.locator('ul.rooms').count()) === 0);
+		st.offline = false;
+		await herr.getByRole('button', { name: '다시 시도' }).click();
+		await page.locator('ul.rooms').waitFor({ timeout: 5000 });
+		check('다시 시도 → 대화 목록', (await herr.count()) === 0);
+		await ctx.close();
+	}
+
+	console.log('[로그아웃 (G14.4)]');
+	{
+		const { ctx, page } = await open({ unread: 1 });
+		await login(page);
+		await page.goto(`${BASE}/me`);
+		await page.getByRole('textbox', { name: '소개' }).fill('다음 계정에 보이면 안 됨');
+		await page.waitForTimeout(700);
+		check('초안이 저장돼 있다', await page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith('draft-v1:'))));
+		await page.evaluate(() => (window.__alive = true));
+		await page.goto(`${BASE}/settings`);
+		await page.evaluate(() => (window.__alive = true)); // 앱 안 이동이면 남아 있다
+		await page.getByRole('button', { name: '로그아웃' }).click();
+		await page.waitForURL('**/login', { timeout: 8000 });
+		await page.getByPlaceholder('학교 이메일 앞부분').waitFor();
+		check('★ 로그아웃하면 로그인 화면을 새로 연다 (앱 안에 기억해 둔 목록을 통째로 버린다)', !(await page.evaluate(() => window.__alive)));
+		check('★ 쓰던 초안을 지운다', await page.evaluate(() => !Object.keys(localStorage).some((k) => k.startsWith('draft-v1:'))));
 		await ctx.close();
 	}
 } catch (e) { fail++; console.error(e); }

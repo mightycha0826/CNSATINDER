@@ -10,7 +10,8 @@
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
 	import MailboxItem from '$lib/letters/MailboxItem.svelte';
 	import { anonName, fromLabel, toLabel, type Box, type MailItem } from '$lib/letters/api';
-	import { BOX, dropThread, loadMore, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import { BOX, dropThread, loadBox, loadMore, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import LoadError from '$lib/ui/LoadError.svelte';
 	import { LIST } from '$lib/letters/unread.svelte';
 	import { envWidth } from '$lib/letters/stage';
 	import { S } from '$lib/state.svelte';
@@ -59,6 +60,8 @@
 	{#if !BOX.loaded[tab] && list.length === 0}
 		<div class="ghost" style:--w="{w}px" aria-label="불러오는 중"></div>
 		<div class="ghost" style:--w="{w}px" aria-hidden="true"></div>
+	{:else if BOX.failed[tab] && list.length === 0}
+		<LoadError title={tab === 'received' ? '받은 편지를 불러오지 못했어요' : '보낸 편지를 불러오지 못했어요'} onretry={() => loadBox(tab)} />
 	{:else if list.length === 0}
 		<p class="muted center">{tab === 'received' ? '아직 받은 편지가 없어요' : '아직 보낸 편지가 없어요'}</p>
 	{:else}

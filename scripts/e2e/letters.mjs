@@ -218,7 +218,7 @@ try {
 	// 뒤로가기 → 받는 사람 고르기 (G5) · 다시 고르면 쓰던 편지가 그대로 (자동 초안 G5.5)
 	await page.goBack(); await page.waitForTimeout(500);
 	check('★ 쓰다가 뒤로가기 → 받는 사람 고르기 (편지함으로 나가지 않는다 · 찾은 결과 그대로)', new URL(page.url()).pathname === '/letters/new' && (await page.locator('.compose').count()) === 0 && (await page.locator('.person').count()) === 2);
-	check('쓰던 편지는 이 기기에 초안으로 (계정 · 받는 사람별)', await page.evaluate((u) => JSON.parse(localStorage.getItem(`letter-draft-v1:${u}:to:u-b`) ?? '{}').body === '안녕 박받음! 오늘 발표 멋있었어', uid));
+	check('쓰던 편지는 이 기기에 초안으로 (계정 · 받는 사람별)', await page.evaluate((u) => JSON.parse(localStorage.getItem(`draft-v1:${u}:letter:to:u-b`) ?? '{}').d?.body === '안녕 박받음! 오늘 발표 멋있었어', uid));
 	await page.locator('.person').first().click();
 	await page.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'write', null, { timeout: 4000 });
 	check('★ 같은 사람을 다시 고르면 쓰던 편지 · 서명이 그대로', (await editor.innerText()).trim() === '안녕 박받음! 오늘 발표 멋있었어' && (await page.locator('.letter-paper .nick').inputValue()) === '  노란   우산 ');
@@ -236,7 +236,7 @@ try {
 	await page.screenshot({ path: `${SP}/letters-5a-compose.png` });
 	await page.getByRole('button', { name: '봉투에 넣어 보내기' }).click();
 	await page.waitForURL(/\/letters$/, { timeout: 5000 });
-	check('★ 보내면 초안을 지운다', await page.evaluate(() => !Object.keys(localStorage).some((k) => k.startsWith('letter-draft-v1:'))));
+	check('★ 보내면 초안을 지운다', await page.evaluate(() => !Object.keys(localStorage).some((k) => k.startsWith('draft-v1:'))));
 	const sent = called(w, 'dm_send').at(-1)?.[1];
 	check('★ 고른 사람(계정 id)에게 · 서명(앞뒤 공백 정리) · 서식은 본문과 따로', sent?.p_to === 'u-b' && sent?.p_body === '안녕 박받음! 오늘 발표 멋있었어' && sent?.p_nick === '노란   우산'
 		&& JSON.stringify(sent?.p_fmt?.m?.slice().sort()) === JSON.stringify([[11, 13, 'b'], [11, 13, 'h:yellow']]), JSON.stringify(sent));

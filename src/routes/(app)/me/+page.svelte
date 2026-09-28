@@ -5,7 +5,9 @@
 	import { fetchMyAchievements, type MyAchievements } from '$lib/achievements';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import { supabase } from '$lib/supabase';
+	import { onDestroy, untrack } from 'svelte';
 	import { S, errMsg, loadProfile, saveProfile, toast } from '$lib/state.svelte';
+	import { draftStore } from '$lib/draft';
 
 	/**
 	 * 내 프로필 (하단 탭 오른쪽) — 상대에게 보이는 소개 · 관심사 · MBTI, 이야기하고 싶은 상대.
@@ -35,22 +37,59 @@
 	let mbti = $state<string | null>(S.profile?.mbti ?? null);
 	let tagDraft = $state('');
 
-	// 프로필이 늦게 불러와졌으면 한 번 채운다
-	let filled = !!S.profile;
+	// ── 자동 초안 (G5.5) — 저장하지 않고 탭을 옮기거나 앱이 꺼져도 고치던 소개 · 관심사 · MBTI 가 남는다. 저장하면 지운다 ──
+	type ProfileDraft = { bio: string; interests: string[]; mbti: string | null };
+	const drafts = draftStore<ProfileDraft>(
+		'profile',
+		(x): x is ProfileDraft => {
+			const d = x as ProfileDraft | null;
+			return typeof d?.bio === 'string' && Array.isArray(d.interests) && d.interests.every((t) => typeof t === 'string') && (d.mbti === null || typeof d.mbti === 'string');
+		},
+		() => false
+	);
+	const same = (a: ProfileDraft, b: ProfileDraft) =>
+		a.bio.trim() === b.bio && a.mbti === b.mbti && JSON.stringify(a.interests) === JSON.stringify(b.interests);
+
+	// 프로필을 불러오면 한 번 채운다 — 저장하지 않은 초안이 있으면 그것으로
+	let filled = false;
 	$effect(() => {
 		if (filled || !S.profile) return;
 		filled = true;
-		bio = S.profile.bio;
-		interests = [...S.profile.interests];
-		mbti = S.profile.mbti;
+		untrack(() => {
+			const p = S.profile!;
+			const d = drafts.load('me');
+			if (d && !same(d, p)) {
+				bio = d.bio;
+				interests = [...d.interests].slice(0, 5);
+				mbti = d.mbti && MBTIS.includes(d.mbti) ? d.mbti : null;
+				toast('저장하지 않은 소개를 이어서 고쳐요');
+			} else {
+				if (d) drafts.drop('me');
+				bio = p.bio;
+				interests = [...p.interests];
+				mbti = p.mbti;
+			}
+		});
 	});
 
-	const dirty = $derived(
-		!!S.profile &&
-			(bio.trim() !== S.profile.bio ||
-				mbti !== S.profile.mbti ||
-				JSON.stringify(interests) !== JSON.stringify(S.profile.interests))
-	);
+	const dirty = $derived(!!S.profile && !same({ bio, interests, mbti }, S.profile));
+
+	// 고치는 대로 저장 — 0.5초 쉬면. 저장한 것과 같아지면 지운다
+	let saveTimer: ReturnType<typeof setTimeout> | null = null;
+	const flush = () => {
+		if (!saveTimer) return;
+		clearTimeout(saveTimer);
+		saveTimer = null;
+		if (dirty) drafts.save('me', { bio, interests: [...interests], mbti });
+		else drafts.drop('me');
+	};
+	$effect(() => {
+		void [bio, JSON.stringify(interests), mbti, dirty];
+		if (!filled) return;
+		if (saveTimer) clearTimeout(saveTimer);
+		saveTimer = setTimeout(flush, 500);
+	});
+	onDestroy(flush);
 
 	function addTag() {
 		const t = tagDraft.trim().replace(/^#/, '');
@@ -72,6 +111,9 @@
 		busy = true;
 		try {
 			await saveProfile(bio, interests, mbti);
+			if (saveTimer) clearTimeout(saveTimer);
+			saveTimer = null;
+			drafts.drop('me');
 			toast('저장 완료');
 		} catch (e) {
 			toast(errMsg(e));
@@ -106,6 +148,9 @@
 	}
 
 </script>
+
+<!-- 앱을 내리거나 닫을 때도 고치던 소개를 바로 저장 (자동 초안) -->
+<svelte:document onvisibilitychange={() => document.visibilityState === 'hidden' && flush()} />
 
 <!-- 머리글은 다른 탭(익명편지 · 채팅)과 같은 높이 · 같은 자리 — 탭을 바꿔도 위쪽이 움직이지 않게 (Phase 35) -->
 <div class="topbar">
@@ -150,6 +195,7 @@
 			maxlength="60"
 			rows="2"
 			aria-labelledby="bio-h"
+			enterkeyhint="done"
 			placeholder="한 줄로 나를 소개해 주세요 (예: 밴드 음악 좋아해요)"
 		></textarea>
 		<span class="count muted num">{bio.trim().length}/60</span>
@@ -169,6 +215,8 @@
 				maxlength="12"
 				placeholder="+ 추가"
 				aria-label="관심사 추가"
+				enterkeyhint="done"
+				autocomplete="off"
 				onkeydown={onTagKey}
 				onblur={addTag}
 			/>

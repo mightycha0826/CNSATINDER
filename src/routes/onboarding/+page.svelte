@@ -66,7 +66,7 @@
 	{:else if needName}
 		<section>
 			<h2>내 이름</h2>
-			<input class="field" bind:value={nameDraft} maxlength="20" placeholder="실명" autocomplete="name" aria-label="내 이름" />
+			<input class="field" bind:value={nameDraft} maxlength="20" placeholder="실명" autocomplete="name" enterkeyhint="done" aria-label="내 이름" />
 			<p class="hint muted">실명을 적어 주세요. <strong>바꿀 수 없어요.</strong></p>
 		</section>
 	{/if}

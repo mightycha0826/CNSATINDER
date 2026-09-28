@@ -17,8 +17,8 @@
 	});
 </script>
 
-<input class="field" type="password" autocomplete="new-password" {placeholder} bind:value />
-<input class="field" type="password" autocomplete="new-password" placeholder="한 번 더" bind:value={confirm} />
+<input class="field" type="password" autocomplete="new-password" enterkeyhint="next" {placeholder} bind:value />
+<input class="field" type="password" autocomplete="new-password" enterkeyhint="done" placeholder="한 번 더" bind:value={confirm} />
 <p class="rule" class:ok={strong} class:bad={value.length > 0 && !strong}>
 	8자 이상, 영문과 숫자를 섞어 주세요{#if confirm && !same} · <span class="bad">두 칸이 달라요</span>{/if}
 </p>

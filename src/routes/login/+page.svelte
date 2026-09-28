@@ -90,6 +90,9 @@
 			busy = false;
 		}
 	}
+	// 로그인: 이메일 칸에서 "다음" → 비밀번호 칸으로 (G6.1)
+	let pwEl: HTMLInputElement | undefined = $state();
+	const focusPw = () => pwEl?.focus();
 </script>
 
 {#snippet emailField(onEnter?: () => void)}
@@ -104,6 +107,7 @@
 			autocorrect="off"
 			spellcheck="false"
 			placeholder="학교 이메일 앞부분"
+			enterkeyhint={onEnter === focusPw ? 'next' : 'go'}
 			onkeydown={(e) => e.key === 'Enter' && onEnter?.()}
 		/>
 		<span class="domain">@{SCHOOL_DOMAIN}</span>
@@ -116,10 +120,12 @@
 
 	{#if mode === 'login'}
 		<section>
-			{@render emailField()}
+			{@render emailField(focusPw)}
 			<input
 				class="field"
+				bind:this={pwEl}
 				bind:value={pw}
+				enterkeyhint="go"
 				type="password"
 				autocomplete="current-password"
 				placeholder="비밀번호"
@@ -159,6 +165,7 @@
 			autocomplete="one-time-code"
 			maxlength="8"
 			placeholder="인증 코드"
+			enterkeyhint="go"
 			onkeydown={(e) => e.key === 'Enter' && onVerify()}
 		/>
 

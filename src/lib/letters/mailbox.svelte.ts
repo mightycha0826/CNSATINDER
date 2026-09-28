@@ -12,16 +12,22 @@ export const BOX = $state({
 	received: [] as MailItem[],
 	sent: [] as MailItem[],
 	loaded: { received: false, sent: false } as Record<Box, boolean>,
-	more: { received: false, sent: false } as Record<Box, boolean>
+	more: { received: false, sent: false } as Record<Box, boolean>,
+	/** 한 번도 받아 오지 못했다(네트워크) — "편지가 없어요"가 아니라 "불러오지 못했어요 · 다시 시도" (UX G4) */
+	failed: { received: false, sent: false } as Record<Box, boolean>
 });
+const got = new Set<Box>();
 
 export async function loadBox(box: Box) {
 	try {
 		const r = await fetchMailbox(box);
 		BOX[box] = r;
 		BOX.more[box] = r.length === PAGE;
+		BOX.failed[box] = false;
+		got.add(box);
 	} catch {
-		/* 다음 번에 — 기억해 둔 목록을 그대로 보여 준다 */
+		// 기억해 둔 목록이 있으면 그대로 보여 주고 다음 번에. 없으면 실패를 알린다
+		if (!got.has(box)) BOX.failed[box] = true;
 	} finally {
 		BOX.loaded[box] = true;
 	}

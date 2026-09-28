@@ -8,6 +8,8 @@
 	import { INBOX } from '$lib/inbox.svelte';
 	import { notifyInApp } from '$lib/inapp.svelte';
 	import { pushState } from '$lib/push';
+	import { untrack } from 'svelte';
+	import { syncAppBadge, waitingRooms } from '$lib/appBadge';
 
 	/**
 	 * 앱 화면 공통 틀 — 하단 탭 3개 (왼쪽 익명편지 · 가운데 채팅 · 오른쪽 프로필).
@@ -61,6 +63,15 @@
 		lastUnread = n;
 	});
 
+	// ── 배지 (G10) — 채팅 탭: 답할 대화 수 · 앱 아이콘: 답할 대화 + 안 읽은 편지 (lib/appBadge.ts) ──
+	const waiting = $derived(INBOX.loaded ? waitingRooms(INBOX.rooms) : []);
+	$effect(() => {
+		if (!INBOX.loaded || !DM.loaded) return;
+		const ids = waiting.map((r) => r.room_id);
+		const letters = DM.unread;
+		untrack(() => syncAppBadge(ids, letters));
+	});
+
 	const { switchTab } = useTabBack(); // 뒤로가기: 익명편지·프로필 → 홈, 홈 → 두 번 누르면 종료 (lib/tabBack.svelte.ts)
 	useDeepBack(); // 알림으로 깊은 화면에 곧장 들어왔으면 뒤로가기 → 홈 (앱이 닫히지 않게)
 </script>
@@ -99,6 +110,7 @@
 				{/if}
 			</svg>
 			<span>채팅</span>
+			{#if waiting.length}<span class="tab-num num" aria-label="답할 대화 {waiting.length}개">{waiting.length > 99 ? '99+' : waiting.length}</span>{/if}
 		</a>
 		<a class="tab" class:on={onMe} href="/me" onclick={(e) => switchTab(e, '/me')} aria-current={onMe ? 'page' : undefined}>
 			<svg viewBox="0 0 24 24" aria-hidden="true">

@@ -668,7 +668,7 @@ button.g-row:active:not(:disabled) {
 	height: 25px;
 	transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.3, 1.5);
 }
-.tab > span:not(.tab-dot) {
+.tab > span:not(.tab-dot, .tab-num) {
 	position: relative;
 }
 /* 고른 탭 — 뒤에 옅은 브랜드색 알약 */
@@ -703,6 +703,30 @@ button.g-row:active:not(:disabled) {
 	background: #ff3040;
 	border: 2px solid var(--bg);
 	box-sizing: content-box;
+}
+/* 채팅 탭 — 답할 대화 수 (G10.1). 숫자는 12px 미만 허용(G12 배지 예외) */
+.tab-num {
+	position: absolute;
+	top: 4px;
+	left: calc(50% + 6px);
+	min-width: 18px;
+	height: 18px;
+	padding: 0 5px;
+	border-radius: 999px;
+	background: #ff3040;
+	color: #fff;
+	border: 2px solid var(--bg);
+	box-sizing: border-box;
+	font-size: 10.5px;
+	font-weight: 800;
+	line-height: 14px;
+	text-align: center;
+	animation: tab-num-in var(--dur-2, 0.22s) var(--ease-spring, ease-out);
+}
+@keyframes tab-num-in {
+	from {
+		transform: scale(0.4);
+	}
 }
 .tab.on {
 	color: var(--accent);

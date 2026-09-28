@@ -1,7 +1,8 @@
 import type { Session } from '@supabase/supabase-js';
 import { hasSupabase, supabase } from './supabase';
 import { disablePush, syncPush } from './push';
-import { clearDrafts } from './letters/draft';
+import { clearDrafts } from './draft';
+import { clearAppBadge } from './appBadge';
 
 /** 내 프로필. 상대에게는 nickname·bio·interests·mbti 만 partner_profile() 을 거쳐 보인다 (성별·선호·상태는 안 보인다). */
 export type Profile = {
@@ -149,10 +150,16 @@ export async function init() {
 	supabase.auth.onAuthStateChange((event, sess) => {
 		S.session = sess;
 		if (event === 'SIGNED_OUT') {
+			const was = loadedFor;
 			S.profile = null;
 			S.hasPassword = null;
 			S.me = undefined;
 			loadedFor = null;
+			// 로그인해 있던 계정이 나갔다(로그아웃 · 다른 탭 · 세션 만료) — 기기에 남긴 것을 지우고 로그인 화면을 새로 연다 (G14.4)
+			if (was) {
+				forgetDevice();
+				location.replace('/login');
+			}
 		} else if (sess && event !== 'TOKEN_REFRESHED') {
 			// 등록하자마자 INITIAL_SESSION 이 오고, 탭으로 돌아올 때 SIGNED_IN 이 다시 오기도 한다 —
 			// 같은 계정이면 위에서 이미 불러왔으니 건너뛴다 (예전엔 앱을 열 때마다 부팅 요청이 두 번씩 나갔다)
@@ -161,6 +168,12 @@ export async function init() {
 	});
 
 	startHeartbeat();
+}
+
+/** 이 기기에 남긴 계정의 흔적 — 쓰던 편지 · 소개 초안, 앱 아이콘 숫자 (G10.4 · G14.4) */
+function forgetDevice() {
+	clearDrafts();
+	clearAppBadge();
 }
 
 /** 부팅 요청을 이미 보낸 계정 — 같은 계정으로 또 오면 건너뛴다 */
@@ -379,11 +392,15 @@ export async function setPassword(password: string) {
 	await loadAccount();
 }
 
+/**
+ * 로그아웃 — 끝나면 로그인 화면을 새로 연다(아래 SIGNED_OUT). 대화 목록 · 편지함 · 공지 · 찾기처럼 앱 안에 기억해 둔 것이
+ * 같은 기기의 다음 계정에 한순간이라도 보이면 안 되므로(UX G14.4) 모듈마다 비우는 대신 메모리를 통째로 버린다.
+ */
 export async function signOut() {
 	await disablePush().catch(() => {}); // 이 기기로 이 계정 알림이 더 오지 않게
 	await beat(false);
+	forgetDevice();
 	await supabase.auth.signOut();
-	clearDrafts(); // 쓰던 편지 초안 — 같은 기기의 다음 계정에 보이면 안 된다 (G14.4)
 	S.profile = null;
 	S.hasPassword = null;
 	S.me = undefined;

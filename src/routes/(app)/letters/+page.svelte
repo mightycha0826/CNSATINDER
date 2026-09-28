@@ -12,7 +12,8 @@
 	import MailboxItem from '$lib/letters/MailboxItem.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
 	import { anonName, borderOf, fromLabel, stampDate, toLabel, type MailItem } from '$lib/letters/api';
-	import { BOX, PAGE, dropThread, pollMailbox, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import { BOX, PAGE, dropThread, loadBox, pollMailbox, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import LoadError from '$lib/ui/LoadError.svelte';
 	import { envWidth } from '$lib/letters/stage';
 	import { whileVisible } from '$lib/visible';
 	import { S } from '$lib/state.svelte';
@@ -74,6 +75,8 @@
 
 	{#if !BOX.loaded.received}
 		<div class="ghost" style:--w="{w}px" aria-label="편지함을 여는 중"></div>
+	{:else if BOX.failed.received}
+		<LoadError title="편지함을 불러오지 못했어요" onretry={() => Promise.all([loadBox('received'), loadBox('sent')])} />
 	{:else if unread.length === 0}
 		<div class="none">
 			<svg viewBox="0 0 48 36" aria-hidden="true">
@@ -119,7 +122,7 @@
 							w={176}
 						/>
 					</span>
-				{:else if loaded}
+				{:else if loaded && !BOX.failed.received && !BOX.failed.sent}
 					<span class="empty-desk">아직 쌓인 편지가 없어요</span>
 				{/if}
 			</span>

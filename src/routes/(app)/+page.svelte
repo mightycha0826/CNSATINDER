@@ -12,6 +12,7 @@
 	import { mmss } from '$lib/time';
 	import { scrollBehavior } from '$lib/motion';
 	import Sheet from '$lib/ui/Sheet.svelte';
+	import LoadError from '$lib/ui/LoadError.svelte';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import AiChat from '$lib/ai/AiChat.svelte';
 	import RoomMenu from '$lib/chat/RoomMenu.svelte';
@@ -224,6 +225,9 @@
 	{/if}
 
 	<!-- 대화 목록 -->
+	{#if inbox.failed && !inbox.loaded}
+		<LoadError title="대화 목록을 불러오지 못했어요" onretry={() => inbox.load()} />
+	{/if}
 	{#if liveRooms.length}
 		<div class="head">
 			<h2>대화</h2>

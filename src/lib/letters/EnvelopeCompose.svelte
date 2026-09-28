@@ -7,11 +7,11 @@
 	 * 보내기 단추 줄은 화면 아래(키보드 위)에 붙는다.
 	 * nickable 이면 From. 칸에 서명(닉네임)을 직접 적는다 — 비우면 anon("익명의 ○학생") 그대로.
 	 * 보내기가 실패하면 쓰던 편지지로 돌아온다. 동작 줄이기면 연출 없이 바로 쓰고, 보내면 바로 끝난다.
-	 * draft(초안 이름)를 주면 쓰는 대로 이 기기에 자동 저장하고, 다시 들어오면 이어 쓴다 — 보내면 지운다 (lib/letters/draft.ts, G5.5).
+	 * draft(초안 이름)를 주면 쓰는 대로 이 기기에 자동 저장하고, 다시 들어오면 이어 쓴다 — 보내면 지운다 (lib/draft.ts, G5.5).
 	 */
 	import { onDestroy, onMount } from 'svelte';
 	import { toast } from '$lib/state.svelte';
-	import { dropDraft, loadDraft, saveDraft } from './draft';
+	import { letterDrafts } from './draft';
 	import Envelope from './Envelope.svelte';
 	import LetterEditor from './LetterEditor.svelte';
 	import type { LetterFmt } from './rich';
@@ -50,7 +50,7 @@
 	// 초안 이름은 열릴 때 한 번 정한다 — 부르는 쪽의 값(to.id)은 닫히는 순간 이미 비었을 수 있다
 	// svelte-ignore state_referenced_locally
 	const key = draft;
-	const saved = key ? loadDraft(key) : null;
+	const saved = key ? letterDrafts.load(key) : null;
 	let body = $state(saved?.body ?? '');
 	let fmt = $state<LetterFmt | null>(saved?.fmt ?? null);
 	// svelte-ignore state_referenced_locally
@@ -67,7 +67,7 @@
 		if (!saveTimer) return;
 		clearTimeout(saveTimer);
 		saveTimer = null;
-		if (key && !sent) saveDraft(key, { body, fmt, nick: nickable ? nick : '' });
+		if (key && !sent) letterDrafts.save(key, { body, fmt, nick: nickable ? nick : '' });
 	};
 	let first = true;
 	$effect(() => {
@@ -110,7 +110,7 @@
 		sent = true;
 		if (saveTimer) clearTimeout(saveTimer);
 		saveTimer = null;
-		if (key) dropDraft(key);
+		if (key) letterDrafts.drop(key);
 		stop = play([
 			[200, () => (phase = 'tuck')],
 			[900, () => (phase = 'close')],

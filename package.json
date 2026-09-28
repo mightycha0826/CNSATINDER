@@ -17,7 +17,8 @@
 		"test:toast": "node --no-warnings --conditions=browser scripts/toast.test.mjs",
 		"test:platform": "node --no-warnings scripts/platform.test.mjs",
 		"test:push": "node --no-warnings scripts/webpush.test.mjs",
-		"test:aichat": "node --no-warnings --experimental-strip-types scripts/ai-chat.test.mjs",
+		"test:sw": "node --no-warnings scripts/sw-badge.test.mjs",
+		"test:aichat":"node --no-warnings --experimental-strip-types scripts/ai-chat.test.mjs",
 		"test:ui": "node scripts/e2e/run.mjs"
 	},
 	"devDependencies": {

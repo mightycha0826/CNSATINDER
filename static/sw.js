@@ -11,7 +11,8 @@
 //     실시간 현황(/admin/live/status)이 처음 받은 사본에 멈춰 있었다. 올리면 그 캐시가 통째로 지워진다.
 // v8: 알림 배지(badge-96.png) 추가
 // v9: 앱 안 알림 · 대화별로 모이는 알림 · 알림을 누르면 새로고침 없이 그 화면으로 (Phase 35)
-const VERSION = 'cnsatinder-v9';
+// v10: 앱 아이콘 배지 — 앱이 꺼져 있는 동안 새 알림을 더해 센다 (UX G10.4)
+const VERSION = 'cnsatinder-v10';
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/badge-96.png', '/manifest.webmanifest'];
 // 버전이 바뀌어도 지우지 않는 작은 저장소 — "설치한 앱으로 쓰는 기기인지", 앱 창 id
 const META = 'cnsatinder-meta';
@@ -67,8 +68,9 @@ async function onPush(d) {
 		return;
 	}
 	await showGrouped(d, note, room, url, tag);
-	// 애플: 띄운 알림을 앱이 받아서 바로 닫고 앱 안 알림으로 보여 준다
+	// 애플: 띄운 알림을 앱이 받아서 바로 닫고 앱 안 알림으로 보여 준다 (앱이 떠 있으면 배지도 앱이 센다)
 	for (const w of wins) w.postMessage({ type: 'push', note, shown: true });
+	if (!wins.length) await bumpBadge().catch(() => {});
 }
 
 async function showGrouped(d, note, room, url, tag) {
@@ -90,7 +92,8 @@ async function showGrouped(d, note, room, url, tag) {
 		// 안드로이드는 배지의 투명도만 쓴다 — 컬러 아이콘을 주면 흰 사각형이 된다. 흰 로고 + 투명 바탕.
 		badge: '/badge-96.png',
 		timestamp: d.at ? Date.parse(d.at) || Date.now() : Date.now(),
-		data: { url, id: id || pd.id || 0, lines, count }
+		// kind · at(띄운 시각) — 앱 아이콘 배지를 셀 때 (bumpBadge)
+		data: { url, id: id || pd.id || 0, lines, count, kind: note.kind, at: Date.now() }
 	});
 }
 
@@ -118,12 +121,40 @@ const metaGet = async () => {
 const metaPut = async (m) => (await caches.open(META)).put('/__app', new Response(JSON.stringify(m)));
 
 self.addEventListener('message', (e) => {
-	if (!e.data || e.data.type !== 'standalone' || !e.source) return;
+	const d = e.data;
+	if (d && d.type === 'badge') return e.waitUntil(setBadgeBase(d));
+	if (!d || d.type !== 'standalone' || !e.source) return;
 	const id = e.source.id;
 	e.waitUntil(
-		metaGet().then((m) => metaPut({ app: true, ids: [id, ...m.ids.filter((x) => x !== id)].slice(0, 10) }))
+		metaGet().then((m) => metaPut({ ...m, app: true, ids: [id, ...m.ids.filter((x) => x !== id)].slice(0, 10) }))
 	);
 });
+
+// ── 앱 아이콘 배지 (UX G10.4) ─────────────────────────────────────────
+// 앱이 떠 있는 동안은 앱이 센다(lib/appBadge.ts) — 답할 대화 id 들 + 안 읽은 편지 수를 여기 적어 둔다(base).
+// 앱이 꺼져 있는 동안 알림이 뜨면: base 뒤에(since 이후) 뜬 알림을 더한다 — 대화는 방(tag)마다 한 번, 편지는 한 통마다.
+// 공감 · 공지 알림은 세지 않는다. 로그아웃하면(clear) 더 세지 않는다. setAppBadge 가 없는 브라우저는 아무것도 안 한다.
+async function setBadgeBase(d) {
+	const m = await metaGet();
+	if (d.clear) delete m.badge;
+	else m.badge = { rooms: Array.isArray(d.rooms) ? d.rooms.slice(0, 200) : [], dm: Number(d.dm) || 0, since: Number(d.since) || Date.now() };
+	await metaPut(m);
+}
+async function bumpBadge() {
+	if (!self.navigator.setAppBadge) return;
+	const b = (await metaGet()).badge;
+	if (!b) return; // 로그인한 앱이 아직 한 번도 알려 주지 않았다
+	const rooms = new Set(b.rooms);
+	let dm = b.dm;
+	for (const n of await self.registration.getNotifications()) {
+		const nd = n.data || {};
+		if (!(nd.at > b.since)) continue;
+		if (nd.kind === 'chat') rooms.add(n.tag);
+		else if (nd.kind === 'letter') dm++;
+	}
+	const count = rooms.size + dm;
+	await (count ? self.navigator.setAppBadge(count) : self.navigator.clearAppBadge()).catch(() => {});
+}
 
 // 알림을 누르면 그 대화로.
 //  1) 앱 창이 떠 있으면 그 창을 앞으로 — 앱에 "여기로 가 줘"라고 알려 새로고침 없이 바로 옮긴다 (Phase 35).

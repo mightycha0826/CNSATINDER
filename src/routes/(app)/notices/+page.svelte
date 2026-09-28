@@ -10,6 +10,7 @@
 	import { agoText } from '$lib/time';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import Chevron from '$lib/ui/Chevron.svelte';
+	import LoadError from '$lib/ui/LoadError.svelte';
 
 	// 화면을 열기 전까지 봤던 번호 — 그보다 새 공지에 "새" 표시 (열자마자 저장해도 표시는 남게).
 	let seenBefore = $state<number | null>(null);
@@ -63,7 +64,9 @@
 		</ul>
 		<h2 class="sec">전체 공지</h2>
 	{/if}
-	{#if !NOTICES.loaded}
+	{#if !NOTICES.loaded && NOTICES.failed}
+		<LoadError title="공지를 불러오지 못했어요" onretry={() => loadNotices(true)} />
+	{:else if !NOTICES.loaded}
 		<!-- 공지 줄과 같은 높이의 빈 줄 -->
 		<p class="sr-only">불러오는 중…</p>
 		<ul aria-hidden="true">

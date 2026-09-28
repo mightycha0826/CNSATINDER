@@ -6,7 +6,6 @@
 	 *  · 새 메시지 알림 · 비밀번호 · 계정 상태 · 약관 및 정책(이용약관 · 개인정보 처리방침 · 운영정책 → /settings/[doc]) · 로그아웃
 	 * 홈의 "비밀번호를 만들어 두세요"와 비밀번호 찾기 인증 뒤에는 /settings#password 로 와서 비밀번호 칸이 펼쳐져 있다.
 	 */
-	import { goto } from '$app/navigation';
 	import { THEME_COLOR, THEME_COLORS, fillOf, setThemeColor } from '$lib/themeColor.svelte';
 	import { THEME, THEME_MODES, setTheme } from '$lib/theme.svelte';
 	import { disablePush, enablePush, pushEnabled, pushState, type PushState } from '$lib/push';
@@ -187,8 +186,7 @@
 	}
 
 	async function out() {
-		await signOut();
-		void goto('/login', { replaceState: true });
+		await signOut(); // 로그인 화면을 새로 연다 (lib/state.svelte.ts)
 	}
 </script>
 
@@ -316,6 +314,7 @@
 						type="password"
 						autocomplete="current-password"
 						placeholder="지금 비밀번호"
+						enterkeyhint="go"
 						bind:value={current}
 						onkeydown={(e) => e.key === 'Enter' && checkCurrent()}
 					/>
@@ -337,6 +336,7 @@
 						autocomplete="one-time-code"
 						maxlength="8"
 						placeholder="인증 코드"
+						enterkeyhint="go"
 						bind:value={code}
 						onkeydown={(e) => e.key === 'Enter' && checkCode()}
 					/>
