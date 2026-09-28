@@ -13,7 +13,7 @@
 	);
 
 	const FIELDS = [
-		{ k: 'room_minutes', label: '기본 대화 시간', unit: '분', hint: '둘 다 입장한 순간부터' },
+		{ k: 'room_minutes', label: '첫 대화 시간', unit: '분', hint: '둘 다 입장한 순간부터 (연장부터는 아래 연장 시간)' },
 		{ k: 'extend_minutes', label: '연장 시간', unit: '분', hint: '둘 다 동의할 때마다' },
 		{ k: 'vote_window_sec', label: '연장 질문 시점', unit: '초 전', hint: '만료 몇 초 전에 물을지' },
 		{ k: 'max_rounds', label: '연장 횟수 상한', unit: '회', hint: '0 = 무제한' },
@@ -73,6 +73,31 @@
 	{/if}
 </form>
 
+<!-- 익명편지 잠금 (Phase 44) — 가입한 학생이 적으면 보낸 사람이 쉽게 짐작된다. 기준 인원이 되면 저절로 열린다 -->
+{#if s.letters_gate !== undefined}
+	{@const min = s.letters_gate_min ?? 100}
+	{@const locked = !!s.letters_gate && (data.students ?? 0) < min}
+	<h2 class="a-h2 sub">익명편지 잠금</h2>
+	<p class="muted small gate-state">
+		지금 <b class:gate-locked={locked}>{locked ? '잠김' : '열림'}</b> · 가입한 학생 <b class="num">{data.students ?? '?'}</b>명
+		{#if s.letters_gate}· {min}명이 되면 저절로 열려요{:else}· 잠금이 꺼져 있어요{/if}
+	</p>
+	<form method="POST" action="?/letters" use:enhance={() => ({ update }) => update({ reset: false })} class="form">
+		<label class="row">
+			<span class="label">잠금 켜기<small>켜 두면 학생 앱의 익명편지 탭에 "가입 인원이 모이면 열려요"와 실시간 가입 인원이 보이고, 편지 쓰기 · 찾기가 막혀요</small></span>
+			<input type="checkbox" name="letters_gate" checked={s.letters_gate} disabled={!isAdmin} />
+		</label>
+		<label class="row">
+			<span class="label">열리는 인원<small>학교 인증 + 시작하기까지 마친 학생 수</small></span>
+			<span class="val">
+				<input class="field num" type="number" name="letters_gate_min" value={min} min="1" max="10000" disabled={!isAdmin} />
+				<span class="unit">명</span>
+			</span>
+		</label>
+		{#if isAdmin}<button class="btn save">잠금 설정 저장</button>{/if}
+	</form>
+{/if}
+
 <h2 class="a-h2 sub">검열봇 · AI 대화 상대</h2>
 {#if !aiReady}
 	<p class="muted small">DB 에 Phase 19 를 반영하면 여기서 켤 수 있어요 (schema.sql 다시 실행).</p>
@@ -95,7 +120,7 @@
 			<input type="checkbox" name="ai_moderation" checked={s.ai_moderation} disabled={!isAdmin} />
 		</label>
 		<label class="row">
-			<span class="label">AI 대화 상대<small>상대를 찾는 동안 "AI 와 얘기하기" 버튼</small></span>
+			<span class="label">대화 봇<small>찾기 20초가 지나도 상대가 없으면 "봇" 표시를 단 대화 봇이 저절로 온다</small></span>
 			<input type="checkbox" name="ai_chat" checked={s.ai_chat} disabled={!isAdmin} />
 		</label>
 		{#each AI_FIELDS as f (f.k)}
@@ -262,6 +287,13 @@
 	.ai-note {
 		max-width: 720px;
 		margin-bottom: 12px;
+	}
+	.gate-state {
+		max-width: 720px;
+		margin: 0 0 8px;
+	}
+	.gate-locked {
+		color: var(--danger);
 	}
 	.usage {
 		display: flex;

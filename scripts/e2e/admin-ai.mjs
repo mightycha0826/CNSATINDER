@@ -125,7 +125,7 @@ try {
 	await page.waitForLoadState('networkidle'); // 하이드레이션 전에 누르면 체크가 되돌려진다
 	check('오늘 사용량', (await page.locator('.usage').innerText()).replace(/\s+/g, ' ').includes('오늘 AI 검토 12건'));
 	await page.getByLabel(/AI 검토 \(검열봇 2단\)/).check();
-	await page.getByLabel(/AI 대화 상대/).check();
+	await page.getByLabel(/대화 봇/).check();
 	await page.locator('input[name=ai_chat_daily_cap]').fill('5');
 	await page.getByRole('button', { name: 'AI 설정 저장' }).click();
 	await page.getByText('AI 설정 저장 완료').waitFor();

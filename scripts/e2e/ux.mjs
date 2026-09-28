@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright-core';
 // 사용 흐름이 말없이 끊기지 않는지 (Phase 39 · docs/UX-GUIDELINES.md) — 가짜 Supabase 를 브라우저 가로채기로
 //  · 로그인 직후 "계정 정보를 불러오지 못함"이 번쩍이지 않는다
-//  · 찾는 중 AI 대화를 닫아도, 끝난 대화에서 "새 대화 찾기"로 와도 찾기가 이어진다
+//  · 찾기 20초 뒤 저절로 뜬 대화 봇을 닫아도(버튼 · 뒤로가기), 끝난 대화에서 "새 대화 찾기"로 와도 찾기가 이어진다
 //  · 대화방을 열다 네트워크가 끊기면 쫓아내지 않고 그 자리에서 "다시 시도"
 //  · 공지 하나를 열면 그 공지까지만 본 것으로
 const PORT = Number(process.env.E2E_PORT) || 5183;
@@ -96,21 +96,26 @@ try {
 		await ctx.close();
 	}
 
-	console.log('[찾는 중 AI 대화를 닫아도]');
+	console.log('[찾기 20초 뒤 대화 봇 — 닫아도 계속 찾는다]');
 	{
 		const { ctx, page, log, count, errs } = await open();
 		await login(page);
 		await page.getByRole('button', { name: '새 대화 찾기' }).click();
-		await page.waitForTimeout(600);
-		await page.getByRole('button', { name: /AI 와 얘기하기/ }).click();
-		await page.getByRole('dialog', { name: 'AI 와 대화' }).waitFor();
-		await page.waitForTimeout(800);
-		await page.getByRole('button', { name: 'AI 대화 닫기' }).click();
+		const bot = page.getByRole('dialog', { name: '대화 봇과 대화' });
+		await page.waitForTimeout(8000);
+		check('20초 전에는 봇이 오지 않는다', (await bot.count()) === 0 && count('rpc/ai_chat_start') === 0);
+		await bot.waitFor({ timeout: 25000 }).catch(() => {});
+		check('★ 20초가 지나면 봇이 저절로 뜬다', (await bot.count()) === 1 && count('rpc/ai_chat_start') === 1, `${count('rpc/ai_chat_start')} · ${errs.join(' | ')}`);
+		check('★ 봇이라는 표시', (await bot.locator('header .tag').innerText()).trim() === '봇');
+		await bot.locator('.row:not(.mine) .bubble:not(.typing)').first().waitFor({ timeout: 6000 });
+		check('봇이 먼저 인사한다', true);
+		await page.getByRole('button', { name: '대화 봇 닫기' }).click();
 		const m0 = log.length;
 		await page.waitForTimeout(9000);
-		check('★ 닫은 뒤에도 계속 찾는다 (request_match 가 이어진다)', count('rpc/request_match', m0) >= 2, String(count('rpc/request_match', m0)));
+		check('★ 닫은 뒤에도 계속 찾는다 (request_match 가 이어진다)', count('rpc/request_match', m0) >= 1, String(count('rpc/request_match', m0)));
 		check('★ 그만 찾기(stop_seeking)를 보내지 않는다', count('rpc/stop_seeking') === 0, String(count('rpc/stop_seeking')));
 		check('찾는 중 표시가 남아 있다 ("그만" 버튼)', await page.getByRole('button', { name: '그만' }).isVisible());
+		check('같은 찾기에서는 봇이 다시 오지 않는다', (await bot.count()) === 0 && count('rpc/ai_chat_start') === 1);
 		check('페이지 오류 없음', errs.length === 0, errs.join(' | '));
 		await ctx.close();
 	}
@@ -201,21 +206,20 @@ try {
 		await ctx.close();
 	}
 
-	console.log('[찾는 중 AI 대화를 뒤로가기로 닫아도]');
+	console.log('[대화 봇을 뒤로가기로 닫아도]');
 	{
 		const { ctx, page, log, count } = await open();
 		await login(page);
 		await page.getByRole('button', { name: '새 대화 찾기' }).click();
-		await page.waitForTimeout(600);
-		await page.getByRole('button', { name: /AI 와 얘기하기/ }).click();
-		await page.getByRole('dialog', { name: 'AI 와 대화' }).waitFor();
+		const bot = page.getByRole('dialog', { name: '대화 봇과 대화' });
+		await bot.waitFor({ timeout: 30000 });
 		await page.waitForTimeout(800);
 		await page.goBack();
 		await page.waitForTimeout(600);
-		check('★ 뒤로가기로 AI 창이 닫힌다 (홈 그대로)', (await page.getByRole('dialog', { name: 'AI 와 대화' }).count()) === 0 && page.url() === `${BASE}/`, page.url());
+		check('★ 뒤로가기로 봇 창이 닫힌다 (홈 그대로)', (await bot.count()) === 0 && page.url() === `${BASE}/`, page.url());
 		const m0 = log.length;
-		await page.waitForTimeout(8500);
-		check('★ 계속 찾는다', count('rpc/request_match', m0) >= 2 && count('rpc/stop_seeking') === 0, `${count('rpc/request_match', m0)} / stop ${count('rpc/stop_seeking')}`);
+		await page.waitForTimeout(9000);
+		check('★ 계속 찾는다', count('rpc/request_match', m0) >= 1 && count('rpc/stop_seeking') === 0, `${count('rpc/request_match', m0)} / stop ${count('rpc/stop_seeking')}`);
 		await ctx.close();
 	}
 

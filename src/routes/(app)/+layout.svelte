@@ -1,6 +1,10 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { useTabBack } from '$lib/tabBack.svelte';
+	import { checkGate, lettersState } from '$lib/letters/gate.svelte';
+	import { S } from '$lib/state.svelte';
+	import Tour from '$lib/ui/Tour.svelte';
 	import { whileVisible } from '$lib/visible';
 	import { DM, refreshUnread } from '$lib/letters/unread.svelte';
 	import AchievementCelebrate from '$lib/ui/AchievementCelebrate.svelte';
@@ -25,9 +29,15 @@
 	const onMe = $derived(path === '/me');
 
 	// 안 읽은 편지 — 익명편지 탭 위 빨간 점. 앱이 보이는 동안 2분마다 (새 편지는 푸시로도 알린다)
+	// 익명편지가 잠겨 있는 동안(Phase 44)은 묻지 않는다 — 새 편지가 올 수 없다
+	$effect(() => whileVisible(() => lettersState() === 'open' && void refreshUnread(), 120_000));
+	// 처음 한 번 — 편지가 열려 있으면 바로, 잠겨 있으면 열리는 순간에 (앱을 켤 때 이미 열렸는지 한 번 본다: checkGate)
 	$effect(() => {
-		void refreshUnread();
-		return whileVisible(() => void refreshUnread(), 120_000);
+		if (!S.settings) return;
+		untrack(checkGate);
+	});
+	$effect(() => {
+		if (lettersState() === 'open') untrack(() => void refreshUnread());
 	});
 
 	// ── 대화 목록 · 앱 안 알림 (Phase 35) ──
@@ -72,6 +82,9 @@
 <!-- 새로 딴 업적 축하 (Phase 31) — 탭 첫 화면에서만 뜬다 -->
 <AchievementCelebrate />
 
+<!-- 처음 사용법 안내 (Phase 44) — 처음 홈에 왔을 때 한 번 (건너뛸 수 있다 · 설정에서 다시 보기) -->
+<Tour />
+
 {#if showTabs}
 	<!-- 탭바에 가려지지 않게 같은 높이만큼 비워 둔다 -->
 	<div class="tabbar-space" aria-hidden="true"></div>
@@ -87,7 +100,7 @@
 				{/if}
 			</svg>
 			<span>익명편지</span>
-			{#if DM.unread > 0}<span class="tab-dot" aria-label="안 읽은 편지 {DM.unread}통"></span>{/if}
+			{#if DM.unread > 0 && lettersState() === 'open'}<span class="tab-dot" aria-label="안 읽은 편지 {DM.unread}통"></span>{/if}
 		</a>
 		<a class="tab" class:on={onChat} href="/" onclick={(e) => switchTab(e, '/')} aria-current={onChat ? 'page' : undefined}>
 			<svg viewBox="0 0 24 24" aria-hidden="true">

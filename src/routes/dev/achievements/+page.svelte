@@ -32,7 +32,8 @@
 		unit: opts.unit ?? '번',
 		lower_better: opts.lower_better ?? false,
 		earned_at: tier ? new Date().toISOString() : null,
-		new: opts.new ?? false
+		new: opts.new ?? false,
+		granted: opts.granted ?? false
 	});
 	const items: Achievement[] = [
 		A('warm', '따뜻한 사람', '🌡️', 'manner', [42, 45, 50], 45.2, 2, { unit: '도', description: '매너 온도', new: true }),
@@ -45,6 +46,8 @@
 		A('owl', '밤 올빼미', '🦉', 'chat', [5, 20, 50], 2, 0, { description: '밤 10시~12시에 시작한 대화' }),
 		A('letter_got', '인기 편지함', '💌', 'letter', [5, 20, 50], 3, 0, { unit: '통', description: '받은 편지' }),
 		A('deco', '꾸미기 장인', '🎨', 'letter', [3, 10, 30], 11, 2, { unit: '통', description: '글자를 꾸며 쓴 편지' }),
+		// 운영진이 주는 특별 업적 (Phase 44) — 무지갯빛 · 등급 대신 "특별"
+		A('beta', '베타 테스터', '🧪', 'special', [1, 1, 1], 0, 3, { unit: '', description: '출시 전 베타 테스트에 함께한 사람', granted: true }),
 		A('streak', '개근상', '📅', 'special', [3, 7, 30], 5, 1, { unit: '일', description: '며칠 연속으로 접속' }),
 		A('pioneer', '개척자', '🚩', 'special', [1000, 300, 100], 42, 3, { unit: '번째', description: '가입한 순서', lower_better: true })
 	];

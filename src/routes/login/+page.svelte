@@ -33,9 +33,15 @@
 	const resendLeft = $derived(Math.max(0, Math.ceil((resendAt - S.now) / 1000)));
 
 	// 학교 이메일의 앞부분만 받는다. 도메인은 고정 표시 — 오타를 구조적으로 없앤다.
-	// (실제 강제는 DB 트리거가 한다. 여기는 UX 용.)
-	const LOCAL = /^[a-zA-Z0-9._%+-]{2,}$/;
-	const localOk = $derived(LOCAL.test(localPart.trim()));
+	// (도메인 강제는 DB 트리거가 한다. 여기는 UX 용.)
+	// 학생 앱이라 앞부분은 학번(5자리, 학년으로 시작)만 (Phase 44). 영어가 섞였으면 선생님 계정 — 학생 전용이라고 알린다
+	const STUDENT_NO = /^[1-3][0-9]{4}$/;
+	const typed = $derived(localPart.trim());
+	const localOk = $derived(STUDENT_NO.test(typed));
+	const teacher = $derived(/[a-zA-Z]/.test(typed));
+	const localHint = $derived(
+		!typed || localOk || teacher ? '' : /^[0-9]+$/.test(typed) ? '학번 5자리를 입력해 주세요 (예: 20101)' : '학번만 입력해 주세요 (예: 20101)'
+	);
 	const pwReady = $derived(localOk && pw.length >= 6);
 	// Supabase 프로젝트 설정(Email OTP length)에 따라 6~8자리
 	const codeOk = $derived(/^[0-9]{6,8}$/.test(code.trim()));
@@ -108,6 +114,15 @@
 		/>
 		<span class="domain">@{SCHOOL_DOMAIN}</span>
 	</div>
+	{#if teacher}
+		<!-- 선생님 계정(영어 아이디) — 학생 전용 앱이라고 알린다 (Phase 44) -->
+		<div class="teacher" role="alert">
+			<strong>선생님이신가요?</strong>
+			<span>CNSATINDER는 <b>학생들을 위한</b> 익명 대화 앱이에요. 학번으로 된 학생 계정으로만 가입 · 로그인할 수 있어요.</span>
+		</div>
+	{:else if localHint}
+		<p class="local-hint" role="status">{localHint}</p>
+	{/if}
 {/snippet}
 
 <div class="page login">
@@ -307,6 +322,32 @@
 		white-space: nowrap;
 	}
 
+	/* 선생님 계정 안내 · 학번 형식 안내 (Phase 44) */
+	.teacher {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 12px 14px;
+		border-radius: var(--r-md);
+		background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 30%, transparent);
+		font-size: 13px;
+		line-height: 1.55;
+		color: var(--text-2);
+	}
+	.teacher strong {
+		color: var(--danger);
+		font-size: 14px;
+	}
+	.teacher b {
+		color: var(--text);
+	}
+	.local-hint {
+		margin: -4px 4px 0;
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--danger);
+	}
 	.code {
 		text-align: center;
 		font-size: 22px;

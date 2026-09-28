@@ -11,6 +11,7 @@
 	import { focustrap } from '$lib/focustrap';
 	import { backClose, navigateFromOverlay } from '$lib/overlay.svelte';
 	import Badge from './Badge.svelte';
+	import { SPECIAL_BADGES } from './badgeIcons';
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
 	import { whileVisible } from '$lib/visible';
 	import { UI } from '$lib/state.svelte';
@@ -46,7 +47,8 @@
 		leaving = false;
 		if (!preview) await markAchievementsSeen().catch(() => {});
 	}
-	const showing = $derived(!!fresh.length && (onRoot || !!preview));
+	// 처음 사용법 안내(튜토리얼)가 떠 있으면 그 뒤에 (Phase 44)
+	const showing = $derived(!!fresh.length && (onRoot || !!preview) && !UI.touring);
 	// 떠 있는 동안 다른 저절로 뜨는 창(매너 평가 · 알림 권한)은 기다린다
 	$effect(() => {
 		UI.celebrating = showing;
@@ -122,7 +124,7 @@
 				{/each}
 			</div>
 			<p class="kicker">새 업적</p>
-			<h2>{one ? `${fresh[0].title} ${TIER_NAME[fresh[0].tier]} 등급!` : `업적 ${fresh.length}개를 모았어요!`}</h2>
+			<h2>{one ? (SPECIAL_BADGES.has(fresh[0].code) ? `특별 업적 ${fresh[0].title}!` : `${fresh[0].title} ${TIER_NAME[fresh[0].tier]} 등급!`) : `업적 ${fresh.length}개를 모았어요!`}</h2>
 			{#if fresh.length > top.length}<p class="more muted">외 {fresh.length - top.length}개</p>{/if}
 			<div class="acts">
 				<button class="btn" onclick={() => close(true)}>업적 보러 가기</button>

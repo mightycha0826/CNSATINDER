@@ -2,7 +2,16 @@
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import MannerTemp from '$lib/ui/MannerTemp.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
-	import { fetchMyAchievements, type MyAchievements } from '$lib/achievements';
+	import BadgeDetail from '$lib/ui/BadgeDetail.svelte';
+	import Sheet from '$lib/ui/Sheet.svelte';
+	import {
+		fetchMyAchievements,
+		progressText,
+		setFeaturedBadges,
+		toggledFeatured,
+		type Achievement,
+		type MyAchievements
+	} from '$lib/achievements';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import { supabase } from '$lib/supabase';
 	import { S, errMsg, loadProfile, saveProfile, toast } from '$lib/state.svelte';
@@ -16,7 +25,8 @@
 
 	let busy = $state(false);
 
-	// ── 명성 (Phase 31) — 대표 업적 3개 · 모은 업적 수. 누르면 업적 전체 ──
+	// ── 명성 (Phase 31) — 대표 업적 3개 · 모은 업적 수. 머리를 누르면 업적 전체 ──
+	// 메달을 누르면 어떻게 얻는지 · 등급 기준 · 대표에서 내리기 (Phase 44 — 업적 화면에서 누를 때와 같은 BadgeDetail)
 	let fame = $state<MyAchievements | null>(null);
 	$effect(() => {
 		fetchMyAchievements()
@@ -24,6 +34,24 @@
 			.catch(() => {});
 	});
 	const earned = $derived(fame?.items.filter((a) => a.tier > 0).length ?? 0);
+	let medal = $state<Achievement | null>(null);
+	let featBusy = $state(false);
+	async function toggleFeature(a: Achievement) {
+		if (!fame || featBusy) return;
+		const codes = toggledFeatured(fame, a.code);
+		featBusy = true;
+		try {
+			const r = await setFeaturedBadges(codes);
+			if (r.status !== 'ok') throw new Error(r.status === 'too_many' ? '대표 업적은 3개까지예요' : '아직 딴 업적이 아니에요');
+			fame = { ...fame, featured: r.featured ?? fame.featured, chosen: codes };
+			medal = null;
+			toast('대표 업적을 바꿨어요');
+		} catch (e) {
+			toast(errMsg(e));
+		} finally {
+			featBusy = false;
+		}
+	}
 
 	// ── 기본 정보 (상대에게 보이는 것) ──
 	const MBTIS = [
@@ -119,27 +147,41 @@
 			<div class="cover" aria-hidden="true"></div>
 			<span class="who-ring"><Avatar name={S.profile.nickname} size={92} online /></span>
 			<p class="nick">{S.profile.nickname}</p>
-			<p class="muted small">대화 상대에게는 이 이름으로만 보여요 · 바꿀 수 없어요</p>
 			<div class="temp"><MannerTemp temp={S.profile.manner_temp} /></div>
 		</section>
 	{/if}
 
 	{#if fame}
-		<a class="fame" href="/me/achievements" aria-label="업적 {earned}개 · 전체 보기">
-			<div class="fame-top">
+		<section class="fame" aria-label="명성">
+			<a class="fame-top" href="/me/achievements" aria-label="명성 · 업적 {earned}개 · 전체 보기">
 				<strong>명성</strong>
 				<span class="num">업적 {earned}/{fame.items.length} ›</span>
+			</a>
+			<div class="fame-row">
+				{#each [0, 1, 2] as i (i)}
+					{@const b = fame.featured[i]}
+					{#if b}
+						<button class="fb u-tap" onclick={() => (medal = fame?.items.find((a) => a.code === b.code) ?? null)} aria-label="{b.title} 업적 자세히">
+							<Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={54} label shine /><span>{b.title}</span>
+						</button>
+					{:else}
+						<a class="fb empty-slot" href="/me/achievements" aria-label="대표 업적 비어 있음 · 업적 보기"><span class="plus" aria-hidden="true">+</span></a>
+					{/if}
+				{/each}
 			</div>
-			{#if fame.featured.length}
-				<div class="fame-row">
-					{#each fame.featured as b (b.code)}
-						<div class="fb"><Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={54} label shine /><span>{b.title}</span></div>
-					{/each}
-				</div>
-			{:else}
-				<p class="muted small">대화하고 편지를 주고받으며 첫 업적을 모아 보세요</p>
-			{/if}
-		</a>
+		</section>
+	{/if}
+
+	{#if medal && fame}
+		{@const a = medal}
+		<Sheet onclose={() => (medal = null)} label={a.title}>
+			<BadgeDetail badge={a} def={a} sub={a.granted ? '' : progressText(a)}>
+				<button aria-busy={featBusy} class="btn feat" onclick={() => toggleFeature(a)} disabled={featBusy}>
+					{fame.featured.some((f) => f.code === a.code) ? '대표 업적에서 내리기' : '대표 업적으로 걸기'}
+				</button>
+				<a class="all u-tap" href="/me/achievements">업적 전체 보기</a>
+			</BadgeDetail>
+		</Sheet>
 	{/if}
 
 	<h2 class="g-head" id="bio-h">소개</h2>
@@ -207,10 +249,6 @@
 	.me {
 		padding-bottom: 32px; /* 아래쪽 안전영역은 탭바가 맡는다 */
 	}
-	.small {
-		margin: 0;
-		font-size: 13px;
-	}
 
 	/* 맨 위 — 브랜드색 표지 위에 걸친 큰 아바타 · 이름 · 매너 온도 (카드 한 장) */
 	.who {
@@ -245,25 +283,27 @@
 	.who p {
 		margin: 0;
 	}
-	.fame:active {
-		transform: scale(0.98);
-	}
 	.fame {
 		display: flex;
 		flex-direction: column;
-		gap: 12px;
+		gap: 4px;
 		margin: 14px 16px 0;
-		padding: 16px 16px 18px;
+		padding: 4px 16px 14px;
 		border-radius: var(--r-card);
 		background: var(--cell);
 		box-shadow: var(--shadow-1);
+	}
+	/* 머리 — 누르면 업적 전체 (누름 높이 44) */
+	.fame-top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		min-height: 44px;
 		color: inherit;
 		text-decoration: none;
 	}
-	.fame-top {
-		display: flex;
-		align-items: baseline;
-		justify-content: space-between;
+	.fame-top:active span {
+		opacity: 0.6;
 	}
 	.fame-top strong {
 		font-size: 15px;
@@ -282,12 +322,39 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 8px;
+		padding: 6px 0;
+		border-radius: 16px;
 		font-size: 12px;
 		font-weight: 600;
 		text-align: center;
+		color: inherit;
+		text-decoration: none;
 	}
-	.fame p {
-		margin: 0;
+	/* 비어 있는 대표 업적 칸 — 점선 동그라미 (업적 화면의 빈 칸과 같은 모양) */
+	.plus {
+		display: grid;
+		place-items: center;
+		width: 54px;
+		height: 54px;
+		border-radius: 50%;
+		border: 2px dashed var(--cell-line);
+		color: var(--text-2);
+		font-size: 22px;
+	}
+	/* 메달 자세히(BadgeDetail) 아래 */
+	.feat {
+		width: 100%;
+		max-width: 320px;
+	}
+	.all {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0 12px;
+		font-size: 14px;
+		font-weight: 600;
+		color: var(--text-2);
+		text-decoration: none;
 	}
 	.who .temp {
 		display: flex;

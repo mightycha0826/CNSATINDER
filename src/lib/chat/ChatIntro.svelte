@@ -2,10 +2,12 @@
 	/**
 	 * 대화의 맨 처음 — 인스타 DM 첫 화면처럼 상대 소개 (위로 끝까지 올리면 보인다).
 	 * 큰 아바타 · 익명 이름 · "MBTI · 관심사 두 개" 한 줄 · 프로필 보기. 적어 둔 게 없으면 앱 이름.
+	 * 대표 업적 메달을 누르면 어떻게 얻는지 (Phase 44, BadgeSheet).
 	 */
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import MannerTemp from '$lib/ui/MannerTemp.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
+	import { openBadge } from '$lib/badgeSheet.svelte';
 	import type { PartnerProfile } from './types';
 
 	let {
@@ -27,7 +29,11 @@
 	{#if profile}
 		<span class="temp">
 			<MannerTemp temp={profile.manner_temp} size="chip" />
-			{#each profile.badges ?? [] as b (b.code)}<Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={26} />{/each}
+			{#each profile.badges ?? [] as b (b.code)}
+				<button class="medal-btn u-tap" onclick={() => openBadge(b)} aria-label="{b.title} 업적 자세히">
+					<Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={26} />
+				</button>
+			{/each}
 		</span>
 	{/if}
 	<button class="intro-btn" onclick={onprofile}>프로필 보기</button>
@@ -56,8 +62,16 @@
 	.temp {
 		display: inline-flex;
 		align-items: center;
-		gap: 6px;
 		margin-top: 8px;
+	}
+	/* 메달 26 · 누름 칸 44 (G1) — 칸끼리 맞닿게 (보이는 메달 사이 18). 위아래는 줄 높이를 늘리지 않게 */
+	.medal-btn {
+		display: grid;
+		place-items: center;
+		width: 44px;
+		height: 44px;
+		margin: -9px 0;
+		border-radius: 50%;
 	}
 	.intro-btn:active {
 		transform: scale(0.96);

@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import { adminRpc } from '$lib/server/supabaseAdmin';
+import { adminRpc, supabaseAdmin } from '$lib/server/supabaseAdmin';
 import { checkAi } from '$lib/server/ai';
 import { friendly, isAdmin } from '$lib/server/adminAuth';
 import type { Actions, PageServerLoad } from './$types';
@@ -22,6 +22,9 @@ export type AppSettings = {
 	ai_chat_daily_cap?: number;
 	ai_chat_minutes?: number;
 	ai_chat_max_turns?: number;
+	/** Phase 44 — 익명편지 잠금 (가입한 학생이 letters_gate_min 명이 될 때까지) */
+	letters_gate?: boolean;
+	letters_gate_min?: number;
 };
 
 export type AiUsage = {
@@ -32,13 +35,19 @@ export type AiUsage = {
 };
 
 export const load: PageServerLoad = async () => {
-	const [s, usage, terms] = await Promise.all([
+	const [s, usage, terms, students] = await Promise.all([
 		adminRpc<AppSettings>('admin_get_settings'),
 		// Phase 19 함수 — DB 에 아직 없으면 null (화면이 "패치 필요"를 띄운다)
 		adminRpc<AiUsage>('admin_ai_usage').catch(() => null),
-		adminRpc<string[]>('admin_banned_terms').catch(() => null)
+		adminRpc<string[]>('admin_banned_terms').catch(() => null),
+		// 가입한 학생 수 (Phase 44 — 익명편지 잠금 기준과 견준다). 표가 아직 없으면 null
+		supabaseAdmin()
+			.from('signup_stats')
+			.select('students')
+			.maybeSingle()
+			.then(({ data }) => (data as { students: number } | null)?.students ?? null, () => null)
 	]);
-	return { s, usage, terms };
+	return { s, usage, terms, students };
 };
 
 const AI_INT: [keyof AppSettings, number, number][] = [
@@ -89,6 +98,21 @@ export const actions: Actions = {
 			return friendly(e);
 		}
 		return { done: '저장 완료' };
+	},
+
+	/** 익명편지 잠금 (Phase 44, 관리자만) — 켜 두면 가입한 학생이 기준 인원이 될 때까지 편지 쓰기 · 찾기가 막힌다 */
+	letters: async ({ request, locals }) => {
+		if (!isAdmin(locals)) return fail(403, { error: '관리자만 바꿀 수 있어요' });
+		const f = await request.formData();
+		const min = Number(f.get('letters_gate_min'));
+		if (!Number.isInteger(min) || min < 1 || min > 10000) return fail(400, { error: '열리는 인원은 1~10000 사이의 정수여야 해요' });
+		const gate = f.get('letters_gate') === 'on';
+		try {
+			await adminRpc('admin_update_settings', { p_patch: { letters_gate: gate, letters_gate_min: min }, p_staff: locals.staff!.id });
+		} catch (e) {
+			return friendly(e);
+		}
+		return { done: gate ? `익명편지 잠금 켬 · 가입 ${min}명에 열림` : '익명편지 잠금 끔 · 지금 바로 열림' };
 	},
 
 	/** 검열봇 · AI 대화 상대 (관리자만) */

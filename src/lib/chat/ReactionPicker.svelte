@@ -28,6 +28,14 @@
 		onclose: () => void;
 	} = $props();
 	backClose(() => onclose());
+
+	// 길게 눌러 연 손가락을 떼면 브라우저가 그 자리에 click 을 보낼 수 있다. 누르는 동안 목록이 움직이면(입력 중 표시가
+	// 사라짐 · 새 메시지) 고르기 줄이 말풍선을 따라 손가락 밑으로 와서, 그 click 이 공감을 눌러 버렸다.
+	// 줄 안에서 새로 누른 것만 받는다 — 키보드(Enter · Space)의 click 은 detail 0
+	let armed = false;
+	const pressed = (fn: () => void) => (e: MouseEvent) => {
+		if (armed || e.detail === 0) fn();
+	};
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
@@ -38,21 +46,23 @@
 	out:fade={{ duration: reducedMotion() ? 0 : 120 }}
 	role="menu"
 	aria-label="공감"
+	tabindex="-1"
 	style:top="{at.top}px"
 	style:left={at.left != null ? `${at.left}px` : null}
 	style:right={at.right != null ? `${at.right}px` : null}
+	onpointerdown={() => (armed = true)}
 >
 	{#if react}
 		{#each REACTIONS as r (r.k)}
-			<button class="rx" class:on={current === r.k} role="menuitem" aria-label={r.label} onclick={() => onpick(r.k)}>
+			<button class="rx" class:on={current === r.k} role="menuitem" aria-label={r.label} onclick={pressed(() => onpick(r.k))}>
 				{r.e}
 			</button>
 		{/each}
 		<span class="sep" aria-hidden="true"></span>
-		<button class="copy" role="menuitem" onclick={onreply}>답장</button>
+		<button class="copy" role="menuitem" onclick={pressed(onreply)}>답장</button>
 	{/if}
-	<button class="copy" role="menuitem" onclick={oncopy}>복사</button>
-	{#if ondelete}<button class="copy del" role="menuitem" onclick={ondelete}>삭제</button>{/if}
+	<button class="copy" role="menuitem" onclick={pressed(oncopy)}>복사</button>
+	{#if ondelete}<button class="copy del" role="menuitem" onclick={pressed(ondelete)}>삭제</button>{/if}
 </div>
 
 <style>

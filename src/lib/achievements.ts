@@ -10,7 +10,11 @@ export type Category = 'chat' | 'manner' | 'letter' | 'special';
 /** 상대 프로필 · 대표 업적에 쓰는 짧은 모양 */
 export type BadgeLite = { code: string; title: string; icon: string; tier: Tier };
 
-export type Achievement = BadgeLite & {
+/** 업적 정의 — 이름 · 설명 · 등급 기준 (누구의 것도 아닌 공개 정보, achievement_catalog) */
+export type AchievementDef = {
+	code: string;
+	title: string;
+	icon: string;
 	description: string;
 	category: Category;
 	unit: string;
@@ -18,11 +22,17 @@ export type Achievement = BadgeLite & {
 	lower_better: boolean;
 	/** [동, 은, 금] 기준 */
 	tiers: [number, number, number];
-	earned_at: string | null;
-	value: number;
-	/** 마지막으로 본 뒤에 새로 땄거나 올랐다 */
-	new: boolean;
+	/** 운영진이 주는 특별 업적 (Phase 44, 베타 테스터) — 등급 기준이 없다 */
+	granted?: boolean;
 };
+
+export type Achievement = BadgeLite &
+	AchievementDef & {
+		earned_at: string | null;
+		value: number;
+		/** 마지막으로 본 뒤에 새로 땄거나 올랐다 */
+		new: boolean;
+	};
 
 export type MyAchievements = { items: Achievement[]; featured: BadgeLite[]; chosen: string[] };
 
@@ -49,6 +59,28 @@ export const markAchievementsSeen = () => rpc<void>('mark_achievements_seen');
 export const setFeaturedBadges = (codes: string[]) =>
 	rpc<{ status: 'ok' | 'too_many' | 'not_owned'; featured?: BadgeLite[] }>('set_featured_badges', { p_codes: codes });
 
+/**
+ * 업적 카탈로그 (Phase 44) — 남의 메달을 눌렀을 때 설명 · 기준을 그린다. 앱을 켠 동안 한 번만 받는다 (정의는 거의 안 바뀐다).
+ * 받는 중이면 같은 약속을 돌려준다 — 메달을 여러 번 눌러도 요청은 하나
+ */
+let catalog: Promise<Map<string, AchievementDef>> | null = null;
+export function fetchCatalog(): Promise<Map<string, AchievementDef>> {
+	catalog ??= rpc<AchievementDef[] | null>('achievement_catalog').then(
+		(r) => new Map((r ?? []).map((d) => [d.code, d])),
+		(e) => {
+			catalog = null; // 실패하면 다음에 다시
+			throw e;
+		}
+	);
+	return catalog;
+}
+
+/** 대표 업적 걸기 · 내리기 — 걸면 맨 앞, 3개까지. 고른 것이 없으면(자동) 지금 보이는 대표 업적에서 시작한다 */
+export function toggledFeatured(data: Pick<MyAchievements, 'chosen' | 'featured'>, code: string): string[] {
+	const base = data.chosen.length ? [...data.chosen] : data.featured.map((b) => b.code);
+	return base.includes(code) ? base.filter((c) => c !== code) : [code, ...base].slice(0, 3);
+}
+
 /** 다음 등급 기준 (금이면 null) */
 export function nextGoal(a: Achievement): number | null {
 	return a.tier >= 3 ? null : a.tiers[a.tier as 0 | 1 | 2];
@@ -56,6 +88,7 @@ export function nextGoal(a: Achievement): number | null {
 
 /** 다음 등급까지 얼마나 왔는지 (0~1) — 작을수록 좋은 것(개척자)은 이미 정해져 있어 따로 채우지 않는다 */
 export function progress(a: Achievement): number {
+	if (a.granted) return a.tier > 0 ? 1 : 0;
 	if (a.tier >= 3) return 1;
 	if (a.lower_better) return a.tier > 0 ? 1 : 0;
 	const goal = a.tiers[a.tier as 0 | 1 | 2];
@@ -65,6 +98,7 @@ export function progress(a: Achievement): number {
 
 /** "12 / 20번" · "41.2 / 42도" · "가입 7번째" */
 export function progressText(a: Achievement): string {
+	if (a.granted) return a.tier > 0 ? '받음' : '특별 업적';
 	const v = a.unit === '도' ? a.value.toFixed(1) : String(Math.floor(a.value));
 	if (a.lower_better) return `가입 ${v}${a.unit}`;
 	const goal = nextGoal(a);
@@ -72,7 +106,7 @@ export function progressText(a: Achievement): string {
 }
 
 /** 등급 기준 한 줄 — "동 5번 · 은 20번 · 금 50번" / 개척자 "1000번째 안" */
-export function tierLine(a: Achievement, t: 1 | 2 | 3): string {
+export function tierLine(a: AchievementDef, t: 1 | 2 | 3): string {
 	const n = a.tiers[t - 1];
 	return a.lower_better ? `${n}${a.unit} 안` : `${n}${a.unit}`;
 }

@@ -55,7 +55,7 @@
 		toSub={to.grade ? `${to.grade}학년` : ''}
 		from={anonName(S.profile?.gender)}
 		nickable
-		placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.\n내 이름은 보이지 않고, 아래 서명(비우면 성별)만 전해져요.`}
+		placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.`}
 		onsend={send}
 		ondone={() => afterSent('편지를 보냈어요')}
 	/>
@@ -75,7 +75,6 @@
 				enterkeyhint="search"
 			/>
 		</label>
-		<p class="hint">받는 사람에게 나는 <b>{anonName(S.profile?.gender)}</b> 또는 내가 적은 서명으로만 보여요</p>
 
 		{#if results === null}
 			<div class="empty">
@@ -83,7 +82,7 @@
 				<p>이름을 두 글자 이상 적어 주세요</p>
 			</div>
 		{:else if results.length === 0}
-			<p class="muted center">{searching ? '찾는 중…' : '찾는 사람이 없어요 · 편지 받기를 꺼 둔 사람은 나오지 않아요'}</p>
+			<p class="muted center">{searching ? '찾는 중…' : '찾는 사람이 없어요'}</p>
 		{:else}
 			<ul class="people">
 				{#each results as p (p.id)}
@@ -131,14 +130,6 @@
 		background: none;
 		color: var(--text);
 		font-size: 16px;
-	}
-	.hint {
-		margin: 0 4px;
-		font-size: 12px;
-		color: var(--text-2);
-	}
-	.hint b {
-		color: var(--accent);
 	}
 	.empty {
 		display: flex;

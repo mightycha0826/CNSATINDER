@@ -9,13 +9,14 @@ import { ask } from './ask.svelte';
  *   enhance 는 이 함수를 await 하고, 폼 값(formData)은 확인창을 띄우기 전에 이미 담아 둔다.
  *
  * keep = true 면 성공해도 폼 입력값을 비우지 않는다 (대상·조치 선택이 튀지 않게).
+ * message 는 보낼 폼 값을 받는다 — 한 화면의 여러 폼이 같은 확인창을 쓸 때 (특별 업적 주기 · 거두기)
  */
 export function confirmed(
-	message: () => string,
+	message: (f: FormData) => string,
 	opts: { keep?: boolean; onSuccess?: () => void } = {}
 ): SubmitFunction {
-	return async ({ cancel }) => {
-		if (!(await ask(message()))) {
+	return async ({ cancel, formData }) => {
+		if (!(await ask(message(formData)))) {
 			cancel();
 			return;
 		}

@@ -66,7 +66,6 @@
 				<path d="M3.5 7l20.5 14L44.5 7" fill="none" stroke="var(--line)" stroke-width="1.5" />
 			</svg>
 			<p>새로 온 편지가 없어요</p>
-			<small class="muted">편지가 오면 여기에 봉인된 채로 도착해요</small>
 		</div>
 	{:else}
 		<MailStack items={unread} box="received" loading={!BOX.loaded.received} />
@@ -166,9 +165,6 @@
 		margin: 0;
 		font-size: 15px;
 		font-weight: 700;
-	}
-	.none small {
-		font-size: 12px;
 	}
 	@keyframes fade-up {
 		from {

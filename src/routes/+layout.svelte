@@ -15,6 +15,8 @@
 	import { listenServiceWorker } from '$lib/push';
 	import { notifyInApp } from '$lib/inapp.svelte';
 	import InAppBanner from '$lib/ui/InAppBanner.svelte';
+	import BadgeSheet from '$lib/ui/BadgeSheet.svelte';
+	import { closeBadge } from '$lib/badgeSheet.svelte';
 	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import { markNavigating, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { reducedMotion } from '$lib/motion';
@@ -41,7 +43,10 @@
 	beforeNavigate((nav) => {
 		if (nav.type !== 'popstate' && nav.type !== 'leave') markNavigating(true);
 	});
-	afterNavigate(() => markNavigating(false));
+	afterNavigate(() => {
+		markNavigating(false);
+		closeBadge(); // 남의 메달 자세히(BadgeSheet)는 화면을 옮기면 닫는다
+	});
 
 	// iOS WebKit 은 문서에 touchstart 리스너가 있어야 :active 를 그린다 — 빈 리스너 하나로 모든 누름 반응을 켠다 (UX G2)
 	$effect(() => {
@@ -195,7 +200,11 @@
 	{@render children()}
 {/if}
 
-{#if !isAdmin}<InAppBanner />{/if}
+{#if !isAdmin}
+	<InAppBanner />
+	<!-- 대화 상대 메달 자세히 (Phase 44) — 프로필 시트 위에도 뜨게 맨 위에 하나 -->
+	<BadgeSheet />
+{/if}
 
 <!-- 화면 아래 알림 — 한 장만, 새 알림이 오면 그 자리에서 바뀐다 (Phase 35) -->
 <div class="toasts" aria-live="polite">

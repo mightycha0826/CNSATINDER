@@ -104,7 +104,7 @@ try {
 	await bubble('안녕하세요!').click({ button: 'right' }); await page.waitForTimeout(200);
 	check('데스크톱: 오른쪽 클릭으로도 열림', (await page.locator('.rx-pick .rx').count()) === 6);
 	await page.keyboard.press('Escape');
-	await page.mouse.click(200, 400);
+	await page.mouse.click(200, 400); await page.waitForTimeout(300); // Esc 로 닫힌 고르기 줄이 사라지는 동안(0.12초)을 기다린다
 	check('한 번 톡은 아무 일도 없음', (await page.locator('.rx-pick').count()) === 0);
 	check('시스템 안내에는 반응 없음', (await page.locator('.sys + .reacts, .sys .reacts').count()) === 0);
 

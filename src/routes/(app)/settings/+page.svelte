@@ -16,6 +16,7 @@
 	import { THEME_COLOR, THEME_COLORS, fillOf, setThemeColor } from '$lib/themeColor.svelte';
 	import { THEME, THEME_MODES, setTheme } from '$lib/theme.svelte';
 	import { LETTER_FONTS, PREFS, TEXT_SIZES, canVibrate, resetPrefs, setPref } from '$lib/prefs.svelte';
+	import { replayTour } from '$lib/tour.svelte';
 	import {
 		PUSH_KINDS,
 		disablePush,
@@ -302,7 +303,6 @@
 			</label>
 		{/if}
 	</div>
-	<p class="g-foot">글자 크기는 대화 말풍선과 편지 글씨에 적용돼요. 움직임 줄이기를 켜면 화면 넘김 · 봉투 연출 같은 움직임이 멈춰요.</p>
 
 	<h2 class="g-head" id="theme-color">테마 색상</h2>
 	<div class="g-card">
@@ -370,8 +370,6 @@
 		<p class="g-foot">이 기기에서는 푸시 알림을 받을 수 없어요.</p>
 	{:else if pushPerm === 'denied'}
 		<p class="g-foot">휴대폰 설정에서 알림을 허용해 주세요.</p>
-	{:else}
-		<p class="g-foot">앱 안 알림은 앱을 보고 있을 때 화면 위에 잠깐 뜨는 알림이에요.{pushOn ? ' 운영진 공지는 끌 수 없어요.' : ''}</p>
 	{/if}
 
 	<h2 class="g-head">대화</h2>
@@ -392,7 +390,6 @@
 			<input class="switch" type="checkbox" role="switch" checked={PREFS.enterSend} onchange={(e) => setPref('enterSend', e.currentTarget.checked)} />
 		</label>
 	</div>
-	{#if !PREFS.enterSend}<p class="g-foot">Enter 키는 줄바꿈이 되고, 보내기 단추로 보내요.</p>{/if}
 
 	<h2 class="g-head">편지</h2>
 	<div class="g-card">
@@ -428,7 +425,6 @@
 			<input class="switch" type="checkbox" role="switch" checked={PREFS.envelope} onchange={(e) => setPref('envelope', e.currentTarget.checked)} />
 		</label>
 	</div>
-	<p class="g-foot">봉투 여는 장면을 끄면 편지를 열고 보낼 때 봉투 연출 없이 바로 편지지가 나와요.</p>
 
 	<h2 class="g-head">계정</h2>
 	<div class="g-card" id="password">
@@ -554,6 +550,11 @@
 		<button class="g-row" onclick={() => { reloading = true; void reloadApp(); }} disabled={reloading}>
 			<span>앱 새로고침</span>
 			<span class="g-val">{reloading ? '불러오는 중…' : '최신 버전으로'}</span>
+			<Chevron />
+		</button>
+		<!-- 처음 사용법 안내 (Phase 44) — 홈으로 가서 처음부터 -->
+		<button class="g-row" onclick={() => { replayTour(); void goto('/'); }}>
+			<span>사용법 다시 보기</span>
 			<Chevron />
 		</button>
 		<button class="g-row" onclick={() => (resetAsk = !resetAsk)} aria-expanded={resetAsk}>

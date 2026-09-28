@@ -5,7 +5,7 @@
 	 * 동작 줄이기면 app.css 가 애니메이션을 끈다.
 	 */
 	import { TIER_NAME, type Tier } from '$lib/achievements';
-	import { BADGE_ICONS, FALLBACK_ICON } from './badgeIcons';
+	import { BADGE_ICONS, FALLBACK_ICON, SPECIAL_BADGES } from './badgeIcons';
 
 	let {
 		code = '',
@@ -33,9 +33,12 @@
 	} = $props();
 
 	const path = $derived(BADGE_ICONS[code] ?? (icon ? null : FALLBACK_ICON));
+	// 운영진이 주는 특별 업적 (Phase 44) — 동 · 은 · 금이 아니라 "특별" (가진 사람만 무지갯빛)
+	const special = $derived(SPECIAL_BADGES.has(code));
+	const tierName = $derived(special && tier > 0 ? '특별' : TIER_NAME[tier]);
 </script>
 
-<span class="medal t{tier}" class:shine class:enter style:--s="{size}px" style:--d="{delay}ms" role="img" aria-label="{title} {TIER_NAME[tier]}">
+<span class="medal t{tier}" class:sp={special && tier > 0} class:shine class:enter style:--s="{size}px" style:--d="{delay}ms" role="img" aria-label="{title} {tierName}">
 	<span class="coin" aria-hidden="true">
 		<span class="rim">
 			<span class="disk">
@@ -51,7 +54,7 @@
 			</span>
 		</span>
 	</span>
-	{#if label && tier > 0}<span class="tier" aria-hidden="true">{TIER_NAME[tier]}</span>{/if}
+	{#if label && tier > 0}<span class="tier" aria-hidden="true">{tierName}</span>{/if}
 </span>
 
 <style>
@@ -140,6 +143,13 @@
 		--face: radial-gradient(circle at 35% 28%, #fff6d0, #f5c95a 55%, #c48a0c);
 		--ink: #7a5200;
 		--tier: #9b6c05;
+	}
+	/* 특별 업적 — 무지갯빛 테두리 · 진주빛 면 (운영진이 주는 것, Phase 44). 등급과 상관없이 이 모양 */
+	.medal.sp {
+		--metal: conic-gradient(from 200deg, #7b5cff, #3ec7ff, #7af0c4, #ffd36e, #ff7ab8, #7b5cff);
+		--face: radial-gradient(circle at 35% 28%, #ffffff, #eef0ff 50%, #c9c6f5);
+		--ink: #4b3aa8;
+		--tier: linear-gradient(90deg, #6a4df0, #d04fa8);
 	}
 	.t0 {
 		--metal: linear-gradient(var(--field), var(--field));

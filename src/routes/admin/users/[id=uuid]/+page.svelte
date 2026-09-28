@@ -6,11 +6,25 @@
 	import SanctionForm from '$lib/admin/SanctionForm.svelte';
 	import { confirmed } from '$lib/admin/confirm';
 	import Sid from '$lib/admin/Sid.svelte';
+	import { isRestricted } from '$lib/restriction';
 
 	let { data, form } = $props();
 	const d = $derived(data.d);
 	const p = $derived(d.profile);
 	const admin = $derived(data.staff?.role === 'admin');
+	// 지금 정지 중 (영구 · 기간 · 검토 대기) — 조치 칸 맨 위에 "정지 풀기" (Phase 44). 영구 정지는 관리자만 풀 수 있다
+	const restricted = $derived(isRestricted(p, Date.now()));
+	const canLift = $derived(restricted && (admin || p.status !== 'banned') && (admin || !d.staff_role));
+	const askLift = confirmed(() => '이 계정의 정지를 풀까요? 바로 다시 대화 · 편지를 할 수 있어요. 이 조치는 기록됩니다.');
+
+	// 특별 업적 (Phase 44) — 베타 테스터처럼 운영진이 주고 거두는 것
+	const askBadge = confirmed((f) => {
+		const on = f.get('on') === 'true';
+		const title = data.badges.find((b) => b.code === f.get('code'))?.title ?? '특별 업적';
+		return on
+			? `이 학생에게 "${title}" 업적을 줄까요? 학생 앱에 새 업적 축하가 뜨고 기록에 남습니다.`
+			: `"${title}" 업적을 거둘까요? 대표 업적에서도 빠집니다.`;
+	});
 
 	// 액션 결과는 다음 액션을 하면 사라지므로 따로 들고 있는다
 	let email = $state<string | null>(null);
@@ -212,14 +226,53 @@
 			</dl>
 		</section>
 
+		{#if restricted}
+			<!-- 지금 정지 중 — 한 번에 풀 수 있게 맨 위에 (Phase 44) -->
+			<section class="a-card lift">
+				<h2 class="a-h2">정지 중</h2>
+				<p class="a-hint" style="margin-top:0"><AccountStatus account={p} /></p>
+				{#if canLift}
+					<form method="POST" action="?/sanction" use:enhance={askLift}>
+						<input type="hidden" name="action" value="reinstate" />
+						<input class="field" name="note" maxlength="1000" placeholder="푸는 이유 (기록용, 선택)" />
+						<button class="btn">정지 풀기</button>
+					</form>
+				{:else}
+					<p class="a-hint">{p.status === 'banned' ? '영구 정지는 관리자만 풀 수 있습니다.' : '운영진 계정은 관리자만 조치할 수 있습니다.'}</p>
+				{/if}
+			</section>
+		{/if}
+
 		<section class="a-card">
 			<h2 class="a-h2">조치</h2>
 			{#if d.staff_role && !admin}
 				<p class="a-hint">운영진 계정은 관리자만 조치할 수 있습니다.</p>
 			{:else}
-				<SanctionForm isAdmin={admin} banned={p.status === 'banned'} />
+				<SanctionForm isAdmin={admin} banned={p.status === 'banned'} {restricted} />
 			{/if}
 		</section>
+
+		<!-- 특별 업적 (Phase 44) — 베타 테스터처럼 운영진이 주는 것. 주면 학생 앱에 새 업적 축하가 뜬다 -->
+		{#if data.badges.length}
+			<section class="a-card">
+				<h2 class="a-h2">특별 업적</h2>
+				<ul class="a-list badges">
+					{#each data.badges as b (b.code)}
+						<li>
+							<span>
+								<b>{b.title}</b>
+								<span class="muted"> · {b.has ? `받음 ${fmtTime(b.earned_at ?? '')}` : '없음'}</span>
+							</span>
+							<form method="POST" action="?/badge" use:enhance={askBadge}>
+								<input type="hidden" name="code" value={b.code} />
+								<input type="hidden" name="on" value={String(!b.has)} />
+								<button class={b.has ? 'btn-text' : 'btn sm-inline'}>{b.has ? '거두기' : '주기'}</button>
+							</form>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
 
 		<section class="a-card">
 			<h2 class="a-h2">개인 공지</h2>
@@ -299,5 +352,24 @@
 	.a-h1 .pill {
 		font-size: 12px;
 		vertical-align: 4px;
+	}
+	/* 정지 중 — 풀기 칸 (Phase 44) */
+	.lift {
+		border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+	}
+	.lift form {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.badges li {
+		align-items: center;
+		gap: 8px;
+	}
+	.sm-inline {
+		width: auto;
+		height: 34px;
+		padding: 0 16px;
+		font-size: 13px;
 	}
 </style>

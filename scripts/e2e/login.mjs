@@ -26,7 +26,7 @@ async function newPage(browser, log) {
 		if (u.pathname === '/auth/v1/otp') {
 			const body = req.postDataJSON();
 			log.otp.push(body);
-			if (!body.create_user && body.email.startsWith('nobody')) return json(422, { code: 422, error_code: 'otp_disabled', msg: 'Signups not allowed for otp' });
+			if (!body.create_user && body.email.startsWith('39997')) return json(422, { code: 422, error_code: 'otp_disabled', msg: 'Signups not allowed for otp' });
 			return json(200, {});
 		}
 		if (u.pathname === '/auth/v1/verify') { log.verify++; return json(200, session(req.postDataJSON().email)); }
@@ -59,7 +59,7 @@ try {
 		await page.getByRole('button', { name: '비밀번호를 잊었어요' }).click();
 		await page.screenshot({ path: `${SP}/login-2-reset.png` });
 		check('비밀번호 찾기 화면 제목', await page.getByRole('heading', { name: '비밀번호 찾기' }).isVisible());
-		await page.getByPlaceholder('학교 이메일 앞부분').fill('nobody');
+		await page.getByPlaceholder('학교 이메일 앞부분').fill('39997'); // 가입하지 않은 학번
 		await page.getByRole('button', { name: '인증 코드 받기' }).click();
 		await page.getByPlaceholder('인증 코드').waitFor();
 		check('★ 비밀번호 찾기는 새 계정을 만들지 않는다 (create_user=false)', log.otp.at(-1)?.create_user === false, JSON.stringify(log.otp.at(-1)));
@@ -88,6 +88,16 @@ try {
 		await page.goto(`${BASE}/login`);
 		await page.getByRole('button', { name: '처음이에요 · 가입하기' }).click();
 		check('가입 화면 제목', await page.getByRole('heading', { name: '처음 가입' }).isVisible());
+		// 학번만 (Phase 44) — 영어가 섞이면 선생님 안내, 숫자가 모자라면 형식 안내. 둘 다 코드를 보내지 않는다
+		const sendBtn = page.getByRole('button', { name: '인증 코드 받기' });
+		await page.getByPlaceholder('학교 이메일 앞부분').fill('kimteacher');
+		check('★ 영어 아이디 → "선생님이신가요?" 학생 전용 안내 · 코드 받기 꺼짐', (await page.getByRole('alert').innerText()).includes('학생들을 위한') && await sendBtn.isDisabled());
+		await page.screenshot({ path: `${SP}/login-teacher.png` });
+		await page.getByPlaceholder('학교 이메일 앞부분').fill('2010');
+		check('★ 학번이 모자라면 형식 안내 · 코드 받기 꺼짐', (await page.getByRole('status').innerText()).includes('학번 5자리') && await sendBtn.isDisabled());
+		await page.getByPlaceholder('학교 이메일 앞부분').fill('40101');
+		check('학년이 1~3 이 아니면 안 된다', await sendBtn.isDisabled());
+		check('여기까지 인증 코드는 한 번도 안 보냄', log.otp.length === 0);
 		await page.getByPlaceholder('학교 이메일 앞부분').fill('19998');
 		await page.getByRole('button', { name: '인증 코드 받기' }).click();
 		await page.getByPlaceholder('인증 코드').fill('12345678');

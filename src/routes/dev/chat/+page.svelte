@@ -17,7 +17,10 @@
 	import type { Reason, Score } from '$lib/manner';
 
 	const ROOM = 'preview-room';
-	const scenario = page.url.searchParams.get('s') ?? 'chat';
+	// 주소는 들어올 때 한 번만 읽는다 — page.url 은 창(고르기 · 시트)을 닫을 때마다(history.back) 새 객체가 되어,
+	// 아래 $effect 가 그것을 추적하면 방을 새로 만들어 보낸 메시지 · 공감이 사라진다
+	const q = page.url.searchParams;
+	const scenario = q.get('s') ?? 'chat';
 
 	const sec = (n: number) => new Date(Date.now() + n * 1000).toISOString();
 	const base: RoomSnap = {
@@ -133,7 +136,7 @@
 				if (scenario === 'chat') h.onTyping(2);
 			}, 50);
 			// &incoming : 1.2초 뒤 상대가 새 메시지를 보낸다 (화면 낭독기 안내 확인용)
-			if (page.url.searchParams.has('incoming'))
+			if (q.has('incoming'))
 				setTimeout(() => {
 					const row = m(2, '방금 온 메시지예요');
 					this.rows.push(row);
@@ -147,7 +150,7 @@
 			const row: MsgRow = { ...m(seat, body), client_msg_id: cid, reply_to: replyTo };
 			this.rows.push(row);
 			// &read : 보낸 메시지를 상대가 1초 뒤 읽음 ("읽음" 표시가 화면 안으로 따라오는지 확인용)
-			if (page.url.searchParams.has('read')) {
+			if (q.has('read')) {
 				setTimeout(() => {
 					this.snap = { ...this.snap, their_read_id: row.id };
 					this.h?.onRoom({
@@ -265,11 +268,11 @@
 		room = r;
 		void r.open().then(() => (loading = false));
 		// &toast : 알림이 2.4초 뒤 사라지는지 확인용
-		if (page.url.searchParams.has('toast')) toast('테스트 알림'); // toast() 는 내부에서 untrack
+		if (q.has('toast')) toast('테스트 알림'); // toast() 는 내부에서 untrack
 		return () => r.dispose();
 	});
 </script>
 
 {#if import.meta.env.DEV}
-	<ChatView {room} {loading} initialSheet={page.url.searchParams.get('sheet') as never} matched={page.url.searchParams.has('matched')} />
+	<ChatView {room} {loading} initialSheet={q.get('sheet') as never} matched={q.has('matched')} />
 {/if}

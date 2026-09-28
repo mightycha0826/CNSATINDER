@@ -3,7 +3,7 @@ import { env } from '$env/dynamic/private';
 import { callModels, type ModelSpec } from './aiFold';
 
 /**
- * Cloudflare Workers AI 호출 (검열봇 · AI 대화 상대 공용). 서버 전용.
+ * Cloudflare Workers AI 호출 (검열봇 · 대화 봇 공용). 서버 전용.
  *
  * 무료 몫: 하루 10,000 Neuron, UTC 00:00(한국 오전 9시)에 초기화, 무료 플랜에서 넘으면 오류.
  * 모델: Gemma 4 26B A4B — Cloudflare 가 Gemma 3 12B(2026-05 폐기 공지, 이 계정은 5018 "not allowed")의 대체로 권하는 모델.
@@ -13,7 +13,7 @@ import { callModels, type ModelSpec } from './aiFold';
  * Cloudflare 는 Workers AI 로 보낸 내용을 모델 학습·서비스 개선에 쓰지 않는다고 명시한다.
  *
  * 개발 서버에서 AI_FAKE=1 이면 진짜 모델 대신 정해진 답을 돌려준다 (화면 테스트용):
- *   검열 — 글에 "[flag:분류]" 가 있으면 그 분류로 걸림 / 대화 — "AI 답: <마지막 말>"
+ *   검열 — 글에 "[flag:분류]" 가 있으면 그 분류로 걸림 / 대화 봇 — "봇 답: <마지막 말>"
  */
 const MODELS: ModelSpec[] = [
 	{ id: '@cf/google/gemma-4-26b-a4b-it', extra: { chat_template_kwargs: { enable_thinking: false } } },

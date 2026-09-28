@@ -6,16 +6,20 @@
 	 * 제재 폼 — 신고 상세(채팅·편지)와 사용자 상세에서 같이 쓴다.
 	 * targets 가 2개 이상이면 대상 선택 라디오가 나온다 (피신고자/신고자).
 	 * 운영진은 영구 정지가 없고, 정지는 최대 7일.
+	 * 정지 풀기(제한 해제)는 대상이 지금 정지 중일 때만 — 기간 정지 · 검토 대기 정지는 운영진도, 영구 정지는 관리자만 (Phase 44)
 	 */
 	let {
 		isAdmin,
 		targets = [],
-		banned = false
+		banned = false,
+		restricted = false
 	}: {
 		isAdmin: boolean;
 		targets?: { v: string; label: string }[];
 		/** 대상이 이미 영구 정지 상태인지 — 운영진은 해제할 수 없다 */
 		banned?: boolean;
+		/** 대상이 지금 정지 중인지 (영구 · 기간 · 검토 대기) — 정지 풀기를 보여 준다. 대상이 여럿이면 모른다(항상 보인다) */
+		restricted?: boolean;
 	} = $props();
 
 	const MOD_MAX = 7;
@@ -24,8 +28,8 @@
 			{ v: 'warn', label: '경고' },
 			{ v: 'suspend', label: isAdmin ? '기간 정지' : `기간 정지 (최대 ${MOD_MAX}일)` },
 			{ v: 'ban', label: '영구 정지', admin: true },
-			{ v: 'reinstate', label: '제한 해제', admin: banned }
-		].filter((a) => isAdmin || !a.admin)
+			{ v: 'reinstate', label: '정지 풀기 (제한 해제)', admin: banned, hide: targets.length < 2 && !restricted && !banned }
+		].filter((a) => (isAdmin || !a.admin) && !a.hide)
 	);
 
 	// 처음 값만 쓰면 된다 (대상 목록은 화면이 떠 있는 동안 바뀌지 않음)

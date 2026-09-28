@@ -12,7 +12,9 @@
 	import { scrollBehavior } from '$lib/motion';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import PushAsk from '$lib/ui/PushAsk.svelte';
-	import AiChat from '$lib/ai/AiChat.svelte';
+	import BotChat from '$lib/bot/BotChat.svelte';
+	import { botApi, type BotStart } from '$lib/bot/api';
+	import { BOT_AFTER_MS, randomAlias } from '$lib/bot/persona';
 	import PinnedStories from '$lib/chat/PinnedStories.svelte';
 	import RoomList from '$lib/chat/RoomList.svelte';
 	import RoomMenu from '$lib/chat/RoomMenu.svelte';
@@ -23,7 +25,7 @@
 	 * 위에는 고정한 대화(PinnedStories), 그 아래 지금 열려 있는 대화들(RoomList) — 여러 대화를 동시에 이어갈 수 있다.
 	 * 목록이 비었으면 찾는 중 레이더 · 소개 카드, 맨 아래(엄지 자리)에 새 상대 찾기.
 	 * 대화 줄을 길게 누르면(마우스는 오른쪽 클릭) 신고 · 차단 · 나가기 (RoomMenu).
-	 * 떠 있는 창: AI 대화(찾는 동안) · 매너 평가(RateQueue) · 처음 한 번 알림 안내(PushAsk).
+	 * 떠 있는 창: 대화 봇(찾기 20초가 지나도 상대가 없으면) · 매너 평가(RateQueue) · 처음 한 번 알림 안내(PushAsk).
 	 */
 	let askPush = $state(false);
 
@@ -38,35 +40,53 @@
 			? new Date(S.profile.suspended_until).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })
 			: null
 	);
-	const minutes = $derived(S.settings?.room_minutes ?? 10);
 	const maxRooms = $derived(S.settings?.max_open_rooms ?? 5);
 
 	// 앱 틀이 켜 둔 대화 목록 — 다른 탭에 다녀와도 기억해 둔 목록을 바로 그리고 뒤에서 새로 읽는다
 	const inbox = INBOX;
 
 	const seeker = new Seeker(
-		// AI 대화 · 시트가 열려 있었으면 그 기록 자리를 대화방으로 바꿔 끼운다 (대화방에서 뒤로 → 홈, lib/overlay.svelte.ts)
+		// 대화 봇 · 시트가 열려 있었으면 그 기록 자리를 대화방으로 바꿔 끼운다 (대화방에서 뒤로 → 홈, lib/overlay.svelte.ts)
 		(roomId) => void navigateFromOverlay(`/chat/${roomId}`, { state: { matched: true } }),
 		(msg) => toast(msg)
 	);
 
-	// ── AI 대화 상대 — 찾는 동안만. 홈 위에 덮어 띄운다(홈이 살아 있어야 찾기가 계속된다) ──
-	// 얕은 기록 하나를 쌓아서 열고, 뒤로가기(또는 닫기)로 걷어서 닫는다
-	// 뒤로가기로 닫기는 AiChat 이 스스로 (backClose)
-	let aiOpen = $state(false);
-	function openAi() {
-		aiOpen = true;
-	}
-	function closeAi() {
-		aiOpen = false;
-	}
-	// 찾기가 끝나면(매칭 · 상한 · 서비스 닫힘) AI 창도 접는다 — 다음에 찾기를 시작할 때 저절로 튀어나오지 않게
+	// ── 대화 봇 (Phase 43) — 찾기를 시작하고 20초가 지나도 상대가 없으면 홈 위에 저절로 뜬다 ──
+	// 홈이 살아 있어야 찾기가 계속된다 — 사람을 찾으면 onMatched 가 봇 창의 기록 칸을 대화방으로 바꿔 끼운다.
+	// 한 번 찾는 동안 한 번만 (닫으면 그 찾기에서는 다시 오지 않는다). 한도가 없으면(ai_chat_start) 조용히 계속 찾는다.
+	// 앱을 내려 둔 동안에는 부르지 않는다 — 다시 보이면 그때.
+	let bot = $state<{ chat: BotStart; alias: string } | null>(null);
+	let botFor = 0; // 봇을 이미 부른 찾기 (seeker.since)
 	$effect(() => {
-		if (!seeker.seeking) untrack(() => (aiOpen = false));
+		if (!seeker.seeking || !S.settings?.ai_chat) return;
+		const since = seeker.since;
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		const arm = () => (timer = setTimeout(summon, Math.max(0, since + BOT_AFTER_MS - Date.now())));
+		const onVis = () => {
+			if (document.visibilityState === 'visible' && !timer) arm();
+		};
+		async function summon() {
+			timer = null;
+			if (document.visibilityState !== 'visible' || botFor === since) return;
+			botFor = since;
+			const r = await botApi.start();
+			if (r.status !== 'ok' || !seeker.seeking || seeker.since !== since) return;
+			bot = { chat: r, alias: randomAlias(S.profile?.nickname) };
+		}
+		arm();
+		document.addEventListener('visibilitychange', onVis);
+		return () => {
+			if (timer) clearTimeout(timer);
+			document.removeEventListener('visibilitychange', onVis);
+		};
+	});
+	// 찾기가 끝나면(매칭 · 상한 · 서비스 닫힘) 봇 창도 접는다
+	$effect(() => {
+		if (!seeker.seeking) untrack(() => (bot = null));
 	});
 	/** 찾기를 새로 시작 */
 	function startSeek() {
-		aiOpen = false;
+		bot = null;
 		seeker.start();
 	}
 	// 고정한 대화(Phase 29)는 동시 대화 개수에 세지 않는다 — 서버(private.open_rooms)와 같은 규칙
@@ -77,7 +97,7 @@
 	const full = $derived(openCount >= maxRooms);
 	let menuFor = $state<InboxRoom | null>(null);
 
-	// ★ 본문 전체를 untrack — 화면에 들어올 때 한 번만 돈다. 예전엔 page.url(AI 대화를 뒤로 닫으면 새 객체가 된다)과
+	// ★ 본문 전체를 untrack — 화면에 들어올 때 한 번만 돈다. 예전엔 page.url(겹친 창을 뒤로 닫으면 새 객체가 된다)과
 	//   seeker.seeking(start 가 읽고 쓴다)을 추적해서 다시 돌았고, 그때 cleanup 이 찾기를 말없이 멈췄다 (Phase 39)
 	$effect(() => {
 		untrack(() => {
@@ -142,12 +162,16 @@
 			<span class="me-ring"><Avatar name={S.profile?.nickname ?? '나'} size={96} /></span>
 		</div>
 	{:else if inbox.loaded}
+		<!-- 빈 홈 (Phase 44) — 숫자(10:00) 대신 말을 건네는 두 말풍선. 시간 규칙은 처음 사용법 안내(튜토리얼)가 알려 준다 -->
 		<div class="hero">
 			<div class="orb" aria-hidden="true"></div>
 			<div class="hero-card">
-				<div class="big num">{minutes}:00</div>
-				<h1>모르는 사람과 {minutes}분</h1>
-				<p>서로 이어져요</p>
+				<div class="talk" aria-hidden="true">
+					<span class="say them">안녕?</span>
+					<span class="say me">반가워!</span>
+				</div>
+				<h1>오늘은 누구와 이야기할까요</h1>
+				<p>이름도 학번도 묻지 않는 익명 대화</p>
 			</div>
 		</div>
 	{/if}
@@ -173,11 +197,6 @@
 				</div>
 				<button class="stop" onclick={() => seeker.cancel()}>그만</button>
 			</div>
-			{#if S.settings?.ai_chat}
-				<button class="ai-btn" onclick={openAi}>
-					<span class="ai-badge" aria-hidden="true">AI</span> 기다리는 동안 AI 와 얘기하기
-				</button>
-			{/if}
 		{:else if profileMissing}
 			<button class="btn" disabled>계정 정보를 불러오지 못함 · 잠시 후 다시 열어 주세요</button>
 		{:else if closed}
@@ -194,8 +213,8 @@
 	</div>
 </div>
 
-{#if aiOpen && seeker.seeking}
-	<AiChat onclose={closeAi} seeking={elapsed} />
+{#if bot && seeker.seeking}
+	<BotChat chat={bot.chat} alias={bot.alias} seeking={elapsed} onclose={() => (bot = null)} />
 {/if}
 
 {#if menuFor}
@@ -211,8 +230,8 @@
 	/>
 {/if}
 
-<!-- 방금 대화한 사람 평가 — 알림 안내 · AI 대화 · 업적 축하가 떠 있지 않을 때 (RateQueue) -->
-<RateQueue paused={askPush || aiOpen || UI.celebrating} />
+<!-- 방금 대화한 사람 평가 — 알림 안내 · 대화 봇 · 업적 축하가 떠 있지 않을 때 (RateQueue) -->
+<RateQueue paused={askPush || !!bot || UI.celebrating || UI.touring} />
 
 <!-- 처음 한 번 — 알림 권한 안내 (PushAsk) -->
 <PushAsk bind:open={askPush} />
@@ -241,12 +260,10 @@
 	}
 
 	/* 누름 반응 (UX G2) */
-	.nudge:active,
-	.ai-btn:active {
+	.nudge:active {
 		transform: scale(0.96);
 	}
-	.nudge,
-	.ai-btn {
+	.nudge {
 		transition: transform 0.15s;
 	}
 
@@ -368,30 +385,6 @@
 		font-size: 14px;
 		font-weight: 700;
 	}
-	.ai-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 8px;
-		width: 100%;
-		min-height: 48px;
-		margin-top: 8px;
-		border-radius: 999px;
-		background: var(--field);
-		font-size: 14px;
-		font-weight: 600;
-	}
-	.ai-badge {
-		display: grid;
-		place-items: center;
-		width: 24px;
-		height: 24px;
-		border-radius: 50%;
-		background: var(--brand);
-		color: #fff;
-		font-size: 10px;
-		font-weight: 800;
-	}
 	.dots {
 		display: flex;
 		gap: 5px;
@@ -472,18 +465,43 @@
 		font-size: 13px;
 		color: var(--text-2);
 	}
-	.big {
+	/* 두 말풍선 — 상대(유리) · 나(브랜드 그라디언트)가 번갈아 살짝 떠오른다 */
+	.talk {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		width: 190px;
+		margin-bottom: 6px;
+	}
+	.say {
+		max-width: 80%;
+		padding: 9px 16px;
+		border-radius: 22px;
 		font-family: var(--display);
-		font-size: 64px;
+		font-size: 24px;
 		font-weight: 400;
-		letter-spacing: -0.01em;
-		line-height: 1;
-		/* 이 앱의 정체성인 숫자에 그라디언트 */
-		background: var(--brand);
-		-webkit-background-clip: text;
-		background-clip: text;
-		color: transparent;
-		padding: 0 2px;
+		line-height: 1.1;
+		animation: float 4s ease-in-out infinite;
+	}
+	.say.them {
+		align-self: flex-start;
+		border-bottom-left-radius: 6px;
+		background: var(--surface);
+		box-shadow: var(--shadow-1);
+		color: var(--text);
+	}
+	.say.me {
+		align-self: flex-end;
+		border-bottom-right-radius: 6px;
+		background: var(--bubble-fill);
+		box-shadow: var(--glow);
+		color: var(--on-accent);
+		animation-delay: -2s;
+	}
+	@keyframes float {
+		50% {
+			transform: translateY(-4px);
+		}
 	}
 	h1 {
 		margin: 6px 0 0;

@@ -288,7 +288,7 @@ export const ACTION_LABEL: Record<string, string> = {
 	sanction_warn: '경고',
 	sanction_suspend: '기간 정지',
 	sanction_ban: '영구 정지',
-	sanction_reinstate: '제한 해제',
+	sanction_reinstate: '정지 풀기',
 	report_open: '신고 다시 열기',
 	report_reviewing: '검토 시작',
 	report_actioned: '조치 완료',
@@ -308,8 +308,13 @@ export const ACTION_LABEL: Record<string, string> = {
 	remove_dm: '이름 편지 내림',
 	personal_notice: '개인 공지 보냄',
 	remove_personal_notice: '개인 공지 거둠',
-	answer_inquiry: '문의 답변'
+	answer_inquiry: '문의 답변',
+	grant_badge: '특별 업적 줌',
+	revoke_badge: '특별 업적 거둠'
 };
+
+/** 한 학생의 특별 업적 (admin_user_badges, Phase 44) — 운영진이 주고 거두는 것만 */
+export type UserBadgeRow = { code: string; title: string; description: string; has: boolean; earned_at: string | null };
 
 /** 학생 문의 (admin_inquiries, Phase 37) — 답변하면 그 학생에게 개인 공지로 간다 */
 export type InquiryRow = {

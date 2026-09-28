@@ -47,7 +47,6 @@
 
 <div class="rate">
 	<p class="title">{alias}님과의 대화, 어땠어요?</p>
-	<p class="sub">익명으로 전해지고, 다음 날 새벽 매너 온도에 반영돼요</p>
 	<div class="faces" role="radiogroup" aria-label="평가">
 		{#each SCORES as s (s.k)}
 			<button class="face" class:on={score === s.k} role="radio" aria-checked={score === s.k} onclick={() => pickScore(s.k)}>
@@ -84,11 +83,6 @@
 		font-size: 16px;
 		font-weight: 700;
 		letter-spacing: -0.01em;
-	}
-	.sub {
-		margin: -4px 0 4px;
-		font-size: 12px;
-		color: var(--text-2);
 	}
 	.faces {
 		display: flex;

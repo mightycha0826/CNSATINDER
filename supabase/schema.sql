@@ -25,7 +25,7 @@ create table if not exists public.app_settings (
   id                    boolean  primary key default true check (id),
   is_open               boolean  not null default true,      -- 킬 스위치
   notice                text     not null default '',
-  room_minutes          int      not null default 10 check (room_minutes between 1 and 60),
+  room_minutes          int      not null default 5 check (room_minutes between 1 and 60),   -- 첫 대화 5분 (Phase 44), 연장부터 extend_minutes
   extend_minutes        int      not null default 10 check (extend_minutes between 1 and 60),
   vote_window_sec       int      not null default 90,        -- 만료 N초 전부터 연장 투표 가능
   join_grace_sec        int      not null default 60,        -- 양쪽 입장 대기 한도
@@ -1323,7 +1323,10 @@ begin
     ai_chat_per_user      = coalesce((p_patch->>'ai_chat_per_user')::int, ai_chat_per_user),
     ai_chat_daily_cap     = coalesce((p_patch->>'ai_chat_daily_cap')::int, ai_chat_daily_cap),
     ai_chat_minutes       = coalesce((p_patch->>'ai_chat_minutes')::int, ai_chat_minutes),
-    ai_chat_max_turns     = coalesce((p_patch->>'ai_chat_max_turns')::int, ai_chat_max_turns)
+    ai_chat_max_turns     = coalesce((p_patch->>'ai_chat_max_turns')::int, ai_chat_max_turns),
+    -- Phase 44 — 익명편지 잠금 (가입한 학생이 letters_gate_min 명이 될 때까지)
+    letters_gate          = coalesce((p_patch->>'letters_gate')::boolean, letters_gate),
+    letters_gate_min      = coalesce((p_patch->>'letters_gate_min')::int, letters_gate_min)
   where id;
   insert into private.audit_log (staff_id, action, detail) values (p_staff, 'update_settings', p_patch);
   return public.admin_get_settings();
@@ -4036,6 +4039,8 @@ create or replace function private.dm_can_write(p_user uuid)
 returns text language plpgsql security definer set search_path = public, private stable as $fn$
 declare p public.profiles%rowtype;
 begin
+  -- 익명편지 잠금 (Phase 44) — 가입한 학생이 적을 때는 누가 보냈는지 쉽게 짐작되므로 아무도 쓰지 못한다
+  if private.letters_locked() then return 'letters_locked'; end if;
   select * into p from public.profiles where id = p_user;
   if not found or not p.onboarded or p.status <> 'active' or coalesce(p.suspended_until > now(), false) then
     return 'restricted';
@@ -4062,7 +4067,7 @@ returns jsonb language plpgsql security definer set search_path = public, privat
 declare me uuid := auth.uid(); q text := btrim(coalesce(p_q, ''));
 begin
   if me is null then raise exception 'unauthenticated'; end if;
-  if char_length(q) < 2 then return '[]'::jsonb; end if;
+  if char_length(q) < 2 or private.letters_locked() then return '[]'::jsonb; end if;   -- 잠겨 있으면 찾기도 없다 (Phase 44)
   return coalesce((
     select jsonb_agg(jsonb_build_object('id', x.id, 'name', x.name, 'grade', x.grade, 'no', x.no, 'checked', x.source = 'roster')
                      order by x.exact desc, x.grade nulls last, x.no nulls last, x.name)
@@ -5381,6 +5386,7 @@ begin
     'items', coalesce((select jsonb_agg(jsonb_build_object(
                'code', d.code, 'title', d.title, 'description', d.description, 'icon', d.icon,
                'category', d.category, 'unit', d.unit, 'lower_better', d.lower_better,
+               'granted', d.granted,   -- 운영진이 주는 업적 (Phase 44, 베타 테스터) — 등급 기준이 없다
                'tiers', jsonb_build_array(d.bronze, d.silver, d.gold),
                'tier', coalesce(a.tier, 0), 'earned_at', a.earned_at,
                'value', case d.stat when 'temp' then p.manner_temp when 'pioneer' then v_rank
@@ -6034,3 +6040,139 @@ begin
   end if;
 end
 $do$;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 44 — 첫 대화 5분 · 특별 업적(베타 테스터) · 익명편지 잠금
+--   · 첫 대화는 5분, 연장할 때마다 extend_minutes(10분) — 운영 설정에서 바꿀 수 있다
+--   · 운영진이 주는 업적(granted) — 기준(동 · 은 · 금) 없이 운영자 화면에서 주고 거둔다. 첫 번째는 베타 테스터.
+--     화면은 메달을 누르면 어떻게 얻는지 보여 준다 — 남의 메달도 설명은 카탈로그(achievement_catalog)에서
+--   · 익명편지 잠금 — 가입한 학생이 적을 때는 누가 보냈는지 쉽게 짐작된다. letters_gate 를 켜 두면
+--     가입(학교 인증 + 시작하기)한 학생이 letters_gate_min 명이 될 때까지 쓰기 · 찾기를 막는다 (dm_can_write · dm_search).
+--     가입 인원은 한 줄 표(signup_stats)에 두고 앱이 Realtime 으로 지켜본다 (주기 요청 없이 실시간)
+-- ════════════════════════════════════════════════════════════════════
+alter table public.app_settings alter column room_minutes set default 5;
+update public.app_settings set room_minutes = 5 where id and room_minutes = 10;
+
+-- ── 운영진이 주는 업적 ──
+alter table private.achievement_defs add column if not exists granted boolean not null default false;
+insert into private.achievement_defs (code, title, description, icon, category, stat, unit, bronze, silver, gold, lower_better, sort, granted) values
+  ('beta', '베타 테스터', '출시 전 베타 테스트에 함께한 사람', '🧪', 'special', 'beta', '', 1, 1, 1, false, 39, true)
+on conflict (code) do update
+  set title = excluded.title, description = excluded.description, icon = excluded.icon, category = excluded.category,
+      stat = excluded.stat, unit = excluded.unit, bronze = excluded.bronze, silver = excluded.silver, gold = excluded.gold,
+      lower_better = excluded.lower_better, sort = excluded.sort, granted = excluded.granted;
+
+-- 업적 카탈로그 — 이름 · 설명 · 등급 기준 (누구의 것도 아닌 공개 정보). 남의 메달을 눌렀을 때 설명을 그린다
+create or replace function public.achievement_catalog()
+returns jsonb language sql security definer set search_path = public, private stable as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'code', code, 'title', title, 'description', description, 'icon', icon, 'category', category,
+           'unit', unit, 'lower_better', lower_better, 'granted', granted,
+           'tiers', jsonb_build_array(bronze, silver, gold)) order by sort), '[]'::jsonb)
+    from private.achievement_defs;
+$fn$;
+revoke all on function public.achievement_catalog() from public, anon;
+grant execute on function public.achievement_catalog() to authenticated;
+
+-- 운영자: 한 학생이 가진 특별 업적 (주고 거둘 수 있는 것만)
+create or replace function public.admin_user_badges(p_staff uuid, p_user uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  perform private.require_staff(p_staff);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('code', d.code, 'title', d.title, 'description', d.description,
+                                        'has', a.user_id is not null, 'earned_at', a.earned_at) order by d.sort)
+      from private.achievement_defs d
+      left join private.user_achievements a on a.code = d.code and a.user_id = p_user
+     where d.granted), '[]'::jsonb);
+end
+$fn$;
+
+-- 운영자: 특별 업적 주기(p_on) · 거두기. 운영진 누구나, 기록에 남는다. 주면 학생 앱에 새 업적 축하가 뜬다
+create or replace function public.admin_set_badge(p_staff uuid, p_user uuid, p_code text, p_on boolean)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+begin
+  perform private.require_staff(p_staff);
+  if not exists (select 1 from public.profiles where id = p_user) then raise exception 'user_not_found'; end if;
+  if not exists (select 1 from private.achievement_defs where code = p_code and granted) then raise exception 'not_grantable'; end if;
+  if p_on then
+    insert into private.user_achievements (user_id, code, tier) values (p_user, p_code, 3)
+    on conflict (user_id, code) do nothing;
+  else
+    delete from private.user_achievements where user_id = p_user and code = p_code;
+    update public.profiles set featured_badges = array_remove(featured_badges, p_code)
+     where id = p_user and p_code = any(featured_badges);
+  end if;
+  insert into private.audit_log (staff_id, action, target_user, detail)
+  values (p_staff, case when p_on then 'grant_badge' else 'revoke_badge' end, p_user, jsonb_build_object('code', p_code));
+  return public.admin_user_badges(p_staff, p_user);
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['admin_user_badges(uuid, uuid)', 'admin_set_badge(uuid, uuid, text, boolean)']
+  loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+    execute format('grant execute on function public.%s to service_role', f);
+  end loop;
+end
+$do$;
+
+-- ── 익명편지 잠금 ──
+alter table public.app_settings add column if not exists letters_gate     boolean not null default true;
+alter table public.app_settings add column if not exists letters_gate_min int     not null default 100;
+do $do$
+begin
+  alter table public.app_settings add constraint app_settings_letters_gate_min check (letters_gate_min between 1 and 10000);
+exception when duplicate_object then null;
+end
+$do$;
+
+-- 가입한 학생 수 (학교 인증 + 시작하기까지) — 한 줄. 누구나(로그인한 학생) 읽는다: 숫자 하나뿐이다
+create table if not exists public.signup_stats (
+  id         boolean primary key default true check (id),
+  students   int not null default 0,
+  updated_at timestamptz not null default now()
+);
+insert into public.signup_stats (id) values (true) on conflict (id) do nothing;
+alter table public.signup_stats enable row level security;
+drop policy if exists "signup_stats: read" on public.signup_stats;
+create policy "signup_stats: read" on public.signup_stats for select to authenticated using (true);
+revoke insert, update, delete on public.signup_stats from anon, authenticated;
+
+create or replace function private.refresh_signup_stats()
+returns trigger language plpgsql security definer set search_path = public as $fn$
+declare n int;
+begin
+  select count(*) into n from public.profiles where verified and onboarded;
+  -- 바뀌었을 때만 쓴다 — 쓸 때마다 Realtime 으로 지켜보는 앱들에 신호가 간다
+  update public.signup_stats set students = n, updated_at = now() where id and students is distinct from n;
+  return null;
+end
+$fn$;
+revoke all on function private.refresh_signup_stats() from public, anon, authenticated;
+drop trigger if exists profiles_signup_stats on public.profiles;
+create trigger profiles_signup_stats after insert or delete or update of verified, onboarded on public.profiles
+  for each statement execute function private.refresh_signup_stats();
+update public.signup_stats set students = (select count(*) from public.profiles where verified and onboarded), updated_at = now() where id;
+
+do $do$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    begin alter publication supabase_realtime add table public.signup_stats;
+    exception when duplicate_object then null; end;
+  end if;
+end
+$do$;
+
+-- 지금 잠겨 있나 — 잠금을 켰고 가입한 학생이 기준보다 적으면
+create or replace function private.letters_locked()
+returns boolean language sql security definer set search_path = public stable as $fn$
+  select coalesce((select s.letters_gate and st.students < s.letters_gate_min
+                     from public.app_settings s cross join public.signup_stats st
+                    where s.id and st.id), false);
+$fn$;
+revoke all on function private.letters_locked() from public, anon, authenticated;

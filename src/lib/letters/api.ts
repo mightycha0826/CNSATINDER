@@ -65,7 +65,7 @@ export type SendResult =
 	| { status: 'ok'; thread_id: number; msg_id: number }
 	| { status: 'rate_limited'; retry_after_ms: number }
 	| { status: 'wait_reply'; thread_id?: number }
-	| { status: 'not_available' | 'restricted' | 'no_name' | 'bad_text' | 'bad_nick' | 'closed' | 'not_found' };
+	| { status: 'not_available' | 'restricted' | 'no_name' | 'bad_text' | 'bad_nick' | 'closed' | 'not_found' | 'letters_locked' };
 
 // ── 이름표 ──
 export const genderWord = (g: Gender | null | undefined) => (g === 'm' ? '남학생' : g === 'f' ? '여학생' : '학생');
@@ -173,6 +173,8 @@ export function sendError(r: SendResult): string | null {
 			return '이 서명은 쓸 수 없어요 · 12자 안에서, 연락처나 운영자처럼 보이는 이름은 빼 주세요';
 		case 'closed':
 			return '끝난 편지예요';
+		case 'letters_locked':
+			return '익명편지는 가입한 학생이 모이면 열려요';
 		default:
 			return '편지를 찾을 수 없어요';
 	}

@@ -18,6 +18,8 @@ try {
 	/** 요소 위를 왼쪽 끝→오른쪽 끝으로 드래그한 뒤 선택된 글자 */
 	const drag = async (loc) => {
 		await page.evaluate(() => getSelection()?.removeAllRanges());
+		// 목록은 맨 아래로 스크롤된 채 열려서 위쪽(소개 카드 · 첫 안내)은 가려져 있다 — 보이게 한 뒤에 긋는다
+		await loc.first().scrollIntoViewIfNeeded();
 		const b = await loc.first().boundingBox();
 		const y = b.y + Math.min(b.height / 2, 10); // 여러 줄이면 첫 줄 위로 (줄 사이 틈을 긋지 않게)
 		await page.mouse.move(b.x + 2, y);
@@ -33,6 +35,9 @@ try {
 	await page.locator('.bubble', { hasText: '안녕하세요!' }).waitFor(); await page.waitForTimeout(500);
 	check('안내 문구(10분 설명) 드래그 → 선택 안 됨', (await drag(page.locator('.list .sys'))) === '');
 	check('상단 이름 드래그 → 선택 안 됨', (await drag(page.locator('.topbar .who'))) === '');
+	// 이름은 프로필 버튼이라 그 위에서 누르고 떼면 프로필 시트가 열린다 — 닫아야 뒤 화면(시트가 inert 로 막음)을 다시 만진다
+	await page.keyboard.press('Escape');
+	await page.locator('.sheet').waitFor({ state: 'detached' });
 	check('소개 카드 드래그 → 선택 안 됨', (await drag(page.locator('.intro h2'))) === '');
 	check('입력칸 안내·보내기 버튼 → 선택 안 됨', (await us(page.locator('button.send'))) === 'none');
 	const got = await drag(page.locator('.bubble', { hasText: '혹시 요즘 뭐 듣는 노래' }));

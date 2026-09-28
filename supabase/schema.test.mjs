@@ -132,9 +132,12 @@ check(
 	(await one('select max_rounds from public.app_settings')).max_rounds === 0
 );
 check(
-	'기본 대화 시간 10분 / 연장 10분',
-	(await one('select room_minutes, extend_minutes from public.app_settings')).room_minutes === 10
+	'기본 대화 시간 5분 / 연장 10분 (Phase 44)',
+	JSON.stringify(await one('select room_minutes, extend_minutes from public.app_settings')) === '{"room_minutes":5,"extend_minutes":10}'
 );
+check('★ 익명편지 잠금은 처음부터 켜져 있다 (가입 100명까지)', JSON.stringify(await one('select letters_gate, letters_gate_min from public.app_settings')) === '{"letters_gate":true,"letters_gate_min":100}');
+// 편지 테스트들은 편지가 열려 있다고 본다 — 잠금은 맨 끝 [84] 에서 따로 확인한다
+await db.exec('update public.app_settings set letters_gate = false');
 
 console.log('\n[3] 학교 이메일 도메인 강제');
 const uidA = await signUp('hong@cnsa.hs.kr');
@@ -648,7 +651,7 @@ console.log('\n[20] 입장 확인 (pending → active)');
 	const row = await roomRow(r);
 	const mins = (new Date(row.expires_at) - new Date(row.armed_at)) / 60000;
 	check('양쪽 입장 → active', b.status === 'active');
-	check('★ 10분 타이머는 둘 다 들어온 순간부터 시작된다', Math.abs(mins - 10) < 0.01, `${mins}분`);
+	check('★ 첫 대화 5분 타이머는 둘 다 들어온 순간부터 시작된다 (Phase 44)', Math.abs(mins - 5) < 0.01, `${mins}분`);
 	check(
 		'시작 안내 시스템 메시지',
 		(await one(`select count(*)::int n from public.messages where room_id=$1 and sender_seat=0`, [r])).n === 1
@@ -2868,7 +2871,7 @@ console.log('\n[78] 업적 — 카운터 · 동/은/금 · 대표 업적 (Phase 
 	const openRoom = async (x, y) => (await one(`select private.dev_open_room($1, $2, 10) as id`, [x.email, y.email])).id;
 	const say = async (room, seat) => (await one(`insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, $2, '안녕', gen_random_uuid()) returning id`, [room, seat])).id;
 
-	check('카탈로그 24종', Number((await one('select count(*) n from private.achievement_defs')).n) === 24);
+	check('카탈로그 25종 (Phase 44 베타 테스터 포함)', Number((await one('select count(*) n from private.achievement_defs')).n) === 25);
 
 	console.log('  [대화]');
 	let room = await openRoom(A, B);
@@ -2953,7 +2956,7 @@ console.log('\n[78] 업적 — 카운터 · 동/은/금 · 대표 업적 (Phase 
 	console.log('  [보이는 곳]');
 	const mine = await rpcAs(A.id, 'my_achievements');
 	const ext = mine.items.find((x) => x.code === 'extend');
-	check('★ 내 업적: 24종 · 진행도 · 등급 · 새로 딴 것', mine.items.length === 24 && ext.tier === 2 && ext.value === 0 && JSON.stringify(ext.tiers) === '[5,20,50]' && ext.new === true, JSON.stringify(ext));
+	check('★ 내 업적: 25종 · 진행도 · 등급 · 새로 딴 것', mine.items.length === 25 && ext.tier === 2 && ext.value === 0 && JSON.stringify(ext.tiers) === '[5,20,50]' && ext.new === true, JSON.stringify(ext));
 	check('개척자는 가입 순서 (작을수록 좋음)', mine.items.find((x) => x.code === 'pioneer').lower_better === true);
 	check('대표 업적은 자동으로 높은 등급부터 3개', mine.featured.length === 3 && mine.featured.every((x, i, a) => i === 0 || a[i - 1].tier >= x.tier), JSON.stringify(mine.featured));
 	check('새 업적 목록', (await rpcAs(A.id, 'new_achievements')).length > 0);
@@ -3236,6 +3239,59 @@ console.log('\n[83] 알림 종류별로 끄기 (Phase 43)');
 	check('★ 발송 판단은 기기마다 끈 종류를 같이 돌려준다 (서버가 거른다)', p.subs?.length === 1 && JSON.stringify(p.subs[0].mute) === '["chat","letter"]', JSON.stringify(p));
 	await rpcAs(t, 'set_push_mute', EP, null);
 	check('비우면 다시 모두 받는다', (await muteOf()).length === 0);
+}
+
+console.log('\n[84] 특별 업적(베타 테스터) · 업적 카탈로그 · 익명편지 잠금 (Phase 44)');
+{
+	const X = await person('m', 'f'), Y = await person('f', 'm');
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+
+	// 카탈로그 — 누구나(로그인한 학생) 설명 · 기준을 본다
+	const cat = await rpcAs(X, 'achievement_catalog');
+	const beta = cat.find((d) => d.code === 'beta');
+	check('★ 카탈로그: 25종 · 설명 · 등급 기준 · 베타 테스터는 운영진이 주는 업적', cat.length === 25 && beta?.granted === true && beta.title === '베타 테스터'
+		&& JSON.stringify(cat.find((d) => d.code === 'extend').tiers) === '[5,20,50]' && cat.find((d) => d.code === 'extend').granted === false, JSON.stringify(beta));
+	await expectError('비로그인은 카탈로그를 못 본다', () => rowsAs(null, 'select public.achievement_catalog()'), 'permission denied');
+	check('내 업적에도 granted 가 온다 (아직 없음)', (await rpcAs(X, 'my_achievements')).items.find((a) => a.code === 'beta')?.granted === true
+		&& (await rpcAs(X, 'my_achievements')).items.find((a) => a.code === 'beta')?.tier === 0);
+
+	// 주기 · 거두기 — 운영진 누구나, 기록에 남는다
+	await expectError('★ 학생은 업적을 줄 수 없다', () => rowsAs(X, `select public.admin_set_badge($1, $1, 'beta', true)`, [X]), 'permission denied');
+	await expectError('운영진 명단에 없으면 거절', () => svc('admin_set_badge', X, Y, 'beta', true), 'not_staff');
+	await expectError('★ 기준으로 따는 업적은 줄 수 없다', () => svc('admin_set_badge', mod, X, 'talk', true), 'not_grantable');
+	const got = await svc('admin_set_badge', mod, X, 'beta', true);
+	check('★ 운영진이 베타 테스터를 준다 → 가진 것으로', got.find((b) => b.code === 'beta')?.has === true);
+	check('★ 새 업적 축하에 뜬다', (await rpcAs(X, 'new_achievements')).some((b) => b.code === 'beta'));
+	await svc('admin_set_badge', adm, X, 'beta', true);
+	check('두 번 줘도 하나', Number((await one(`select count(*) n from private.user_achievements where user_id = $1 and code = 'beta'`, [X])).n) === 1);
+	check('대표 업적(자동)에 들어간다', (await rpcAs(X, 'set_featured_badges', ['beta'])).status === 'ok'
+		&& (await one('select featured_badges from public.profiles where id = $1', [X])).featured_badges.includes('beta'));
+	await svc('admin_set_badge', mod, X, 'beta', false);
+	check('★ 거두면 없어지고 대표 업적에서도 빠진다', !(await svc('admin_user_badges', adm, X)).find((b) => b.code === 'beta').has
+		&& !(await one('select featured_badges from public.profiles where id = $1', [X])).featured_badges.includes('beta'));
+	check('주고 거둔 것은 기록에 남는다', Number((await one(`select count(*) n from private.audit_log where action in ('grant_badge', 'revoke_badge') and target_user = $1`, [X])).n) === 3);
+
+	// 익명편지 잠금
+	const students = async () => (await one('select students from public.signup_stats')).students;
+	const real = Number((await one('select count(*) n from public.profiles where verified and onboarded')).n);
+	check('★ 가입 인원 = 학교 인증 + 시작하기까지 마친 학생 수', (await students()) === real, `${await students()} vs ${real}`);
+	const before = await students();
+	const Z = await person('f', 'm');
+	check('★ 새로 가입하면 바로 늘어난다 (Realtime 으로 앱이 본다)', (await students()) === before + 1);
+	check('학생은 가입 인원을 읽을 수 있다 (숫자 하나)', (await rowsAs(Y, 'select students from public.signup_stats')).length === 1);
+	await expectError('학생은 가입 인원을 못 바꾼다', () => rowsAs(Y, 'update public.signup_stats set students = 999'), 'permission denied');
+
+	await svc('admin_update_settings', JSON.stringify({ letters_gate: true, letters_gate_min: before + 100 }), adm);
+	check('★ 잠겨 있으면 편지를 못 쓴다', (await rpcAs(Y, 'dm_send', Z, '안녕', null, null)).status === 'letters_locked');
+	check('★ 잠겨 있으면 찾기도 비어 있다', (await rpcAs(Y, 'dm_search', '가나')).length === 0);
+	await svc('admin_update_settings', JSON.stringify({ letters_gate_min: 1 }), adm);
+	check('★ 가입 인원이 기준을 넘으면 저절로 열린다', (await rpcAs(Y, 'dm_send', Z, '안녕', null, null)).status !== 'letters_locked');
+	await svc('admin_update_settings', JSON.stringify({ letters_gate_min: before + 100 }), adm);
+	await svc('admin_update_settings', JSON.stringify({ letters_gate: false }), adm);
+	check('★ 운영자가 잠금을 끄면 바로 열린다', (await rpcAs(Y, 'dm_send', Z, '또 안녕', null, null)).status !== 'letters_locked');
+	await expectError('운영진(관리자 아님)은 잠금을 못 바꾼다', () => svc('admin_update_settings', JSON.stringify({ letters_gate: true }), mod), 'admin_only');
+	await expectError('기준은 1명 이상', () => svc('admin_update_settings', JSON.stringify({ letters_gate_min: 0 }), adm), 'app_settings_letters_gate_min');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

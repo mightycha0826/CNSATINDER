@@ -200,7 +200,7 @@ try {
 	await page.locator('button.back').click(); await page.waitForURL(/\/letters$/); await page.waitForTimeout(300);
 	await page.getByRole('link', { name: '편지 쓰기' }).click(); await page.waitForURL('**/letters/new');
 	const search = page.getByRole('searchbox', { name: '편지 받을 학생 찾기' });
-	check('받는 사람에게 나는 성별만 ("익명의 남학생")', (await page.locator('.hint').innerText()).includes('익명의 남학생'));
+	check('찾기 화면에 설명 문구 없음 (처음 사용법 안내가 알려 준다, Phase 44)', (await page.locator('.pick .hint').count()) === 0);
 	await search.fill('박'); await page.waitForTimeout(400);
 	check('한 글자로는 찾지 않는다', called(w, 'dm_search').length === 0 && (await page.locator('.person').count()) === 0);
 	await search.fill('박받'); await page.waitForTimeout(600);

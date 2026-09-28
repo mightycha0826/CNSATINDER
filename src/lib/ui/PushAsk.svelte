@@ -38,7 +38,7 @@
 	}
 </script>
 
-{#if open && !UI.celebrating}
+{#if open && !UI.celebrating && !UI.touring}
 	<Sheet label="알림 받기">
 		<div class="ask">
 			<div class="bell" aria-hidden="true">

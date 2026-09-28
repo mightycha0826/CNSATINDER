@@ -9,7 +9,7 @@ declare global {
 			guard?: boolean;
 			/** 방금 매칭돼서 들어가는 대화방 — 연결 화면을 한 번 보여 준다 (chat/[id]) */
 			matched?: boolean;
-			/** 홈 위에 AI 대화 상대가 열려 있다 — 뒤로가기로 닫힌다 ((app)/+page.svelte) */
+			/** (쓰지 않음 — 예전 AI 대화 창. 대화 봇은 ov 로 닫힌다) */
 			ai?: boolean;
 			/** 열려 있는 겹친 창들 (시트 · 고르기 · 모달) — 뒤로가기로 맨 위부터 닫힌다 (lib/overlay.svelte.ts) */
 			ov?: string[];

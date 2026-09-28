@@ -22,6 +22,7 @@ const inquiries = [{ id: 1, kind: 'bug', body: '예전에 보낸 문의', create
 const inqCalls = [];
 const marks = [];
 
+let GATE = false; // 익명편지 잠금 (Phase 44)
 const prof = { id: uid, nickname: '푸른고래', bio: '', interests: [], mbti: null, gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true, allow_rematch: false };
 const patches = [];
 
@@ -44,7 +45,8 @@ try {
 			if (req.method() === 'PATCH') { Object.assign(prof, req.postDataJSON()); patches.push(req.postDataJSON()); return route.fulfill({ status: 204 }); }
 			return json(prof);
 		}
-		if (u.pathname === '/rest/v1/app_settings') return json({ is_open: true, notice: '', room_minutes: 10, extend_minutes: 10, vote_window_sec: 30, join_grace_sec: 30, max_rounds: 99, heartbeat_sec: 30, presence_ttl_sec: 70, msg_max_len: 500, max_open_rooms: 5, letter_max_len: 1000, comment_max_len: 300 });
+		if (u.pathname === '/rest/v1/app_settings') return json({ is_open: true, notice: '', room_minutes: 10, extend_minutes: 10, vote_window_sec: 30, join_grace_sec: 30, max_rounds: 99, heartbeat_sec: 30, presence_ttl_sec: 70, msg_max_len: 500, max_open_rooms: 5, letter_max_len: 1000, comment_max_len: 300, letters_gate: GATE, letters_gate_min: 100 });
+		if (u.pathname === '/rest/v1/signup_stats') return json({ students: 42 }); // Phase 44 — 가입한 학생 수
 		// 문의 (Phase 37)
 		if (u.pathname === '/rest/v1/rpc/my_inquiries') { inqCalls.push('list'); return json(inquiries); }
 		if (u.pathname === '/rest/v1/rpc/send_inquiry') {
@@ -201,7 +203,6 @@ try {
 	await page.getByRole('switch', { name: '봉투 여는 장면' }).click(); await page.getByRole('switch', { name: '움직임 줄이기' }).click(); await page.waitForTimeout(150);
 	check('★ 편지지 글씨 · Enter 키 · 봉투 장면 · 움직임 — 이 기기에 저장, <html> 에 입혀진다', (await html('letterFont')) === 'plain' && (await html('motion')) === 'reduce'
 		&& JSON.stringify(JSON.parse(await prefs())) === JSON.stringify({ text: 'xl', motion: true, letterFont: 'plain', envelope: false, enterSend: false }), await prefs());
-	check('Enter 키를 끄면 설명이 나온다', await page.getByText('Enter 키는 줄바꿈이 되고').isVisible());
 	await page.reload(); await page.getByRole('radiogroup', { name: '글자 크기' }).waitFor({ timeout: 8000 });
 	check('★ 다시 켜도 그대로 (첫 화면부터 <html> 에)', (await html('text')) === 'xl' && (await html('letterFont')) === 'plain' && (await page.getByRole('radio', { name: '아주 크게' }).getAttribute('aria-checked')) === 'true'
 		&& !(await page.getByRole('switch', { name: 'Enter 키로 보내기' }).isChecked()) && (await previewFs()) === '19px');
@@ -279,6 +280,53 @@ try {
 	check('기기 설정 따르기 → 폰 설정(다크)대로 · 저장값 지움', (await bg()) === 'rgb(12, 10, 11)' && (await page.evaluate(() => localStorage.getItem('theme-v1'))) === null
 		&& (await page.evaluate(() => document.documentElement.dataset.theme)) === undefined && (await bar()) === '#fbf9f7,#0c0a0b', await bar());
 	await page.emulateMedia({ colorScheme: 'light' });
+
+	console.log('[처음 사용법 안내 · 빈 홈 (Phase 44)]');
+	await page.goto(`${BASE}/`); await page.locator('a.logo').waitFor(); await page.waitForTimeout(600);
+	check('★ 빈 홈 — 숫자(10:00) 대신 두 말풍선', (await page.locator('.hero .talk .say').count()) === 2 && !(await page.locator('.hero').innerText()).includes(':00'), await page.locator('.hero').innerText());
+	check('자동 테스트에서는 사용법 안내가 저절로 뜨지 않는다', (await page.getByRole('dialog', { name: '사용법 안내' }).count()) === 0);
+	await page.goto(`${BASE}/?tour`);
+	const tour = page.getByRole('dialog', { name: '사용법 안내' });
+	await tour.waitFor({ timeout: 8000 });
+	check('★ 처음 홈 → 사용법 안내 (환영 · 건너뛰기 · 11단계)', (await tour.innerText()).includes('환영') && (await tour.getByRole('button', { name: '건너뛰기' }).count()) === 1
+		&& (await tour.locator('.dots i').count()) === 11);
+	await page.screenshot({ path: `${SP}/tour-1.png` });
+	await tour.getByRole('button', { name: '알려 주세요' }).click(); await page.waitForTimeout(700);
+	const near = (a, b, pad) => Math.abs(a.x - (b.x - pad)) < 3 && Math.abs(a.y - (b.y - pad)) < 3 && Math.abs(a.width - (b.width + pad * 2)) < 3;
+	check('★ "새 대화 찾기" 자리를 비춘다', (await tour.innerText()).includes('새 대화 찾기') && near(await page.locator('.tour .hole').boundingBox(), await page.locator('.cta').boundingBox(), 6),
+		JSON.stringify([await page.locator('.tour .hole').boundingBox(), await page.locator('.cta').boundingBox()]));
+	await page.screenshot({ path: `${SP}/tour-2.png` });
+	await tour.getByRole('button', { name: '다음' }).click(); await page.waitForTimeout(400);
+	check('시간 규칙은 운영 설정 값으로 (첫 대화 · 연장)', (await tour.innerText()).includes('첫 대화는 10분') && (await tour.innerText()).includes('10분씩'));
+	for (let i = 0; i < 4; i++) { await tour.getByRole('button', { name: '다음' }).click(); await page.waitForTimeout(250); }
+	await page.waitForTimeout(500);
+	check('★ 익명편지 탭을 비춘다', (await tour.innerText()).includes('익명편지') && near(await page.locator('.tour .hole').boundingBox(), await page.locator('a.tab[href="/letters"]').boundingBox(), 6));
+	await page.screenshot({ path: `${SP}/tour-3.png` });
+	await tour.getByRole('button', { name: '건너뛰기' }).click(); await page.waitForTimeout(400);
+	check('★ 건너뛰기 → 닫히고 이 기기에 "봤음"', (await page.getByRole('dialog', { name: '사용법 안내' }).count()) === 0 && (await page.evaluate(() => localStorage.getItem('tour-v1'))) === '1');
+	await page.goto(`${BASE}/?tour`); await page.locator('a.logo').waitFor(); await page.waitForTimeout(700);
+	check('한 번 보면 다시 뜨지 않는다', (await page.getByRole('dialog', { name: '사용법 안내' }).count()) === 0);
+	await page.goto(`${BASE}/settings`); await page.getByRole('button', { name: '사용법 다시 보기' }).click();
+	await page.getByRole('dialog', { name: '사용법 안내' }).waitFor({ timeout: 8000 });
+	check('★ 설정 › 사용법 다시 보기 → 홈에서 처음부터', new URL(page.url()).pathname === '/' && (await page.getByRole('dialog', { name: '사용법 안내' }).innerText()).includes('환영'));
+	for (let i = 0; i < 10; i++) { await page.getByRole('dialog', { name: '사용법 안내' }).getByRole('button', { name: /^(알려 주세요|다음)$/ }).click(); await page.waitForTimeout(200); }
+	check('마지막 — 지킬 것 세 가지 · 시작하기 (건너뛰기 없음)', (await page.locator('.tour .rules li').count()) === 3 && (await page.getByRole('button', { name: '건너뛰기' }).count()) === 0);
+	await page.screenshot({ path: `${SP}/tour-4.png` });
+	await page.getByRole('button', { name: '시작하기' }).click(); await page.waitForTimeout(400);
+	check('시작하기 → 닫힘', (await page.getByRole('dialog', { name: '사용법 안내' }).count()) === 0);
+
+	console.log('[익명편지 잠금 (Phase 44)]');
+	GATE = true;
+	await page.goto(`${BASE}/letters`); await page.getByText('100명이 모이면 열려요').waitFor({ timeout: 8000 }).catch(() => {});
+	check('★ 잠겨 있으면 편지함 대신 "100명이 모이면 열려요" · 실시간 가입 42/100', (await page.locator('.gate h1').innerText()).includes('100명이 모이면 열려요')
+		&& (await page.locator('.gate .big').innerText()) === '42' && (await page.locator('.gate .left').innerText()).includes('58명 더'), await page.locator('.gate').innerText().catch(() => ''));
+	check('편지 쓰기 단추 · 편지함 요청 없음', (await page.locator('a.fab').count()) === 0);
+	await page.screenshot({ path: `${SP}/letters-gate.png` });
+	await page.goto(`${BASE}/letters/new`); await page.locator('.gate').waitFor({ timeout: 8000 }).catch(() => {});
+	check('편지 쓰기 주소로 와도 잠금 화면', (await page.locator('.gate').count()) === 1 && (await page.getByRole('searchbox').count()) === 0);
+	GATE = false;
+	await page.goto(`${BASE}/letters`); await page.locator('a.fab').waitFor({ timeout: 8000 }).catch(() => {});
+	check('잠금을 끄면 평소 편지함', (await page.locator('.gate').count()) === 0 && (await page.locator('a.fab').count()) === 1);
 	check('페이지 오류 없음', errors.length === 0, errors.join(' / '));
 } finally { await browser.close(); }
 console.log(`\n${pass} passed, ${fail} failed`);

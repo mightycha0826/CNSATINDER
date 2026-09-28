@@ -14,6 +14,7 @@ const id = (c) => `${c.repeat(8)}-${c.repeat(4)}-4${c.repeat(3)}-8${c.repeat(3)}
 const [A, B, ROOM, REP, LREP, BOOM] = ['a', 'b', 'c', 'd', 'e', '9'].map(id);
 const t = new Date().toISOString();
 let ROLE = 'admin';
+let SUSPENDED = false, BETA = false; // Phase 44 — 정지 풀기 · 특별 업적
 const calls = [];
 
 const user = (i, nick) => ({ id: i, nickname: nick, status: 'active', suspended_until: null, strikes: 0, verified: true, onboarded: true, created_at: t, online: false, last_seen: t, staff_role: null, reports_received: 1 });
@@ -32,10 +33,13 @@ const RPC = {
 	admin_set_letter_report: () => null,
 	admin_find_users: () => [user(A, '푸른고래'), user(B, '작은별')],
 	admin_student_labels: () => ({ [A]: '29999 홍길동', [B]: '19998' }),
-	admin_user: () => ({ profile: { ...user(A, '푸른고래'), bio: '', interests: [], mbti: null, gender: 'm', want: 'f' }, online: false, last_seen: t, staff_role: null, counts: { rooms: 1, open_rooms: 0, letters: 1, comments: 0, reports_filed: 0, reports_dismissed: 0 }, chat_reports: [], letter_reports: [], history: [] }),
+	admin_user: () => ({ profile: { ...user(A, '푸른고래'), bio: '', interests: [], mbti: null, gender: 'm', want: 'f', ...(SUSPENDED ? { suspended_until: new Date(Date.now() + 3 * 86400_000).toISOString(), strikes: 1 } : {}) }, online: false, last_seen: t, staff_role: null, counts: { rooms: 1, open_rooms: 0, letters: 1, comments: 0, reports_filed: 0, reports_dismissed: 0 }, chat_reports: [], letter_reports: [], history: [] }),
+	// Phase 44 — 특별 업적
+	admin_user_badges: () => [{ code: 'beta', title: '베타 테스터', description: '출시 전 베타 테스트에 함께한 사람', has: BETA, earned_at: BETA ? t : null }],
+	admin_set_badge: (a) => ((BETA = a.p_on), RPC.admin_user_badges()),
 	admin_user_rooms: () => [],
 	admin_user_letters: () => [{ letter_id: 7, alias: '맑은 하늘', is_author: true, status: 'open', created_at: t, preview: '광고 편지', my_comments: 0 }],
-	admin_get_settings: () => ({ is_open: true, notice: '', room_minutes: 10, extend_minutes: 10, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5 }),
+	admin_get_settings: () => ({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5, letters_gate: true, letters_gate_min: 100 }),
 	admin_update_settings: () => RPC.admin_get_settings(),
 	admin_audit: () => [
 		{ id: 1, staff_id: STAFF, action: 'remove_letter', target_user: null, report_id: LREP, detail: { letter_id: 7, comment_id: null }, created_at: t },
@@ -67,6 +71,7 @@ const sb = http.createServer((req, res) => {
 		if (u.pathname === '/auth/v1/user') return send(200, { id: STAFF, aud: 'authenticated', email: '29999@cnsa.hs.kr', app_metadata: {}, user_metadata: {}, created_at: t });
 		const au = u.pathname.match(/^\/auth\/v1\/admin\/users\/(.+)$/);
 		if (au) return send(200, { id: au[1], email: au[1] === A ? '29999@cnsa.hs.kr' : '19998@cnsa.hs.kr', aud: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: t });
+		if (u.pathname === '/rest/v1/signup_stats') return send(200, { students: 42 }); // Phase 44 — 가입한 학생 수
 		const fn = u.pathname.match(/^\/rest\/v1\/rpc\/([a-z_]+)/)?.[1];
 		if (!fn || !RPC[fn]) return send(404, { message: `no mock ${req.url}` });
 		const args = body ? JSON.parse(body) : {};
@@ -183,10 +188,46 @@ try {
 	await page.waitForTimeout(600);
 	check('★ 서비스 닫기 취소 → 안 닫음', !got().includes('admin_update_settings'));
 	await page.locator('input[name=room_minutes]').fill('12');
-	await page.getByRole('button', { name: '저장' }).click();
+	await page.getByRole('button', { name: '저장', exact: true }).click();
 	await page.getByText('저장 완료').waitFor({ timeout: 5000 }).catch(() => {});
 	const save = calls.filter((c) => c[0] === 'admin_update_settings').at(-1)?.[1];
 	check('저장은 확인창 없이 바로', save?.p_patch?.room_minutes === 12, JSON.stringify(save));
+
+	console.log('\n[6-1] 정지 풀기 · 특별 업적 · 익명편지 잠금 (Phase 44)');
+	SUSPENDED = true;
+	await page.go(`/admin/users/${A}`);
+	check('★ 정지 중이면 조치 칸 위에 "정지 중" · 정지 풀기', (await page.locator('.lift').innerText()).includes('까지 정지') && (await page.getByRole('button', { name: '정지 풀기' }).count()) === 1);
+	check('제재 폼에도 "정지 풀기 (제한 해제)"', (await page.locator('select[name=action] option').allInnerTexts()).includes('정지 풀기 (제한 해제)'));
+	answer = false;
+	got = since();
+	await page.getByRole('button', { name: '정지 풀기' }).click();
+	await page.waitForTimeout(600);
+	check('★ 정지 풀기 취소 → 안 부름', !got().includes('admin_sanction'), got().join());
+	answer = true;
+	await page.locator('.lift input[name=note]').fill('오해였음');
+	await page.getByRole('button', { name: '정지 풀기' }).click();
+	await page.getByText('정지를 풀었어요').waitFor({ timeout: 5000 }).catch(() => {});
+	const lift = calls.filter((c) => c[0] === 'admin_sanction').at(-1)?.[1];
+	check('★ 정지 풀기 → reinstate · 사유 기록', lift?.p_action === 'reinstate' && lift?.p_user === A && lift?.p_note === '오해였음', JSON.stringify(lift));
+	SUSPENDED = false;
+	await page.go(`/admin/users/${A}`);
+	check('정지 중이 아니면 정지 풀기가 없다', (await page.getByRole('button', { name: '정지 풀기' }).count()) === 0
+		&& !(await page.locator('select[name=action] option').allInnerTexts()).includes('정지 풀기 (제한 해제)'));
+	check('특별 업적 칸 — 베타 테스터 · 없음', (await page.locator('.badges').innerText()).includes('베타 테스터') && (await page.locator('.badges').innerText()).includes('없음'));
+	await page.locator('.badges').getByRole('button', { name: '주기' }).click();
+	await page.getByText('업적을 줬어요').waitFor({ timeout: 5000 }).catch(() => {});
+	const give = calls.filter((c) => c[0] === 'admin_set_badge').at(-1)?.[1];
+	check('★ 베타 테스터 주기 → admin_set_badge(on)', give?.p_code === 'beta' && give?.p_on === true && give?.p_user === A, JSON.stringify(give));
+	check('준 뒤에는 "거두기"', (await page.locator('.badges').getByRole('button', { name: '거두기' }).count()) === 1);
+	await page.screenshot({ path: `${SP}/audit-user-p44.png`, fullPage: true });
+	await page.go('/admin/settings');
+	check('★ 익명편지 잠금: 지금 잠김 · 가입 42명 · 100명에 열림', (await page.locator('.gate-state').innerText()).replace(/\s+/g, ' ').includes('잠김 · 가입한 학생 42명'));
+	await page.locator('input[name=letters_gate]').uncheck();
+	await page.locator('input[name=letters_gate_min]').fill('80');
+	await page.getByRole('button', { name: '잠금 설정 저장' }).click();
+	await page.getByText('익명편지 잠금 끔').waitFor({ timeout: 5000 }).catch(() => {});
+	const gate = calls.filter((c) => c[0] === 'admin_update_settings').at(-1)?.[1];
+	check('★ 잠금 끄기 · 인원 저장', gate?.p_patch?.letters_gate === false && gate?.p_patch?.letters_gate_min === 80, JSON.stringify(gate));
 
 	console.log('\n[7] 활동 기록 — 원시 JSON 이 보이지 않는다');
 	await page.go('/admin/audit');

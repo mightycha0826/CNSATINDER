@@ -1,7 +1,7 @@
 import { error, fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
 import { friendly, isAdmin, revealIdentity, runSanction, studentLabels } from '$lib/server/adminAuth';
-import type { PersonalNoticeRow, UserDetail, UserLetterRow, UserRoomRow } from '$lib/adminTypes';
+import type { PersonalNoticeRow, UserBadgeRow, UserDetail, UserLetterRow, UserRoomRow } from '$lib/adminTypes';
 import { deliver, type PushNote } from '$lib/server/pushSend';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -14,15 +14,17 @@ async function detail(id: string, staff: string) {
 // ★ load 에는 이메일이 없다. 이메일·편지 활동은 아래 액션으로만, 기록과 함께 나간다.
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const staff = locals.staff!.id;
-	const [d, rooms, notices] = await Promise.all([
+	const [d, rooms, notices, badges] = await Promise.all([
 		detail(params.id, staff),
 		isAdmin(locals)
 			? adminRpc<UserRoomRow[]>('admin_user_rooms', { p_user: params.id, p_staff: staff })
 			: Promise.resolve(null),
-		adminRpc<PersonalNoticeRow[]>('admin_personal_notices', { p_staff: staff, p_user: params.id }).catch(() => [] as PersonalNoticeRow[])
+		adminRpc<PersonalNoticeRow[]>('admin_personal_notices', { p_staff: staff, p_user: params.id }).catch(() => [] as PersonalNoticeRow[]),
+		// 특별 업적 (Phase 44) — DB 에 아직 없으면 빈 목록 (칸이 안 보인다)
+		adminRpc<UserBadgeRow[]>('admin_user_badges', { p_staff: staff, p_user: params.id }).catch(() => [] as UserBadgeRow[])
 	]);
 	const students = await studentLabels(locals, [params.id, ...(rooms ?? []).map((r) => r.partner_id)]);
-	return { d, rooms, students, notices };
+	return { d, rooms, students, notices, badges };
 };
 
 export const actions: Actions = {
@@ -78,6 +80,20 @@ export const actions: Actions = {
 		await detail(params.id, locals.staff!.id);
 		const res = await runSanction(locals, params.id, await request.formData(), null);
 		if (typeof res !== 'string') return res;
-		return { done: '조치 완료' };
+		return { done: res === 'reinstate' ? '정지를 풀었어요' : '조치 완료' };
+	},
+
+	// 특별 업적 주기 · 거두기 (Phase 44) — 운영진 누구나, 기록에 남는다
+	badge: async ({ params, request, locals }) => {
+		const f = await request.formData();
+		const code = String(f.get('code') ?? '');
+		const on = f.get('on') === 'true';
+		if (!/^[a-z_]{1,40}$/.test(code)) return fail(400, { error: '잘못된 업적' });
+		try {
+			await adminRpc('admin_set_badge', { p_staff: locals.staff!.id, p_user: params.id, p_code: code, p_on: on });
+		} catch (e) {
+			return friendly(e);
+		}
+		return { done: on ? '업적을 줬어요' : '업적을 거뒀어요' };
 	}
 };

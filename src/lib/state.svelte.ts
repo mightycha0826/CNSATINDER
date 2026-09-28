@@ -43,6 +43,9 @@ export type Settings = {
 	ai_moderation?: boolean;
 	ai_chat?: boolean;
 	ai_chat_per_user?: number;
+	/** Phase 44 — 익명편지 잠금: 켜져 있으면 가입한 학생이 letters_gate_min 명이 될 때까지 편지가 잠긴다 (lib/letters/gate.svelte.ts) */
+	letters_gate?: boolean;
+	letters_gate_min?: number;
 };
 
 export const S = $state({
@@ -70,8 +73,10 @@ export const UI = $state({
 	busy: false,
 	/** 로그인 직후 갈 곳 — 비밀번호 찾기로 들어왔으면 새 비밀번호 화면으로 */
 	afterLogin: null as string | null,
-	/** 새 업적 축하가 떠 있다 — 저절로 뜨는 창은 한 번에 하나 (축하 > 매너 평가 > 알림 권한, UX G8) */
+	/** 새 업적 축하가 떠 있다 — 저절로 뜨는 창은 한 번에 하나 (튜토리얼 > 축하 > 매너 평가 > 알림 권한, UX G8) */
 	celebrating: false,
+	/** 처음 사용법 안내(튜토리얼, Phase 44)가 떠 있다 — 다른 저절로 뜨는 창은 그 뒤에 */
+	touring: false,
 	/** 대화방에서 "새 대화 찾기"로 홈에 돌아왔다 — 홈이 바로 찾기를 시작한다 (lib/nav.ts backToSeek) */
 	seekOnHome: false
 });
@@ -208,8 +213,10 @@ const SETTINGS_COLS =
 	'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms, letter_max_len, comment_max_len';
 async function loadSettings() {
 	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();
-	let { data, error } = await read(`${SETTINGS_COLS}, ai_moderation, ai_chat, ai_chat_per_user`);
-	// AI 설정(Phase 19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
+	const AI = 'ai_moderation, ai_chat, ai_chat_per_user';
+	let { data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min`);
+	// 편지 잠금(Phase 44) · AI 설정(Phase 19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
+	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}`));
 	if (error) ({ data } = await read(SETTINGS_COLS));
 	S.settings = (data as unknown as Settings) ?? null;
 }
