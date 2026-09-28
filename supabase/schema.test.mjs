@@ -3210,5 +3210,33 @@ console.log('\n[82] 운영진에게 문의하기 (Phase 37)');
 		&& (await rpcAs(Q, 'send_inquiry', 'etc', '여섯 번째 문의')).status === 'rate');
 }
 
+console.log('\n[83] 알림 종류별로 끄기 (Phase 43)');
+{
+	await resetPool();
+	const s = await person('m', 'f');
+	const t = await person('f', 'm');
+	const P256 = 'B' + 'x'.repeat(86);
+	const EP = 'https://fcm.googleapis.com/fcm/send/mute-t';
+	await rpcAs(t, 'save_push_subscription', EP, P256, 'a'.repeat(22));
+	const muteOf = async () => (await one('select mute from public.push_subscriptions where endpoint = $1', [EP])).mute;
+	check('처음엔 아무것도 끄지 않았다', (await muteOf()).length === 0);
+	await rpcAs(t, 'set_push_mute', EP, ['letter', 'chat', 'chat', 'notice', 'hack']);
+	check('★ 알려진 종류만 · 중복 없이 저장 (운영진 공지는 끌 수 없다)', JSON.stringify(await muteOf()) === '["chat","letter"]', JSON.stringify(await muteOf()));
+	await rpcAs(s, 'set_push_mute', EP, []);
+	check('★ 남의 기기 설정은 못 바꾼다', JSON.stringify(await muteOf()) === '["chat","letter"]');
+	await rpcAs(t, 'save_push_subscription', EP, P256, 'a'.repeat(22));
+	check('구독을 다시 저장해도(로그인) 끈 종류는 그대로', JSON.stringify(await muteOf()) === '["chat","letter"]');
+	await expectError('로그인 안 하면 거절', () => rowsAs(null, `select public.set_push_mute('x', '{}')`), 'permission denied');
+
+	const r = await pairRoom(s, t);
+	const sSeat = (await rpcAs(s, 'room_snapshot', r)).my_seat;
+	await sendIn(s, r, sSeat, '알림 꺼 둔 사람에게');
+	const mid = (await one('select max(id)::int m from public.messages where room_id = $1', [r])).m;
+	const p = await svc('push_payload', mid, s);
+	check('★ 발송 판단은 기기마다 끈 종류를 같이 돌려준다 (서버가 거른다)', p.subs?.length === 1 && JSON.stringify(p.subs[0].mute) === '["chat","letter"]', JSON.stringify(p));
+	await rpcAs(t, 'set_push_mute', EP, null);
+	check('비우면 다시 모두 받는다', (await muteOf()).length === 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

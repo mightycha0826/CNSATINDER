@@ -66,6 +66,11 @@
 	--shadow-2: 0 2px 6px rgb(40 20 10 / 0.06), 0 18px 40px -14px rgb(40 20 10 / 0.28);
 	--glow: 0 10px 28px -8px rgb(238 67 96 / 0.55);
 
+	/* 글자 크기 (Phase 43, 설정 › 화면) — 대화 말풍선 · 편지 글씨. 편지지 줄 간격(--rule-h)도 같이 바뀌어 글줄이 늘 줄 위에 앉는다 */
+	--chat-fs: 15px;
+	--letter-fs: 24px;
+	--rule-h: 34px;
+
 	--r-card: 24px;
 	--r-md: 16px;
 	--r-sm: 12px;
@@ -82,6 +87,19 @@
 		'Malgun Gothic', 'Segoe UI', Roboto, sans-serif;
 	/* 브랜드 글씨 — 한 가지 굵기(통통한 400)뿐이라 font-weight 는 400 으로 둔다 */
 	--display: 'Bagel Fat One', var(--sans);
+}
+
+/* 이 앱은 라이트 · 다크를 스스로 그린다고 브라우저에 알린다 (Phase 43) — 안드로이드 Chrome "사이트에 어두운 테마 적용" ·
+   삼성 인터넷 다크 모드가 화면을 억지로 뒤집지 않고, 입력칸 · 키보드(아이폰) · 스크롤 막대가 화면 모드를 따른다.
+   설정에서 모드를 골랐으면 그 모드만 (only — 브라우저가 반대로 뒤집지 못하게) */
+:root {
+	color-scheme: light dark;
+}
+:root[data-theme='light'] {
+	color-scheme: only light;
+}
+:root[data-theme='dark'] {
+	color-scheme: only dark;
 }
 
 /* 다크는 기본적으로 시스템 설정을 따른다 (인스타와 동일). 설정 > 화면에서 고르면 <html data-theme> 가 이긴다. */
@@ -133,6 +151,41 @@
 		radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.12), transparent 70%);
 	--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -8px rgb(0 0 0 / 0.6);
 	--shadow-2: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 40px -14px rgb(0 0 0 / 0.8);
+}
+
+/* 글자 크기 (lib/prefs.svelte.ts) — 보통은 위 :root 값. 편지지 줄은 px 정수로 딱 떨어지게 단계마다 적는다 */
+:root[data-text='sm'] {
+	--chat-fs: 14px;
+	--letter-fs: 21px;
+	--rule-h: 30px;
+}
+:root[data-text='lg'] {
+	--chat-fs: 17px;
+	--letter-fs: 27px;
+	--rule-h: 38px;
+}
+:root[data-text='xl'] {
+	--chat-fs: 19px;
+	--letter-fs: 30px;
+	--rule-h: 42px;
+}
+/* 편지지 글씨 "반듯한 글씨" — 손글씨(나눔펜)는 글자가 작게 그려져서, 같은 단계라도 본문 글씨는 더 작은 px 이다.
+   쓰는 편지지(입력칸)는 16px 아래로 내려가면 아이폰이 확대하므로 16px 부터 */
+:root[data-letter-font='plain'] {
+	--letter-fs: 17px;
+	--rule-h: 30px;
+}
+:root[data-letter-font='plain'][data-text='sm'] {
+	--letter-fs: 16px;
+	--rule-h: 28px;
+}
+:root[data-letter-font='plain'][data-text='lg'] {
+	--letter-fs: 19px;
+	--rule-h: 33px;
+}
+:root[data-letter-font='plain'][data-text='xl'] {
+	--letter-fs: 21px;
+	--rule-h: 36px;
 }
 
 * {
@@ -879,7 +932,7 @@ html.kb-open .toasts {
 	}
 }
 
-/* 기기에서 "동작 줄이기"를 켰으면 움직임을 끈다 (나타나기·튀기·깜빡임). 스크롤은 lib/motion.ts */
+/* 기기에서 "동작 줄이기"를 켰거나 설정 › 화면 › "움직임 줄이기"(Phase 43)면 움직임을 끈다 (나타나기·튀기·깜빡임). 스크롤은 lib/motion.ts */
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
@@ -889,6 +942,15 @@ html.kb-open .toasts {
 		transition-duration: 0.01ms !important;
 		scroll-behavior: auto !important;
 	}
+}
+:root[data-motion='reduce'],
+:root[data-motion='reduce'] *,
+:root[data-motion='reduce'] *::before,
+:root[data-motion='reduce'] *::after {
+	animation-duration: 0.01ms !important;
+	animation-iteration-count: 1 !important;
+	transition-duration: 0.01ms !important;
+	scroll-behavior: auto !important;
 }
 
 /* ── 편지지 (이름 편지) — 편지 쓰기 · 편지로 답장 · 편지 화면이 같이 쓴다 ─────────────
@@ -900,7 +962,7 @@ html.kb-open .toasts {
 /* 편지지 꾸밈 (Phase 37) — 종이 결(아주 옅은 섬유 무늬) · 가장자리가 살짝 바랜 빛 · 두 줄 여백선 ·
    테마 색으로 물든 줄 · 오른쪽 아래 학교 로고 물자국 · 위에 테마 색 마스킹 테이프 한 조각. 그림은 모두 CSS (이미지 파일 없음) */
 .letter-paper {
-	--rule-h: 34px;
+	/* 줄 간격(--rule-h) · 본문 글씨(--letter-fs)는 :root 에서 — 설정 › 화면 › 글자 크기 · 설정 › 편지 › 편지지 글씨 (Phase 43) */
 	--paper-line: color-mix(in srgb, var(--accent) 11%, var(--paper-rule));
 	--paper-margin: color-mix(in srgb, var(--accent) 38%, transparent);
 	position: relative;
@@ -957,6 +1019,7 @@ html.kb-open .toasts {
 	gap: 10px;
 	margin-bottom: 10px;
 }
+/* To. · From. — 나눔펜은 획이 가늘어 잉크를 살짝 굵게 (Phase 43, 봉투의 이름 손글씨와 같게) */
 .letter-paper .lp-to,
 .letter-paper .lp-from {
 	margin: 0;
@@ -964,6 +1027,16 @@ html.kb-open .toasts {
 	font-size: 26px;
 	font-weight: 400;
 	line-height: 1.2;
+	-webkit-text-stroke: 0.018em currentColor;
+}
+/* 반듯한 글씨 (설정 › 편지 › 편지지 글씨) — 본문 · To. · From. 모두 본문 서체로 */
+:root[data-letter-font='plain'] .letter-paper {
+	--hand: var(--sans);
+}
+:root[data-letter-font='plain'] .letter-paper :is(.lp-to, .lp-from) {
+	font-size: 19px;
+	font-weight: 700;
+	-webkit-text-stroke: 0;
 }
 .letter-paper .lp-to {
 	margin-bottom: 10px;
@@ -996,7 +1069,7 @@ html.kb-open .toasts {
 	margin: 0 -20px 0 -30px;
 	padding: 0 20px 0 30px;
 	font-family: var(--hand);
-	font-size: 24px;
+	font-size: var(--letter-fs);
 	line-height: var(--rule-h);
 	white-space: pre-wrap;
 	overflow-wrap: break-word;

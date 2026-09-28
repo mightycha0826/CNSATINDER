@@ -1,10 +1,11 @@
 import { untrack } from 'svelte';
+import { PREFS } from './prefs.svelte';
 
 /**
  * 앱 안 알림 (Phase 35) — 앱을 보고 있을 때 새 메시지 · 편지 · 공지가 오면 화면 위에서 내려오는 띠 (카카오톡 · 인스타처럼).
  * 한 번에 한 장 — 새 알림이 오면 그 자리에서 바뀐다. 같은 대화(key)면 내용만 최신으로.
  * 알리는 곳: 대화 목록(INBOX.onNew, 실시간) · 서비스워커(푸시가 왔는데 앱이 화면에 떠 있을 때) · 편지 수(DM.unread)가 늘었을 때.
- * 지금 그 화면(url)을 보고 있으면 띄우지 않는다.
+ * 지금 그 화면(url)을 보고 있으면 띄우지 않는다. 설정 › 알림에서 "앱 안 알림"을 끄면 띄우지 않는다 (Phase 43).
  */
 export type InApp = {
 	key: string;
@@ -26,6 +27,7 @@ const recent = new Map<string, number>();
 
 export function notifyInApp(n: Omit<InApp, 'n'>, dedupeKey = '') {
 	untrack(() => {
+		if (!PREFS.inApp) return;
 		if (typeof location !== 'undefined' && location.pathname === n.url) return;
 		if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 		if (dedupeKey) {

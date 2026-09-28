@@ -1,9 +1,12 @@
 /**
  * 햅틱 (docs/UX-GUIDELINES.md G9) — navigator.vibrate 를 직접 부르지 말고 이 함수들만 쓴다.
  * 안드로이드 크롬에서만 느껴진다. iOS 는 Vibration API 가 없어 아무 일도 없다 — 그래서 진동에만 기대는 신호를 만들지 않는다
- * (항상 화면 반응과 함께). 동작 줄이기와는 별개(진동은 움직임이 아니다).
+ * (항상 화면 반응과 함께). 동작 줄이기와는 별개(진동은 움직임이 아니다). 설정 › 알림 › 진동을 끄면 울리지 않는다 (Phase 43).
  */
+import { PREFS } from './prefs.svelte';
+
 function buzz(pattern: number | number[]) {
+	if (!PREFS.haptics) return;
 	try {
 		navigator.vibrate?.(pattern);
 	} catch {

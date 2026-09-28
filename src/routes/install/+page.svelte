@@ -14,6 +14,20 @@
 	const external = openExternalUrl(env, appUrl);
 	const browserName = ios ? 'Safari' : 'Chrome';
 
+	// 삼성 인터넷이면 화면을 그린 뒤 저절로 Chrome 을 연다 (Phase 43) — 이 탭에서 한 번만 (돌아와도 또 넘기지 않게).
+	// 삼성 인터넷이 막거나 Chrome 이 없으면 이 화면이 그대로 남고 아래 "Chrome으로 열기" 단추로 연다
+	$effect(() => {
+		if (!toChrome || env.browser !== 'samsung' || !external) return;
+		try {
+			if (sessionStorage.getItem('to-chrome')) return;
+			sessionStorage.setItem('to-chrome', '1');
+		} catch {
+			return;
+		}
+		const t = setTimeout(() => location.assign(external), 400);
+		return () => clearTimeout(t);
+	});
+
 	let installing = $state(false);
 
 	async function onInstall() {
@@ -78,7 +92,10 @@
 		<p class="url muted">{appUrl}</p>
 	{:else if toChrome}
 		<h1>Chrome에서 설치해 주세요</h1>
-		<p class="muted note">{env.browser === 'samsung' ? '삼성 인터넷' : '이 브라우저'}로 설치하면 Play 프로텍트가 막아요.</p>
+		<p class="muted note">
+			{env.browser === 'samsung' ? '삼성 인터넷으로' : '이 브라우저로'} 설치한 앱은 Play 프로텍트가 <strong>위험한 앱</strong>으로 차단해요.
+			{#if external}Chrome이 열리지 않으면 아래 단추를 눌러 주세요.{/if}
+		</p>
 		{#if external}<a class="btn" href={external}>Chrome으로 열기</a>{/if}
 		<button class="btn-ghost" onclick={copyLink}>링크 복사하기</button>
 		<p class="url muted">{appUrl}</p>

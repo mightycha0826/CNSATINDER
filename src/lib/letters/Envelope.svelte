@@ -303,21 +303,25 @@
 	}
 	.lbl {
 		display: block;
-		font-size: 0.42em;
+		font-size: 0.46em;
 		font-weight: 800;
-		letter-spacing: 0.12em;
-		opacity: 0.45;
-	}
-	.en {
-		font-size: 0.6em;
-		font-weight: 800;
-		letter-spacing: 0.04em;
+		letter-spacing: 0.1em;
 		opacity: 0.55;
 	}
+	/* From. · To. 머리말 (Phase 43) — 예전(0.6em · 옅게 0.55)은 휴대폰에서 거의 안 보였다 */
+	.en {
+		font-size: 0.68em;
+		font-weight: 800;
+		letter-spacing: 0.03em;
+		opacity: 0.75;
+	}
+	/* 이름 손글씨 (Phase 43) — 나눔펜은 획이 가늘고 글자가 작게 그려져서 한 단계 크게 · 잉크를 조금 굵게.
+	   줄 높이는 1 이 아니라 여유 있게 — 나눔펜 받침은 글자 칸 아래로 내려가서, 1 이면 overflow: hidden 에 받침이 잘렸다 ("학생" → "학새") */
 	.hand {
 		font-family: var(--hand);
-		font-size: 1.25em;
-		line-height: 1;
+		font-size: 1.45em;
+		line-height: 1.3;
+		-webkit-text-stroke: 0.022em currentColor;
 	}
 	.hand.big {
 		font-size: 1.9em;

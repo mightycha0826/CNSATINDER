@@ -2,8 +2,11 @@
 	/**
 	 * 말 입력 알약 (Phase 42 에서 하나로) — 대화방 · AI 대화가 같이 쓴다.
 	 * 줄이 늘면 칸이 자라고(최대 120px), Enter 는 보내기 · Shift+Enter 는 줄바꿈 (한글 조합 중 Enter 는 무시 — IME).
+	 * 설정 › 대화 › "Enter 키로 보내기"를 끄면 Enter 도 줄바꿈이고 보내기 단추로만 보낸다 (Phase 43). 휴대폰 키보드의 Enter 자리도 그에 맞춰 "보내기" / "줄바꿈".
 	 * 글자는 16px — 아이폰이 입력칸에 들어갈 때 화면을 확대하지 않게 (G6.8).
 	 */
+	import { PREFS } from '$lib/prefs.svelte';
+
 	let {
 		value = $bindable(''),
 		el = $bindable(),
@@ -31,7 +34,7 @@
 	} = $props();
 
 	function onkeydown(e: KeyboardEvent) {
-		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && PREFS.enterSend) {
 			e.preventDefault();
 			if (canSend) onsubmit();
 		}
@@ -46,7 +49,7 @@
 </script>
 
 <div class="pill" class:dim>
-	<textarea bind:this={el} bind:value rows="1" {placeholder} {disabled} {maxlength} {oninput} {onkeydown}></textarea>
+	<textarea bind:this={el} bind:value rows="1" {placeholder} {disabled} {maxlength} {oninput} {onkeydown} enterkeyhint={PREFS.enterSend ? 'send' : 'enter'}></textarea>
 	<button class="send" onclick={onsubmit} disabled={!canSend}>보내기</button>
 </div>
 

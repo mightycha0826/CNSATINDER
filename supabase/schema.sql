@@ -1583,6 +1583,9 @@ create table if not exists public.push_subscriptions (
 create index if not exists push_subs_user on public.push_subscriptions (user_id);
 alter table public.push_subscriptions enable row level security;
 revoke all on public.push_subscriptions from anon, authenticated;
+-- 이 기기로 받지 않을 알림 종류 (Phase 43, 설정 › 알림) — chat(대화 메시지) · reaction(공감) · letter(편지).
+--   운영진의 개인 공지(notice)는 끌 수 없다. 거르는 곳은 서버(Worker, lib/server/pushSend.ts) — push_target 이 기기마다 같이 돌려준다
+alter table public.push_subscriptions add column if not exists mute text[] not null default '{}';
 
 create table if not exists private.push_log (
   message_id bigint primary key,
@@ -1623,9 +1626,24 @@ begin
 end
 $fn$;
 
-revoke all on function public.save_push_subscription(text, text, text), public.delete_push_subscription(text)
+-- 이 기기로 받지 않을 알림 종류 (Phase 43). 내 기기만 · 알려진 종류만 남긴다 (중복 · 모르는 값은 버린다)
+create or replace function public.set_push_mute(p_endpoint text, p_mute text[])
+returns void language plpgsql security definer set search_path = public as $fn$
+declare m text[];
+begin
+  if auth.uid() is null then raise exception 'unauthenticated'; end if;
+  select coalesce(array_agg(distinct k order by k), '{}') into m
+    from unnest(coalesce(p_mute, '{}')) k
+   where k in ('chat', 'reaction', 'letter');
+  update public.push_subscriptions set mute = m where endpoint = p_endpoint and user_id = auth.uid();
+end
+$fn$;
+
+revoke all on function public.save_push_subscription(text, text, text), public.delete_push_subscription(text),
+  public.set_push_mute(text, text[])
   from public, anon;
-grant execute on function public.save_push_subscription(text, text, text), public.delete_push_subscription(text)
+grant execute on function public.save_push_subscription(text, text, text), public.delete_push_subscription(text),
+  public.set_push_mute(text, text[])
   to authenticated;
 
 -- ★ service_role 전용 — 알림을 보낼지, 누구에게, 무슨 문구로.
@@ -1633,12 +1651,13 @@ grant execute on function public.save_push_subscription(text, text, text), publi
 -- 받는 사람의 알림 대상 — 채팅 메시지 · 편지 댓글 · 공감 알림이 같이 쓴다.
 --   앱이 켜져 있어도 보낸다 (Phase 35) — 앱이 화면에 떠 있으면 서비스워커가 시스템 알림 대신 앱 안 알림으로 띄운다.
 --   그 대화 화면을 보고 있을 때만 보내지 않는다 (채팅 · 공감이 private.viewing_room 으로 따로 확인).
---   알림을 켠 기기가 없으면 → { skip: 'no_device' },  있으면 → { subs: [{endpoint, p256dh, auth}, …] }
+--   알림을 켠 기기가 없으면 → { skip: 'no_device' },  있으면 → { subs: [{endpoint, p256dh, auth, mute}, …] }
+--   mute = 그 기기가 끈 알림 종류 (Phase 43) — 서버(Worker)가 보낼 때 알림 종류를 보고 거른다
 create or replace function private.push_target(p_user uuid)
 returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
 declare v_subs jsonb;
 begin
-  select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth)), '[]'::jsonb)
+  select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth, 'mute', mute)), '[]'::jsonb)
     into v_subs from public.push_subscriptions where user_id = p_user;
   if jsonb_array_length(v_subs) = 0 then return jsonb_build_object('skip', 'no_device'); end if;
   return jsonb_build_object('subs', v_subs);

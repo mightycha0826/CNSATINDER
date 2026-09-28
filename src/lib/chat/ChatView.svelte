@@ -986,7 +986,7 @@
 		border-radius: var(--r-bubble);
 		background: var(--field);
 		color: var(--text);
-		font-size: 15px;
+		font-size: var(--chat-fs); /* 설정 › 화면 › 글자 크기 (app.css, Phase 43) */
 		line-height: 1.38;
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
@@ -1064,11 +1064,14 @@
 			transform: scale(1.03);
 		}
 	}
-	/* 동작 줄이기: 커지지 않고 어두워지기만 — 어디로 왔는지는 알려야 하니 끄지는 않는다 */
+	/* 동작 줄이기 · 움직임 줄이기(설정, Phase 43): 커지지 않고 어두워지기만 — 어디로 왔는지는 알려야 하니 끄지는 않는다 */
 	@media (prefers-reduced-motion: reduce) {
 		.bwrap.flash .bubble {
 			animation: flash-still 1.2s ease-out !important;
 		}
+	}
+	:global(html[data-motion='reduce']) .bwrap.flash .bubble {
+		animation: flash-still 1.2s ease-out !important;
 	}
 	@keyframes flash-still {
 		0%,

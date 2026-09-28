@@ -319,10 +319,11 @@
 	.sheet.letter-paper .area {
 		padding-top: 0;
 	}
-	/* 편지지 안에서는 손글씨 · 줄 맞춤 (app.css .letter-paper .le-doc) — 줄이 편지지 끝까지 보이게 넉넉한 높이 */
+	/* 편지지 안에서는 손글씨 · 줄 맞춤 (app.css .letter-paper .le-doc) — 줄이 편지지 끝까지 보이게 넉넉한 높이.
+	   글씨 크기 · 줄 간격은 설정(글자 크기 · 편지지 글씨)을 따른다 (app.css --letter-fs · --rule-h, Phase 43) */
 	.sheet.letter-paper .area :global(.le-doc) {
 		min-height: max(36dvh, calc(var(--rule-h) * 8));
-		font-size: 24px;
+		font-size: var(--letter-fs);
 		line-height: var(--rule-h);
 	}
 	.sheet.letter-paper .area :global(.le-doc *) {

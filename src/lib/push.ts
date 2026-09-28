@@ -59,7 +59,47 @@ export async function syncPush(): Promise<boolean> {
 		p_p256dh: j.keys?.p256dh,
 		p_auth: j.keys?.auth
 	});
+	// 끈 알림 종류가 있으면 이 구독에도 (새로 구독했거나 지난번 저장이 실패했을 수 있다). 다 켜 둔 기기는 요청하지 않는다
+	const mute = pushMuted();
+	if (!error && mute.length) await supabase.rpc('set_push_mute', { p_endpoint: j.endpoint, p_mute: mute });
 	return !error;
+}
+
+// ── 알림 종류별로 끄기 (Phase 43, 설정 › 알림) ──
+// 이 기기에 적어 두고(화면이 바로 그린다) 서버 구독에도 보낸다 — 거르는 것은 서버(lib/server/pushSend.ts). 운영진 공지는 끌 수 없다.
+export type PushKind = 'chat' | 'reaction' | 'letter';
+export const PUSH_KINDS: { id: PushKind; label: string }[] = [
+	{ id: 'chat', label: '대화 메시지' },
+	{ id: 'reaction', label: '공감' },
+	{ id: 'letter', label: '편지' }
+];
+const MUTE_KEY = 'push-mute-v1';
+
+export function pushMuted(): PushKind[] {
+	try {
+		const v: unknown = JSON.parse(localStorage.getItem(MUTE_KEY) ?? '[]');
+		return Array.isArray(v) ? PUSH_KINDS.map((k) => k.id).filter((k) => v.includes(k)) : [];
+	} catch {
+		return [];
+	}
+}
+
+/** 한 종류를 켜고 끈다 — 서버에 저장되면 끈 목록을 돌려준다 */
+export async function setPushKind(kind: PushKind, on: boolean): Promise<PushKind[]> {
+	const next = PUSH_KINDS.map((k) => k.id).filter((k) => (k === kind ? !on : pushMuted().includes(k)));
+	const reg = await registration();
+	const sub = await reg?.pushManager.getSubscription();
+	if (sub) {
+		const { error } = await supabase.rpc('set_push_mute', { p_endpoint: sub.endpoint, p_mute: next });
+		if (error) throw error;
+	}
+	try {
+		if (next.length) localStorage.setItem(MUTE_KEY, JSON.stringify(next));
+		else localStorage.removeItem(MUTE_KEY);
+	} catch {
+		/* 저장소를 못 쓰는 환경 — 서버에는 저장됐다 */
+	}
+	return next;
 }
 
 function sameBytes(a: Uint8Array, b: Uint8Array) {

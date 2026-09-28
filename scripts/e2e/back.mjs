@@ -139,8 +139,8 @@ try {
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
 	const setHeads = await heads();
-	check('★ 설정 = 화면(한 줄) · 테마 색상 · 알림 · 매칭 · 편지 · 계정 · 도움(문의) · 약관 및 정책 · 로그아웃', setHeads.join(',') === '테마 색상,알림,매칭,편지,계정,도움,약관 및 정책'
-		&& (await page.getByRole('switch', { name: '새 메시지 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
+	check('★ 설정 = 화면 · 테마 색상 · 알림 · 대화 · 편지 · 계정 · 도움(문의) · 약관 및 정책 · 앱 · 로그아웃', setHeads.join(',') === '테마 색상,알림,대화,편지,계정,도움,약관 및 정책,앱'
+		&& (await page.getByRole('switch', { name: '푸시 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
 		&& (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
 	check('뒤로는 둥근 단추 · 제목 가운데', (await page.locator('button.back').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%'
 		&& Math.abs(await page.locator('.topbar .title').evaluate((e) => { const r = e.getBoundingClientRect(); return r.left + r.width / 2 - innerWidth / 2; })) < 2);
@@ -175,7 +175,7 @@ try {
 	const tok = () => page.evaluate(() => { const cs = getComputedStyle(document.documentElement); return ['--accent-fill', '--accent', '--brand'].map((k) => cs.getPropertyValue(k).trim()); });
 	const [af, ac, br] = await tok();
 	check('★ 앱 전체 색이 바뀐다 — 채운 버튼 · 글자/아이콘 색 · 로고', af.includes('#3b8af6') && ac === '#3b8af6' && br.includes('#3b8af6'), JSON.stringify([af, ac, br]));
-	check('설정 안의 포인트(화면 모드 고른 칸)도 파랑', (await page.locator('.seg-btn.on').evaluate((e) => getComputedStyle(e).backgroundImage)).includes('59, 138, 246'));
+	check('설정 안의 포인트(화면 모드 고른 칸)도 파랑', (await page.locator('[aria-labelledby="theme-h"] .seg-btn.on').evaluate((e) => getComputedStyle(e).backgroundImage)).includes('59, 138, 246'));
 	check('이 기기에 저장', (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === 'ocean');
 	await page.screenshot({ path: `${SP}/settings-color.png` });
 	check('긴 설정 화면에서도 머리글 52px 그대로 (눌려 줄지 않음)', Math.round((await page.locator('.topbar').boundingBox()).height) === 52, String((await page.locator('.topbar').boundingBox()).height));
@@ -188,6 +188,28 @@ try {
 	await swatch('기본').click(); await page.waitForTimeout(200);
 	check('기본으로 되돌리면 저장값도 지운다', (await fill()) === before && (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === null);
 	check('기본으로 되돌리면 앱 색도 원래대로 (주황 → 핑크)', (await tok()).every((v) => !v.includes('#3b8af6')) && (await tok())[0].includes('#f2603f'), JSON.stringify(await tok()));
+
+	console.log('[설정 · 글자 크기 · 이 기기 설정 (Phase 43)]');
+	const prefs = () => page.evaluate(() => localStorage.getItem('prefs-v1'));
+	const html = (k) => page.evaluate((k) => document.documentElement.dataset[k] ?? null, k);
+	const previewFs = () => page.locator('.preview .bubble').first().evaluate((e) => getComputedStyle(e).fontSize);
+	check('글자 크기: 네 단계 · 기본은 보통 (15px)', (await page.getByRole('radiogroup', { name: '글자 크기' }).getByRole('radio').count()) === 4
+		&& (await page.getByRole('radio', { name: '보통' }).getAttribute('aria-checked')) === 'true' && (await previewFs()) === '15px' && (await prefs()) === null);
+	await page.getByRole('radio', { name: '아주 크게' }).click(); await page.waitForTimeout(150);
+	check('★ 아주 크게 → 미리보기 말풍선이 바로 커지고(19px) 이 기기에 저장', (await previewFs()) === '19px' && (await html('text')) === 'xl' && (await prefs()) === '{"text":"xl"}', `${await previewFs()} ${await prefs()}`);
+	await page.getByRole('radio', { name: '반듯한 글씨' }).click(); await page.getByRole('switch', { name: 'Enter 키로 보내기' }).click();
+	await page.getByRole('switch', { name: '봉투 여는 장면' }).click(); await page.getByRole('switch', { name: '움직임 줄이기' }).click(); await page.waitForTimeout(150);
+	check('★ 편지지 글씨 · Enter 키 · 봉투 장면 · 움직임 — 이 기기에 저장, <html> 에 입혀진다', (await html('letterFont')) === 'plain' && (await html('motion')) === 'reduce'
+		&& JSON.stringify(JSON.parse(await prefs())) === JSON.stringify({ text: 'xl', motion: true, letterFont: 'plain', envelope: false, enterSend: false }), await prefs());
+	check('Enter 키를 끄면 설명이 나온다', await page.getByText('Enter 키는 줄바꿈이 되고').isVisible());
+	await page.reload(); await page.getByRole('radiogroup', { name: '글자 크기' }).waitFor({ timeout: 8000 });
+	check('★ 다시 켜도 그대로 (첫 화면부터 <html> 에)', (await html('text')) === 'xl' && (await html('letterFont')) === 'plain' && (await page.getByRole('radio', { name: '아주 크게' }).getAttribute('aria-checked')) === 'true'
+		&& !(await page.getByRole('switch', { name: 'Enter 키로 보내기' }).isChecked()) && (await previewFs()) === '19px');
+	check('버전 = 빌드 시각', /^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}$/.test((await page.locator('.g-row', { hasText: /^버전/ }).locator('.g-val').innerText()).trim()));
+	await page.getByRole('button', { name: '이 기기 설정 초기화' }).click();
+	await page.getByRole('button', { name: '되돌리기' }).click(); await page.waitForTimeout(200);
+	check('★ 이 기기 설정 초기화 → 모두 기본 · 저장값 지움', (await prefs()) === null && (await html('text')) === null && (await html('letterFont')) === null && (await html('motion')) === null
+		&& (await previewFs()) === '15px' && (await page.getByRole('switch', { name: 'Enter 키로 보내기' }).isChecked()) && (await toastText()).includes('처음으로 되돌렸어요'));
 
 	console.log('[설정 · 약관 및 정책]');
 	const legal = page.locator('a.legal-row');

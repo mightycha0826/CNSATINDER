@@ -35,7 +35,8 @@ export async function deliver(p: PushNote, platform?: Readonly<Partial<App.Platf
 	const vapid = vapidKeys();
 	if (!vapid) return { skip: 'not_configured' };
 	// 알려진 푸시 서버로만 보낸다 (DB 도 같은 목록으로 막는다 — 두 겹). 개발 서버는 테스트용 가짜 푸시 서버를 쓴다
-	const subs = p.subs.filter((s) => dev || isPushEndpoint(s.endpoint));
+	// 그 기기가 이 종류의 알림을 꺼 두었으면 건너뛴다 (Phase 43, 설정 › 알림 — 운영진 공지는 DB 가 끌 수 없게 막는다)
+	const subs = p.subs.filter((s) => (dev || isPushEndpoint(s.endpoint)) && !s.mute?.includes(p.kind));
 	if (!subs.length) return { skip: 'no_device' };
 
 	const work = (async () => {

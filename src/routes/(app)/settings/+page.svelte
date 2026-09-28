@@ -2,14 +2,31 @@
 	/**
 	 * 설정 — 상단 바 오른쪽 톱니를 누르면 오는 화면. 아이폰 설정 앱처럼 회색 바탕에 둥근 카드 (app.css .g-*).
 	 *  · 화면: 기기 설정 따르기 / 라이트 / 다크. 이 기기에만 저장 (lib/theme.svelte.ts)
+	 *    글자 크기(대화 · 편지) · 움직임 줄이기 · 진동(안드로이드) — 이 기기에만 저장 (lib/prefs.svelte.ts, Phase 43)
 	 *  · 테마 색상: 앱 전체의 포인트 색 (버튼 · 로고 · 내 말풍선 …). 이 기기에만 저장되고 상대 화면은 그대로다 (lib/themeColor.svelte.ts)
-	 *  · 새 메시지 알림 · 비밀번호 · 계정 상태 · 약관 및 정책(이용약관 · 개인정보 처리방침 · 운영정책 → /settings/[doc]) · 로그아웃
+	 *  · 알림: 푸시 알림 · 종류별로 끄기(대화 메시지 · 공감 · 편지 — 서버 구독에 저장, Phase 43) · 앱 안 알림 띠
+	 *  · 대화: 만났던 사람 다시 만나기 · Enter 키로 보내기 / 편지: 편지 받기 · 편지지 글씨 · 봉투 여는 장면
+	 *  · 비밀번호 · 계정 상태 · 약관 및 정책(이용약관 · 개인정보 처리방침 · 운영정책 → /settings/[doc])
+	 *  · 앱: 버전(빌드 시각) · 앱 새로고침 · 이 기기 설정 초기화 · 로그아웃
 	 * 홈의 "비밀번호를 만들어 두세요"와 비밀번호 찾기 인증 뒤에는 /settings#password 로 와서 비밀번호 칸이 펼쳐져 있다.
 	 */
+	import '@fontsource/nanum-pen-script/index.css';
+	import { version } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { THEME_COLOR, THEME_COLORS, fillOf, setThemeColor } from '$lib/themeColor.svelte';
 	import { THEME, THEME_MODES, setTheme } from '$lib/theme.svelte';
-	import { disablePush, enablePush, pushEnabled, pushState, type PushState } from '$lib/push';
+	import { LETTER_FONTS, PREFS, TEXT_SIZES, canVibrate, resetPrefs, setPref } from '$lib/prefs.svelte';
+	import {
+		PUSH_KINDS,
+		disablePush,
+		enablePush,
+		pushEnabled,
+		pushMuted,
+		pushState,
+		setPushKind,
+		type PushKind,
+		type PushState
+	} from '$lib/push';
 	import {
 		S,
 		errMsg,
@@ -149,6 +166,42 @@
 		}
 	}
 
+	// 알림 종류별로 끄기 (Phase 43) — 이 기기 구독에 저장된다. 운영진 공지는 끌 수 없다
+	let muted = $state<PushKind[]>(pushMuted());
+	let kindBusy = $state(false);
+	async function toggleKind(kind: PushKind, e: Event) {
+		const box = e.currentTarget as HTMLInputElement;
+		const on = box.checked;
+		box.checked = !muted.includes(kind); // 저장된 뒤에 바뀐다
+		if (kindBusy) return;
+		kindBusy = true;
+		try {
+			muted = await setPushKind(kind, on);
+		} catch (err) {
+			toast(errMsg(err));
+		} finally {
+			kindBusy = false;
+		}
+	}
+
+	// ── 앱 ──
+	// 빌드 시각 (SvelteKit version = 빌드한 때의 Date.now()) — 문의할 때 어느 버전인지 알 수 있게
+	const built = (() => {
+		const d = new Date(Number(version));
+		if (Number.isNaN(d.getTime())) return version;
+		const p = (n: number) => String(n).padStart(2, '0');
+		return `${d.getFullYear()}.${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+	})();
+
+	let resetAsk = $state(false);
+	function resetDevice() {
+		setTheme('system');
+		setThemeColor(THEME_COLORS[0].id);
+		resetPrefs();
+		resetAsk = false;
+		toast('이 기기 설정을 처음으로 되돌렸어요');
+	}
+
 	// ── 매칭 ──
 	let rematchBusy = $state(false);
 	async function toggleRematch(e: Event) {
@@ -220,7 +273,36 @@
 				{/each}
 			</div>
 		</div>
+		<!-- 글자 크기 (Phase 43) — "가" 네 개가 점점 크게. 대화 말풍선 · 편지 글씨에 입혀진다 (아래 미리보기 말풍선도 같이) -->
+		<div class="g-row">
+			<span id="text-h">글자 크기</span>
+			<div class="seg" role="radiogroup" aria-labelledby="text-h">
+				{#each TEXT_SIZES as t, i (t.id)}
+					<button
+						class="seg-btn pick"
+						class:on={PREFS.text === t.id}
+						role="radio"
+						aria-checked={PREFS.text === t.id}
+						aria-label={t.label}
+						title={t.label}
+						style:font-size="{13 + i * 2.5}px"
+						onclick={() => setPref('text', t.id)}>가</button
+					>
+				{/each}
+			</div>
+		</div>
+		<label class="g-row">
+			<span>움직임 줄이기</span>
+			<input class="switch" type="checkbox" role="switch" checked={PREFS.motion} onchange={(e) => setPref('motion', e.currentTarget.checked)} />
+		</label>
+		{#if canVibrate()}
+			<label class="g-row">
+				<span>진동</span>
+				<input class="switch" type="checkbox" role="switch" checked={PREFS.haptics} onchange={(e) => setPref('haptics', e.currentTarget.checked)} />
+			</label>
+		{/if}
 	</div>
+	<p class="g-foot">글자 크기는 대화 말풍선과 편지 글씨에 적용돼요. 움직임 줄이기를 켜면 화면 넘김 · 봉투 연출 같은 움직임이 멈춰요.</p>
 
 	<h2 class="g-head" id="theme-color">테마 색상</h2>
 	<div class="g-card">
@@ -250,7 +332,7 @@
 	<h2 class="g-head">알림</h2>
 	<div class="g-card">
 		<label class="g-row">
-			<span>새 메시지 알림</span>
+			<span>푸시 알림</span>
 			<input
 				class="switch"
 				type="checkbox"
@@ -263,14 +345,36 @@
 				}}
 			/>
 		</label>
+		<!-- 종류별로 (Phase 43) — 푸시를 켰을 때만. 이 기기로 오는 알림만 바뀐다 -->
+		{#if pushOn}
+			{#each PUSH_KINDS as k (k.id)}
+				<label class="g-row sub">
+					<span>{k.label}</span>
+					<input
+						class="switch"
+						type="checkbox"
+						role="switch"
+						checked={!muted.includes(k.id)}
+						disabled={kindBusy}
+						onchange={(e) => toggleKind(k.id, e)}
+					/>
+				</label>
+			{/each}
+		{/if}
+		<label class="g-row">
+			<span>앱 안 알림</span>
+			<input class="switch" type="checkbox" role="switch" checked={PREFS.inApp} onchange={(e) => setPref('inApp', e.currentTarget.checked)} />
+		</label>
 	</div>
 	{#if pushPerm === 'unsupported'}
-		<p class="g-foot">이 기기에서는 알림을 받을 수 없어요.</p>
+		<p class="g-foot">이 기기에서는 푸시 알림을 받을 수 없어요.</p>
 	{:else if pushPerm === 'denied'}
 		<p class="g-foot">휴대폰 설정에서 알림을 허용해 주세요.</p>
+	{:else}
+		<p class="g-foot">앱 안 알림은 앱을 보고 있을 때 화면 위에 잠깐 뜨는 알림이에요.{pushOn ? ' 운영진 공지는 끌 수 없어요.' : ''}</p>
 	{/if}
 
-	<h2 class="g-head">매칭</h2>
+	<h2 class="g-head">대화</h2>
 	<div class="g-card">
 		<label class="g-row">
 			<span>만났던 사람 다시 만나기</span>
@@ -283,7 +387,12 @@
 				onchange={toggleRematch}
 			/>
 		</label>
+		<label class="g-row">
+			<span>Enter 키로 보내기</span>
+			<input class="switch" type="checkbox" role="switch" checked={PREFS.enterSend} onchange={(e) => setPref('enterSend', e.currentTarget.checked)} />
+		</label>
 	</div>
+	{#if !PREFS.enterSend}<p class="g-foot">Enter 키는 줄바꿈이 되고, 보내기 단추로 보내요.</p>{/if}
 
 	<h2 class="g-head">편지</h2>
 	<div class="g-card">
@@ -298,7 +407,28 @@
 				onchange={toggleLetters}
 			/>
 		</label>
+		<!-- 편지지 글씨 (Phase 43) — 손글씨가 읽기 어려우면 반듯한 글씨로. 단추 글자가 그 글씨로 보인다 -->
+		<div class="g-row">
+			<span id="font-h">편지지 글씨</span>
+			<div class="seg" role="radiogroup" aria-labelledby="font-h">
+				{#each LETTER_FONTS as f (f.id)}
+					<button
+						class="seg-btn pick word {f.id}"
+						class:on={PREFS.letterFont === f.id}
+						role="radio"
+						aria-checked={PREFS.letterFont === f.id}
+						aria-label={f.label}
+						onclick={() => setPref('letterFont', f.id)}>{f.id === 'hand' ? '손글씨' : '반듯한'}</button
+					>
+				{/each}
+			</div>
+		</div>
+		<label class="g-row">
+			<span>봉투 여는 장면</span>
+			<input class="switch" type="checkbox" role="switch" checked={PREFS.envelope} onchange={(e) => setPref('envelope', e.currentTarget.checked)} />
+		</label>
 	</div>
+	<p class="g-foot">봉투 여는 장면을 끄면 편지를 열고 보낼 때 봉투 연출 없이 바로 편지지가 나와요.</p>
 
 	<h2 class="g-head">계정</h2>
 	<div class="g-card" id="password">
@@ -374,12 +504,6 @@
 			<span>계정 상태</span>
 			<span class="g-val" class:bad={S.profile?.status !== 'active'}>{S.profile?.status === 'active' ? '정상' : '제한됨'}</span>
 		</div>
-		<!-- 앱 새로고침 (Phase 37) — 탭 첫 화면에서는 맨 위에서 당겨도 된다 -->
-		<button class="g-row" onclick={() => { reloading = true; void reloadApp(); }} disabled={reloading}>
-			<span>앱 새로고침</span>
-			<span class="g-val">{reloading ? '불러오는 중…' : '최신 버전으로'}</span>
-			<Chevron />
-		</button>
 	</div>
 
 	<!-- 운영진에게 문의하기 (Phase 37) — 답변은 개인 공지로 온다 -->
@@ -417,6 +541,35 @@
 				<Chevron />
 			</a>
 		{/each}
+	</div>
+
+	<!-- 앱 (Phase 43) — 버전 · 새로고침 · 이 기기 설정 초기화 -->
+	<h2 class="g-head">앱</h2>
+	<div class="g-card">
+		<div class="g-row">
+			<span>버전</span>
+			<span class="g-val num">{built}</span>
+		</div>
+		<!-- 앱 새로고침 (Phase 37) — 탭 첫 화면에서는 맨 위에서 당겨도 된다 -->
+		<button class="g-row" onclick={() => { reloading = true; void reloadApp(); }} disabled={reloading}>
+			<span>앱 새로고침</span>
+			<span class="g-val">{reloading ? '불러오는 중…' : '최신 버전으로'}</span>
+			<Chevron />
+		</button>
+		<button class="g-row" onclick={() => (resetAsk = !resetAsk)} aria-expanded={resetAsk}>
+			<span>이 기기 설정 초기화</span>
+			<span class="g-val">기본값으로</span>
+			<Chevron />
+		</button>
+		{#if resetAsk}
+			<div class="g-more">
+				<p class="step muted">화면 모드 · 테마 색상 · 글자 크기 · 움직임 · 편지지 글씨 · 앱 안 알림 · Enter 키 설정을 처음으로 되돌려요. 계정과 편지 · 대화는 그대로예요.</p>
+				<div class="pwfoot">
+					<button class="btn-text danger-text" onclick={resetDevice}>되돌리기</button>
+					<button class="cancel u-tap" onclick={() => (resetAsk = false)}>취소</button>
+				</div>
+			</div>
+		{/if}
 	</div>
 
 	<div class="g-card out">
@@ -465,6 +618,29 @@
 	.seg-btn.on {
 		background: var(--accent-fill);
 		color: var(--on-accent);
+	}
+	/* 글자 크기 · 편지지 글씨 (Phase 43) — 아이콘 대신 글자. "가"는 단추마다 크기가 다르다(style) */
+	.seg-btn.pick {
+		font-weight: 700;
+		line-height: 1;
+	}
+	.seg-btn.word {
+		width: auto;
+		padding: 0 13px;
+		font-size: 14px;
+	}
+	.seg-btn.word.hand {
+		font-family: var(--hand);
+		font-size: 21px;
+		font-weight: 400;
+	}
+	/* 푸시 알림 아래의 종류별 줄 — 한 단계 들여서 */
+	.g-row.sub {
+		padding-left: 30px;
+		font-size: 15px;
+	}
+	.danger-text {
+		color: var(--danger);
 	}
 	.settings > .g-head:first-child {
 		margin-top: 8px;
@@ -561,7 +737,7 @@
 		border-radius: var(--r-bubble);
 		background: var(--bubble-fill);
 		color: var(--on-accent);
-		font-size: 15px;
+		font-size: var(--chat-fs); /* 글자 크기를 고르면 미리보기도 바로 (app.css) */
 		line-height: 1.38;
 	}
 	.bubble.other {

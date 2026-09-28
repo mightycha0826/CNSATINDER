@@ -24,6 +24,9 @@ function apply(mode: ThemeMode) {
 		const sys = m.media.includes('dark') ? BAR.dark : BAR.light;
 		m.content = mode === 'system' ? sys : BAR[mode];
 	}
+	// 브라우저에 알리는 모드 (app.html · app.css 와 같이, Phase 43) — 입력칸 · 키보드 · 스크롤 막대 색, 브라우저가 억지로 뒤집지 않게
+	const cs = document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]');
+	if (cs) cs.content = mode === 'system' ? 'light dark' : `only ${mode}`;
 }
 
 /** 앱을 켤 때 한 번 */

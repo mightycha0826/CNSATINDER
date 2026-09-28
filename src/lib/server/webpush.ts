@@ -9,7 +9,8 @@
  *   VAPID_PRIVATE_KEY : base64url, 개인키 d 32바이트
  */
 
-export type PushSub = { endpoint: string; p256dh: string; auth: string };
+/** mute = 이 기기가 끈 알림 종류 (Phase 43, 설정 › 알림) — DB push_target 이 같이 돌려준다 */
+export type PushSub = { endpoint: string; p256dh: string; auth: string; mute?: string[] };
 
 /**
  * 알려진 브라우저 푸시 서버 주소인가 — DB(save_push_subscription)와 같은 목록.
