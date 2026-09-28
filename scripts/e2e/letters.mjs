@@ -1,5 +1,6 @@
 import { CHROME, OUT } from './_env.mjs';
 import { chromium } from 'playwright-core';
+import { writeFileSync } from 'node:fs';
 // 익명편지 (Phase 32 · 35) — 편지함(새 편지 + 책상 위 보관함) · 보관함(받은 · 보낸) → 봉투 열기 연출 → 편지로 답장 · 새 편지(찾기 → 서명 → 봉투에 담아 보내기) · 메뉴 · 설정 · 이름 적기
 // 가짜 Supabase 를 브라우저 요청 가로채기로 (서버: run.mjs 가 5199 에 띄운다)
 const SP = OUT;
@@ -344,6 +345,98 @@ try {
 	await two.page.waitForURL(`${BASE}/`, { timeout: 8000 }).catch(() => {});
 	check('★ 적으면 저장하고 홈으로', called(w2, 'set_my_name').at(-1)?.[1]?.p_name === '이외부' && new URL(two.page.url()).pathname === '/', two.page.url());
 	check('페이지 오류 없음 (둘째)', two.errors.length === 0, two.errors.join(' / '));
+
+	console.log('[인스타 스토리]');
+	const w5 = world();
+	const lines14 = Array.from({ length: 14 }, (_, i) => `${i + 1}번째 줄 — 너랑 얘기하면 하루가 금방 가`).join('\n');
+	w5.letters.push(
+		{ id: 61, thread_id: 11, box: 'received', from_gender: 'f', from_name: null, from_nick: '비밀친구', opened: true, is_reply: false, body: lines14,
+			fmt: { m: [[0, 6, 'b'], [9, 11, 'h:yellow'], [24, 30, 'c:blue'], [35, 38, 'z:xl'], [40, 44, 'u']], a: [[1, 'center'], [2, 'right']] }, created_at: ago(20) },
+		{ id: 62, thread_id: 12, box: 'received', from_gender: 'm', from_name: null, opened: true, is_reply: false, body: '가나다라마바사아 '.repeat(110).trim(), created_at: ago(25) }
+	);
+	const r5 = await openApp(browser, w5);
+	const p5 = r5.page;
+	const ig = p5.getByRole('button', { name: '인스타그램 스토리에 공유' });
+	// 공유 창 · 캔버스 글씨를 가로챈다 — 그림에 무엇을 그렸는지(상대 이름이 실리지 않는지) 본다
+	const hook = () => p5.evaluate(() => {
+		window.__texts = []; window.__shared = null; window.__deny = 0;
+		const orig = CanvasRenderingContext2D.prototype.fillText;
+		CanvasRenderingContext2D.prototype.fillText = function (t, ...rest) { window.__texts.push(String(t)); return orig.call(this, t, ...rest); };
+		Object.defineProperty(navigator, 'canShare', { configurable: true, value: (d) => !!d?.files?.length });
+		Object.defineProperty(navigator, 'share', { configurable: true, value: async (d) => {
+			if (window.__deny > 0) { window.__deny--; throw new DOMException('no activation', 'NotAllowedError'); }
+			window.__shared = d.files[0];
+		} });
+	});
+	const openAt = async (id) => {
+		await p5.goto(`${BASE}/letters/m/${id}`);
+		await p5.locator('.stage').click({ timeout: 1500 }).catch(() => {}); // 처음 여는 편지는 연출을 건너뛴다
+		await p5.locator('.letter-paper').waitFor({ timeout: 6000 }); await p5.waitForTimeout(300);
+		await hook();
+	};
+	const shared = () => p5.waitForFunction(() => window.__shared, null, { timeout: 8000 }).then(() => p5.evaluate(async () => {
+		const f = window.__shared; const bmp = await createImageBitmap(f);
+		const url = await new Promise((ok) => { const r = new FileReader(); r.onload = () => ok(r.result); r.readAsDataURL(f); });
+		return { type: f.type, name: f.name, w: bmp.width, h: bmp.height, url, texts: window.__texts };
+	}));
+	const saveImg = (url, name) => writeFileSync(`${SP}/${name}`, Buffer.from(url.split(',')[1], 'base64'));
+
+	await openAt(60);
+	const rb = await p5.getByRole('button', { name: '편지로 답장 쓰기' }).boundingBox(), ib = await ig.boundingBox();
+	check('★ 받은 편지: 답장 버튼 오른쪽에 작은 인스타 버튼 한 줄 (답장이 넓게)', !!ib && ib.x >= rb.x + rb.width && Math.abs(ib.y + ib.height / 2 - (rb.y + rb.height / 2)) < 2
+		&& ib.width === 54 && ib.height === 54 && rb.width > ib.width * 3, JSON.stringify({ rb, ib }));
+	await p5.screenshot({ path: `${SP}/letters-story-0-row.png` });
+	await ig.click();
+	const s1 = await shared();
+	check('★ 누르면 공유 창에 스토리 그림 한 장 — PNG 1080×1920', s1.type === 'image/png' && s1.name === 'cnsatinder-letter.png' && s1.w === 1080 && s1.h === 1920, JSON.stringify({ ...s1, url: '', texts: '' }));
+	check('그림에 편지 그대로 — To. 내 이름 · 본문 · From. 익명의 남학생 · CNSATINDER', s1.texts.includes('To. 김보냄') && s1.texts.some((t) => t.includes('시험'))
+		&& s1.texts.includes('From. 익명의 남학생') && s1.texts.includes('CNSATINDER'), JSON.stringify(s1.texts));
+	saveImg(s1.url, 'letters-story-1-short.png');
+
+	await openAt(55);
+	await ig.click();
+	const s2 = await shared();
+	check('★ 이름으로 온 답장이어도 스토리에는 상대 이름을 싣지 않는다 (From. 익명의 여학생)', (await p5.locator('.letter-paper .lp-from').innerText()) === 'From. 박받음'
+		&& s2.texts.includes('From. 익명의 여학생') && !s2.texts.some((t) => t.includes('박받음')), JSON.stringify(s2.texts));
+	saveImg(s2.url, 'letters-story-2-named.png');
+
+	await openAt(61);
+	await ig.click();
+	const s3 = await shared();
+	check('서명이 있으면 서명 · 긴 편지는 글씨를 줄여 끝줄까지 한 장에', s3.texts.includes('From. 비밀친구') && s3.texts.some((t) => t.includes('14번째')) && !s3.texts.includes('…'), JSON.stringify(s3.texts.slice(-6)));
+	saveImg(s3.url, 'letters-story-3-format.png');
+
+	await openAt(62);
+	await ig.click();
+	const s4 = await shared();
+	check('그래도 넘치는 편지는 끝을 "…" 로 자른다', s4.texts.includes('…') && s4.h === 1920);
+	saveImg(s4.url, 'letters-story-4-long.png');
+
+	await openAt(60);
+	await p5.evaluate(() => (window.__deny = 1));
+	await ig.click();
+	await p5.getByText('한 번 더 누르면').waitFor({ timeout: 5000 }).catch(() => {});
+	const drawn = await p5.evaluate(() => window.__texts.length);
+	check('그리는 사이 손길이 식어 공유 창이 막히면 "한 번 더" 안내', drawn > 0 && !(await p5.evaluate(() => window.__shared)) && (await p5.getByText('한 번 더 누르면').count()) === 1);
+	await ig.click();
+	const s5 = await shared();
+	check('★ 다시 누르면 그려 둔 그림으로 바로 공유 (다시 그리지 않는다)', s5.texts.length === drawn && s5.w === 1080);
+
+	await p5.evaluate(() => Object.defineProperty(navigator, 'canShare', { configurable: true, value: undefined }));
+	const dl = p5.waitForEvent('download', { timeout: 8000 });
+	await ig.click();
+	const file = await dl.catch(() => null);
+	await p5.getByText('스토리 그림을 저장했어요').waitFor({ timeout: 3000 }).catch(() => {});
+	check('★ 파일 공유가 안 되는 곳(데스크톱 등)은 그림을 저장 + 안내', file?.suggestedFilename() === 'cnsatinder-letter.png' && (await p5.getByText('스토리 그림을 저장했어요').count()) === 1);
+
+	w5.wait = true;
+	await openAt(60);
+	check('답장을 못 쓸 때도 안내 옆에 인스타 버튼', (await p5.locator('.actions .row .note').count()) === 1 && (await ig.count()) === 1);
+	w5.wait = false;
+	await openAt(50);
+	check('보낸 편지에는 인스타 버튼 없음', (await ig.count()) === 0);
+	check('페이지 오류 없음 (스토리)', r5.errors.length === 0, r5.errors.join(' / '));
+	await r5.ctx.close();
 } finally {
 	await browser.close();
 }

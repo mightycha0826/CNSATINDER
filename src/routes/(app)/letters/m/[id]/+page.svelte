@@ -3,7 +3,7 @@
 	 * 편지 한 통 (Phase 32) — 봉투를 열어 읽는다.
 	 * 처음 여는 받은 편지는 연출: 주소 면 → 뒤집기 → 밀랍 봉인에 금이 가고 → 봉인이 붙은 채 덮개가 열리고 → 편지지가 나와 → 펼쳐 읽는다.
 	 * 이미 열어 본 편지 · 내가 보낸 편지는 연출 없이 편지지만 펼친다. 화면을 누르면 연출을 건너뛴다.
-	 * 아래: 받은 편지면 "답장 쓰기", 보낸 편지면 읽음 · 답장 여부. ⋯ 는 편지 버리기 · 차단 · 신고 (LetterMenu).
+	 * 아래: 받은 편지면 "답장 쓰기" + 인스타 스토리 공유(Phase 45, story.ts), 보낸 편지면 읽음 · 답장 여부. ⋯ 는 편지 버리기 · 차단 · 신고 (LetterMenu).
 	 */
 	import { onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -14,7 +14,8 @@
 	import Envelope from '$lib/letters/Envelope.svelte';
 	import LetterSheet from '$lib/letters/LetterSheet.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
-	import { borderOf, iAmRecipient, myLabel, openLetter, otherLabel, paperDate, stampDate, toLabel, type Letter } from '$lib/letters/api';
+	import { anonName, borderOf, iAmRecipient, myLabel, openLetter, otherLabel, paperDate, stampDate, toLabel, type Letter } from '$lib/letters/api';
+	import { shareImage, storyImage } from '$lib/letters/story';
 	import { DM, LIST, refreshUnread } from '$lib/letters/unread.svelte';
 	import { markOpened } from '$lib/letters/mailbox.svelte';
 	import { clearNotifications } from '$lib/push';
@@ -85,6 +86,43 @@
 			: { to: other, toSub: letter.to_grade ? `${letter.to_grade}학년` : '', from: me };
 	});
 	const staging = $derived(phase !== 'read');
+
+	// ── 인스타 스토리 공유 (Phase 45) ──
+	// 그림은 누를 때 이 기기에서 그린다. 그리는 사이 손길이 식어 공유 창이 막히면(iOS) 그린 그림을 두었다가 다시 누를 때 바로 연다.
+	// From. 은 늘 익명 이름표 — 이름으로 온 답장이어도 스토리에는 상대 이름을 싣지 않는다.
+	let story: { id: number; file: File } | null = null;
+	let drawing = $state(false);
+	let sharing = false;
+	const canStory = $derived(!!letter && letter.role === 'received' && !letter.removed && !!letter.body);
+	async function shareStory() {
+		const l = letter;
+		if (!l || drawing || sharing) return;
+		haptic.select();
+		sharing = true;
+		try {
+			let file = story?.id === l.id ? story.file : null;
+			if (!file) {
+				drawing = true;
+				file = await storyImage({
+					to: names.to,
+					from: l.from_nick ?? anonName(l.from_gender),
+					date: paperDate(l.created_at),
+					body: l.body ?? '',
+					fmt: l.fmt
+				});
+				story = { id: l.id, file };
+				drawing = false;
+			}
+			const r = await shareImage(file);
+			if (r === 'again') toast('스토리 그림이 준비됐어요 · 한 번 더 누르면 공유 창이 열려요');
+			else if (r === 'saved') toast('스토리 그림을 저장했어요 · 인스타그램에서 스토리로 올려 보세요');
+		} catch {
+			toast('스토리로 공유하지 못했어요');
+		} finally {
+			drawing = false;
+			sharing = false;
+		}
+	}
 </script>
 
 
@@ -140,16 +178,36 @@
 
 			<div class="actions">
 				{#if letter.role === 'received'}
-					{#if letter.can_reply && !letter.wait_reply}
-						<button class="btn reply" onclick={() => goto(`/letters/m/${letter!.id}/reply`)}>
-							<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7l8 6 8-6M4 7v10h16V7H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
-							편지로 답장 쓰기
-						</button>
-					{:else if letter.wait_reply}
-						<p class="note">답장을 기다리는 중이에요 · 상대가 답하면 다시 쓸 수 있어요</p>
-					{:else}
-						<p class="note">끝난 편지예요</p>
-					{/if}
+					<!-- 답장(넓게) · 인스타 스토리(작게, 오른쪽) 한 줄 -->
+					<div class="row">
+						{#if letter.can_reply && !letter.wait_reply}
+							<button class="btn reply" onclick={() => goto(`/letters/m/${letter!.id}/reply`)}>
+								<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7l8 6 8-6M4 7v10h16V7H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+								편지로 답장 쓰기
+							</button>
+						{:else if letter.wait_reply}
+							<p class="note">답장을 기다리는 중이에요 · 상대가 답하면 다시 쓸 수 있어요</p>
+						{:else}
+							<p class="note">끝난 편지예요</p>
+						{/if}
+						{#if canStory}
+							<button class="ig" class:busy={drawing} onclick={shareStory} aria-label="인스타그램 스토리에 공유" aria-busy={drawing}>
+								<svg viewBox="0 0 24 24" aria-hidden="true">
+									<defs>
+										<linearGradient id="ig-grad" x1="0" y1="1" x2="1" y2="0">
+											<stop offset="0" stop-color="#feda75" />
+											<stop offset="0.3" stop-color="#fa7e1e" />
+											<stop offset="0.6" stop-color="#d62976" />
+											<stop offset="1" stop-color="#4f5bd5" />
+										</linearGradient>
+									</defs>
+									<rect x="3" y="3" width="18" height="18" rx="5.5" fill="none" stroke="url(#ig-grad)" stroke-width="2" />
+									<circle cx="12" cy="12" r="4.2" fill="none" stroke="url(#ig-grad)" stroke-width="2" />
+									<circle cx="17.2" cy="6.8" r="1.25" fill="url(#ig-grad)" />
+								</svg>
+							</button>
+						{/if}
+					</div>
 				{:else}
 					<p class="note">
 						{#if letter.replied}답장이 왔어요 · 받은 편지함에서 확인해 보세요
@@ -273,11 +331,47 @@
 		align-items: center;
 		gap: 6px;
 	}
-	.reply {
-		display: inline-flex;
+	.row {
+		display: flex;
 		align-items: center;
-		justify-content: center;
+		gap: 10px;
+		width: 100%;
+	}
+	.reply {
+		flex: 1;
+		min-width: 0;
 		gap: 8px;
+	}
+	.row .note {
+		flex: 1;
+	}
+	/* 인스타 스토리 — 답장 버튼(54) 옆 작은 동그라미. 누름 영역은 54 그대로 (G1) */
+	.ig {
+		flex: none;
+		display: grid;
+		place-items: center;
+		width: 54px;
+		height: 54px;
+		border-radius: 50%;
+		background: var(--field);
+		transition:
+			transform 0.15s,
+			opacity 0.2s;
+	}
+	.ig:active {
+		transform: scale(0.92);
+	}
+	.ig svg {
+		width: 24px;
+		height: 24px;
+	}
+	.ig.busy {
+		animation: pulse 0.9s ease-in-out infinite alternate;
+	}
+	@keyframes pulse {
+		to {
+			opacity: 0.45;
+		}
 	}
 	.reply svg {
 		width: 18px;

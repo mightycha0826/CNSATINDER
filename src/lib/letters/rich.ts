@@ -134,7 +134,8 @@ export function fromDoc(doc: Node): { body: string; fmt: LetterFmt | null } {
 }
 
 // ── body + fmt → 화면에 그릴 줄 목록 ─────────────────────────────────
-export type Run = { text: string; cls: string; style: string };
+/** keys = 이 조각의 서식 종류 (b · i · h:yellow …) — 화면은 cls · style 을, 스토리 그림(story.ts)은 keys 를 쓴다 */
+export type Run = { text: string; cls: string; style: string; keys: string[] };
 export type Line = { align: Align; runs: Run[] };
 
 /** fmt 가 이상해도(잘린 미리보기, 옛 데이터) 모르는 종류·범위 밖은 조용히 버린다 */
@@ -183,5 +184,5 @@ function styleOf(text: string, keys: string[]): Run {
 		else if (k.startsWith('z:')) style.push(`font-size:${SIZE[k.slice(2) as keyof typeof SIZE]}`);
 	}
 	if (deco.length) style.push(`text-decoration-line:${[...new Set(deco)].join(' ')}`);
-	return { text, cls: cls.join(' '), style: style.join(';') };
+	return { text, cls: cls.join(' '), style: style.join(';'), keys };
 }

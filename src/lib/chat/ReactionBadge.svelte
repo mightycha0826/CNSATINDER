@@ -12,15 +12,32 @@
 	{onclick}
 	aria-label="공감 {summary.emojis.join(' ')}{summary.count ? ' 2개' : ''}"
 >
-	{#each summary.emojis as e, i (i)}<span>{e}</span>{/each}
-	{#if summary.count}<span class="n">{summary.count}</span>{/if}
+	<span class="pill">
+		{#each summary.emojis as e, i (i)}<span>{e}</span>{/each}
+		{#if summary.count}<span class="n">{summary.count}</span>{/if}
+	</span>
 </button>
 
 <style>
+	/* 보이는 알약은 22 지만 누름은 44 × 44 (G1) — 알약 윗변에서 아래로 넓힌다. 말풍선과 겹치는 건 알약이 걸친 7px 줄뿐이라
+	   말풍선의 길게 누르기 · 두 번 톡 · 밀기 · 오른쪽 클릭 · 글자 고르기를 가로채지 않는다 (G1.3).
+	   (예전엔 가운데에서 위아래로 넓혀 말풍선 아래쪽 절반을 덮었고, 그걸 말풍선 밑에 깔자 위 절반이 가려 44 가 안 됐다)
+	   아래로 넓힌 자리는 ChatView .bwrap.reacted 가 비워 둔다 */
 	.reacts {
 		position: absolute;
-		bottom: -15px;
-		left: 8px;
+		top: calc(100% - 7px);
+		left: 2px;
+		display: flex;
+		justify-content: center;
+		align-items: flex-start;
+		min-width: 44px;
+		height: 44px;
+	}
+	.reacts.mine {
+		left: auto;
+		right: 2px;
+	}
+	.pill {
 		display: flex;
 		align-items: center;
 		gap: 1px;
@@ -32,21 +49,8 @@
 		font-size: 12px;
 		line-height: 1;
 	}
-	/* 배지는 22 지만 누름은 44 (G1) — 말풍선 아래 자리는 ChatView .bwrap.reacted 가 비워 둔다.
-	   넓힌 영역은 말풍선 밑에 깐다(z-index -1, 쌓임 기준은 ChatView .bwrap): 위로 넓힌 만큼이 말풍선 아래쪽 절반을 덮어
-	   길게 누르기 · 두 번 톡 · 밀기 · 오른쪽 클릭 · 글자 고르기를 배지가 가로채던 것 (G1.3). 보이는 배지는 그대로 말풍선 위 */
-	.reacts::after {
-		content: '';
-		position: absolute;
-		inset: min(-2px, calc(50% - 22px));
-		z-index: -1;
-	}
-	.reacts:active {
+	.reacts:active .pill {
 		transform: scale(0.9);
-	}
-	.reacts.mine {
-		left: auto;
-		right: 8px;
 	}
 	.n {
 		margin-left: 2px;

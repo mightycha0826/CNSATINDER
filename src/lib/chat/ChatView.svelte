@@ -1130,7 +1130,6 @@
 	/* ── 공감 ── */
 	.bwrap {
 		position: relative;
-		isolation: isolate; /* 공감 배지의 넓힌 누름 영역(z-index -1)이 이 안에서 말풍선 밑에 깔리게 — ReactionBadge */
 		max-width: 75%;
 		min-width: 0;
 		transition: transform 0.2s ease-out; /* 놓으면 제자리로 */
@@ -1164,9 +1163,9 @@
 		width: 18px;
 		height: 18px;
 	}
-	/* 공감 배지 자리 + 배지의 누름 영역(44)이 다음 말풍선을 덮지 않을 만큼 */
+	/* 공감 배지의 누름 영역(말풍선 아래 7px 위에서 44)이 다음 말풍선을 덮지 않을 만큼 — 다음 줄 margin-top 2 와 합쳐 37 */
 	.bwrap.reacted {
-		margin-bottom: 22px;
+		margin-bottom: 35px;
 	}
 	.bwrap .bubble {
 		max-width: none;
