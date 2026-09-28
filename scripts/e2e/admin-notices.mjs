@@ -15,8 +15,18 @@ const RPC = {
 	admin_notices: () => notices.filter((n) => !n.removed).sort((a, b) => b.id - a.id),
 	admin_post_notice: (a) => { calls.push(['post', a]); if (ROLE !== 'admin') throw { status: 400, body: { message: 'admin_only' } }; const id = ++seq; notices.push({ id, title: a.p_title, body: a.p_body, created_at: new Date().toISOString() }); audit.push({ id: audit.length + 1, staff_id: STAFF, action: 'post_notice', target_user: null, report_id: null, detail: { notice: id, title: a.p_title }, created_at: new Date().toISOString() }); return id; },
 	admin_remove_notice: (a) => { calls.push(['remove', a]); const n = notices.find((x) => x.id === a.p_id && !x.removed); if (!n) throw { status: 400, body: { message: 'notice_not_found' } }; n.removed = true; return null; },
-	admin_audit: () => audit
+	admin_audit: () => audit,
+	// 문의 (Phase 37)
+	admin_inquiries: () => ({ open: inquiries.filter((q) => !q.answered_at).length, items: [...inquiries].sort((a, b) => (!!a.answered_at - !!b.answered_at) || a.id - b.id) }),
+	admin_answer_inquiry: (a) => { calls.push(['answer', a]); const q = inquiries.find((x) => x.id === a.p_id); if (q.answered_at) throw { status: 400, body: { message: 'already_answered' } }; q.answer = a.p_answer; q.answered_at = new Date().toISOString(); return 900 + q.id; },
+	admin_student_labels: (a) => { calls.push(['labels', a]); return Object.fromEntries(a.p_users.map((u) => [u, '20101 김문의'])); },
+	personal_notice_push: () => ({ skip: 'no_subscription' })
 };
+const U1 = '22222222-2222-4222-8222-222222222222';
+const inquiries = [
+	{ id: 1, user_id: U1, kind: 'bug', body: '편지 봉투가 안 열려요', created_at: new Date().toISOString(), answer: null, answered_at: null },
+	{ id: 2, user_id: U1, kind: 'use', body: '예전 문의', created_at: new Date().toISOString(), answer: '답했어요', answered_at: new Date().toISOString() }
+];
 const sb = http.createServer((req, res) => { let b = ''; req.on('data', (c) => (b += c)); req.on('end', () => { const fn = req.url.match(/rpc\/([a-z_]+)/)?.[1]; const send = (s, o) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); }; if (!RPC[fn]) return send(404, { message: 'no ' + fn }); try { send(200, RPC[fn](JSON.parse(b || '{}'))); } catch (e) { send(e.status ?? 500, e.body ?? { message: String(e) }); } }); }).listen(54399);
 const env = { ...process.env, SUPABASE_URL: SB, SUPABASE_SERVICE_ROLE_KEY: 'service-key-xxxxxxxxxxxx', PUBLIC_SUPABASE_URL: SB, PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_testtesttesttesttest', ADMIN_SESSION_SECRET: SECRET };
 const vite = spawn('npx', ['vite', 'dev', '--port', String(PORT), '--strictPort'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -64,6 +74,21 @@ try {
 		const r = await page.request.post(`http://localhost:${PORT}/admin/notices?/post`, { form: { title: '몰래', body: '' }, headers: { origin: `http://localhost:${PORT}`, 'x-sveltekit-action': 'true' } });
 		check('★ 운영진이 직접 요청해도 서버가 막음', calls.length === 0 && (await r.text()).includes('관리자만'), String(r.status()));
 	}
+	console.log('  [문의]');
+	await page.locator('header.bar nav a', { hasText: '문의' }).click(); await settle();
+	check('★ 메뉴 "문의" → 답변 대기 · 답변한 문의', page.url().endsWith('/admin/inquiries') && (await page.locator('h1').innerText()).includes('답변 대기 1개')
+		&& (await page.locator('.list li').first().innerText()).includes('편지 봉투가 안 열려요') && (await page.locator('.a-card.done').innerText()).includes('답했어요'));
+	check(ROLE === 'admin' ? '관리자: 보낸 학생 이름표 (기록에 남음)' : '운영진: 이름표 없이 "보낸 학생 보기"',
+		ROLE === 'admin' ? (await page.locator('.list li').first().locator('a.who').innerText()) === '20101 김문의' : (await page.locator('.list li').first().locator('a.who').innerText()) === '보낸 학생 보기' && !calls.some((c) => c[0] === 'labels'));
+	const reply = page.locator('.list li', { hasText: '편지 봉투가 안 열려요' });
+	await reply.locator('textarea').fill('새로고침 후 다시 열어 보세요');
+	answer = false; await reply.getByRole('button', { name: '답변 보내기' }).click(); await settle();
+	check('확인창 취소 → 안 보냄', !calls.some((c) => c[0] === 'answer'));
+	answer = true; await reply.getByRole('button', { name: '답변 보내기' }).click(); await settle();
+	check('★ 답변 → 서버에 문의 번호 · 답변', calls.find((c) => c[0] === 'answer')?.[1].p_id === 1 && calls.find((c) => c[0] === 'answer')[1].p_answer === '새로고침 후 다시 열어 보세요');
+	check('★ 답변하면 답변한 문의로 옮겨 간다', (await page.locator('h1').innerText()).includes('답변 대기 0개') && (await page.locator('.a-ok').innerText()).includes('답변을 보냈어요')
+		&& (await page.locator('.a-card.done').count()) === 2);
+	await page.screenshot({ path: `${SP}/admin-inquiries-${ROLE}.png`, fullPage: true });
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
 } finally {
 	await browser.close(); vite.kill(); sb.close();

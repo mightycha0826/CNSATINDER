@@ -18,6 +18,8 @@ let notices = [
 	{ id: 1, title: '처음 공지', body: '', created_at: ago(60 * 30) }
 ];
 let lastSeen = 1;
+const inquiries = [{ id: 1, kind: 'bug', body: '예전에 보낸 문의', created_at: new Date().toISOString(), answer: '확인했어요, 고쳤어요!', answered_at: new Date().toISOString() }];
+const inqCalls = [];
 const marks = [];
 
 const prof = { id: uid, nickname: '푸른고래', bio: '', interests: [], mbti: null, gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true, allow_rematch: false };
@@ -43,6 +45,14 @@ try {
 			return json(prof);
 		}
 		if (u.pathname === '/rest/v1/app_settings') return json({ is_open: true, notice: '', room_minutes: 10, extend_minutes: 10, vote_window_sec: 30, join_grace_sec: 30, max_rounds: 99, heartbeat_sec: 30, presence_ttl_sec: 70, msg_max_len: 500, max_open_rooms: 5, letter_max_len: 1000, comment_max_len: 300 });
+		// 문의 (Phase 37)
+		if (u.pathname === '/rest/v1/rpc/my_inquiries') { inqCalls.push('list'); return json(inquiries); }
+		if (u.pathname === '/rest/v1/rpc/send_inquiry') {
+			const a = req.postDataJSON(); inqCalls.push(a);
+			if (inquiries.filter((q) => !q.answer).length >= 1) return json({ status: 'too_many' });
+			inquiries.unshift({ id: 10 + inquiries.length, kind: a.p_kind, body: a.p_body, created_at: new Date().toISOString(), answer: null, answered_at: null });
+			return json({ status: 'ok', id: 10 });
+		}
 		if (u.pathname.startsWith('/rest/v1/rpc/')) return json(null);
 		return json([]);
 	});
@@ -129,7 +139,7 @@ try {
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
 	const setHeads = await heads();
-	check('★ 설정 = 화면(한 줄) · 테마 색상 · 알림 · 매칭 · 편지 · 계정 · 약관 및 정책 · 로그아웃', setHeads.join(',') === '테마 색상,알림,매칭,편지,계정,약관 및 정책'
+	check('★ 설정 = 화면(한 줄) · 테마 색상 · 알림 · 매칭 · 편지 · 계정 · 도움(문의) · 약관 및 정책 · 로그아웃', setHeads.join(',') === '테마 색상,알림,매칭,편지,계정,도움,약관 및 정책'
 		&& (await page.getByRole('switch', { name: '새 메시지 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
 		&& (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
 	check('뒤로는 둥근 단추 · 제목 가운데', (await page.locator('button.back').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%'
@@ -196,6 +206,30 @@ try {
 	await page.goto(`${BASE}/settings/nope`); await page.getByText('없는 문서예요').waitFor({ timeout: 8000 }).catch(() => {});
 	check('없는 문서 주소', await page.getByText('없는 문서예요').isVisible());
 	await page.goto(`${BASE}/settings`); await page.getByRole('radiogroup', { name: '화면' }).waitFor({ timeout: 8000 });
+
+	console.log('[설정 · 운영진에게 문의하기]');
+	await page.getByRole('link', { name: '운영진에게 문의하기' }).click(); await page.waitForURL('**/settings/contact');
+	await page.locator('.mine .q').first().waitFor({ timeout: 8000 });
+	check('★ 설정 › 운영진에게 문의하기 → 문의 화면 · 내 문의와 답변', (await page.locator('.mine .q').count()) === 1 && (await page.locator('.mine .answer').innerText()).includes('확인했어요')
+		&& (await page.locator('.mine .st').innerText()) === '답변 완료');
+	check('종류 다섯 가지 · 처음은 "이용 방법"', (await page.getByRole('radiogroup', { name: '무엇에 관한 문의인가요?' }).getByRole('radio').count()) === 5
+		&& (await page.getByRole('radio', { name: '이용 방법' }).getAttribute('aria-checked')) === 'true');
+	const sendBtn = page.getByRole('button', { name: '보내기', exact: true });
+	await page.getByRole('textbox', { name: '문의 내용' }).fill('짧아');
+	check('5자 안 되면 보내기 꺼짐', await sendBtn.isDisabled());
+	await page.getByRole('radio', { name: '오류 제보' }).click();
+	await page.getByRole('textbox', { name: '문의 내용' }).fill('  알림이 두 번씩 와요  ');
+	await sendBtn.click(); await page.locator('.mine .q').nth(1).waitFor({ timeout: 5000 });
+	check('★ 보내기 → 종류 · 내용(앞뒤 공백 정리) · 목록 맨 위에 "답변 대기"', JSON.stringify(inqCalls.find((c) => typeof c === 'object')) === JSON.stringify({ p_kind: 'bug', p_body: '알림이 두 번씩 와요' })
+		&& (await page.locator('.mine .q').first().innerText()).includes('알림이 두 번씩 와요') && (await page.locator('.mine .st').first().innerText()) === '답변 대기'
+		&& (await page.getByRole('textbox', { name: '문의 내용' }).inputValue()) === '' && (await toastText()).includes('문의를 보냈어요'));
+	await page.getByRole('textbox', { name: '문의 내용' }).fill('하나 더 보내 봅니다');
+	await sendBtn.click(); await page.locator('.err').waitFor({ timeout: 5000 });
+	check('★ 답을 못 받은 문의가 많으면 안내 (글은 그대로)', (await page.locator('.err').innerText()).includes('답변을 기다리는 문의') && (await page.getByRole('textbox', { name: '문의 내용' }).inputValue()) === '하나 더 보내 봅니다');
+	check('문의 화면은 열 때 한 번 · 보낸 뒤 한 번만 목록을 읽는다 (주기 확인 없음)', inqCalls.filter((c) => c === 'list').length === 2, String(inqCalls.filter((c) => c === 'list').length));
+	await page.screenshot({ path: `${SP}/settings-contact.png`, fullPage: true });
+	await page.locator('button.back').click(); await page.waitForURL(/\/settings$/);
+	await page.getByRole('radiogroup', { name: '화면' }).waitFor({ timeout: 8000 });
 
 	console.log('[설정 · 화면 모드]');
 	const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);

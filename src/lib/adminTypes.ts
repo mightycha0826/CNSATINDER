@@ -307,7 +307,19 @@ export const ACTION_LABEL: Record<string, string> = {
 	remove_notice: '공지 내림',
 	remove_dm: '이름 편지 내림',
 	personal_notice: '개인 공지 보냄',
-	remove_personal_notice: '개인 공지 거둠'
+	remove_personal_notice: '개인 공지 거둠',
+	answer_inquiry: '문의 답변'
+};
+
+/** 학생 문의 (admin_inquiries, Phase 37) — 답변하면 그 학생에게 개인 공지로 간다 */
+export type InquiryRow = {
+	id: number;
+	user_id: string;
+	kind: 'use' | 'safety' | 'account' | 'bug' | 'etc';
+	body: string;
+	created_at: string;
+	answer: string | null;
+	answered_at: string | null;
 };
 
 /** 한 사람에게 보낸 개인 공지 (admin_personal_notices, Phase 35) */

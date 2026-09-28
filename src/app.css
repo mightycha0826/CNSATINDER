@@ -773,17 +773,29 @@ button.g-row:active:not(:disabled) {
    줄 친 미색 종이 · 왼쪽 여백선(브랜드 코랄) · 손글씨 To./From. · .stacked 면 뒤에 한 장 더 겹쳐 보인다
    본문도 손글씨 (Phase 37). 줄은 종이가 아니라 본문 칸에 긋는다 — 한 줄(--rule-h, px 고정) 아래쪽에 선이 있어서
    글자가 언제나 줄 위에 앉는다 (종이 맨 위부터 그으면 To. 높이만큼 어긋났다). 글자 크기를 바꿔도 줄 간격은 그대로. */
+/* 편지지 꾸밈 (Phase 37) — 종이 결(아주 옅은 섬유 무늬) · 가장자리가 살짝 바랜 빛 · 두 줄 여백선 ·
+   테마 색으로 물든 줄 · 오른쪽 아래 학교 로고 물자국 · 위에 테마 색 마스킹 테이프 한 조각. 그림은 모두 CSS (이미지 파일 없음) */
 .letter-paper {
 	--rule-h: 34px;
+	--paper-line: color-mix(in srgb, var(--accent) 11%, var(--paper-rule));
+	--paper-margin: color-mix(in srgb, var(--accent) 38%, transparent);
 	position: relative;
-	padding: 22px 20px 18px 30px;
-	border-radius: 6px;
+	padding: 26px 20px 18px 30px;
+	border-radius: 4px;
 	background-color: var(--paper);
-	background-image: linear-gradient(90deg, transparent 21px, color-mix(in srgb, var(--g-pink) 28%, transparent) 21px 22.5px, transparent 22.5px);
+	background-image:
+		linear-gradient(90deg, transparent 20px, var(--paper-margin) 20px 21px, transparent 21px 23.5px, var(--paper-margin) 23.5px 24.5px, transparent 24.5px),
+		url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 232'%3E%3Cpath d='M0 57L50 86V202L0 174ZM0 57L100 0V56L50 86ZM50 86L100 56L166 28L152 42V87L102 116V174L50 202ZM152 42L166 28L200 57L152 87ZM102 116L200 57V173L102 231Z' fill='%238a6f55' fill-opacity='.06'/%3E%3C/svg%3E"),
+		radial-gradient(140% 100% at 50% 35%, transparent 55%, color-mix(in srgb, var(--paper-edge) 70%, transparent)),
+		url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .32 0 0 0 0 .22 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+	background-repeat: no-repeat, no-repeat, no-repeat, repeat;
+	background-size: auto, 76px auto, auto, 180px;
+	background-position: 0 0, right 22px bottom 64px, 0 0, 0 0;
 	color: var(--paper-ink);
 	box-shadow:
+		0 0 0 1px color-mix(in srgb, var(--paper-edge) 60%, transparent),
 		0 1px 2px rgb(0 0 0 / 0.08),
-		0 10px 28px -10px rgb(60 30 20 / 0.28);
+		0 12px 30px -12px rgb(60 30 20 / 0.32);
 }
 .letter-paper.stacked::after {
 	content: '';
@@ -796,14 +808,23 @@ button.g-row:active:not(:disabled) {
 	transform: rotate(1.4deg);
 	opacity: 0.85;
 }
+/* 마스킹 테이프 — 반투명 테마 색 · 사선 무늬 · 양 끝은 손으로 뜯은 톱니 */
 .letter-paper::before {
 	content: '';
 	position: absolute;
-	inset: 0 0 auto;
-	height: 4px;
-	border-radius: 6px 6px 0 0;
-	background: var(--accent-fill);
-	opacity: 0.85;
+	top: -9px;
+	left: 50%;
+	width: 104px;
+	height: 24px;
+	translate: -50% 0;
+	rotate: -2.5deg;
+	background:
+		repeating-linear-gradient(-45deg, rgb(255 255 255 / 0.22) 0 5px, transparent 5px 10px),
+		var(--accent-fill);
+	opacity: 0.72;
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+	clip-path: polygon(0 8%, 4% 0, 8% 10%, 12% 0, 88% 0, 92% 12%, 96% 0, 100% 10%, 100% 92%, 96% 100%, 92% 88%, 88% 100%, 12% 100%, 8% 90%, 4% 100%, 0 90%);
+	pointer-events: none;
 }
 .letter-paper .lp-head {
 	display: flex;
@@ -855,7 +876,7 @@ button.g-row:active:not(:disabled) {
 	line-height: var(--rule-h);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
-	background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-h) - 1px), var(--paper-rule) calc(var(--rule-h) - 1px) var(--rule-h));
+	background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-h) - 1px), var(--paper-line) calc(var(--rule-h) - 1px) var(--rule-h));
 	background-attachment: local;
 }
 .letter-paper .lp-body * {

@@ -134,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 37 적용** — 2026-09-28 Supabase 커넥터로 실DB 에 적용 (문의 `private.inquiries` · `send_inquiry` · `my_inquiries` ·
+      `admin_inquiries` · `admin_answer_inquiry`, 정리 예약 `simbun-purge-inquiries`). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 36 적용** — 2026-09-28 Supabase 커넥터로 실DB 에 적용 (`room_view`/`ack_room` 보고 있음 창 45초, `online_ttl_sec` 130,
       pg_cron 실행 기록 정리 `simbun-purge-cron-log`). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 35 적용** — 2026-09-28 Supabase 커넥터로 실DB 에 적용 (편지 서명 `dm_msgs.from_nick` · `dm_send`/`dm_reply_to` 에 `p_nick`,
@@ -457,4 +459,8 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       편지 본문도 To. · From. 과 같은 손글씨(나눔펜)로 쓰고 읽는다. 줄은 종이가 아니라 본문 칸에 긋고 줄 간격을 34px 로 고정해
       글줄이 언제나 편지지 줄 위에 앉는다 (종이 맨 위부터 그어 To. 높이만큼 어긋나던 것). 설치한 앱에는 새로고침 단추가 없어서
       탭 첫 화면 맨 위에서 당겼다 놓으면 새 버전을 확인하고 다시 불러온다(`PullRefresh`), 설정 › 계정에도 "앱 새로고침".
+      편지지 꾸밈 — 종이 결 · 가장자리 바랜 빛 · 두 줄 여백선 · 테마 색 줄 · 학교 로고 물자국 · 마스킹 테이프 (이미지 파일 없이 CSS).
+      상단 하트 · 톱니 그림 크기를 눈으로 같게(하트 가로 19 · 톱니 20).
+      운영진에게 문의하기 — 설정 › 도움 에서 종류를 골라 보내고, 내 문의와 답변을 본다. 운영 화면 "문의" 탭에서 답하면
+      그 학생에게 개인 공지(알림 · 공지 · 푸시)로 간다. 답 못 받은 문의 3개 · 하루 5개까지, 180일 뒤 삭제.
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

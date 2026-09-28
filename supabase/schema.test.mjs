@@ -3171,5 +3171,44 @@ console.log('\n[81] 편지 서명 · 학번 검색 · 개인 공지 · 실시간
 	check('★ 둘 다 대화 화면을 보고 있으면 "대화 중"', (await st()).talking === 1);
 }
 
+console.log('\n[82] 운영진에게 문의하기 (Phase 37)');
+{
+	const Q = await person('f', 'm'), O = await person('m', 'f');
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+	check('종류가 없거나 너무 짧으면 bad_input', (await rpcAs(Q, 'send_inquiry', 'nope', '안녕하세요 문의')).status === 'bad_input'
+		&& (await rpcAs(Q, 'send_inquiry', 'use', ' 짧 ')).status === 'bad_input'
+		&& (await rpcAs(Q, 'send_inquiry', 'use', '가'.repeat(1001))).status === 'bad_input');
+	const q1 = await rpcAs(Q, 'send_inquiry', 'bug', '  편지 봉투가 안 열려요  ');
+	check('★ 문의 보내기 (앞뒤 공백 정리)', q1.status === 'ok' && (await one('select body from private.inquiries where id = $1', [q1.id])).body === '편지 봉투가 안 열려요');
+	await rpcAs(Q, 'send_inquiry', 'use', '두 번째 문의입니다');
+	await rpcAs(Q, 'send_inquiry', 'etc', '세 번째 문의입니다');
+	check('★ 답을 못 받은 문의는 3개까지', (await rpcAs(Q, 'send_inquiry', 'etc', '네 번째 문의입니다')).status === 'too_many');
+	const mine = await rpcAs(Q, 'my_inquiries');
+	check('내 문의 목록 (최근 순 · 답변 없음)', mine.length === 3 && mine[0].body === '세 번째 문의입니다' && mine.every((x) => x.answer === null) && !JSON.stringify(mine).includes(Q));
+	check('★ 남의 문의는 안 보인다', (await rpcAs(O, 'my_inquiries')).length === 0);
+	await expectError('학생은 문의 표를 직접 못 읽는다', () => rowsAs(Q, 'select * from private.inquiries'), 'permission denied');
+	await expectError('★ 학생은 운영진 문의 목록을 못 부른다', () => rowsAs(Q, 'select public.admin_inquiries($1)', [Q]), 'permission denied');
+	await expectError('학생은 답변할 수 없다', () => rowsAs(Q, `select public.admin_answer_inquiry($1, $2, '답')`, [Q, q1.id]), 'permission denied');
+	await expectError('운영진 명단에 없으면 거절', () => svc('admin_inquiries', O), 'not_staff');
+
+	const list = await svc('admin_inquiries', mod);
+	const openIds = list.items.filter((x) => !x.answered_at).map((x) => x.id);
+	check('★ 운영진 목록: 답을 기다리는 문의 수 · 오래된 것부터', list.open >= 3 && openIds.indexOf(q1.id) >= 0
+		&& openIds.every((x, i) => i === 0 || openIds[i - 1] < x), JSON.stringify(openIds));
+	await expectError('빈 답변은 안 된다', () => svc('admin_answer_inquiry', mod, q1.id, '  '), 'bad_answer');
+	const nid = await svc('admin_answer_inquiry', mod, q1.id, '새로고침 후 다시 열어 보세요!');
+	check('★ 답변 → 그 학생에게 개인 공지 (하트 · 공지에 뜬다)', (await rpcAs(Q, 'my_notices')).personal.some((n) => n.id === nid && n.title === '문의하신 내용에 답변드려요' && n.body === '새로고침 후 다시 열어 보세요!')
+		&& (await rpcAs(O, 'my_notices')).personal.length === 0);
+	check('★ 내 문의 목록에도 답변', (await rpcAs(Q, 'my_inquiries')).find((x) => x.id === q1.id)?.answer === '새로고침 후 다시 열어 보세요!');
+	check('답변은 활동 기록에 남는다', Number((await one(`select count(*) n from private.audit_log where action = 'answer_inquiry' and target_user = $1`, [Q])).n) === 1);
+	await expectError('같은 문의에 두 번 답할 수 없다', () => svc('admin_answer_inquiry', adm, q1.id, '또 답'), 'already_answered');
+	check('답을 받으면 다시 보낼 수 있다 (답 못 받은 문의 2개)', (await rpcAs(Q, 'send_inquiry', 'account', '네 번째 문의입니다')).status === 'ok');
+	check('★ 하루 5개까지', (await rpcAs(Q, 'send_inquiry', 'etc', '다섯 번째 문의')).status === 'too_many');
+	await db.query(`update private.inquiries set answered_at = now(), answer = 'x' where user_id = $1`, [Q]);
+	check('답을 다 받아도 하루 5개를 넘으면 rate', (await rpcAs(Q, 'send_inquiry', 'etc', '다섯 번째 문의')).status === 'ok'
+		&& (await rpcAs(Q, 'send_inquiry', 'etc', '여섯 번째 문의')).status === 'rate');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

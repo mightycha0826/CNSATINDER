@@ -382,6 +382,15 @@
 		</button>
 	</div>
 
+	<!-- 운영진에게 문의하기 (Phase 37) — 답변은 개인 공지로 온다 -->
+	<h2 class="g-head">도움</h2>
+	<div class="g-card">
+		<a class="g-row" href="/settings/contact">
+			<span>운영진에게 문의하기</span>
+			<Chevron />
+		</a>
+	</div>
+
 	<h2 class="g-head">약관 및 정책</h2>
 	<div class="g-card">
 		{#each LEGAL_IDS as id (id)}

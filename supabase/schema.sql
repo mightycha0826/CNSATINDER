@@ -5900,3 +5900,118 @@ begin
   end if;
 end
 $do$;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 37 — 운영진에게 문의하기
+--   학생: 설정 › 운영진에게 문의하기 — 종류 하나 고르고 글을 보낸다. 내가 보낸 문의와 답변을 같은 화면에서 본다.
+--   운영진: 운영 화면 "문의" 탭 — 답변을 적으면 그 학생에게 개인 공지로 가고(하트 · 공지 · 푸시), 문의에도 답변이 남는다.
+--   남용 막기: 답을 못 받은 문의는 3개까지 · 하루 5개까지. 답변 180일 뒤(답이 없으면 보낸 지 180일 뒤) 지운다.
+-- ════════════════════════════════════════════════════════════════════
+create table if not exists private.inquiries (
+  id           bigint generated always as identity primary key,
+  user_id      uuid not null references public.profiles(id) on delete cascade,
+  kind         text not null check (kind in ('use', 'safety', 'account', 'bug', 'etc')),
+  body         text not null check (char_length(btrim(body)) between 5 and 1000),
+  created_at   timestamptz not null default now(),
+  answer       text check (char_length(answer) <= 2000),
+  answered_at  timestamptz,
+  answered_by  uuid,
+  notice_id    bigint
+);
+create index if not exists inquiries_user on private.inquiries (user_id, id desc);
+create index if not exists inquiries_open on private.inquiries (id) where answered_at is null;
+alter table private.inquiries enable row level security;
+revoke all on private.inquiries from public, anon, authenticated;
+
+-- 학생: 문의 보내기 → ok | bad_input | too_many(답 못 받은 문의 3개) | rate(하루 5개)
+create or replace function public.send_inquiry(p_kind text, p_body text)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); v bigint; b text := btrim(coalesce(p_body, ''));
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if coalesce(p_kind, '') not in ('use', 'safety', 'account', 'bug', 'etc') or char_length(b) not between 5 and 1000 then
+    return jsonb_build_object('status', 'bad_input');
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('inquiry:' || me::text, 0));
+  if (select count(*) from private.inquiries where user_id = me and answered_at is null) >= 3 then
+    return jsonb_build_object('status', 'too_many');
+  end if;
+  if (select count(*) from private.inquiries where user_id = me and created_at > now() - interval '1 day') >= 5 then
+    return jsonb_build_object('status', 'rate');
+  end if;
+  insert into private.inquiries (user_id, kind, body) values (me, p_kind, b) returning id into v;
+  return jsonb_build_object('status', 'ok', 'id', v);
+end
+$fn$;
+revoke all on function public.send_inquiry(text, text) from public, anon;
+grant execute on function public.send_inquiry(text, text) to authenticated;
+
+-- 학생: 내가 보낸 문의 (최근 20개) · 답변
+create or replace function public.my_inquiries()
+returns jsonb language sql security definer set search_path = '' stable as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object('id', i.id, 'kind', i.kind, 'body', i.body, 'created_at', i.created_at,
+                                               'answer', i.answer, 'answered_at', i.answered_at) order by i.id desc), '[]'::jsonb)
+    from (select * from private.inquiries where user_id = (select auth.uid()) order by id desc limit 20) i;
+$fn$;
+revoke all on function public.my_inquiries() from public, anon;
+grant execute on function public.my_inquiries() to authenticated;
+
+-- 운영진: 문의 목록 — 답을 기다리는 것 먼저(오래된 순), 그다음 답한 것(최근 순). 운영진 누구나
+create or replace function public.admin_inquiries(p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  perform private.require_staff(p_staff);
+  return jsonb_build_object(
+    'open', (select count(*) from private.inquiries where answered_at is null),
+    'items', coalesce((
+      select jsonb_agg(jsonb_build_object('id', i.id, 'user_id', i.user_id, 'kind', i.kind, 'body', i.body, 'created_at', i.created_at,
+                                          'answer', i.answer, 'answered_at', i.answered_at) order by (i.answered_at is null) desc,
+                                          case when i.answered_at is null then i.id end asc, i.id desc)
+        from (select * from private.inquiries
+               order by (answered_at is null) desc, case when answered_at is null then id end asc, id desc limit 100) i
+    ), '[]'::jsonb));
+end
+$fn$;
+
+-- 운영진: 답변 — 그 학생에게 개인 공지로 보내고(돌려주는 값 = 공지 번호, 알림은 personal_notice_push) 문의에 답을 남긴다. 기록에 남는다
+create or replace function public.admin_answer_inquiry(p_staff uuid, p_id bigint, p_answer text)
+returns bigint language plpgsql security definer set search_path = public, private as $fn$
+declare q private.inquiries%rowtype; a text := btrim(coalesce(p_answer, '')); v bigint;
+begin
+  perform private.require_staff(p_staff);
+  if char_length(a) not between 1 and 2000 then raise exception 'bad_answer'; end if;
+  select * into q from private.inquiries where id = p_id for update;
+  if not found then raise exception 'inquiry_not_found'; end if;
+  if q.answered_at is not null then raise exception 'already_answered'; end if;
+  insert into private.personal_notices (user_id, kind, title, body, created_by)
+  values (q.user_id, 'message', '문의하신 내용에 답변드려요', a, p_staff)
+  returning id into v;
+  update private.inquiries set answer = a, answered_at = now(), answered_by = p_staff, notice_id = v where id = p_id;
+  insert into private.audit_log (staff_id, action, target_user, detail)
+  values (p_staff, 'answer_inquiry', q.user_id, jsonb_build_object('inquiry', p_id, 'notice', v));
+  return v;
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['admin_inquiries(uuid)', 'admin_answer_inquiry(uuid, bigint, text)']
+  loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+    execute format('grant execute on function public.%s to service_role', f);
+  end loop;
+end
+$do$;
+
+-- 오래된 문의 지우기 — 답변 180일 뒤 (답이 없으면 보낸 지 180일 뒤)
+do $do$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'simbun-purge-inquiries';
+    perform cron.schedule('simbun-purge-inquiries', '57 4 * * *',
+      $q$delete from private.inquiries where coalesce(answered_at, created_at) < now() - interval '180 days'$q$);
+  end if;
+end
+$do$;

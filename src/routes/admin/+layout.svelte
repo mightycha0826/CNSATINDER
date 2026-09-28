@@ -40,6 +40,7 @@
 			{ href: '/admin/users', label: '사용자' },
 			{ href: '/admin/rooms', label: '전체 대화', admin: true },
 			{ href: '/admin/notices', label: '공지사항' },
+			{ href: '/admin/inquiries', label: '문의' },
 			{ href: '/admin/settings', label: '운영 설정' },
 			{ href: '/admin/audit', label: '활동 기록' }
 		].filter((n) => !n.admin || data.staff?.role === 'admin')

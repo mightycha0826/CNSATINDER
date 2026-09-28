@@ -29,7 +29,7 @@
 	<button class="ic heart" onclick={() => goto('/activity')} aria-label={count ? `알림 (새 알림 있음)` : '알림'}>
 		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
 			<path
-				d="M12 20.3s-7.6-4.6-7.6-10.3A4.4 4.4 0 0 1 12 7.2a4.4 4.4 0 0 1 7.6 2.8c0 5.7-7.6 10.3-7.6 10.3z"
+				d="M12 20.6C8.2 18.3 2.6 14.2 2.6 9.2A5.1 5.1 0 0 1 12 6.3a5.1 5.1 0 0 1 9.4 2.9c0 5-5.6 9.1-9.4 11.4z"
 				stroke="currentColor"
 				stroke-width="1.8"
 				stroke-linejoin="round"
@@ -38,12 +38,13 @@
 		{#if count}<span class="dot"></span>{/if}
 	</button>
 	<button class="ic settings" onclick={() => goto('/settings')} aria-label="설정">
-		<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8" />
+		<!-- 톱니는 톱니 끝까지 22칸이라 하트(19칸)보다 커 보인다 — 한 치수 작게(viewBox 26) 그리고, 선 굵기는 1.8 로 보이게 -->
+		<svg viewBox="-1 -1 26 26" fill="none" aria-hidden="true">
+			<circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.95" />
 			<path
 				d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
 				stroke="currentColor"
-				stroke-width="1.8"
+				stroke-width="1.95"
 				stroke-linejoin="round"
 			/>
 		</svg>
