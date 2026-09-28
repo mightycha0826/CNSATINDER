@@ -218,7 +218,12 @@
 <style>
 	.ai {
 		position: fixed;
-		inset: 0;
+		/* 보이는 영역에 딱 맞춘다 — 아이폰에서 키보드가 올라와도 머리글이 밀려 올라가지 않고 입력 줄이 키보드 위에 (Phase 41, lib/keyboard.svelte.ts) */
+		top: 0;
+		left: 0;
+		right: 0;
+		height: var(--vvh, 100dvh);
+		transform: translateY(var(--vv-top, 0px));
 		z-index: 60;
 		display: flex;
 		flex-direction: column;
@@ -371,6 +376,10 @@
 		padding: 8px var(--pad) calc(8px + env(safe-area-inset-bottom));
 		background: var(--bg);
 	}
+	/* 키보드가 떠 있을 때는 홈 인디케이터 여백이 필요 없다 */
+	:global(html.kb-open) .composer {
+		padding-bottom: 8px;
+	}
 	.composer .btn {
 		width: 100%;
 	}
@@ -391,7 +400,8 @@
 		outline: none;
 		resize: none;
 		background: none;
-		font-size: 15px;
+		/* 16px 미만이면 아이폰이 입력칸에 들어갈 때 화면을 확대한다 (Phase 41) */
+		font-size: 16px;
 		line-height: 1.38;
 		max-height: 120px;
 	}

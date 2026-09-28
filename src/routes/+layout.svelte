@@ -17,6 +17,7 @@
 	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import { markNavigating, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { reducedMotion } from '$lib/motion';
+	import { trackKeyboard } from '$lib/keyboard.svelte';
 
 	let { children } = $props();
 
@@ -45,6 +46,12 @@
 		const noop = () => {};
 		document.addEventListener('touchstart', noop, { passive: true });
 		return () => document.removeEventListener('touchstart', noop);
+	});
+
+	// 휴대폰 키보드 (Phase 41) — 보이는 영역 · 키보드 높이를 <html> 에 적어 두고 화면들이 그 값에 맞춘다 (lib/keyboard.svelte.ts)
+	$effect(() => {
+		if (isAdmin) return;
+		return trackKeyboard();
 	});
 
 	// PWA 설치 프롬프트를 잡아둔다 (Android/Chrome)

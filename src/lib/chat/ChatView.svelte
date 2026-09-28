@@ -4,6 +4,7 @@
 	 * 실제 방(/chat)과 개발용 미리보기(/dev/chat)가 같은 컴포넌트를 쓴다.
 	 */
 	import * as haptic from '$lib/haptics';
+	import { KB } from '$lib/keyboard.svelte';
 	import { tick, untrack } from 'svelte';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import type { ChatRoom } from './room.svelte';
@@ -282,26 +283,8 @@
 
 	// ── 키보드 (모바일) ──────────────────────────────────────────
 	// iOS 는 키보드가 올라와도 100dvh 가 줄지 않고 페이지 전체를 위로 밀어 올린다 → 헤더와 최근 메시지가
-	// 화면 밖으로 사라진다. 실제로 보이는 영역(visualViewport)에 대화 화면을 딱 맞춘다.
-	let vvH = $state<number | null>(null);
-	let vvTop = $state(0);
-	let keyboard = $state(false);
-	$effect(() => {
-		const vv = window.visualViewport;
-		if (!vv) return;
-		const sync = () => {
-			vvH = vv.height;
-			vvTop = vv.offsetTop;
-			keyboard = window.innerHeight - vv.height > 120;
-		};
-		sync();
-		vv.addEventListener('resize', sync);
-		vv.addEventListener('scroll', sync);
-		return () => {
-			vv.removeEventListener('resize', sync);
-			vv.removeEventListener('scroll', sync);
-		};
-	});
+	// 화면 밖으로 사라진다. 실제로 보이는 영역(visualViewport)에 대화 화면을 딱 맞춘다 — 값은 앱 전체가 같이 쓰는
+	// lib/keyboard.svelte.ts 가 <html> 에 적어 둔 --vvh · --vv-top (Phase 41).
 
 	// ── 스크롤 ───────────────────────────────────────────────────
 	/** 맨 아래에서 얼마나 떨어져 있는지 — 목록 높이가 바뀌어도(키보드) 보던 자리를 지킨다 */
@@ -621,9 +604,7 @@
 
 <div
 	class="chat"
-	class:keyboard
-	style:height={vvH ? `${vvH}px` : null}
-	style:--vv-top={`${vvTop}px`}
+	class:keyboard={KB.open}
 >
 	<ChatHeader
 		alias={room?.snap?.partner_alias ?? null}
@@ -905,7 +886,7 @@
 	.chat {
 		display: flex;
 		flex-direction: column;
-		height: 100dvh;
+		height: var(--vvh, 100dvh);
 		/* 보이는 영역에 고정 — 키보드가 올라와도 페이지째 밀려 올라가지 않는다 */
 		position: fixed;
 		top: 0;
@@ -1398,7 +1379,8 @@
 		outline: none;
 		resize: none;
 		background: none;
-		font-size: 15px;
+		/* 16px 미만이면 아이폰이 입력칸에 들어갈 때 화면을 확대하고 그대로 둔다 (Phase 41) */
+		font-size: 16px;
 		line-height: 1.38;
 		max-height: 120px;
 	}

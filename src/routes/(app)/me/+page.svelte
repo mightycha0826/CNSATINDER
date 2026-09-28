@@ -370,7 +370,7 @@
 		border: 1px dashed var(--cell-line);
 		border-radius: 999px;
 		background: none;
-		font-size: 14px;
+		font-size: 16px; /* 16px 미만이면 아이폰이 확대한다 (Phase 41) */
 		outline: none;
 	}
 	.tag-input:focus {

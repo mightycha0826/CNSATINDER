@@ -720,6 +720,12 @@ button.g-row:active:not(:disabled) {
 	flex: none;
 	height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
 }
+/* 키보드가 떠 있는 동안은 탭바를 숨긴다 (Phase 41, lib/keyboard.svelte.ts) — 프로필 소개를 쓸 때 줄어든 화면을
+   탭바가 또 먹거나(안드로이드) 키보드 위에 탭바가 떠 입력칸을 가리지(아이폰) 않게 */
+html.kb-open .tabbar,
+html.kb-open .tabbar-space {
+	display: none;
+}
 
 /* 토스트 — 한 장만. 새 알림이 오면 같은 칸에 겹쳐 그린다 (떠 있던 것은 빨리 사라지고 새 것이 튀어 오른다, Phase 35) */
 .toasts {
@@ -735,6 +741,10 @@ button.g-row:active:not(:disabled) {
 	max-width: calc(100vw - 32px);
 	pointer-events: none;
 	view-transition-name: toasts;
+}
+/* 키보드가 떠 있으면 키보드(아이폰은 --kb 만큼) 위 · 입력 줄 위에 (G11) */
+html.kb-open .toasts {
+	bottom: calc(76px + var(--kb, 0px));
 }
 .toasts > * {
 	grid-area: 1 / 1;

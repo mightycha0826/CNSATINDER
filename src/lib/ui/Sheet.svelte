@@ -88,6 +88,8 @@
 		display: flex;
 		align-items: flex-end;
 		justify-content: center;
+		/* 아이폰은 키보드가 시트 아래를 가린다 — 그만큼 올려서 신고 메모 · 버튼이 키보드 위에 (Phase 41) */
+		padding-bottom: var(--kb, 0px);
 		background: rgb(14 6 9 / 0.48);
 		-webkit-backdrop-filter: blur(3px);
 		backdrop-filter: blur(3px);
@@ -98,7 +100,7 @@
 		position: relative;
 		width: 100%;
 		max-width: 520px;
-		max-height: 92dvh;
+		max-height: calc(var(--vvh, 100dvh) * 0.92);
 		overflow-y: auto;
 		padding: 22px 0 calc(10px + env(safe-area-inset-bottom));
 		border-radius: 28px 28px 0 0;

@@ -128,7 +128,7 @@
 		border-radius: 12px;
 		background: var(--field);
 		color: var(--text);
-		font-size: 14px;
+		font-size: 16px; /* 16px 미만이면 아이폰이 확대한다 (Phase 41) */
 		outline: none;
 	}
 	.hint-in:focus {

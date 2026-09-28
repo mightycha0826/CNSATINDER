@@ -93,20 +93,6 @@
 	const paperPos = $derived(phase === 'rising' || phase === 'fold' || phase === 'write' ? 'out' : 'in');
 	const sealed = $derived(['seal', 'flip', 'fly'].includes(phase));
 
-	// iOS 는 키보드가 올라와도 화면(레이아웃)이 줄지 않는다 — 키보드 높이만큼 보내기 줄을 올린다
-	let kb = $state(0);
-	$effect(() => {
-		const vv = window.visualViewport;
-		if (!vv) return;
-		const sync = () => (kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)));
-		sync();
-		vv.addEventListener('resize', sync);
-		vv.addEventListener('scroll', sync);
-		return () => {
-			vv.removeEventListener('resize', sync);
-			vv.removeEventListener('scroll', sync);
-		};
-	});
 </script>
 
 <svelte:window bind:innerWidth={vw} />
@@ -142,7 +128,8 @@
 				{/if}
 			{/snippet}
 		</LetterEditor>
-		<div class="foot" style:--kb="{kb}px">
+		<!-- iOS 는 키보드가 올라와도 화면(레이아웃)이 줄지 않는다 — 키보드 높이(--kb, lib/keyboard.svelte.ts)만큼 보내기 줄을 올린다 -->
+		<div class="foot">
 			<span class="num" class:over={len > MAX}>{len > MAX ? `${len - MAX}자 넘음 · ` : ''}{len}/{MAX}</span>
 			<button class="btn send" onclick={send} disabled={!ready}>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l16-8-6 16-3-7-7-1z" fill="currentColor" /></svg>
@@ -268,6 +255,10 @@
 		background: linear-gradient(to top, var(--bg) 70%, color-mix(in srgb, var(--bg) 0%, transparent));
 		font-size: 12px;
 		color: var(--text-2);
+	}
+	/* 키보드가 떠 있을 때는 홈 인디케이터 여백이 필요 없다 */
+	:global(html.kb-open) .foot {
+		padding-bottom: 10px;
 	}
 	.over {
 		color: var(--danger);
