@@ -133,12 +133,59 @@ export function fromDoc(doc: Node): { body: string; fmt: LetterFmt | null } {
 	return { body, fmt: m.length || a.length ? fmt : null };
 }
 
+// ── body + fmt → 편집기(Tiptap) 문서 — 자동 초안을 되살릴 때 (fromDoc 의 반대) ──────────────
+/** 종류 하나 → Tiptap 표시. 글자색 · 크기는 둘 다 textStyle 이라 부르는 쪽에서 하나로 합친다 */
+function markOf(k: string): Mark {
+	if (k === 'b') return { type: 'bold' };
+	if (k === 'i') return { type: 'italic' };
+	if (k === 'u') return { type: 'underline' };
+	if (k === 's') return { type: 'strike' };
+	if (k.startsWith('h:')) return { type: 'highlight', attrs: { color: HIGHLIGHT[k.slice(2) as keyof typeof HIGHLIGHT] } };
+	if (k.startsWith('c:')) return { type: 'textStyle', attrs: { color: COLOR[k.slice(2) as keyof typeof COLOR] } };
+	return { type: 'textStyle', attrs: { fontSize: SIZE[k.slice(2) as keyof typeof SIZE] } };
+}
+
+export function toDoc(body: string, fmt: LetterFmt | null | undefined): Node {
+	const { cps, n, marks, align } = clean(body, fmt);
+	const content: Node[] = [];
+	const para = (from: number, to: number) => {
+		const cuts = new Set([from, to]);
+		for (const [s, e] of marks) {
+			if (s > from && s < to) cuts.add(s);
+			if (e > from && e < to) cuts.add(e);
+		}
+		const points = [...cuts].sort((x, y) => x - y);
+		const runs: Node[] = [];
+		for (let j = 0; j + 1 < points.length; j++) {
+			const [a, b] = [points[j], points[j + 1]];
+			const ms: Mark[] = [];
+			for (const [, , k] of marks.filter(([s, e]) => s <= a && e >= b)) {
+				const m = markOf(k);
+				const ts = m.type === 'textStyle' ? ms.find((x) => x.type === 'textStyle') : undefined;
+				if (ts) ts.attrs = { ...ts.attrs, ...m.attrs };
+				else ms.push(m);
+			}
+			runs.push({ type: 'text', text: cps.slice(a, b).join(''), ...(ms.length ? { marks: ms } : {}) });
+		}
+		const al = align.get(content.length);
+		content.push({ type: 'paragraph', ...(al ? { attrs: { textAlign: al } } : {}), ...(runs.length ? { content: runs } : {}) });
+	};
+	let start = 0;
+	cps.forEach((c, i) => {
+		if (c !== '\n') return;
+		para(start, i);
+		start = i + 1;
+	});
+	para(start, n);
+	return { type: 'doc', content };
+}
+
 // ── body + fmt → 화면에 그릴 줄 목록 ─────────────────────────────────
 export type Run = { text: string; cls: string; style: string };
 export type Line = { align: Align; runs: Run[] };
 
 /** fmt 가 이상해도(잘린 미리보기, 옛 데이터) 모르는 종류·범위 밖은 조용히 버린다 */
-export function toLines(body: string, fmt: LetterFmt | null | undefined): Line[] {
+function clean(body: string, fmt: LetterFmt | null | undefined) {
 	const cps = Array.from(body);
 	const n = cps.length;
 	const marks = (Array.isArray(fmt?.m) ? fmt.m : [])
@@ -149,6 +196,11 @@ export function toLines(body: string, fmt: LetterFmt | null | undefined): Line[]
 	for (const x of Array.isArray(fmt?.a) ? fmt.a : []) {
 		if (Array.isArray(x) && Number.isInteger(x[0]) && (x[1] === 'center' || x[1] === 'right')) align.set(x[0], x[1]);
 	}
+	return { cps, n, marks, align };
+}
+
+export function toLines(body: string, fmt: LetterFmt | null | undefined): Line[] {
+	const { cps, n, marks, align } = clean(body, fmt);
 
 	const cuts = new Set([0, n]);
 	for (const [s, e] of marks) cuts.add(s).add(e);

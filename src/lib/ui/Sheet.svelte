@@ -8,7 +8,7 @@
 	 */
 	import type { Snippet } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import { focustrap } from '$lib/focustrap';
+	import { focustrap, releaseTrap } from '$lib/focustrap';
 	import { backClose } from '$lib/overlay.svelte';
 	import { reducedMotion } from '$lib/motion';
 
@@ -42,8 +42,14 @@
 		else dy = 0;
 	}
 
-	/** 사라질 때 — 시트는 아래로 미끄러지고(끌던 자리에서 이어서) 바탕은 흐려진다 (G7.1) */
+	function fadeOut(node: HTMLElement) {
+		node.style.pointerEvents = 'none';
+		return fade(node, { duration: reducedMotion() ? 0 : 200 });
+	}
+	/** 사라질 때 — 시트는 아래로 미끄러지고(끌던 자리에서 이어서) 바탕은 흐려진다 (G7.1).
+	 * 사라지는 동안은 누름을 막지 않고 포커스도 가두지 않는다 — 닫자마자 누른 뒤 화면이 먹히게 */
 	function slideOut(node: Element) {
+		releaseTrap(node);
 		const from = dy;
 		const h = node.getBoundingClientRect().height;
 		return {
@@ -56,7 +62,7 @@
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose?.()} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="scrim" role="presentation" onclick={() => onclose?.()} out:fade={{ duration: reducedMotion() ? 0 : 200 }}>
+<div class="scrim" role="presentation" onclick={() => onclose?.()} out:fadeOut>
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
 		class="sheet"

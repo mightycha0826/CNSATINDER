@@ -94,3 +94,32 @@ export function useTabBack() {
 
 	return { switchTab };
 }
+
+/**
+ * 알림으로 앱을 새로 열어 깊은 화면(대화방 · 편지 · 공지)에 곧장 들어왔을 때의 뒤로가기 (docs/UX-GUIDELINES.md G5.7).
+ * 기록이 이 한 칸뿐이라 그대로 두면 안드로이드 뒤로가기가 앱을 닫는다.
+ *
+ * 방법: 같은 주소로 얕은 기록 한 칸(deep)을 쌓아 둔다. 뒤로가기(또는 화면의 ←, lib/nav.ts goBack)로 그 칸이 걷혀
+ * 맨 아래 칸이 드러나면 그 자리를 홈으로 바꿔 끼운다 — 홈이 기록의 맨 아래가 되고, 홈에서는 useTabBack 이 이어받는다.
+ * 사용자 동작 없이 쌓은 칸이라 크롬은 화면을 한 번도 누르지 않았으면 뒤로가기에서 건너뛸 수 있다(그때는 예전처럼 닫힌다).
+ *
+ * 컴포넌트 초기화 중에 부른다 ((app)/+layout.svelte).
+ */
+export function useDeepBack() {
+	// 맨 아래 칸의 SvelteKit 기록 번호 — 그 칸으로 돌아온 것을 알아본다 (같은 주소로 다시 들어온 것과 헷갈리지 않게)
+	let base: number | null = null;
+	const idx = () => (history.state?.['sveltekit:history'] as number | undefined) ?? null;
+
+	$effect(() => {
+		if (history.length > 1 || ROOTS.includes(untrack(() => page.url.pathname))) return;
+		base = idx();
+		untrack(() => pushState('', { ...page.state, deep: true }));
+	});
+
+	$effect(() => {
+		void page.state; // 기록 칸이 바뀔 때마다 (얕은 기록을 걷어도 page.state 가 바뀐다)
+		if (base === null || idx() !== base) return;
+		base = null;
+		untrack(() => void goto('/', { replaceState: true }));
+	});
+}

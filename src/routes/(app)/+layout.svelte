@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { useTabBack } from '$lib/tabBack.svelte';
+	import { useDeepBack, useTabBack } from '$lib/tabBack.svelte';
 	import { whileVisible } from '$lib/visible';
 	import { DM, refreshUnread } from '$lib/letters/unread.svelte';
 	import AchievementCelebrate from '$lib/ui/AchievementCelebrate.svelte';
@@ -62,6 +62,7 @@
 	});
 
 	const { switchTab } = useTabBack(); // 뒤로가기: 익명편지·프로필 → 홈, 홈 → 두 번 누르면 종료 (lib/tabBack.svelte.ts)
+	useDeepBack(); // 알림으로 깊은 화면에 곧장 들어왔으면 뒤로가기 → 홈 (앱이 닫히지 않게)
 </script>
 
 {@render children()}

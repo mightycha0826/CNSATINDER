@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { hasSupabase, supabase } from './supabase';
 import { disablePush, syncPush } from './push';
+import { clearDrafts } from './letters/draft';
 
 /** 내 프로필. 상대에게는 nickname·bio·interests·mbti 만 partner_profile() 을 거쳐 보인다 (성별·선호·상태는 안 보인다). */
 export type Profile = {
@@ -382,6 +383,7 @@ export async function signOut() {
 	await disablePush().catch(() => {}); // 이 기기로 이 계정 알림이 더 오지 않게
 	await beat(false);
 	await supabase.auth.signOut();
+	clearDrafts(); // 쓰던 편지 초안 — 같은 기기의 다음 계정에 보이면 안 된다 (G14.4)
 	S.profile = null;
 	S.hasPassword = null;
 	S.me = undefined;

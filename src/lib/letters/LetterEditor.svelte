@@ -12,7 +12,7 @@
 	import { Color, FontSize, TextStyle } from '@tiptap/extension-text-style';
 	import { TextAlign } from '@tiptap/extension-text-align';
 	import { Placeholder, UndoRedo } from '@tiptap/extensions';
-	import { COLOR, COLOR_LABEL, HIGHLIGHT, HIGHLIGHT_LABEL, SIZE, SIZE_LABEL, fromDoc, type LetterFmt } from './rich';
+	import { COLOR, COLOR_LABEL, HIGHLIGHT, HIGHLIGHT_LABEL, SIZE, SIZE_LABEL, fromDoc, toDoc, type LetterFmt } from './rich';
 	import '@fontsource/nanum-pen-script/index.css';
 
 	/**
@@ -20,8 +20,9 @@
 	 * 문단 하나 = 본문 한 줄. 붙여넣기는 글자만 받는다(다른 곳의 서식·색은 버린다).
 	 * 결과는 body(순수 텍스트) + fmt(서식 범위)로 내보낸다 — 서버에는 이 둘만 간다.
 	 * before · after 를 주면 글 쓰는 칸을 편지지(app.css .letter-paper)로 감싸고 그 위 · 아래에 그린다 (To. · From.)
+	 * 처음 body · fmt 가 있으면(자동 초안) 그 내용으로 시작한다.
 	 */
-	import type { Snippet } from 'svelte';
+	import { untrack, type Snippet } from 'svelte';
 	let {
 		body = $bindable(''),
 		fmt = $bindable<LetterFmt | null>(null),
@@ -55,6 +56,7 @@
 				UndoRedo,
 				Placeholder.configure({ placeholder })
 			],
+			content: untrack(() => (body ? toDoc(body, fmt) : undefined)),
 			autofocus: 'end',
 			editorProps: {
 				attributes: { class: 'le-doc', role: 'textbox', 'aria-multiline': 'true', 'aria-label': '편지 내용', spellcheck: 'false' },
@@ -71,7 +73,8 @@
 					return true;
 				}
 			},
-			onTransaction: () => tick++,
+			// 다음 틱에 — 글을 쓰던 채로 편집기가 사라지면(뒤로가기) 사라지는 도중에 blur 트랜잭션이 와서, 그 자리에서 상태를 바꾸면 Svelte 가 막는다
+			onTransaction: () => queueMicrotask(() => tick++),
 			onUpdate: ({ editor: e }) => {
 				const r = fromDoc(e.getJSON());
 				body = r.body;

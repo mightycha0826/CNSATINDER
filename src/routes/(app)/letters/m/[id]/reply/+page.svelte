@@ -72,6 +72,7 @@
 		nickable={anonSide}
 		nick={letter.my_nick ?? ''}
 		placeholder={'받은 편지에 답장을 적어 보세요.\n답장도 봉투에 담겨 전해져요.'}
+		draft="re:{letter.id}"
 		onsend={send}
 		ondone={done}
 	/>

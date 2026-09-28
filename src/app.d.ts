@@ -15,7 +15,7 @@ declare global {
 			ov?: string[];
 			/** 편지 쓰기 단계 — 뒤로가기로 받는 사람 고르기로 돌아간다 (letters/new) */
 			compose?: boolean;
-			/** 알림으로 앱을 새로 열어 깊은 화면에 곧장 들어왔다 — 뒤로가기는 홈으로 (lib/nav.ts) */
+			/** 알림으로 앱을 새로 열어 깊은 화면에 곧장 들어왔다 — 뒤로가기는 홈으로 (lib/tabBack.svelte.ts useDeepBack) */
 			deep?: boolean;
 		}
 		/** Cloudflare Workers — 응답 뒤에도 작업(푸시 발송)을 마저 하기 위해 · Workers AI 바인딩(wrangler.jsonc "ai") */

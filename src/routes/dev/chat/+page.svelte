@@ -7,6 +7,7 @@
 	 *
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { ChatRoom } from '$lib/chat/room.svelte';
@@ -261,11 +262,16 @@
 			void goto('/', { replaceState: true });
 			return;
 		}
-		const r = new ChatRoom(ROOM, new PreviewTransport());
-		room = r;
-		void r.open().then(() => (loading = false));
-		// &toast : 알림이 2.4초 뒤 사라지는지 확인용
-		if (page.url.searchParams.has('toast')) toast('테스트 알림'); // toast() 는 내부에서 untrack
+		// 전부 untrack — 가짜 전송(connect · send)이 page.url 을 읽는데, 겹친 창(시트 · 고르기)을 뒤로 닫으면 page.url 이
+		// 새 객체가 되어 방을 새로 만들어 버린다(쓰던 글 · 공감이 사라진다, UX G14.1)
+		const r = untrack(() => {
+			const r = new ChatRoom(ROOM, new PreviewTransport());
+			room = r;
+			void r.open().then(() => (loading = false));
+			// &toast : 알림이 2.4초 뒤 사라지는지 확인용
+			if (page.url.searchParams.has('toast')) toast('테스트 알림');
+			return r;
+		});
 		return () => r.dispose();
 	});
 </script>

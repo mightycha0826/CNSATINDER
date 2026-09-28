@@ -8,7 +8,16 @@
  *    알림 띠 · 화면 아래 알림(aria-live)은 계속 읽히게 건드리지 않는다
  *  · 닫히면 열기 직전에 포커스가 있던 곳(여는 버튼)으로 돌려놓는다 — 그 사이 사라졌거나 다른 곳이 포커스를 가져갔으면 그대로 둔다
  * 겹쳐 열리면 맨 위 창만 가둔다.
+ * 나가는 연출이 있는 창은 연출이 시작될 때 releaseTrap(창) — 사라지는 동안 뒤 화면이 inert 로 남아
+ * 바로 누른 입력칸 · 버튼이 먹히지 않는 일이 없게 (UX G7.1).
  */
+const RELEASE = 'focustrap:release';
+
+/** 창이 나가기 시작했다 — 가두기를 지금 푼다(뒤 화면 inert 해제 · 포커스 돌려놓기) */
+export function releaseTrap(node: Element | null | undefined) {
+	node?.dispatchEvent(new Event(RELEASE));
+}
+
 const FOCUSABLE =
 	'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), summary, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
 const LIVE = '[aria-live], [role="status"], [role="alert"]';
@@ -60,17 +69,21 @@ export function focustrap(node: HTMLElement, initial?: string) {
 	};
 	document.addEventListener('keydown', onkey);
 	document.addEventListener('focusin', onfocusin);
-
-	return {
-		destroy() {
-			document.removeEventListener('keydown', onkey);
-			document.removeEventListener('focusin', onfocusin);
-			stack.splice(stack.indexOf(node), 1);
-			release();
-			// 창을 닫는 버튼이 다른 곳(입력창 등)에 포커스를 줬으면 그쪽을 존중한다
-			const now = document.activeElement;
-			const lost = !now || now === document.body || node.contains(now);
-			if (lost && trigger?.isConnected && !trigger.closest('[inert]')) trigger.focus({ preventScroll: true });
-		}
+	let done = false;
+	const destroy = () => {
+		if (done) return;
+		done = true;
+		node.removeEventListener(RELEASE, destroy);
+		document.removeEventListener('keydown', onkey);
+		document.removeEventListener('focusin', onfocusin);
+		stack.splice(stack.indexOf(node), 1);
+		release();
+		// 창을 닫는 버튼이 다른 곳(입력창 등)에 포커스를 줬으면 그쪽을 존중한다
+		const now = document.activeElement;
+		const lost = !now || now === document.body || node.contains(now);
+		if (lost && trigger?.isConnected && !trigger.closest('[inert]')) trigger.focus({ preventScroll: true });
 	};
+	node.addEventListener(RELEASE, destroy);
+
+	return { destroy };
 }

@@ -244,7 +244,7 @@ try {
 	await page.locator('.rate-bar').click(); await page.waitForTimeout(200);
 	check('막대를 누르면 평가 시트', await page.getByRole('dialog', { name: '매너 평가' }).isVisible());
 	await page.screenshot({ path: `${SP}/feat-14-pinrate.png` });
-	await page.getByRole('button', { name: '나중에 할게요' }).click(); await page.waitForTimeout(200);
+	await page.getByRole('button', { name: '나중에 할게요' }).click(); await page.waitForTimeout(400); // 시트가 내려가는 연출(200ms, UX G7.1) 뒤
 	check('나중에 → 시트 닫힘 · 막대는 남는다', (await page.getByRole('dialog', { name: '매너 평가' }).count()) === 0 && (await page.locator('.rate-bar').isVisible()));
 	await page.getByRole('button', { name: '프로필 보기' }).first().click(); await page.waitForTimeout(300);
 	check('상대 프로필 시트에 매너 온도 막대', (await page.locator('.profile').innerText()).includes('매너 온도') && (await page.locator('.profile').innerText()).includes('42.3°C'));

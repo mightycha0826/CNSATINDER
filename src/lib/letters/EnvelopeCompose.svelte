@@ -7,8 +7,11 @@
 	 * 보내기 단추 줄은 화면 아래(키보드 위)에 붙는다.
 	 * nickable 이면 From. 칸에 서명(닉네임)을 직접 적는다 — 비우면 anon("익명의 ○학생") 그대로.
 	 * 보내기가 실패하면 쓰던 편지지로 돌아온다. 동작 줄이기면 연출 없이 바로 쓰고, 보내면 바로 끝난다.
+	 * draft(초안 이름)를 주면 쓰는 대로 이 기기에 자동 저장하고, 다시 들어오면 이어 쓴다 — 보내면 지운다 (lib/letters/draft.ts, G5.5).
 	 */
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
+	import { toast } from '$lib/state.svelte';
+	import { dropDraft, loadDraft, saveDraft } from './draft';
 	import Envelope from './Envelope.svelte';
 	import LetterEditor from './LetterEditor.svelte';
 	import type { LetterFmt } from './rich';
@@ -22,6 +25,7 @@
 		nickable = false,
 		nick: nickInit = '',
 		placeholder,
+		draft,
 		onsend,
 		ondone
 	}: {
@@ -34,6 +38,8 @@
 		/** 미리 채울 서명 (지난번에 쓴 것) */
 		nick?: string;
 		placeholder: string;
+		/** 자동 초안 이름 — 새 편지는 `to:<받는 사람 id>`, 답장은 `re:<편지 id>` */
+		draft?: string;
 		/** 서버에 보낸다 — 됐으면 true (연출을 이어 간다), 안 됐으면 false (편지지로 돌아온다 · 이유는 부르는 쪽이 알린다) */
 		onsend: (body: string, fmt: LetterFmt | null, nick: string | null) => Promise<boolean>;
 		/** 봉투가 날아간 뒤 */
@@ -41,10 +47,37 @@
 	} = $props();
 
 	const MAX = 1000;
-	let body = $state('');
-	let fmt = $state<LetterFmt | null>(null);
+	// 초안 이름은 열릴 때 한 번 정한다 — 부르는 쪽의 값(to.id)은 닫히는 순간 이미 비었을 수 있다
 	// svelte-ignore state_referenced_locally
-	let nick = $state(nickInit);
+	const key = draft;
+	const saved = key ? loadDraft(key) : null;
+	let body = $state(saved?.body ?? '');
+	let fmt = $state<LetterFmt | null>(saved?.fmt ?? null);
+	// svelte-ignore state_referenced_locally
+	let nick = $state(saved?.nick || nickInit);
+	onMount(() => {
+		if (saved?.body) toast('쓰던 편지를 이어서 써요');
+	});
+
+	// 쓰는 대로 저장 — 0.5초 쉬면. 보내는 중 · 보낸 뒤에는 저장하지 않는다(보내면 지운다)
+	let sent = false;
+	let saveTimer: ReturnType<typeof setTimeout> | null = null;
+	/** 바뀐 것이 있으면 지금 저장 */
+	const flush = () => {
+		if (!saveTimer) return;
+		clearTimeout(saveTimer);
+		saveTimer = null;
+		if (key && !sent) saveDraft(key, { body, fmt, nick: nickable ? nick : '' });
+	};
+	let first = true;
+	$effect(() => {
+		void [body, fmt, nick];
+		if (first) return void (first = false); // 연 그대로는 저장하지 않는다
+		if (!key || sent) return;
+		if (saveTimer) clearTimeout(saveTimer);
+		saveTimer = setTimeout(flush, 500);
+	});
+	onDestroy(flush);
 	const len = $derived(Array.from(body).length);
 	const signed = $derived(nickable && nick.trim() ? nick.trim().replace(/\s+/g, ' ') : from);
 
@@ -74,6 +107,10 @@
 			phase = 'write';
 			return;
 		}
+		sent = true;
+		if (saveTimer) clearTimeout(saveTimer);
+		saveTimer = null;
+		if (key) dropDraft(key);
 		stop = play([
 			[200, () => (phase = 'tuck')],
 			[900, () => (phase = 'close')],
@@ -106,7 +143,9 @@
 	});
 </script>
 
-<svelte:window bind:innerWidth={vw} />
+<!-- 앱을 내리거나 닫을 때도 쓰던 것을 바로 저장 -->
+<svelte:window bind:innerWidth={vw} onpagehide={flush} />
+<svelte:document onvisibilitychange={() => document.visibilityState === 'hidden' && flush()} />
 
 <div class="compose" data-phase={phase}>
 	<div class="desk" aria-hidden="true"></div>

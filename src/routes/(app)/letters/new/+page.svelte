@@ -3,8 +3,11 @@
 	 * 새 편지 (Phase 32) — 1) 받을 학생을 이름으로 찾고 → 2) 봉투를 열어 편지지에 쓰고 → 봉투에 담아 보낸다 (EnvelopeCompose).
 	 * 받는 사람에게 나는 "익명의 ○학생"(성별만) 또는 내가 적은 서명으로만 보인다 (Phase 35). 받기를 끈 사람 · 차단한 사이는 검색에 나오지 않는다.
 	 * 찾기 결과에는 학년 · 학번 — 같은 학년 동명이인을 구분한다.
+	 * 받는 사람을 고르면 기록 한 칸(compose)을 쌓는다 — 뒤로가기 · ← 로 받는 사람 고르기로 돌아온다 (쓰던 편지는 초안에 남는다, G5).
 	 */
-	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
+	import { goto, pushState } from '$app/navigation';
+	import { page } from '$app/state';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import EnvelopeCompose from '$lib/letters/EnvelopeCompose.svelte';
@@ -17,6 +20,20 @@
 	let results = $state<DmPerson[] | null>(null);
 	let searching = $state(false);
 	let to = $state<DmPerson | null>(null);
+
+	function pick(p: DmPerson) {
+		to = p;
+		pushState('', { ...page.state, compose: true });
+	}
+	function repick() {
+		if (page.state.compose) history.back();
+		else to = null;
+	}
+	// 뒤로가기로 compose 칸이 걷혔다 = 받는 사람 고르기로
+	let leaving = false;
+	$effect(() => {
+		if (!page.state.compose && !leaving) untrack(() => (to = null));
+	});
 
 	$effect(() => {
 		const term = q.trim();
@@ -53,16 +70,23 @@
 			return false;
 		}
 	}
-	function done() {
+	async function done() {
 		LIST.tab = 'sent';
 		toast('편지를 보냈어요');
+		// 쓰기 칸(compose)부터 걷고 편지 쓰기 자리를 편지함으로 바꿔 끼운다 — 편지함에서 뒤로 가도 보낸 편지 쓰기로 돌아오지 않게
+		leaving = true;
+		if (page.state.compose) {
+			const popped = new Promise<void>((r) => addEventListener('popstate', () => r(), { once: true }));
+			history.back();
+			await popped;
+		}
 		void goto('/letters', { replaceState: true });
 	}
 </script>
 
 <div class="topbar">
 	{#if to}
-		<button class="x" onclick={() => (to = null)} aria-label="받는 사람 다시 고르기">
+		<button class="x" onclick={repick} aria-label="받는 사람 다시 고르기">
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
 		</button>
 	{:else}
@@ -78,6 +102,7 @@
 		from={anonName(S.profile?.gender)}
 		nickable
 		placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.\n내 이름은 보이지 않고, 아래 서명(비우면 성별)만 전해져요.`}
+		draft="to:{to.id}"
 		onsend={send}
 		ondone={done}
 	/>
@@ -110,7 +135,7 @@
 			<ul class="people">
 				{#each results as p (p.id)}
 					<li>
-						<button class="person" onclick={() => (to = p)}>
+						<button class="person" onclick={() => pick(p)}>
 							<Avatar name={p.name} size={44} />
 							<span class="who">
 								<b>{p.name}</b>

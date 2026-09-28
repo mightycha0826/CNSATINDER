@@ -6,6 +6,7 @@ import { chromium } from 'playwright-core';
 //  · 찾는 중 AI 대화를 닫아도, 끝난 대화에서 "새 대화 찾기"로 와도 찾기가 이어진다
 //  · 대화방을 열다 네트워크가 끊기면 쫓아내지 않고 그 자리에서 "다시 시도"
 //  · 공지 하나를 열면 그 공지까지만 본 것으로
+//  · 겹친 창(시트 · AI 대화)은 뒤로가기로 닫힌다 · 알림으로 깊은 화면에 곧장 들어와도 뒤로가기는 홈으로
 const PORT = Number(process.env.E2E_PORT) || 5183;
 const BASE = `http://localhost:${PORT}`;
 const env = { ...process.env, PUBLIC_SUPABASE_URL: 'https://fake-proj.supabase.co', PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_testtesttesttesttest' };
@@ -37,7 +38,7 @@ async function open(opts = {}) {
 	const log = [];
 	const errs = []; page.on('pageerror', (e) => errs.push(String(e)));
 	const st = { flakyFails: opts.flakyFails ?? 0, marks: [] };
-	await page.route('https://fake-proj.supabase.co/**', async (route) => {
+	await ctx.route('https://fake-proj.supabase.co/**', async (route) => { // 창 전체 (알림으로 새 창을 여는 시나리오)
 		const req = route.request(); const u = new URL(req.url()); const p = u.pathname;
 		log.push(p.replace('/rest/v1/', ''));
 		const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -66,7 +67,7 @@ async function open(opts = {}) {
 		if (p.startsWith('/rest/v1/rpc/')) return json(null);
 		return json([]);
 	});
-	await page.addInitScript(() => { try { localStorage.setItem('push-asked-v1', '1'); } catch {} });
+	await ctx.addInitScript(() => { try { localStorage.setItem('push-asked-v1', '1'); } catch {} });
 	const count = (path, from = 0) => log.slice(from).filter((x) => x === path).length;
 	return { ctx, page, log, errs, st, count };
 }
@@ -228,6 +229,36 @@ try {
 		await page.waitForTimeout(800);
 		check('★ 연 공지(2번)까지 본 것으로 저장', st.marks.includes(2), JSON.stringify(st.marks));
 		check('더 새 공지(3번)는 본 것으로 치지 않는다', !st.marks.includes(3), JSON.stringify(st.marks));
+		await ctx.close();
+	}
+
+	console.log('[알림으로 깊은 화면에 곧장 (G5.7)]');
+	{
+		const { ctx, page } = await open();
+		await login(page);
+		// 알림을 누르면 서비스워커가 새 창을 연다 — 기록이 한 칸뿐인 창 (newPage 는 about:blank 칸이 먼저 있어 window.open 으로)
+		const fresh = async () => (await Promise.all([ctx.waitForEvent('page'), page.evaluate((u) => void window.open(u), `${BASE}/notices/2`)]))[0];
+		const win = await fresh();
+		await win.getByRole('heading', { name: '두 번째 공지' }).waitFor({ timeout: 10000 });
+		await win.waitForTimeout(600);
+		check('깊은 화면 위에 뒤로가기 칸 하나 (deep)', (await win.evaluate(() => [history.length, !!history.state?.['sveltekit:states']?.deep])).join() === '2,true');
+		await win.mouse.click(200, 400); // 크롬은 누른 적 없는 화면에서 쌓인 칸을 건너뛴다
+		await win.goBack();
+		await win.locator('button.heart').waitFor({ timeout: 8000 });
+		await win.waitForTimeout(400);
+		check('★ 뒤로가기 → 홈 (앱이 닫히지 않는다) · 홈이 기록의 맨 아래', new URL(win.url()).pathname === '/' && (await win.evaluate(() => history.length)) === 2, `${win.url()} ${await win.evaluate(() => history.length)}`);
+		// 화면의 ← 도 같다
+		const win2 = await fresh();
+		await win2.getByRole('heading', { name: '두 번째 공지' }).waitFor({ timeout: 10000 });
+		await win2.waitForTimeout(600);
+		await win2.locator('button.back').click();
+		await win2.locator('button.heart').waitFor({ timeout: 8000 });
+		check('★ 화면의 ← → 홈', new URL(win2.url()).pathname === '/');
+		// 앱 안에서 들어온 깊은 화면에는 쌓지 않는다
+		await page.goto(`${BASE}/notices/2`);
+		await page.getByRole('heading', { name: '두 번째 공지' }).waitFor({ timeout: 10000 });
+		await page.waitForTimeout(400);
+		check('기록이 있으면 (앱 안에서 왔으면) deep 칸을 쌓지 않는다', !(await page.evaluate(() => history.state?.['sveltekit:states']?.deep)));
 		await ctx.close();
 	}
 } catch (e) { fail++; console.error(e); }

@@ -145,8 +145,10 @@ try {
 	const p0 = await phase(page), cap = await page.locator('.caption').innerText();
 	check('★ 처음 여는 편지는 연출: 주소 면부터 · "익명의 여학생에게서 편지가 왔어요"', p0 === 'front' && cap.includes('익명의 여학생에게서 편지가 왔어요'), `${p0} | ${cap}`);
 	await page.screenshot({ path: `${SP}/letters-3a-front.png` });
-	await page.waitForTimeout(1300);
-	check('뒤집어 덮개 쪽 · 봉인이 깨진다', ['back', 'crack'].includes(await phase(page)));
+	// 고정 대기 대신 그 단계가 오는지 지켜본다 — 스크린샷이 느린 기계에서 400ms 짜리 'crack' 을 지나쳐 버리지 않게
+	const flipped = await page.waitForFunction(() => ['back', 'crack'].includes(document.querySelector('[data-phase]')?.getAttribute('data-phase')), null, { timeout: 2500, polling: 'raf' }).then(() => true, () => false);
+	check('뒤집어 덮개 쪽 · 봉인이 깨진다', flipped);
+	await page.waitForFunction(() => document.querySelector('[data-phase]')?.getAttribute('data-phase') === 'crack', null, { timeout: 1500, polling: 'raf' }).catch(() => {});
 	await page.screenshot({ path: `${SP}/letters-3b-crack.png` });
 	await page.waitForTimeout(900);
 	check('덮개가 열리고 편지지가 나온다', ['open', 'out'].includes(await phase(page)));
@@ -213,6 +215,14 @@ try {
 	check('서식 도구 막대', (await page.getByRole('toolbar', { name: '서식' }).getByRole('button').count()) >= 10);
 	const editor = page.getByRole('textbox', { name: '편지 내용' });
 	await editor.fill('안녕 박받음! 오늘 발표 멋있었어');
+	// 뒤로가기 → 받는 사람 고르기 (G5) · 다시 고르면 쓰던 편지가 그대로 (자동 초안 G5.5)
+	await page.goBack(); await page.waitForTimeout(500);
+	check('★ 쓰다가 뒤로가기 → 받는 사람 고르기 (편지함으로 나가지 않는다 · 찾은 결과 그대로)', new URL(page.url()).pathname === '/letters/new' && (await page.locator('.compose').count()) === 0 && (await page.locator('.person').count()) === 2);
+	check('쓰던 편지는 이 기기에 초안으로 (계정 · 받는 사람별)', await page.evaluate((u) => JSON.parse(localStorage.getItem(`letter-draft-v1:${u}:to:u-b`) ?? '{}').body === '안녕 박받음! 오늘 발표 멋있었어', uid));
+	await page.locator('.person').first().click();
+	await page.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'write', null, { timeout: 4000 });
+	check('★ 같은 사람을 다시 고르면 쓰던 편지 · 서명이 그대로', (await editor.innerText()).trim() === '안녕 박받음! 오늘 발표 멋있었어' && (await page.locator('.letter-paper .nick').inputValue()) === '  노란   우산 ');
+	check('"쓰던 편지를 이어서 써요" 안내', (await page.locator('.toast').allInnerTexts()).some((t) => t.includes('이어서 써요')));
 	await editor.evaluate((el) => {
 		const node = el.querySelector('p').firstChild, i = node.textContent.indexOf('발표');
 		const r = document.createRange(); r.setStart(node, i); r.setEnd(node, i + 2);
@@ -226,6 +236,7 @@ try {
 	await page.screenshot({ path: `${SP}/letters-5a-compose.png` });
 	await page.getByRole('button', { name: '봉투에 넣어 보내기' }).click();
 	await page.waitForURL(/\/letters$/, { timeout: 5000 });
+	check('★ 보내면 초안을 지운다', await page.evaluate(() => !Object.keys(localStorage).some((k) => k.startsWith('letter-draft-v1:'))));
 	const sent = called(w, 'dm_send').at(-1)?.[1];
 	check('★ 고른 사람(계정 id)에게 · 서명(앞뒤 공백 정리) · 서식은 본문과 따로', sent?.p_to === 'u-b' && sent?.p_body === '안녕 박받음! 오늘 발표 멋있었어' && sent?.p_nick === '노란   우산'
 		&& JSON.stringify(sent?.p_fmt?.m?.slice().sort()) === JSON.stringify([[11, 13, 'b'], [11, 13, 'h:yellow']]), JSON.stringify(sent));
