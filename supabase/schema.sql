@@ -573,7 +573,7 @@ begin
     return public.room_snapshot(p_room);
   end if;
 
-  update public.room_members set joined_at = coalesce(joined_at, now()), viewing_until = now() + interval '25 seconds'
+  update public.room_members set joined_at = coalesce(joined_at, now()), viewing_until = now() + interval '45 seconds'
    where room_id = p_room and user_id = auth.uid();
 
   if r.status = 'pending' then
@@ -1358,7 +1358,7 @@ $do$;
 -- ════════════════════════════════════════════════════════════════════
 
 alter table public.app_settings add column if not exists max_open_rooms int not null default 5;
-alter table public.app_settings add column if not exists online_ttl_sec int not null default 70;
+alter table public.app_settings add column if not exists online_ttl_sec int not null default 130;
 alter table public.app_settings drop constraint if exists app_settings_max_open_rooms;
 alter table public.app_settings add  constraint app_settings_max_open_rooms check (max_open_rooms between 1 and 20);
 
@@ -4634,13 +4634,13 @@ end
 $fn$;
 revoke all on function private.room_clock(uuid) from public, anon, authenticated;
 
--- 대화 화면을 보고 있다(p_on) / 떠났다 — 앱이 화면을 보는 동안 10초마다 부른다
+-- 대화 화면을 보고 있다(p_on) / 떠났다 — 앱이 화면을 보는 동안 20초마다 부른다 (보고 있음 = 45초, Phase 36)
 create or replace function public.room_view(p_room uuid, p_on boolean default true)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 begin
   if public.my_seat(p_room) is null then raise exception 'not_member'; end if;
   update public.room_members
-     set viewing_until = case when p_on then now() + interval '25 seconds' else now() end
+     set viewing_until = case when p_on then now() + interval '45 seconds' else now() end
    where room_id = p_room and user_id = auth.uid();
   perform private.room_clock(p_room);
   return public.room_snapshot(p_room);
@@ -5861,7 +5861,7 @@ begin
 end
 $do$;
 
--- ── 5) 알림 정책 — 그 대화 화면을 보고 있는가 (room_view 가 10초마다 viewing_until 을 25초 뒤로 민다)
+-- ── 5) 알림 정책 — 그 대화 화면을 보고 있는가 (room_view 가 20초마다 viewing_until 을 45초 뒤로 민다)
 create or replace function private.viewing_room(p_user uuid, p_room uuid)
 returns boolean language sql stable security definer set search_path = '' as $fn$
   select exists (select 1 from public.room_members
@@ -5876,6 +5876,27 @@ begin
     perform cron.unschedule(jobid) from cron.job where jobname = 'simbun-purge-pn-push';
     perform cron.schedule('simbun-purge-pn-push', '49 4 * * *',
       $q$delete from private.personal_notice_push_log where created_at < now() - interval '1 day'$q$);
+  end if;
+end
+$do$;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 36 — Supabase 사용량 줄이기
+--   요청 하나하나가 로그(무료 1GB/월)가 된다. 앱이 보내는 주기 신호를 절반으로 줄이고 서버의 창을 그만큼 늘린다.
+--   접속 신호 30초 → 60초 (온라인 창 70초 → 130초) · 대화 "보고 있음" 10초 → 20초 (창 25초 → 45초, 위에서 고침).
+--   화면을 내리면 곧바로 오프라인 · 떠남을 알리므로, 늘어난 창은 앱이 갑자기 꺼졌을 때만 쓰인다.
+-- ════════════════════════════════════════════════════════════════════
+alter table public.app_settings alter column online_ttl_sec set default 130;
+update public.app_settings set online_ttl_sec = 130 where online_ttl_sec = 70;
+
+-- pg_cron 실행 기록(cron.job_run_details)은 스스로 지워지지 않는다 — 1분마다 도는 스위퍼 때문에 하루 1,440줄씩 쌓인다. 이틀치만 남긴다.
+do $do$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'simbun-purge-cron-log';
+    perform cron.schedule('simbun-purge-cron-log', '53 4 * * *',
+      $q$delete from cron.job_run_details where end_time < now() - interval '2 days'$q$);
   end if;
 end
 $do$;

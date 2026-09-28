@@ -104,9 +104,9 @@ try {
 	// ── 자동 갱신: 서버 상태를 바꾸고 새로고침 없이 기다린다
 	const labelsBefore = labelCalls;
 	world = world.map((u) => (u.id === D ? { ...u, online: false, last_seen: ago(0) } : u.id === C ? { ...u, seeking: false, room_count: 1, talking: 1, rooms: [id('9')] } : u));
-	await page.waitForFunction(() => document.querySelector('nav.a-tabs')?.textContent?.replace(/\s+/g, ' ').includes('매칭 대기 0'), null, { timeout: 15000 }).catch(() => {});
+	await page.waitForFunction(() => document.querySelector('nav.a-tabs')?.textContent?.replace(/\s+/g, ' ').includes('매칭 대기 0'), null, { timeout: 25000 }).catch(() => {});
 	const tabs2 = await tabText();
-	check('★ 10초 안에 새로고침 없이 상태 반영', /대화 중 2/.test(tabs2) && /대화방 있음 1/.test(tabs2) && /매칭 대기 0/.test(tabs2) && /접속 중 0/.test(tabs2) && /오프라인 2/.test(tabs2), tabs2);
+	check('★ 20초 안에 새로고침 없이 상태 반영', /대화 중 2/.test(tabs2) && /대화방 있음 1/.test(tabs2) && /매칭 대기 0/.test(tabs2) && /접속 중 0/.test(tabs2) && /오프라인 2/.test(tabs2), tabs2);
 	check('★ 자동 갱신은 학번·이름을 다시 부르지 않는다 (활동 기록이 쌓이지 않음)', labelCalls === labelsBefore, `${labelsBefore}→${labelCalls}`);
 	check('상태 RPC 는 여러 번 불림', liveCalls >= 2, String(liveCalls));
 	await page.screenshot({ path: `${SP}/live-${ROLE}-2.png`, fullPage: true });

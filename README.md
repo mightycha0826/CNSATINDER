@@ -134,6 +134,8 @@ npm run dev
       채팅·편지·댓글에 적용된다. AI 두 기능은 꺼진 채로 시작 — **개인정보 처리방침에 "Cloudflare Workers AI 로 글을 검토"를 적은 뒤**
       운영 설정에서 켠다. 배포에 `wrangler.jsonc` 의 `"ai"` 바인딩이 들어가 있어야 한다 (API 키 불필요).
       안 하면 공감을 눌러도 되돌아간다 (대화 자체는 정상).
+- [x] **Phase 36 적용** — 2026-09-28 Supabase 커넥터로 실DB 에 적용 (`room_view`/`ack_room` 보고 있음 창 45초, `online_ttl_sec` 130,
+      pg_cron 실행 기록 정리 `simbun-purge-cron-log`). 새 DB 는 `schema.sql` 을 다시 실행.
 - [x] **Phase 35 적용** — 2026-09-28 Supabase 커넥터로 실DB 에 적용 (편지 서명 `dm_msgs.from_nick` · `dm_send`/`dm_reply_to` 에 `p_nick`,
       찾기에 학번, 디플로마 목록 `private.diplomas`, 개인 공지 `private.personal_notices` · `read_personal_notice` · `admin_send_personal_notice`,
       알림 정책 `private.viewing_room`, 실시간 현황 `talking`). 새 DB 는 `schema.sql` 을 다시 실행.
@@ -445,4 +447,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       대화 목록 · 편지함을 기억해 두고 바로 그림, 매너 평가는 화면 가운데 큰 카드에서 끝냄, 토스트는 한 장만(그 자리에서 바뀜),
       업적 메달은 이모지 대신 새긴 선 그림 · 동전처럼 돌며 튀어나오는 축하, 연장 때 디플로마는 학교 목록에서 검색해 고름.
       운영: 학생 한 명에게 개인 공지(경고 · 연락) 보내기, 실시간 현황의 "대화 중"은 둘 다 대화 화면을 볼 때만. 학생 앱에서 F12 · 오른쪽 클릭 막음(보안 장치 아님)
+- [x] **Phase 36 — Supabase 사용량 줄이기**
+      요청 하나하나가 Supabase 로그(무료 1GB/월)가 된다. 새 업적 확인이 스스로 다시 도는 버그로 하루 24만 번 불리던 것을 고치고,
+      주기 요청을 줄였다 — 접속 신호 30→60초 · 대화 "보고 있음" 10→20초 · 대화 안전망 45→90초 · 대화 목록 30→60초 ·
+      안 읽은 편지 1→2분 · 편지함 30초(3개) → 2분(받은 편지 1개) · 새 업적 2→10분 · 운영자 실시간 현황 10→20초 ·
+      매너 평가 대기는 1분마다가 아니라 대화가 끝나거나 고정될 때만. 서버의 창(온라인 130초 · 보고 있음 45초)을 그만큼 늘림.
+      **새 기능을 만들 때 주기 요청은 꼭 필요한 만큼만, Realtime · 푸시 · 화면 복귀로 대신할 수 있으면 그쪽으로.**
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

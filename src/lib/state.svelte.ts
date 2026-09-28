@@ -222,9 +222,10 @@ export async function saveMyName(name: string) {
 }
 
 // ── 온라인 표시 ───────────────────────────────────────────────────────
-// 앱이 화면에 떠 있는 동안 30초마다 "켜져 있음"을 알린다. 서버는 70초 동안 온라인으로 본다.
+// 앱이 화면에 떠 있는 동안 60초마다 "켜져 있음"을 알린다. 서버는 130초 동안 온라인으로 본다.
 // 백그라운드로 가면 곧바로 오프라인을 알린다 (그래야 상대 화면의 초록 점이 바로 꺼진다).
-const BEAT_MS = 30_000;
+// 요청 하나하나가 Supabase 로그 사용량이 되므로 주기는 필요한 만큼만 (Phase 36).
+const BEAT_MS = 60_000;
 let beatTimer: ReturnType<typeof setInterval> | null = null;
 
 async function beat(online: boolean) {
@@ -244,7 +245,7 @@ function startHeartbeat() {
 	document.addEventListener('visibilitychange', () => {
 		void beat(document.visibilityState === 'visible');
 	});
-	// 앱을 완전히 닫을 때 — 응답을 기다릴 수 없으니 최선을 다할 뿐, 못 보내도 70초 뒤 자연히 오프라인
+	// 앱을 완전히 닫을 때 — 응답을 기다릴 수 없으니 최선을 다할 뿐, 못 보내도 130초 뒤 자연히 오프라인
 	window.addEventListener('pagehide', () => void beat(false));
 }
 

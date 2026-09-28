@@ -17,7 +17,6 @@
 	import { longpress } from '$lib/longpress';
 	import RateModal from '$lib/chat/RateModal.svelte';
 	import { fetchPendingRatings, ratePartner, skipRating, skippedRatings, type PendingRating, type Reason, type Score } from '$lib/manner';
-	import { whileVisible } from '$lib/visible';
 
 	/**
 	 * 홈 = 대화 목록 (인스타 DM 받은편지함).
@@ -46,11 +45,22 @@
 	let pending = $state<PendingRating[]>([]);
 	let skipped = $state(new Set<string>());
 	const toRate = $derived(pending.find((p) => !skipped.has(p.room_id)) ?? null);
+	// 평가할 대화가 생기는 때 = 대화가 끝나거나 고정될 때뿐 — 그때(대화 목록에서 끝난 · 고정된 방이 바뀔 때)만 다시 묻는다.
+	// 예전엔 1분마다 물었다 (요청 하나하나가 Supabase 로그 사용량이 된다, Phase 36)
+	const doneKey = $derived(
+		inbox.rooms
+			.filter((r) => r.status === 'closed' || r.pinned)
+			.map((r) => r.room_id)
+			.sort()
+			.join(',')
+	);
 	$effect(() => {
 		skipped = skippedRatings();
-		const load = async () => (pending = await fetchPendingRatings());
-		void load();
-		return whileVisible(() => void load(), 60_000);
+	});
+	$effect(() => {
+		if (!inbox.loaded) return;
+		void doneKey;
+		void fetchPendingRatings().then((r) => (pending = r));
 	});
 	function skip(p: PendingRating) {
 		skipRating(p.room_id);

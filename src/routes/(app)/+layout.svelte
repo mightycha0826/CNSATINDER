@@ -23,10 +23,10 @@
 	const onChat = $derived(path === '/');
 	const onMe = $derived(path === '/me');
 
-	// 안 읽은 편지 — 익명편지 탭 위 빨간 점. 앱이 보이는 동안 1분마다 (편지 목록 화면은 따로 30초마다 읽는다)
+	// 안 읽은 편지 — 익명편지 탭 위 빨간 점. 앱이 보이는 동안 2분마다 (새 편지는 푸시로도 알린다)
 	$effect(() => {
 		void refreshUnread();
-		return whileVisible(() => void refreshUnread(), 60_000);
+		return whileVisible(() => void refreshUnread(), 120_000);
 	});
 
 	// ── 대화 목록 · 앱 안 알림 (Phase 35) ──

@@ -33,6 +33,11 @@ export function refreshMailbox() {
 	void refreshUnread();
 }
 
+/** 화면을 보고 있는 동안의 주기 확인 — 새로 올 수 있는 건 받은 편지뿐 (안 읽은 수는 받은 편지와 함께 앱 틀이 따로 센다) */
+export function pollMailbox() {
+	void loadBox('received');
+}
+
 export async function loadMore(box: Box) {
 	const last = BOX[box].at(-1);
 	if (!last) return;

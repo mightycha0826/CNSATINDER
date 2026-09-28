@@ -9,13 +9,13 @@
 	let { data } = $props();
 	const admin = $derived(data.staff?.role === 'admin');
 
-	const REFRESH_MS = 10_000;
+	const REFRESH_MS = 20_000;
 	let fresh = $state<LiveUser[] | null>(null);
 	let now = $state(Date.now());
 	let failed = $state(false);
 	const users = $derived(fresh ?? data.users);
 
-	// 탭이 보이는 동안만 10초마다 상태를 다시 받는다
+	// 탭이 보이는 동안만 20초마다 상태를 다시 받는다
 	$effect(() => {
 		async function tick() {
 			try {
@@ -101,7 +101,7 @@
 	<div>
 		<h1 class="a-h1">실시간 현황</h1>
 		<p class="a-sub">
-			전체 사용자와 지금 상태 · 10초마다 자동 갱신 ({clock})
+			전체 사용자와 지금 상태 · 20초마다 자동 갱신 ({clock})
 			{#if failed}<span class="danger"> · 갱신 실패, 다시 시도 중</span>{/if}
 		</p>
 	</div>

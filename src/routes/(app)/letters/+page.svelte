@@ -12,7 +12,7 @@
 	import MailboxItem from '$lib/letters/MailboxItem.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
 	import { anonName, borderOf, fromLabel, stampDate, toLabel, type MailItem } from '$lib/letters/api';
-	import { BOX, PAGE, dropThread, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import { BOX, PAGE, dropThread, pollMailbox, refreshMailbox } from '$lib/letters/mailbox.svelte';
 	import { envWidth } from '$lib/letters/stage';
 	import { whileVisible } from '$lib/visible';
 	import { S } from '$lib/state.svelte';
@@ -22,7 +22,7 @@
 
 	$effect(() => {
 		refreshMailbox();
-		return whileVisible(refreshMailbox, 30_000);
+		return whileVisible(pollMailbox, 120_000);
 	});
 
 	const unread = $derived(BOX.received.filter((i) => !i.opened && !i.removed));
