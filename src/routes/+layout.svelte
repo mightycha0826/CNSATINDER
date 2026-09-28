@@ -33,6 +33,13 @@
 		if (!isAdmin) void init();
 	});
 
+	// iOS WebKit 은 문서에 touchstart 리스너가 있어야 :active 를 그린다 — 빈 리스너 하나로 모든 누름 반응을 켠다 (UX G2)
+	$effect(() => {
+		const noop = () => {};
+		document.addEventListener('touchstart', noop, { passive: true });
+		return () => document.removeEventListener('touchstart', noop);
+	});
+
 	// PWA 설치 프롬프트를 잡아둔다 (Android/Chrome)
 	$effect(() => {
 		const onPrompt = (e: Event) => {

@@ -107,7 +107,7 @@
 	</div>
 
 	<div class="foot">
-		<button class="btn" onclick={submit} disabled={!ready || busy}>
+		<button aria-busy={busy} class="btn" onclick={submit} disabled={!ready || busy}>
 			{busy ? '저장 중…' : onlyName ? '저장' : '동의하고 시작하기'}
 		</button>
 	</div>
@@ -133,9 +133,13 @@
 		display: flex;
 		gap: 8px;
 	}
+	.opt:active {
+		transform: scale(0.97);
+	}
 	.opt {
 		flex: 1;
-		height: 44px;
+		height: 48px;
+		transition: transform 0.15s;
 		border: 1px solid var(--line);
 		border-radius: var(--r-sm);
 		font-size: 15px;

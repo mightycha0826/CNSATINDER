@@ -54,18 +54,17 @@
 <style>
 	.actions {
 		margin-left: auto;
-		margin-right: -8px;
+		margin-right: -10px;
 		display: flex;
 		align-items: center;
-		gap: 4px;
 	}
-	/* 두 아이콘 — 같은 칸 · 같은 크기 (24px) */
+	/* 두 아이콘 — 같은 칸 · 같은 크기 (24px). 누름 칸은 44 씩 맞닿게 — 아이콘 사이 거리는 예전(40 + 4)과 같다 (G1) */
 	.ic {
 		position: relative;
 		display: grid;
 		place-items: center;
-		width: 40px;
-		height: 40px;
+		width: 44px;
+		height: 44px;
 		border-radius: 50%;
 		transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.3, 1.4);
 	}
@@ -78,8 +77,8 @@
 	}
 	.dot {
 		position: absolute;
-		top: 7px;
-		right: 7px;
+		top: 9px;
+		right: 9px;
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;

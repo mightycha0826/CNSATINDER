@@ -1,4 +1,4 @@
-import { ROOT, CHROME } from './_env.mjs';
+import { ROOT, CHROME, OUT } from './_env.mjs';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright-core';
 // 누름 영역 (docs/UX-GUIDELINES.md G1) — 화면마다 보이는 모든 누를 것이 가운데 44×44 를 자기 것으로 갖는지.
@@ -13,20 +13,8 @@ for (let i = 0; i < 120 && !out.includes('ready'); i++) await new Promise((r) =>
 
 /** 화면별 허용 개수 (폭마다 따로 세지 않고 두 폭 중 큰 쪽) — Phase 39 웨이브마다 0 으로 줄인다 */
 const BUDGET = {
-	// Phase 39 W0 기준선 (고치기 전)
-	login: 2,
-	home: 3,
-	letters: 2,
-	archive: 3,
-	'letters-new': 1,
-	me: 20,
-	achievements: 6,
-	settings: 4,
-	activity: 2,
-	notices: 1,
-	chat: 5,
-	'chat-menu': 0,
-	'chat-vote': 7
+	// Phase 39 W1: 전 화면 0. 연장 투표 막대(그만하기 · 더 얘기하기)는 W3 에서 입력창 위로 옮기며 고친다
+	'chat-vote': 2
 };
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -141,6 +129,7 @@ try {
 		for (const [name, path] of SCREENS.slice(1)) {
 			await page.goto(`${BASE}${path}`);
 			await page.waitForTimeout(1600);
+			if (process.env.SHOTS) await page.screenshot({ path: `${OUT}/hit-${name}-${w}.png` }); // SHOTS=1 이면 화면마다 스크린샷 (눈으로 확인)
 			const bad = await audit(page);
 			worst[name] = Math.max(worst[name] ?? 0, bad.length);
 			console.log(`  ${name}: ${bad.length}${bad.length ? ' — ' + bad.join(' · ') : ''}`);

@@ -388,8 +388,12 @@
 		width: 28px;
 		height: 28px;
 	}
+	.later:active {
+		opacity: 0.55;
+	}
 	.later {
-		height: 40px;
+		height: 44px;
+		padding: 0 16px;
 		font-size: 14px;
 		font-weight: 600;
 		color: var(--text-2);
@@ -403,6 +407,11 @@
 		/* 아래 목록이 버튼 뒤로 스며들게 — 바탕색으로 서서히 */
 		background: linear-gradient(to bottom, transparent, var(--bg) 40%);
 		z-index: 5;
+		/* 위쪽 흐린 띠는 뒤의 목록 줄을 가로채지 않는다 — 버튼만 눌린다 (UX G1) */
+		pointer-events: none;
+	}
+	.cta > :global(*) {
+		pointer-events: auto;
 	}
 
 	.home {
@@ -423,6 +432,17 @@
 	}
 	.stories::-webkit-scrollbar {
 		display: none;
+	}
+	/* 누름 반응 (UX G2) */
+	.story:active,
+	.nudge:active,
+	.ai-btn:active {
+		transform: scale(0.96);
+	}
+	.story,
+	.nudge,
+	.ai-btn {
+		transition: transform 0.15s;
 	}
 	.story {
 		position: relative;
@@ -565,9 +585,22 @@
 	.seek-text strong {
 		font-size: 14px;
 	}
+	/* 로고(맨 위로) — 글자는 그대로, 누름 높이 44 */
+	.logo {
+		position: relative;
+	}
+	.logo::after {
+		content: '';
+		position: absolute;
+		inset: -6px 0;
+	}
+	.stop:active {
+		transform: scale(0.94);
+	}
 	.stop {
 		flex: none;
-		height: 36px;
+		height: 44px;
+		transition: transform 0.15s;
 		padding: 0 14px;
 		border-radius: 999px;
 		background: var(--field);

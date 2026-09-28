@@ -6,6 +6,7 @@
 	 * 다시 불러오면 서비스워커도 새 버전을 확인한다 (화면은 네트워크 먼저라 최신을 받는다).
 	 * 창(시트 · 모달)이 떠 있거나 두 손가락이면 움직이지 않는다.
 	 */
+	import { select } from '$lib/haptics';
 	import { reloadApp } from '$lib/reload';
 
 	const MAX = 120; // 당길 수 있는 최대 거리 (px)
@@ -23,8 +24,11 @@
 		let locked: 'y' | 'x' | null = null;
 
 		const blocked = () => !!document.querySelector('[aria-modal="true"], dialog[open]');
+		// 탭바 · 편지 쓰기 버튼 · 아래 고정 버튼 · 알림 띠에서 시작한 끌기는 새로고침이 아니다 (그 자리의 동작)
+		const OWN = '.tabbar, .fab, .cta, .inapp, .seek-pill';
 		const start = (e: TouchEvent) => {
 			if (busy || e.touches.length !== 1 || window.scrollY > 0 || blocked()) return;
+			if ((e.target as Element | null)?.closest?.(OWN)) return;
 			const t = e.touches[0];
 			y0 = t.clientY;
 			x0 = t.clientX;
@@ -47,7 +51,7 @@
 			dragging = true;
 			// 당길수록 무거워진다 (고무줄)
 			const next = Math.min(MAX, dy * 0.55 - (dy * dy) / 9000);
-			if (next >= GO && pull < GO) navigator.vibrate?.(8);
+			if (next >= GO && pull < GO) select();
 			pull = Math.max(0, next);
 		};
 		const end = () => {

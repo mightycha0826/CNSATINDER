@@ -205,7 +205,7 @@
 		z-index: 2;
 		display: flex;
 		align-items: center;
-		gap: 2px;
+		gap: 4px;
 		padding: 6px 0;
 		overflow-x: auto;
 		scrollbar-width: none;
@@ -220,12 +220,24 @@
 		flex: none;
 		display: grid;
 		place-items: center;
-		min-width: 34px;
+		min-width: 40px;
 		height: 34px;
 		padding: 0 6px;
 		border-radius: var(--r-sm);
 		font-size: 16px;
 		color: var(--text);
+		transition: transform 0.2s, background-color 0.15s;
+	}
+	/* 누름 44×44 — 위아래는 막대 여백, 옆은 이웃과 맞닿을 때까지 (G1) */
+	.t::after {
+		content: '';
+		position: absolute;
+		inset: -5px -2px;
+	}
+	.t:active:not(:disabled) {
+		transform: scale(0.9);
+		background: var(--field);
+		transition-duration: 0.08s;
 	}
 	.t.wide {
 		font-size: 13px;
@@ -263,7 +275,7 @@
 	.panel {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px;
+		gap: 8px;
 		padding: 8px 0;
 		border-bottom: 1px solid var(--line);
 	}
@@ -271,12 +283,21 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
-		height: 30px;
-		padding: 0 10px;
+		position: relative;
+		height: 36px;
+		padding: 0 12px;
 		border: 1px solid var(--line);
 		border-radius: 999px;
 		font-size: 13px;
 		color: var(--text);
+	}
+	.chip::after {
+		content: '';
+		position: absolute;
+		inset: -4px min(-4px, calc(50% - 22px));
+	}
+	.chip:active {
+		transform: scale(0.95);
 	}
 	.chip.on {
 		border-color: var(--text);

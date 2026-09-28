@@ -1,3 +1,5 @@
+import { select } from './haptics';
+
 /**
  * 목록 줄 길게 누르기 — `<button use:longpress={() => openMenu(item)}>` (대화 목록 · 편지 목록).
  *  · 손가락: 450ms 누르고 있으면 한 번 진동하고 부른다. 10px 넘게 움직이면(스크롤) 취소
@@ -17,7 +19,7 @@ export function longpress(node: HTMLElement, fn: () => void) {
 	const fire = () => {
 		cancel();
 		fired = true;
-		navigator.vibrate?.(10);
+		select();
 		cb();
 	};
 	const down = (e: PointerEvent) => {

@@ -319,7 +319,7 @@
 						bind:value={current}
 						onkeydown={(e) => e.key === 'Enter' && checkCurrent()}
 					/>
-					<button class="btn" onclick={checkCurrent} disabled={!current || busy}>
+					<button aria-busy={busy} class="btn" onclick={checkCurrent} disabled={!current || busy}>
 						{busy ? '확인 중…' : '확인'}
 					</button>
 					<div class="pwfoot">
@@ -340,7 +340,7 @@
 						bind:value={code}
 						onkeydown={(e) => e.key === 'Enter' && checkCode()}
 					/>
-					<button class="btn" onclick={checkCode} disabled={!/^[0-9]{6,8}$/.test(code.trim()) || busy}>
+					<button aria-busy={busy} class="btn" onclick={checkCode} disabled={!/^[0-9]{6,8}$/.test(code.trim()) || busy}>
 						{busy ? '확인 중…' : '확인'}
 					</button>
 					<div class="pwfoot">
@@ -350,7 +350,7 @@
 				{:else}
 					<p class="step muted">{S.hasPassword ? '새 비밀번호를 정해 주세요.' : '로그인에 쓸 비밀번호를 정해 주세요.'}</p>
 					<PasswordFields bind:value={password} bind:valid={passwordOk} placeholder="새 비밀번호" />
-					<button class="btn" onclick={savePassword} disabled={!passwordOk || busy}>
+					<button aria-busy={busy} class="btn" onclick={savePassword} disabled={!passwordOk || busy}>
 						{busy ? '저장 중…' : '저장'}
 					</button>
 					<div class="pwfoot">
@@ -434,17 +434,26 @@
 	/* 화면 모드 — 아이콘 세 개짜리 작은 고르기 칸 */
 	.seg {
 		display: flex;
-		gap: 2px;
 		margin-left: auto;
 		padding: 3px;
 		border-radius: 999px;
 		background: var(--field);
 	}
+	/* 보이는 칸 44×32, 누름은 위아래 여백까지 44 (G1) */
+	.seg-btn::after {
+		content: '';
+		position: absolute;
+		inset: -6px 0;
+	}
+	.seg-btn:active {
+		transform: scale(0.92);
+	}
 	.seg-btn {
+		position: relative;
 		display: grid;
 		place-items: center;
-		width: 40px;
-		height: 30px;
+		width: 44px;
+		height: 32px;
 		border-radius: 999px;
 		color: var(--text-2);
 		transition: background-color 0.15s, color 0.15s;
@@ -488,8 +497,17 @@
 		align-items: center;
 	}
 	.cancel {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0 8px;
 		font-size: 14px;
 		color: var(--text-2);
+		transition: opacity 0.2s;
+	}
+	.cancel:active {
+		opacity: 0.55;
+		transition-duration: 0.08s;
 	}
 
 	/* 약관 및 정책 — 아이콘 · 제목 · 한 줄 설명 · › */

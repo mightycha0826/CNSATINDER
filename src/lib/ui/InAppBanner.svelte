@@ -38,7 +38,7 @@
 {#if INAPP.cur}
 	{@const n = INAPP.cur}
 	{#key n.key}
-		<div class="wrap" role="status" aria-live="polite">
+		<div class="wrap inapp" role="status" aria-live="polite">
 			<button
 				class="card"
 				class:drag={dragging}
@@ -87,6 +87,9 @@
 			transform: translateY(calc(-100% - 20px - var(--safe-top)));
 			opacity: 0.4;
 		}
+	}
+	.card:active:not(.drag) {
+		filter: brightness(0.94);
 	}
 	.card {
 		position: relative;

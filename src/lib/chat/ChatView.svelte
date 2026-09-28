@@ -3,6 +3,7 @@
 	 * 대화방 화면 — ChatRoom 상태만 읽어서 그린다.
 	 * 실제 방(/chat)과 개발용 미리보기(/dev/chat)가 같은 컴포넌트를 쓴다.
 	 */
+	import * as haptic from '$lib/haptics';
 	import { tick, untrack } from 'svelte';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import type { ChatRoom } from './room.svelte';
@@ -483,7 +484,7 @@
 		if (m.id == null || !bubble || m.deleted_at) return;
 		pickerAnchor = { m, el: bubble };
 		placePicker(m, bubble);
-		navigator.vibrate?.(10);
+		haptic.select();
 	}
 	/** 목록이 움직였다 — 말풍선이 아직 보이면 고르기 줄을 옮기고, 화면 밖으로 나갔으면 닫는다 */
 	function followPicker() {
@@ -1186,11 +1187,17 @@
 		flex: none;
 		display: grid;
 		place-items: center;
-		width: 28px;
-		height: 28px;
+		width: 44px;
+		height: 44px;
+		margin: -8px -4px -8px 0;
 		border-radius: 50%;
 		color: var(--text-2);
 		font-size: 14px;
+		transition: opacity 0.2s;
+	}
+	.replying-x:active {
+		opacity: 0.55;
+		transition-duration: 0.08s;
 	}
 
 	/* ── 공감 ── */
@@ -1229,8 +1236,9 @@
 		width: 18px;
 		height: 18px;
 	}
+	/* 공감 배지 자리 + 배지의 누름 영역(44)이 다음 말풍선을 덮지 않을 만큼 */
 	.bwrap.reacted {
-		margin-bottom: 14px;
+		margin-bottom: 22px;
 	}
 	.bwrap .bubble {
 		max-width: none;
@@ -1254,7 +1262,14 @@
 		opacity: 0.5;
 		cursor: pointer;
 	}
+	/* 빨간 ! 는 20 이지만 누름은 44 (말풍선 쪽으로 겹쳐도 같은 "다시 보내기") */
+	.fail::after {
+		content: '';
+		position: absolute;
+		inset: -12px;
+	}
 	.fail {
+		position: relative;
 		display: grid;
 		place-items: center;
 		width: 20px;
@@ -1329,11 +1344,15 @@
 		font-weight: 500;
 		color: var(--text-2);
 	}
+	.rate-bar:active {
+		background: var(--field);
+	}
 	.rate-bar {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 10px;
+		min-height: 44px;
 		padding: 9px var(--pad);
 		border-bottom: 1px solid var(--line);
 		background: var(--surface);
@@ -1386,12 +1405,21 @@
 	textarea::placeholder {
 		color: var(--text-2);
 	}
+	/* 보내기 — 누름 높이 44, 알약 안쪽 여백으로 파고들어 알약 높이(48)는 그대로 */
 	.send {
 		flex: none;
-		padding: 6px 6px 7px;
+		min-height: 44px;
+		margin: -5px -4px -5px 0;
+		padding: 0 10px;
+		transition: opacity 0.2s, transform 0.2s;
 		color: var(--accent);
 		font-weight: 600;
 		font-size: 15px;
+	}
+	.send:active:not(:disabled) {
+		opacity: 0.55;
+		transform: scale(0.94);
+		transition-duration: 0.08s;
 	}
 	.send:disabled {
 		color: var(--text-2);

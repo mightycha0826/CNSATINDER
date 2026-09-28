@@ -112,7 +112,7 @@
 				{/each}
 			</ol>
 			{#if a.tier > 0}
-				<button class="btn" onclick={() => toggleFeature(a)} disabled={busy}>
+				<button aria-busy={busy} class="btn" onclick={() => toggleFeature(a)} disabled={busy}>
 					{featuredCodes.includes(a.code) ? '대표 업적에서 내리기' : '대표 업적으로 걸기'}
 				</button>
 			{:else}
@@ -236,15 +236,29 @@
 		font-size: 22px;
 	}
 
+	/* 위아래 여백은 칸(36)의 누름 영역 44 가 잘리지 않게 */
 	.cats {
 		display: flex;
-		gap: 6px;
+		gap: 8px;
+		padding: 4px 0;
+		margin: -4px 0;
 		overflow-x: auto;
 		scrollbar-width: none;
 	}
+	.cats button::after {
+		content: '';
+		position: absolute;
+		inset: -4px min(-4px, calc(50% - 22px));
+	}
+	.cats button:active {
+		transform: scale(0.95);
+	}
 	.cats button {
+		position: relative;
 		flex: none;
-		padding: 7px 14px;
+		min-height: 36px;
+		padding: 0 16px;
+		transition: transform 0.15s;
 		border-radius: 999px;
 		background: var(--field);
 		font-size: 13px;

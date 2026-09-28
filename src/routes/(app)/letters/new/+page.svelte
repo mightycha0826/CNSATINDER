@@ -129,9 +129,15 @@
 	.x {
 		display: grid;
 		place-items: center;
-		width: 32px;
-		height: 32px;
-		margin-left: -6px;
+		width: 44px;
+		height: 44px;
+		margin: 0 -6px 0 -12px;
+		transition: opacity 0.2s, transform 0.2s;
+	}
+	.x:active {
+		opacity: 0.55;
+		transform: scale(0.9);
+		transition-duration: 0.08s;
 	}
 	.x svg {
 		width: 24px;
@@ -197,6 +203,9 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+	.person:active {
+		background: var(--field);
 	}
 	.person {
 		display: flex;

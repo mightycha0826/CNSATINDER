@@ -32,6 +32,15 @@
 		font-size: 12px;
 		line-height: 1;
 	}
+	/* 배지는 22 지만 누름은 44 (G1) — 말풍선 아래 자리는 ChatView .bwrap.reacted 가 비워 둔다 */
+	.reacts::after {
+		content: '';
+		position: absolute;
+		inset: min(-2px, calc(50% - 22px));
+	}
+	.reacts:active {
+		transform: scale(0.9);
+	}
 	.reacts.mine {
 		left: auto;
 		right: 8px;

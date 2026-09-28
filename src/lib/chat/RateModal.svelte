@@ -159,6 +159,7 @@
 			transform: translateY(60px) scale(0.7);
 		}
 	}
+	/* 보이는 원은 34, 누름은 44 (G1) */
 	.x {
 		position: absolute;
 		top: 12px;
@@ -170,6 +171,17 @@
 		border-radius: 50%;
 		background: rgb(255 255 255 / 0.28);
 		color: #fff;
+		transition: opacity 0.2s, transform 0.2s;
+	}
+	.x::after {
+		content: '';
+		position: absolute;
+		inset: -5px;
+	}
+	.x:active {
+		opacity: 0.55;
+		transform: scale(0.9);
+		transition-duration: 0.08s;
 	}
 	.x svg {
 		width: 18px;

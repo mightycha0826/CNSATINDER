@@ -226,9 +226,15 @@
 		flex: none;
 		display: grid;
 		place-items: center;
-		width: 32px;
-		height: 32px;
-		margin-left: -6px;
+		width: 44px;
+		height: 44px;
+		margin: 0 -6px 0 -12px;
+		transition: opacity 0.2s, transform 0.2s;
+	}
+	.close:active {
+		opacity: 0.55;
+		transform: scale(0.9);
+		transition-duration: 0.08s;
 	}
 	.close svg {
 		width: 22px;

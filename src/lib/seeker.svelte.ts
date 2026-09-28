@@ -1,3 +1,4 @@
+import { match } from './haptics';
 import { supabase } from './supabase';
 import { PollSeeker } from './pollSeeker.svelte';
 
@@ -52,7 +53,7 @@ export class Seeker extends PollSeeker<MatchRes> {
 		switch (res.status) {
 			case 'matched':
 				this.halt();
-				navigator.vibrate?.(60);
+				match();
 				this.onMatched(res.room_id);
 				return;
 			case 'waiting':

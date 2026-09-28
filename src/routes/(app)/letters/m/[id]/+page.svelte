@@ -188,9 +188,15 @@
 	.more {
 		display: grid;
 		place-items: center;
-		width: 32px;
-		height: 32px;
-		margin-left: auto;
+		width: 44px;
+		height: 44px;
+		margin: 0 -12px 0 auto;
+		transition: opacity 0.2s, transform 0.2s;
+	}
+	.more:active {
+		opacity: 0.55;
+		transform: scale(0.9);
+		transition-duration: 0.08s;
 	}
 	.more svg {
 		width: 22px;

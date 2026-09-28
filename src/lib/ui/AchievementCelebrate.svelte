@@ -320,8 +320,11 @@
 		margin-top: 8px;
 		animation: up 0.5s 0.8s ease-out both;
 	}
+	.later:active {
+		opacity: 0.55;
+	}
 	.later {
-		height: 40px;
+		height: 44px;
 		font-size: 14px;
 		font-weight: 600;
 		color: var(--text-2);

@@ -22,13 +22,29 @@
 </button>
 
 <style>
+	/* 누름 영역 44×44 (G1) — 화살표 자리는 예전(28칸, -4)과 같게 음수 여백으로 맞춘다 */
 	.back {
+		position: relative;
 		flex: none;
 		display: grid;
 		place-items: center;
-		width: 28px;
-		height: 28px;
-		margin-left: -4px;
+		width: 44px;
+		height: 44px;
+		margin: 0 -8px 0 -12px;
+		transition:
+			opacity 0.2s,
+			transform 0.2s;
+	}
+	/* 설정 화면의 둥근 40칸 단추(.topbar.ios)도 누름은 44 */
+	.back::after {
+		content: '';
+		position: absolute;
+		inset: min(0px, calc(50% - 22px));
+	}
+	.back:active {
+		opacity: 0.55;
+		transform: scale(0.92);
+		transition-duration: 0.08s;
 	}
 	svg {
 		width: 24px;

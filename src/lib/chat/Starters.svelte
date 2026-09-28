@@ -70,8 +70,10 @@
 <style>
 	.starters {
 		display: flex;
-		gap: 6px;
-		padding: 0 0 8px;
+		gap: 8px;
+		/* 위아래 5px 는 칩의 누름 영역(34 → 44)이 잘리지 않게 (옆으로 밀리는 줄은 넘친 것을 자른다) */
+		padding: 5px 0 3px;
+		margin-top: -5px;
 		overflow-x: auto;
 		scrollbar-width: none;
 	}
@@ -79,9 +81,26 @@
 		display: none;
 	}
 	/* 글자는 자르지 않는다 — 줄이 넘치면 옆으로 밀어서 본다 */
+	.chip,
+	.more {
+		position: relative;
+		transition: opacity 0.2s, transform 0.2s;
+	}
+	.chip::after,
+	.more::after {
+		content: '';
+		position: absolute;
+		inset: -5px min(0px, calc(50% - 22px));
+	}
+	.chip:active,
+	.more:active {
+		opacity: 0.6;
+		transform: scale(0.95);
+		transition-duration: 0.08s;
+	}
 	.chip {
 		flex: none;
-		height: 32px;
+		height: 34px;
 		padding: 0 12px;
 		border: 1px solid var(--line);
 		border-radius: 999px;
@@ -91,8 +110,8 @@
 	}
 	.more {
 		flex: none;
-		width: 32px;
-		height: 32px;
+		width: 34px;
+		height: 34px;
 		border-radius: 50%;
 		background: var(--field);
 		color: var(--text-2);

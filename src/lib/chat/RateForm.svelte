@@ -65,7 +65,7 @@
 			{/each}
 		</div>
 	{/if}
-	<button class="btn send" onclick={send} disabled={!score || busy}>{busy ? '보내는 중…' : '평가 보내기'}</button>
+	<button aria-busy={busy} class="btn send" onclick={send} disabled={!score || busy}>{busy ? '보내는 중…' : '평가 보내기'}</button>
 	{#if onskip}<button class="skip" onclick={onskip}>나중에 할게요</button>{/if}
 </div>
 
@@ -132,10 +132,21 @@
 		display: flex;
 		flex-wrap: wrap;
 		justify-content: center;
-		gap: 6px;
+		gap: 8px;
+	}
+	.chip::after {
+		content: '';
+		position: absolute;
+		inset: -4px min(-4px, calc(50% - 22px));
+	}
+	.chip:active {
+		transform: scale(0.95);
 	}
 	.chip {
-		padding: 7px 12px;
+		position: relative;
+		min-height: 36px;
+		padding: 0 14px;
+		transition: transform 0.15s, background-color 0.15s;
 		border: 1px solid var(--line);
 		border-radius: 999px;
 		font-size: 13px;
@@ -150,8 +161,12 @@
 		width: 100%;
 		margin-top: 4px;
 	}
+	.skip:active {
+		opacity: 0.55;
+	}
 	.skip {
-		height: 36px;
+		height: 44px;
+		padding: 0 12px;
 		font-size: 13px;
 		font-weight: 600;
 		color: var(--text-2);

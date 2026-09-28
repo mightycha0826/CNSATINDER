@@ -72,7 +72,13 @@
 		align-items: center;
 		gap: 10px;
 		min-width: 0;
+		min-height: 44px;
 		text-align: left;
+		transition: opacity 0.2s;
+	}
+	.who:active {
+		opacity: 0.55;
+		transition-duration: 0.08s;
 	}
 	.names {
 		display: flex;
@@ -122,12 +128,19 @@
 		width: 16px;
 		height: 16px;
 	}
+	/* 누름 44 — 점 세 개 자리는 예전(32칸, -6)과 같게 */
 	.more {
 		display: grid;
 		place-items: center;
-		width: 32px;
-		height: 32px;
-		margin-right: -6px;
+		width: 44px;
+		height: 44px;
+		margin-right: -12px;
+		transition: opacity 0.2s, transform 0.2s;
+	}
+	.more:active {
+		opacity: 0.55;
+		transform: scale(0.9);
+		transition-duration: 0.08s;
 	}
 	.more svg {
 		width: 22px;

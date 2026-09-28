@@ -1,3 +1,5 @@
+import { select } from '$lib/haptics';
+
 /**
  * 말풍선 제스처 — 길게 누르기(손가락) · 두 번 톡 · 오른쪽 클릭.
  * pointer 이벤트로 직접 판정한다 (모바일 브라우저의 dblclick 은 믿을 수 없다).
@@ -107,7 +109,7 @@ export function swipeReply<T>(opts: {
 				}
 			}
 			const hit = Math.abs(dx) >= LIMIT;
-			if (hit && !s.hit) navigator.vibrate?.(10);
+			if (hit && !s.hit) select();
 			s.hit = hit;
 			opts.onMove(s.item, shown(dx));
 		},

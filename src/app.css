@@ -287,11 +287,89 @@ a {
 	transform: scale(0.97);
 }
 
-/* 텍스트 버튼 */
+/* 텍스트 버튼 — 글자는 작아도 누름 높이는 44 (docs/UX-GUIDELINES.md G1) */
 .btn-text {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 44px;
+	padding: 0 6px;
 	color: var(--accent);
 	font-weight: 600;
 	font-size: 14px;
+	transition: opacity 0.2s;
+}
+.btn-text:active:not(:disabled) {
+	opacity: 0.55;
+	transition-duration: 0.08s;
+}
+/* 처리 중인 주 버튼은 회색(꺼짐)이 아니라 제 색 그대로 + 작은 스피너 (aria-busy, G2.4) */
+.btn[aria-busy='true']:disabled {
+	background: var(--accent-fill);
+	color: var(--on-accent);
+	box-shadow: var(--glow);
+	cursor: progress;
+}
+:where(.btn, .btn-ghost, .btn-text)[aria-busy='true']::after {
+	content: '';
+	flex: none;
+	width: 0.9em;
+	height: 0.9em;
+	margin-left: 4px;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	border-radius: 50%;
+	opacity: 0;
+	animation:
+		busy-spin 0.7s linear infinite,
+		busy-in 0.2s 0.3s both; /* 300ms 안에 끝나면 안 보인다 (G3) */
+}
+@keyframes busy-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+@keyframes busy-in {
+	to {
+		opacity: 1;
+	}
+}
+
+/* ── 누름 영역 · 누름 반응 · 모션 토큰 (Phase 39 · docs/UX-GUIDELINES.md G1 · G2 · G7) ── */
+:root {
+	--dur-1: 120ms;
+	--dur-2: 220ms;
+	--dur-3: 360ms;
+	--ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--ease-in: cubic-bezier(0.4, 0, 1, 1);
+	/* 튀어나오는 보상 — Badge 의 동전 곡선과 같은 스프링 */
+	--ease-spring: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1);
+}
+/* 누를 것 — 두 번 톡 확대를 기다리지 않고 바로. 끌기를 직접 다루는 요소는 자기 touch-action 이 이긴다(:where = 0점) */
+:where(button, a[href], [role='button'], summary, label) {
+	touch-action: manipulation;
+}
+/* .u-hit — 겉모양은 그대로, 누름 영역만 가운데 44×44 (요소가 더 크면 요소 그대로). 이웃과 8px 미만이면 쓰지 말 것 (G1) */
+:where(.u-hit) {
+	position: relative;
+}
+:where(.u-hit)::after {
+	content: '';
+	position: absolute;
+	inset: min(0px, calc(50% - 22px));
+}
+/* .u-tap — 글자 · 아이콘 버튼의 누름 반응 (G2.2). 아이콘이면 .icon 을 같이 */
+:where(.u-tap) {
+	transition:
+		opacity 0.2s var(--ease-out),
+		transform 0.2s var(--ease-out);
+}
+:where(.u-tap):active:not(:disabled) {
+	opacity: 0.55;
+	transition-duration: 0.08s;
+}
+:where(.u-tap.icon):active:not(:disabled) {
+	transform: scale(0.9);
 }
 .btn-text:disabled {
 	color: var(--text-2);

@@ -81,7 +81,7 @@
 		></textarea>
 		<div class="foot">
 			<span class="count" class:over={len > INQUIRY_MAX}>{len}/{INQUIRY_MAX}</span>
-			<button class="btn send" onclick={send} disabled={!canSend}>{busy ? '보내는 중…' : '보내기'}</button>
+			<button aria-busy={busy} class="btn send" onclick={send} disabled={!canSend}>{busy ? '보내는 중…' : '보내기'}</button>
 		</div>
 	</div>
 	{#if error}<p class="err" role="alert">{error}</p>{/if}
@@ -127,7 +127,13 @@
 		gap: 8px;
 		padding: 0 4px;
 	}
+	.chip::after {
+		content: '';
+		position: absolute;
+		inset: -4px min(-4px, calc(50% - 22px));
+	}
 	.chip {
+		position: relative;
 		height: 36px;
 		padding: 0 14px;
 		border-radius: 999px;
@@ -186,7 +192,7 @@
 	}
 	.send {
 		width: auto;
-		height: 40px;
+		height: 44px;
 		padding: 0 20px;
 		font-size: 15px;
 	}

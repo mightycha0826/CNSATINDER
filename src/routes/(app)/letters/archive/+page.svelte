@@ -112,6 +112,15 @@
 		border-radius: 999px;
 		background: var(--field);
 	}
+	/* 보이는 칸은 38, 누름은 둘레 여백까지 44 (G1) */
+	.seg button::after {
+		content: '';
+		position: absolute;
+		inset: -4px 0;
+	}
+	.seg button:active {
+		opacity: 0.6;
+	}
 	.seg button {
 		position: relative;
 		z-index: 1;
@@ -178,6 +187,9 @@
 	.center {
 		margin: 40px 0;
 		text-align: center;
+	}
+	.more:active:not(:disabled) {
+		transform: scale(0.96);
 	}
 	.more {
 		align-self: center;

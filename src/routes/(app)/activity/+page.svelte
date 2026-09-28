@@ -139,9 +139,18 @@
 
 <style>
 	.all {
-		margin-left: auto;
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		margin: 0 -8px 0 auto;
+		padding: 0 8px;
 		font-size: 14px;
 		font-weight: 700;
+		transition: opacity 0.2s;
+	}
+	.all:active {
+		opacity: 0.55;
+		transition-duration: 0.08s;
 	}
 	.activity {
 		gap: 8px;

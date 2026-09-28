@@ -59,9 +59,13 @@
 		gap: 6px;
 		margin-top: 8px;
 	}
+	.intro-btn:active {
+		transform: scale(0.96);
+	}
 	.intro-btn {
 		margin-top: 12px;
-		height: 34px;
+		height: 44px;
+		transition: transform 0.15s;
 		padding: 0 16px;
 		border-radius: 10px;
 		background: var(--field);

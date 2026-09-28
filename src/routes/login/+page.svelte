@@ -125,7 +125,7 @@
 				placeholder="비밀번호"
 				onkeydown={(e) => e.key === 'Enter' && onPassword()}
 			/>
-			<button class="btn" onclick={onPassword} disabled={!pwReady || busy}>
+			<button aria-busy={busy} class="btn" onclick={onPassword} disabled={!pwReady || busy}>
 				{busy ? '확인 중…' : '로그인'}
 			</button>
 		</section>
@@ -138,7 +138,7 @@
 		<section>
 			<h2>{mode === 'signup' ? '처음 가입' : '비밀번호 찾기'}</h2>
 			{@render emailField(onSend)}
-			<button class="btn" onclick={onSend} disabled={!localOk || busy}>
+			<button aria-busy={busy} class="btn" onclick={onSend} disabled={!localOk || busy}>
 				{busy ? '보내는 중…' : '인증 코드 받기'}
 			</button>
 		</section>
@@ -162,7 +162,7 @@
 			onkeydown={(e) => e.key === 'Enter' && onVerify()}
 		/>
 
-		<button class="btn" onclick={onVerify} disabled={!codeOk || busy}>
+		<button aria-busy={busy} class="btn" onclick={onVerify} disabled={!codeOk || busy}>
 			{busy ? '확인 중…' : mode === 'signup' ? '시작하기' : '확인'}
 		</button>
 

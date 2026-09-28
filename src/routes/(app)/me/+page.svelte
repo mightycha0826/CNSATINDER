@@ -183,7 +183,7 @@
 		{/each}
 	</div>
 
-	<button class="btn save" onclick={saveInfo} disabled={!dirty || busy}>
+	<button aria-busy={busy} class="btn save" onclick={saveInfo} disabled={!dirty || busy}>
 		{busy ? '저장 중…' : dirty ? '저장' : '저장됨'}
 	</button>
 
@@ -244,6 +244,9 @@
 	}
 	.who p {
 		margin: 0;
+	}
+	.fame:active {
+		transform: scale(0.98);
 	}
 	.fame {
 		display: flex;
@@ -332,8 +335,25 @@
 		gap: 8px;
 		padding: 14px 16px;
 	}
+	/* 칩은 36, 누름은 줄 간격(8)의 반씩 더해 44 (G1) */
+	.tag,
+	.chip {
+		position: relative;
+		transition: transform 0.15s, opacity 0.15s;
+	}
+	.tag::after,
+	.chip::after {
+		content: '';
+		position: absolute;
+		inset: -4px min(-4px, calc(50% - 22px));
+	}
+	.tag:active,
+	.chip:active {
+		transform: scale(0.95);
+		transition-duration: 0.08s;
+	}
 	.tag {
-		height: 34px;
+		height: 36px;
 		padding: 0 14px;
 		border-radius: 999px;
 		background: var(--field);
@@ -345,7 +365,7 @@
 	}
 	.tag-input {
 		width: 100px;
-		height: 34px;
+		height: 36px;
 		padding: 0 14px;
 		border: 1px dashed var(--cell-line);
 		border-radius: 999px;
