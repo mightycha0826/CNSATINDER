@@ -294,8 +294,10 @@
 	}
 	h2 {
 		margin: 0 0 4px;
-		font-size: 21px;
-		letter-spacing: -0.02em;
+		font-family: var(--display);
+		font-size: 23px;
+		font-weight: 400;
+		letter-spacing: -0.01em;
 		animation: up 0.5s 0.65s ease-out both;
 	}
 	@keyframes up {

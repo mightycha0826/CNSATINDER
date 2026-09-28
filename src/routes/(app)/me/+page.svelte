@@ -109,7 +109,7 @@
 
 <!-- 머리글은 다른 탭(익명편지 · 채팅)과 같은 높이 · 같은 자리 — 탭을 바꿔도 위쪽이 움직이지 않게 (Phase 35) -->
 <div class="topbar">
-	<span class="title">내 프로필</span>
+	<span class="title display">내 프로필</span>
 	<TopbarMe />
 </div>
 

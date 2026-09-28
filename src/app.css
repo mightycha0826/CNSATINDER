@@ -4,7 +4,9 @@
      · 바탕은 순백 대신 아주 옅은 따뜻한 흰색, 탭 첫 화면 위쪽엔 브랜드색 빛 번짐(--ambient)
      · 카드는 흰 면 + 부드러운 그림자, 모서리는 크게 (24px) · 버튼은 알약 + 브랜드 빛(--glow)
      · 머리글 · 탭바는 반투명 유리(--glass) — 탭바는 화면 맨 아래에 붙는다 (Phase 35: 떠 있는 알약이 아이폰에서 어중간하게 떠 보여서)
-     · 서체는 Pretendard (자체 호스팅), 제목은 굵고 촘촘하게
+     · 서체 (Phase 38) — 본문은 원티드 산스(Wanted Sans, 기하학적 · 촘촘 · 굵기 400~1000),
+       로고 · 탭 제목 · 큰 숫자 · 축하 순간은 베이글 팻 원(Bagel Fat One, 둥글고 통통한 디스플레이),
+       편지 글씨는 나눔펜. 셋 다 자체 호스팅 · 글자 범위별 분할 파일
    ──────────────────────────────────────────────────────────── */
 
 :root {
@@ -76,8 +78,10 @@
 	--tabbar-pill: 58px;
 	--tabbar-h: 58px;
 
-	--sans: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
+	--sans: 'Wanted Sans Variable', 'Wanted Sans', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
 		'Malgun Gothic', 'Segoe UI', Roboto, sans-serif;
+	/* 브랜드 글씨 — 한 가지 굵기(통통한 400)뿐이라 font-weight 는 400 으로 둔다 */
+	--display: 'Bagel Fat One', var(--sans);
 }
 
 /* 다크는 기본적으로 시스템 설정을 따른다 (인스타와 동일). 설정 > 화면에서 고르면 <html data-theme> 가 이긴다. */
@@ -341,15 +345,29 @@ a {
 	letter-spacing: -0.03em;
 }
 
-/* 로고 글자 — 그라디언트를 글자에만 입힌다 */
+/* 탭 첫 화면 제목 (익명편지 · 내 프로필) — 브랜드 글씨로 크게 */
+.title.display {
+	font-family: var(--display);
+	font-weight: 400;
+	font-size: 22px;
+	letter-spacing: -0.01em;
+}
+
+/* 로고 글자 — 브랜드 글씨 + 그라디언트를 글자에만 입힌다 */
 .wordmark {
 	width: fit-content; /* 그라디언트가 글자 폭에 맞게 펼쳐지도록 */
-	font-weight: 800;
-	letter-spacing: -0.03em;
+	font-family: var(--display);
+	font-weight: 400;
+	letter-spacing: 0;
+	padding-bottom: 0.06em; /* 통통한 글자의 아래 끝이 그라디언트 밖으로 잘리지 않게 */
 	background: linear-gradient(90deg, var(--g-orange), var(--g-coral) 50%, var(--g-pink));
 	-webkit-background-clip: text;
 	background-clip: text;
 	color: transparent;
+}
+/* 홈 머리글의 로고 — 다른 탭 제목(22px)과 같은 무게로 보이게 */
+.title.wordmark {
+	font-size: 21px;
 }
 
 /* 앱 아이콘 (로그인·설치·스플래시) */

@@ -1,6 +1,8 @@
 <script lang="ts">
-	// 서체 — Pretendard (자체 호스팅, 쓰는 글자만 나눠 받는 동적 서브셋 · CSP font-src 'self' 그대로)
-	import 'pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css';
+	// 서체 (Phase 38) — 본문 · 화면 글자는 원티드 산스(가변 굵기), 로고 · 큰 제목은 베이글 팻 원.
+	//   둘 다 자체 호스팅 · 글자 범위별로 나눈 파일이라 화면에 쓰인 글자 묶음만 받는다 (CSP font-src 'self' 그대로)
+	import 'wanted-sans/fonts/webfonts/variable/split/WantedSansVariable.css';
+	import '@fontsource/bagel-fat-one/index.css';
 	import '../app.css';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';

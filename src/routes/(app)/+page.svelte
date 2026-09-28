@@ -780,9 +780,10 @@
 		color: var(--text-2);
 	}
 	.big {
+		font-family: var(--display);
 		font-size: 64px;
-		font-weight: 900;
-		letter-spacing: -0.05em;
+		font-weight: 400;
+		letter-spacing: -0.01em;
 		line-height: 1;
 		/* 이 앱의 정체성인 숫자에 그라디언트 */
 		background: var(--brand);

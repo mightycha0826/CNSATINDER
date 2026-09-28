@@ -1,10 +1,9 @@
 <script lang="ts">
 	/**
 	 * 연결 순간 — 새로 매칭된 방에 처음 들어올 때 1.8초 동안 (틴더의 "It's a Match" 처럼).
-	 * 내 얼굴과 상대 얼굴이 양쪽에서 날아와 맞닿고, 가운데 하트 · 손글씨 "연결됐어요!".
+	 * 내 얼굴과 상대 얼굴이 양쪽에서 날아와 맞닿고, 가운데 하트 · 브랜드 글씨(베이글 팻 원) "연결됐어요!".
 	 * 바로 대화방으로 튀어 들어가면 시작이 흐릿해서, 짧게 숨 고를 틈을 준다. 누르면 바로 닫힌다.
 	 */
-	import '@fontsource/nanum-pen-script/index.css';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import { S } from '$lib/state.svelte';
 
@@ -62,8 +61,9 @@
 	.headline {
 		position: relative;
 		margin: 0;
-		font-family: var(--hand);
-		font-size: 64px;
+		padding-bottom: 0.08em;
+		font-family: var(--display);
+		font-size: 46px;
 		line-height: 1;
 		background: linear-gradient(90deg, #ffb347, var(--g-orange), var(--g-pink));
 		-webkit-background-clip: text;

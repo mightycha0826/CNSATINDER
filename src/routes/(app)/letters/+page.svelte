@@ -62,7 +62,7 @@
 <svelte:window bind:innerWidth={vw} />
 
 <div class="topbar">
-	<span class="title">익명편지</span>
+	<span class="title display">익명편지</span>
 	<TopbarMe />
 </div>
 
@@ -170,9 +170,10 @@
 	}
 	.head h2 {
 		margin: 0;
-		font-size: 17px;
-		font-weight: 800;
-		letter-spacing: -0.02em;
+		font-family: var(--display);
+		font-size: 18px;
+		font-weight: 400;
+		letter-spacing: 0;
 	}
 	.count {
 		min-width: 20px;
