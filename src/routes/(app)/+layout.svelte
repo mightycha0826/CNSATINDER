@@ -4,6 +4,7 @@
 	import { whileVisible } from '$lib/visible';
 	import { DM, refreshUnread } from '$lib/letters/unread.svelte';
 	import AchievementCelebrate from '$lib/ui/AchievementCelebrate.svelte';
+	import PullRefresh from '$lib/ui/PullRefresh.svelte';
 	import { INBOX } from '$lib/inbox.svelte';
 	import { notifyInApp } from '$lib/inapp.svelte';
 	import { pushState } from '$lib/push';
@@ -64,6 +65,9 @@
 </script>
 
 {@render children()}
+
+<!-- 당겨서 새로고침 (Phase 37) — 탭 첫 화면 맨 위에서 -->
+{#if showTabs}<PullRefresh />{/if}
 
 <!-- 새로 딴 업적 축하 (Phase 31) — 탭 첫 화면에서만 뜬다 -->
 <AchievementCelebrate />

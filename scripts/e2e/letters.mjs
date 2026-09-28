@@ -123,6 +123,7 @@ try {
 	check('★ 아래 책상 위 서류 더미 = 편지 보관함 (읽은 편지 · 보낸 편지)', (await desk.getAttribute('aria-label')) === '편지 보관함 — 받은 편지 1통, 보낸 편지 1통' && (await desk.locator('.layer').count()) >= 3 && (await desk.locator('.top-env .env').count()) === 1,
 		await desk.getAttribute('aria-label'));
 	await page.screenshot({ path: `${SP}/letters-1-inbox.png`, fullPage: true });
+
 	await desk.click(); await page.waitForURL('**/letters/archive'); await page.locator('.rows .row').first().waitFor(); await page.waitForTimeout(300);
 	const recvRows = await page.locator('.rows .row .name').allInnerTexts();
 	check('★ 보관함 받은 편지: 전부 한 줄씩 (안 읽음 표시)', recvRows.length === 3 && recvRows[0].includes('익명의 여학생') && (await page.locator('.rows .st.new').count()) === 2, JSON.stringify(recvRows));
@@ -151,6 +152,17 @@ try {
 		&& (await page.locator('.letter-paper .lp-from').innerText()) === 'From. 익명의 여학생' && (await page.locator('.letter-paper .lp-body').innerText()).includes('그림 진짜 잘 그리더라'));
 	check('dm_open 으로 이 편지 한 통을 연다', JSON.stringify(called(w, 'dm_open').at(-1)?.[1]) === '{"p_msg":70}');
 	check('편지 글은 선택 · 복사 가능', await page.locator('.letter-paper .lp-body').evaluate((e) => getComputedStyle(e).userSelect !== 'none'));
+	check('★ 본문도 To. 와 같은 손글씨 · 줄 간격 = 편지지 줄 (34px)', await page.locator('.letter-paper .lp-body').evaluate((e) => {
+		const s = getComputedStyle(e); const to = getComputedStyle(document.querySelector('.letter-paper .lp-to'));
+		return s.fontFamily === to.fontFamily && s.lineHeight === '34px' && s.backgroundImage.includes('repeating-linear-gradient');
+	}));
+	check('★ 글줄마다 줄 위에 앉는다 (줄 칸의 아래 선과 글줄 아래가 같은 자리)', await page.locator('.letter-paper .lp-body').evaluate((e) => {
+		const box = e.getBoundingClientRect(); const r = document.createRange(); r.selectNodeContents(e);
+		const rects = [...r.getClientRects()].filter((c) => c.width > 0);
+		// 글줄마다 줄 칸(34px) 안에서 같은 자리 · 글자 아래가 그 칸의 선(칸 맨 아래)을 넘지 않는다
+		const offs = rects.map((c) => (c.top - box.top) % 34);
+		return rects.length > 1 && Math.max(...offs) - Math.min(...offs) < 1.5 && rects.every((c) => ((c.top - box.top) % 34) + c.height <= 34.5);
+	}));
 	check('받은 편지 → "편지로 답장 쓰기" (채팅하기 없음)', (await page.getByRole('button', { name: '편지로 답장 쓰기' }).count()) === 1 && (await page.getByText('채팅하기').count()) === 0);
 	await page.screenshot({ path: `${SP}/letters-3d-read.png`, fullPage: true });
 	await page.goto(`${BASE}/letters/m/70`); await page.locator('.letter-paper').waitFor({ timeout: 2000 });
@@ -285,6 +297,31 @@ try {
 	check('동작 줄이기: 보내면 바로 편지함', called(w3, 'dm_reply_to').length === 1);
 	check('페이지 오류 없음 (동작 줄이기)', r3.errors.length === 0, r3.errors.join(' / '));
 	await r3.ctx.close();
+
+	console.log('[당겨서 새로고침]');
+	const w4 = world();
+	const r4 = await openApp(browser, w4);
+	const pg = r4.page;
+	await pg.goto(`${BASE}/letters`); await pg.locator('.stack .item').first().waitFor(); await pg.waitForTimeout(400);
+	const cdp = await pg.context().newCDPSession(pg);
+	const drag = async (dist) => {
+		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 160 }] });
+		for (let i = 1; i <= 12; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 195, y: 160 + (dist * i) / 12 }] });
+	};
+	let reloaded = false; pg.once('load', () => (reloaded = true));
+	await drag(60);
+	check('조금 당기면 동그라미만 따라온다 (새로고침 아님)', (await pg.locator('.ptr.dragging').count()) === 1 && (await pg.locator('.ptr.ready').count()) === 0);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await pg.waitForTimeout(500);
+	check('놓으면 제자리로 · 새로고침 안 함', !reloaded && (await pg.locator('.ptr.busy').count()) === 0);
+	await drag(320);
+	check('★ 충분히 당기면 준비 표시', (await pg.locator('.ptr.ready').count()) === 1);
+	const load = pg.waitForEvent('load', { timeout: 8000 }).then(() => true, () => false);
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+	check('★ 맨 위에서 당겼다 놓으면 앱을 다시 불러온다', await load);
+	await pg.locator('.stack .item').first().waitFor(); await pg.waitForTimeout(400);
+	check('다시 불러와도 편지함 그대로 (로그인 유지)', new URL(pg.url()).pathname === '/letters' && (await pg.locator('.stack .item').count()) === 2);
+	check('페이지 오류 없음 (새로고침)', r4.errors.length === 0, r4.errors.join(' / '));
+	await r4.ctx.close();
 
 	console.log('[명단에 없는 학생 — 이름 적기]');
 	const w2 = world({ named: false });

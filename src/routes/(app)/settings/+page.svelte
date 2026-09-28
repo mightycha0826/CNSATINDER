@@ -28,6 +28,9 @@
 	import Chevron from '$lib/ui/Chevron.svelte';
 	import { LEGAL, LEGAL_IDS } from '$lib/legal';
 	import PasswordFields from '$lib/ui/PasswordFields.svelte';
+	import { reloadApp } from '$lib/reload';
+
+	let reloading = $state(false);
 
 	let busy = $state(false);
 
@@ -371,6 +374,12 @@
 			<span>계정 상태</span>
 			<span class="g-val" class:bad={S.profile?.status !== 'active'}>{S.profile?.status === 'active' ? '정상' : '제한됨'}</span>
 		</div>
+		<!-- 앱 새로고침 (Phase 37) — 탭 첫 화면에서는 맨 위에서 당겨도 된다 -->
+		<button class="g-row" onclick={() => { reloading = true; void reloadApp(); }} disabled={reloading}>
+			<span>앱 새로고침</span>
+			<span class="g-val">{reloading ? '불러오는 중…' : '최신 버전으로'}</span>
+			<Chevron />
+		</button>
 	</div>
 
 	<h2 class="g-head">약관 및 정책</h2>

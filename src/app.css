@@ -770,17 +770,16 @@ button.g-row:active:not(:disabled) {
 /* ── 편지지 (이름 편지) — 편지 쓰기 · 편지로 답장 · 편지 화면이 같이 쓴다 ─────────────
    To. 는 왼쪽 위, From. 은 오른쪽 아래. 종이 윗단에 테마 색 띠 한 줄 */
 /* 편지지 (Phase 32) — 쓰는 편지지(LetterEditor)와 읽는 편지지(LetterSheet)가 같은 종이.
-   줄 친 미색 종이 · 왼쪽 여백선(브랜드 코랄) · 손글씨 To./From. · .stacked 면 뒤에 한 장 더 겹쳐 보인다 */
+   줄 친 미색 종이 · 왼쪽 여백선(브랜드 코랄) · 손글씨 To./From. · .stacked 면 뒤에 한 장 더 겹쳐 보인다
+   본문도 손글씨 (Phase 37). 줄은 종이가 아니라 본문 칸에 긋는다 — 한 줄(--rule-h, px 고정) 아래쪽에 선이 있어서
+   글자가 언제나 줄 위에 앉는다 (종이 맨 위부터 그으면 To. 높이만큼 어긋났다). 글자 크기를 바꿔도 줄 간격은 그대로. */
 .letter-paper {
-	--rule-h: 1.85em;
+	--rule-h: 34px;
 	position: relative;
 	padding: 22px 20px 18px 30px;
 	border-radius: 6px;
 	background-color: var(--paper);
-	background-image:
-		linear-gradient(90deg, transparent 21px, color-mix(in srgb, var(--g-pink) 28%, transparent) 21px 22.5px, transparent 22.5px),
-		repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-h) - 1px), var(--paper-rule) calc(var(--rule-h) - 1px) var(--rule-h));
-	background-position: 0 0, 0 14px;
+	background-image: linear-gradient(90deg, transparent 21px, color-mix(in srgb, var(--g-pink) 28%, transparent) 21px 22.5px, transparent 22.5px);
 	color: var(--paper-ink);
 	box-shadow:
 		0 1px 2px rgb(0 0 0 / 0.08),
@@ -845,9 +844,20 @@ button.g-row:active:not(:disabled) {
 	font-weight: 600;
 	opacity: 0.55;
 }
-.letter-paper .lp-body {
-	font-size: 16px;
+.letter-paper .lp-body,
+.letter-paper .le-doc {
+	flex: 1;
+	/* 줄은 종이 양 끝까지 — 안쪽 여백만큼 밖으로 늘이고 다시 채운다 (왼쪽 여백선은 종이 배경이 그 위에 보인다) */
+	margin: 0 -20px 0 -30px;
+	padding: 0 20px 0 30px;
+	font-family: var(--hand);
+	font-size: 24px;
 	line-height: var(--rule-h);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
+	background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--rule-h) - 1px), var(--paper-rule) calc(var(--rule-h) - 1px) var(--rule-h));
+	background-attachment: local;
+}
+.letter-paper .lp-body * {
+	line-height: inherit;
 }

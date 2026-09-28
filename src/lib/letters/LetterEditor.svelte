@@ -13,6 +13,7 @@
 	import { TextAlign } from '@tiptap/extension-text-align';
 	import { Placeholder, UndoRedo } from '@tiptap/extensions';
 	import { COLOR, COLOR_LABEL, HIGHLIGHT, HIGHLIGHT_LABEL, SIZE, SIZE_LABEL, fromDoc, type LetterFmt } from './rich';
+	import '@fontsource/nanum-pen-script/index.css';
 
 	/**
 	 * 편지 서식 편집기 — 굵게·기울임·밑줄·취소선·형광펜·글자색·크기·정렬·되돌리기.
@@ -297,9 +298,14 @@
 	.sheet.letter-paper .area {
 		padding-top: 0;
 	}
+	/* 편지지 안에서는 손글씨 · 줄 맞춤 (app.css .letter-paper .le-doc) — 줄이 편지지 끝까지 보이게 넉넉한 높이 */
 	.sheet.letter-paper .area :global(.le-doc) {
-		min-height: 36dvh;
-		line-height: var(--rule-h, 1.8); /* 편지지 줄에 맞춘다 (app.css .letter-paper) */
+		min-height: max(36dvh, calc(var(--rule-h) * 8));
+		font-size: 24px;
+		line-height: var(--rule-h);
+	}
+	.sheet.letter-paper .area :global(.le-doc *) {
+		line-height: inherit;
 	}
 	.area {
 		flex: 1;
