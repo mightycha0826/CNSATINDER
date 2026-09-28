@@ -1,4 +1,4 @@
-import { ROOT, CHROME, OUT } from './_env.mjs';
+import { ROOT, CHROME, OUT, answerDialogs } from './_env.mjs';
 import http from 'node:http';
 import { createHmac } from 'node:crypto';
 import { spawn, execSync } from 'node:child_process';
@@ -42,7 +42,7 @@ try {
 	await ctx.addCookies([{ name: 'simbun_admin', value: cookie, domain: 'localhost', path: '/admin', httpOnly: true, sameSite: 'Strict' }]);
 	const page = await ctx.newPage();
 	const errs = []; page.on('pageerror', (e) => errs.push(String(e)));
-	let answer = true; page.on('dialog', (d) => (answer ? d.accept() : d.dismiss()));
+	let answer = true; await answerDialogs(page, () => answer);
 	const settle = async () => { await page.waitForLoadState('networkidle'); await page.waitForTimeout(300); };
 	console.log(`\n[${ROLE}]`);
 	await page.goto(`http://localhost:${PORT}/admin`); await settle();

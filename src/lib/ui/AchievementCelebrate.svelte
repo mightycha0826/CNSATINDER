@@ -9,6 +9,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
+	import { focustrap } from '$lib/focustrap';
 	import Badge from './Badge.svelte';
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
 	import { whileVisible } from '$lib/visible';
@@ -78,7 +79,7 @@
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div class="scrim" class:leaving role="presentation" onclick={() => close()}>
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div class="party" role="dialog" aria-modal="true" aria-label="새 업적" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+		<div class="party" role="dialog" aria-modal="true" aria-label="새 업적" tabindex="-1" onclick={(e) => e.stopPropagation()} use:focustrap>
 			<div class="stage" aria-hidden="true">
 				<i class="glow"></i>
 				<i class="rays"></i>

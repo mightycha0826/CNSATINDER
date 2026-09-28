@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import '$lib/admin/admin.css';
+	import ConfirmDialog from '$lib/admin/ConfirmDialog.svelte';
 
 	let { data, children } = $props();
 
@@ -79,6 +80,8 @@
 <main class="wrap">
 	{@render children()}
 </main>
+
+<ConfirmDialog />
 
 <style>
 	:global(body.admin #app) {

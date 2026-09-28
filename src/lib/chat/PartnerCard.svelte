@@ -36,7 +36,14 @@
 			<p class="muted small">아직 소개를 적지 않음</p>
 		{/if}
 	{:else if loading}
-		<p class="muted small">불러오는 중…</p>
+		<!-- 매너 온도 · 소개 · 관심사 자리를 먼저 잡는다 — 시트가 아래에서 붙어 있어 내용이 늘면 윗단이 튀어 오르므로 -->
+		<p class="sr-only">불러오는 중…</p>
+		<div class="sk" aria-hidden="true">
+			<i class="skeleton temp-sk"></i>
+			<i class="skeleton line"></i>
+			<i class="skeleton line short"></i>
+			<span class="tags">{#each [48, 64, 56] as w (w)}<i class="skeleton pill" style:width="{w}px"></i>{/each}</span>
+		</div>
 	{:else}
 		<p class="muted small">프로필을 불러오지 못함</p>
 	{/if}
@@ -104,6 +111,33 @@
 		border-radius: 999px;
 		background: var(--field);
 		font-size: 13px;
+	}
+	.sk {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		width: 100%;
+	}
+	/* MannerTemp 막대 묶음 (글자 줄 + 막대 + 설명) 높이 */
+	.temp-sk {
+		width: 100%;
+		max-width: 280px;
+		height: 63px;
+		margin: 6px 0 4px;
+		border-radius: var(--r-sm);
+	}
+	.line {
+		width: 78%;
+		height: 13px;
+		margin-top: 12px;
+	}
+	.line.short {
+		width: 52%;
+		margin-top: 9px;
+	}
+	.pill {
+		height: 27px;
+		border-radius: 999px;
 	}
 	.tag.mbti {
 		background: var(--text);

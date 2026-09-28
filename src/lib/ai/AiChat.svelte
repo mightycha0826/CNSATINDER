@@ -10,6 +10,7 @@
 	import { S, errMsg, toast } from '$lib/state.svelte';
 	import { mmss as fmtClock } from '$lib/time';
 	import { scrollBehavior } from '$lib/motion';
+	import { focustrap } from '$lib/focustrap';
 	import { aiApi, GREETING, type AiApi, type Line } from './api';
 
 	let {
@@ -136,7 +137,7 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && onclose()} />
 
-<div class="ai" role="dialog" aria-modal="true" aria-label="AI 와 대화">
+<div class="ai" role="dialog" aria-modal="true" aria-label="AI 와 대화" tabindex="-1" use:focustrap>
 	<header class="topbar">
 		<button class="close" onclick={onclose} aria-label="AI 대화 닫기">
 			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -219,6 +220,7 @@
 		display: flex;
 		flex-direction: column;
 		background: var(--bg);
+		outline: none;
 	}
 	.close {
 		flex: none;

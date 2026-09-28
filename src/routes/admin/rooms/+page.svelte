@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { CLOSE_LABEL, fmtTime } from '$lib/adminTypes';
 	import Sid from '$lib/admin/Sid.svelte';
+	import { ask } from '$lib/admin/ask.svelte';
 
 	let { data } = $props();
 
@@ -16,7 +17,7 @@
 
 	async function backup() {
 		if (busy) return;
-		if (!confirm(`${from} ~ ${to} 의 대화를 내려받을까요?\n내려받은 기록이 남습니다. 파일은 안전하게 보관하고 공유하지 마세요.`)) return;
+		if (!(await ask(`${from} ~ ${to} 의 대화를 내려받을까요?\n내려받은 기록이 남습니다. 파일은 안전하게 보관하고 공유하지 마세요.`, '내려받기'))) return;
 		busy = true;
 		progress = '받는 중…';
 		const parts: string[] = [];

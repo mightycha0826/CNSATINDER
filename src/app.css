@@ -773,6 +773,20 @@ button.g-row:active:not(:disabled) {
 	user-select: none;
 }
 
+/* 불러오는 동안의 빈 자리 — 실제 내용과 같은 크기로 자리를 먼저 잡아 두어, 다 불러와도 화면이 튀지 않게.
+   크기 · 모양은 쓰는 쪽 스타일에서 (<i class="skeleton t"></i>). 동작 줄이기면 깜빡이지 않고 그대로 멈춘다 */
+.skeleton {
+	display: block;
+	border-radius: 6px;
+	background: var(--field);
+	animation: skeleton 1.2s ease-in-out infinite;
+}
+@keyframes skeleton {
+	50% {
+		opacity: 0.5;
+	}
+}
+
 /* 기기에서 "동작 줄이기"를 켰으면 움직임을 끈다 (나타나기·튀기·깜빡임). 스크롤은 lib/motion.ts */
 @media (prefers-reduced-motion: reduce) {
 	*,

@@ -6,6 +6,7 @@
 	 * 안에 넣는 공용 모양: .item (한 줄 버튼, .danger) · .warn (확인 문구, .left)
 	 */
 	import type { Snippet } from 'svelte';
+	import { focustrap } from '$lib/focustrap';
 
 	let { onclose, label, children }: { onclose?: () => void; label?: string; children: Snippet } = $props();
 </script>
@@ -15,7 +16,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div class="scrim" role="presentation" onclick={() => onclose?.()}>
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="sheet" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" onclick={(e) => e.stopPropagation()}>
+	<div class="sheet" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" onclick={(e) => e.stopPropagation()} use:focustrap>
 		{@render children()}
 	</div>
 </div>

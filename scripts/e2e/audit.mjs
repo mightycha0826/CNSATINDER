@@ -1,4 +1,4 @@
-import { ROOT, CHROME, OUT } from './_env.mjs';
+import { ROOT, CHROME, OUT, answerDialogs } from './_env.mjs';
 import http from 'node:http';
 import { createHmac } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -106,7 +106,7 @@ async function session(width = 1200) {
 	return { ctx, page };
 }
 /** 확인창: answer 에 따라 수락/취소 */
-const dialogs = (page, answer) => { page.removeAllListeners('dialog'); page.on('dialog', (d) => (answer() ? d.accept() : d.dismiss())); };
+const dialogs = (page, answer) => answerDialogs(page, answer);
 
 try {
 	console.log('\n[1] 모든 화면이 열린다 (관리자)');
@@ -120,7 +120,7 @@ try {
 	console.log('\n[2] ★ 확인창에서 "취소"하면 아무것도 보내지 않는다');
 	await page.go(`/admin/reports/${REP}`);
 	let answer = false;
-	dialogs(page, () => answer);
+	await dialogs(page, () => answer);
 	let got = since();
 	await page.getByRole('button', { name: '조치하기' }).click();
 	await page.waitForTimeout(600);

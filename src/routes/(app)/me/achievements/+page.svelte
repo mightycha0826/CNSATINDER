@@ -45,7 +45,12 @@
 	{:else if failed}
 		<p class="muted center">업적을 불러오지 못했어요</p>
 	{:else}
-		<p class="muted center">불러오는 중…</p>
+		<!-- 요약 카드 · 업적 칸 자리 (AchievementsView 의 .summary · .grid 와 같은 모양) -->
+		<p class="sr-only">불러오는 중…</p>
+		<i class="skeleton summary" aria-hidden="true"></i>
+		<div class="grid" aria-hidden="true">
+			{#each [0, 1, 2, 3] as i (i)}<i class="skeleton card"></i>{/each}
+		</div>
 	{/if}
 </div>
 
@@ -57,5 +62,18 @@
 	.center {
 		margin: 40px auto;
 		text-align: center;
+	}
+	.summary {
+		height: 88px;
+		border-radius: var(--r-card);
+	}
+	.grid {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 10px;
+	}
+	.card {
+		height: 176px;
+		border-radius: 20px;
 	}
 </style>

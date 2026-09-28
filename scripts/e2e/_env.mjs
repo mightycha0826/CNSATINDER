@@ -25,3 +25,28 @@ export const CHROME = findChrome();
 /** 스크린샷 저장 위치 (저장소 밖) */
 export const OUT = process.env.E2E_OUT || join(tmpdir(), 'cnsatinder-e2e');
 mkdirSync(OUT, { recursive: true });
+
+/**
+ * 운영 확인창(ConfirmDialog — 브라우저 confirm() 대신) 자동 응답. 예전 `page.on('dialog', …)` 자리.
+ * 확인창이 뜨면 answer() 가 참이면 확인, 아니면 취소를 누른다. 지금 페이지와 이후 새로 여는 페이지 모두.
+ * 다시 부르면 answer 만 바꾼다.
+ */
+const answers = new WeakMap();
+export async function answerDialogs(page, answer) {
+	const first = !answers.has(page);
+	answers.set(page, answer);
+	if (!first) return;
+	await page.exposeFunction('__e2eAnswer', () => !!answers.get(page)());
+	const watch = () => {
+		if (window.__e2eWatch) return;
+		window.__e2eWatch = true;
+		new MutationObserver(() => {
+			const box = document.querySelector('[role="alertdialog"]:not([data-e2e])');
+			if (!box) return;
+			box.setAttribute('data-e2e', '');
+			void window.__e2eAnswer().then((yes) => box.querySelector(yes ? '.btn' : '.cancel')?.click());
+		}).observe(document, { childList: true, subtree: true });
+	};
+	await page.addInitScript(watch);
+	await page.evaluate(watch);
+}

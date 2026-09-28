@@ -1,4 +1,4 @@
-import { ROOT, CHROME, OUT } from './_env.mjs';
+import { ROOT, CHROME, OUT, answerDialogs } from './_env.mjs';
 import http from 'node:http';
 import { createHmac } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -68,7 +68,7 @@ try {
 	const page = await ctx.newPage();
 	const errs = [];
 	page.on('pageerror', (e) => errs.push(String(e)));
-	page.on('dialog', (d) => d.accept());
+	await answerDialogs(page, () => true);
 	const text = async () => (await page.locator('main').innerText()).replace(/\s+/g, ' ');
 	const nav = async (label) => {
 		await page.locator('header.bar nav a', { hasText: label }).click();

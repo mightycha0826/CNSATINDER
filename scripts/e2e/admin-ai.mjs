@@ -1,4 +1,4 @@
-import { ROOT, CHROME, OUT } from './_env.mjs';
+import { ROOT, CHROME, OUT, answerDialogs } from './_env.mjs';
 import http from 'node:http';
 import { createHmac } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -91,7 +91,7 @@ try {
 	await ctx.addCookies([{ name: 'simbun_admin', value: cookie, domain: 'localhost', path: '/admin', httpOnly: true, sameSite: 'Strict' }]);
 	const page = await ctx.newPage();
 	const errs = []; page.on('pageerror', (e) => errs.push(String(e)));
-	page.on('dialog', (d) => d.accept());
+	await answerDialogs(page, () => true);
 	const U = (p) => `http://localhost:${PORT}${p}`;
 
 	console.log('[자동 감지 신고]');

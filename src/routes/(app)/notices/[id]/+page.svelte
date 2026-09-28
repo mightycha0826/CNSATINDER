@@ -30,7 +30,15 @@
 			{#if notice.body}<p class="body selectable">{notice.body}</p>{/if}
 		</article>
 	{:else if !NOTICES.loaded}
-		<p class="muted empty">불러오는 중…</p>
+		<!-- 제목 · 시각 · 본문 자리 (알림을 눌러 곧바로 들어온 경우) -->
+		<p class="sr-only">불러오는 중…</p>
+		<div class="sk" aria-hidden="true">
+			<i class="skeleton title"></i>
+			<i class="skeleton when"></i>
+			<div class="body">
+				{#each [100, 94, 97, 60] as w (w)}<i class="skeleton" style:width="{w}%"></i>{/each}
+			</div>
+		</div>
 	{:else}
 		<p class="muted empty">공지를 찾을 수 없어요.</p>
 	{/if}
@@ -68,5 +76,31 @@
 	.empty {
 		margin: 48px 0;
 		text-align: center;
+	}
+	.sk {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	.sk .title {
+		width: 70%;
+		height: 20px;
+		margin: 4px 0;
+	}
+	.sk .when {
+		width: 18%;
+		height: 11px;
+		margin: 4px 0;
+	}
+	.sk .body {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin-top: 14px;
+		padding-top: 20px;
+		border-top: 1px solid var(--line);
+	}
+	.sk .body i {
+		height: 13px;
 	}
 </style>

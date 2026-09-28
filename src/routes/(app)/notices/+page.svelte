@@ -64,7 +64,13 @@
 		<h2 class="sec">전체 공지</h2>
 	{/if}
 	{#if !NOTICES.loaded}
-		<p class="muted empty">불러오는 중…</p>
+		<!-- 공지 줄과 같은 높이의 빈 줄 -->
+		<p class="sr-only">불러오는 중…</p>
+		<ul aria-hidden="true">
+			{#each [72, 55, 64, 48] as w (w)}
+				<li class="sk"><i class="skeleton" style:width="{w}%"></i><i class="skeleton when"></i></li>
+			{/each}
+		</ul>
 	{:else if NOTICES.list.length === 0}
 		<p class="muted empty">아직 공지가 없어요.</p>
 	{:else}
@@ -208,5 +214,21 @@
 	.empty {
 		margin: 48px 0;
 		text-align: center;
+	}
+	/* 불러오는 동안 — 제목 줄(16px × 1.4) · 시각 줄(12px) · 위아래 16px 가 실제 줄(a)과 같다 */
+	.sk {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 16px 0;
+	}
+	.sk i {
+		height: 16px;
+		margin: 3px 0;
+	}
+	.sk i.when {
+		width: 22%;
+		height: 10px;
+		margin: 4px 0;
 	}
 </style>

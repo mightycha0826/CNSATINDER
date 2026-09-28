@@ -656,7 +656,13 @@
 	<div class="sr-only" aria-live="polite">{announce}</div>
 	<div class="list" bind:this={listEl} onscroll={onScroll} role="region" aria-label="대화 내용">
 		{#if loading}
-			<div class="empty muted">불러오는 중…</div>
+			<!-- 말풍선 모양 빈 자리 — 최근 대화가 놓일 아래쪽에. 불러오면 그 자리에 실제 대화가 들어선다 -->
+			<p class="sr-only">불러오는 중…</p>
+			<div class="sk" aria-hidden="true">
+				{#each [[false, 46, true], [false, 30, false], [true, 52, true], [true, 36, false], [false, 58, true]] as [mine, w, gap], i (i)}
+					<i class="skeleton" class:mine class:gap style:width="{w}%"></i>
+				{/each}
+			</div>
 		{:else if room}
 			{#if room.snap}
 				<ChatIntro alias={room.snap.partner_alias} online={partnerOnline} {profile} onprofile={() => openSheet('profile')} />
@@ -961,9 +967,22 @@
 		display: flex;
 		flex-direction: column;
 	}
-	.empty {
-		margin: auto;
-		font-size: 14px;
+	/* 불러오는 동안 — 한 줄 말풍선(.bubble)과 같은 높이 · 모서리 */
+	.sk {
+		margin-top: auto;
+		display: flex;
+		flex-direction: column;
+	}
+	.sk i {
+		height: 37px;
+		margin-top: 2px;
+		border-radius: var(--r-bubble);
+	}
+	.sk i.gap {
+		margin-top: 8px;
+	}
+	.sk i.mine {
+		align-self: flex-end;
 	}
 	.sys {
 		align-self: center;

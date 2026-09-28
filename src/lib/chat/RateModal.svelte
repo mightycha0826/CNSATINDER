@@ -4,6 +4,7 @@
 	 * 표정을 고르면 그 자리에서 이유 칩이 펼쳐지고, 보내면 "고마워요" 뒤 카드가 닫힌다.
 	 * ✕ · 바깥 · Esc = 나중에 (이 대화는 다시 묻지 않는다 — 부르는 쪽이 skipRating). 카드가 다 닫힌 뒤 onclose 로 알린다.
 	 */
+	import { focustrap } from '$lib/focustrap';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import RateForm from './RateForm.svelte';
 	import type { PendingRating, Reason, Score } from '$lib/manner';
@@ -40,7 +41,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div class="scrim" class:leaving role="presentation" onclick={() => !done && skip()}>
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="card" role="dialog" aria-modal="true" aria-label="매너 평가" tabindex="-1" onclick={(e) => e.stopPropagation()}>
+	<div class="card" role="dialog" aria-modal="true" aria-label="매너 평가" tabindex="-1" onclick={(e) => e.stopPropagation()} use:focustrap>
 		<div class="hero" aria-hidden="true">
 			<i class="orb a"></i><i class="orb b"></i>
 			<span class="ring"><Avatar name={p.partner_alias} size={76} /></span>
