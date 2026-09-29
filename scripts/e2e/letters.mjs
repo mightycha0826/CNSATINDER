@@ -458,6 +458,30 @@ try {
 	check('페이지 오류 없음 (폴더)', r7.errors.length === 0, r7.errors.join(' / '));
 	await r7.ctx.close();
 
+	console.log('[낮은 화면 편지 쓰기 단추 · 인터넷 끊김 띠 (Phase 54)]');
+	{
+		const w8 = world();
+		const r8 = await openApp(browser, w8, { viewport: { width: 280, height: 574 } });
+		const p8 = r8.page;
+		await p8.goto(`${BASE}/letters`); await p8.locator('button.desk').waitFor(); await p8.waitForTimeout(700);
+		// 큰 글꼴 안드로이드(≈280×574): 새 편지 + 책상이 화면보다 길어서 처음엔 편지 쓰기 단추가 보관함 이름표 위에 온다
+		const cover = await p8.evaluate(() => {
+			const p = document.querySelector('.plate')?.getBoundingClientRect();
+			const f = document.querySelector('.fab')?.getBoundingClientRect();
+			return p && f ? p.bottom > f.top + 4 && p.top < f.bottom - 4 : null;
+		});
+		check('★ 이름표와 겹치면 편지 쓰기 단추가 동그란 연필로 줄어든다', cover === false || (await p8.locator('.fab.compact').count()) === 1, String(cover));
+		await p8.evaluate(() => scrollTo(0, document.documentElement.scrollHeight)); await p8.waitForTimeout(400);
+		check('맨 아래로 내리면(겹치지 않으면) 다시 "편지 쓰기" 글자', (await p8.locator('.fab.compact').count()) === 0);
+		await p8.screenshot({ path: `${SP}/letters-fab-280.png` });
+		await r8.ctx.setOffline(true); await p8.waitForTimeout(300);
+		check('★ 인터넷이 끊기면 위쪽 띠', (await p8.locator('.offline').innerText()).includes('인터넷 연결이 끊겼어요'));
+		await r8.ctx.setOffline(false); await p8.waitForTimeout(400);
+		check('다시 이어지면 띠가 걷히고 "다시 연결됐어요"', (await p8.locator('.offline').count()) === 0 && (await p8.getByText('다시 연결됐어요').count()) >= 1);
+		check('페이지 오류 없음 (Phase 54)', r8.errors.length === 0, r8.errors.join(' / '));
+		await r8.ctx.close();
+	}
+
 	console.log('[폰 키보드 — 찾기 → 고르기 (Phase 46)]');
 	const w6 = world();
 	const r6 = await openApp(browser, w6, { isMobile: true, hasTouch: true, deviceScaleFactor: 3 });

@@ -6580,3 +6580,13 @@ returns boolean language sql stable security definer set search_path = '' as $fn
                      from public.app_settings s where s.id), false);
 $fn$;
 revoke all on function private.in_maintenance() from public, anon, authenticated;
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 54 — 점검 (Supabase 성능 진단: 인덱스 없는 외래 키 5개)
+-- 가리키는 행을 지우거나 고칠 때(on delete / 조인) 표 전체를 훑지 않게. 학교 인원 규모에선 당장 느리진 않지만 편지 · 댓글이 쌓일수록 차이가 난다.
+-- ════════════════════════════════════════════════════════════════════
+create index if not exists letter_comments_letter_author on public.letter_comments (letter_id, author_no);
+create index if not exists letter_comments_parent on public.letter_comments (parent_comment_id) where parent_comment_id is not null;
+create index if not exists letter_reply_assignments_comment on public.letter_reply_assignments (comment_id) where comment_id is not null;
+create index if not exists letter_reply_cooldown_hi on public.letter_reply_cooldown (user_hi);
+create index if not exists letters_designated_reply on public.letters (designated_reply_comment_id) where designated_reply_comment_id is not null;

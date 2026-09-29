@@ -12,6 +12,7 @@
 	let { team }: { team: TeamMember[] } = $props();
 
 	let fresh = $state<TeamMember[] | null>(null);
+	let panel: HTMLElement | undefined = $state();
 	let now = $state(Date.now());
 	// 페이지를 옮겨 새 목록이 오면 그걸 쓴다
 	$effect(() => {
@@ -25,6 +26,8 @@
 		const pull = async () => {
 			now = Date.now();
 			if (document.visibilityState !== 'visible') return;
+			// 좁은 화면(판이 숨겨짐)에선 부르지 않는다 (Phase 54 — 안 보이는 판 때문에 1분마다 DB 요청이 나가던 것)
+			if (!panel || panel.offsetParent === null) return;
 			try {
 				const r = await fetch('/admin/team', { headers: { accept: 'application/json' } });
 				if (r.ok) fresh = (await r.json()).team;
@@ -59,7 +62,7 @@
 	const online = $derived(list.filter((m) => stateOf(m) !== 'off').length);
 </script>
 
-<aside class="team" aria-label="운영진 현황">
+<aside class="team" aria-label="운영진 현황" bind:this={panel}>
 	<p class="head">운영진 <b class="num">{online}</b><span>/ {list.length} 접속</span></p>
 	{#each groups as g (g.role)}
 		<p class="group">{ROLE_LABEL[g.role]} — {g.members.length}</p>

@@ -46,6 +46,38 @@
 	let vh = $state(844);
 	const k = $derived(Math.min(1.5, Math.max(0.75, Math.min(deskW / 390, vh / 844))));
 
+	// 편지 쓰기 단추가 보관함 이름표와 겹치면 동그란 연필 단추로 줄인다 (Phase 54) — 낮은 화면(아이폰 SE · 큰 글꼴)에서
+	// 이름표 글("받은 편지 3 · 보낸 편지 2")이 단추 밑에 가려지지 않게. 스크롤 · 화면 크기가 바뀔 때만 잰다(요청 없음)
+	let plateEl = $state<HTMLElement>();
+	let fabEl = $state<HTMLElement>();
+	let compact = $state(false);
+	$effect(() => {
+		if (!plateEl || !fabEl) return;
+		let raf = 0;
+		let last = false; // $state 를 읽지 않는다 — 읽으면 이 effect 가 바뀔 때마다 다시 돈다
+		const measure = () => {
+			raf = 0;
+			const p = plateEl!.getBoundingClientRect();
+			const f = fabEl!.getBoundingClientRect();
+			// 세로로만 본다 — 단추 폭이 줄었다 폈다 해도 판단이 흔들리지 않게
+			const over = p.bottom > f.top + 4 && p.top < f.bottom - 4;
+			if (over !== last) compact = last = over;
+		};
+		const kick = () => (raf ||= requestAnimationFrame(measure));
+		measure();
+		addEventListener('scroll', kick, { passive: true });
+		addEventListener('resize', kick);
+		// 편지를 불러와 더미 · 봉투가 생기면 이름표 자리가 바뀐다(스크롤 · 창 크기와 상관없이)
+		const ro = new ResizeObserver(kick);
+		ro.observe(document.body);
+		return () => {
+			ro.disconnect();
+			cancelAnimationFrame(raf);
+			removeEventListener('scroll', kick);
+			removeEventListener('resize', kick);
+		};
+	});
+
 	const LAYERS = [
 		{ r: -7, x: -14, y: 10, kind: 'paper' },
 		{ r: 5, x: 16, y: 8, kind: 'env' },
@@ -104,7 +136,7 @@
 				{/if}
 			</span>
 		</span>
-		<span class="plate">
+		<span class="plate" bind:this={plateEl}>
 			<span class="plate-text">
 				<strong>편지 보관함</strong>
 				<span class="muted num">받은 편지 {count(readCount, BOX.more.received)} · 보낸 편지 {count(sentCount, BOX.more.sent)}{#if BOX.folders.length}&nbsp;· 폴더 {BOX.folders.length}{/if}</span>
@@ -114,7 +146,7 @@
 	</button>
 </div>
 
-<a class="fab" href="/letters/new" aria-label="편지 쓰기">
+<a class="fab" class:compact href="/letters/new" aria-label="편지 쓰기" bind:this={fabEl}>
 	<svg viewBox="0 0 24 24" aria-hidden="true">
 		<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
 		<path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="2" />
@@ -312,6 +344,23 @@
 	}
 	.fab:active {
 		transform: scale(0.94);
+	}
+	/* 이름표와 겹칠 때 — 연필만 있는 동그란 단추 (글자는 접힌다) */
+	.fab span {
+		overflow: hidden;
+		max-width: 6em;
+		white-space: nowrap;
+		transition:
+			max-width 0.25s ease,
+			opacity 0.2s ease;
+	}
+	.fab.compact {
+		gap: 0;
+		padding: 0 15px;
+	}
+	.fab.compact span {
+		max-width: 0;
+		opacity: 0;
 	}
 	.fab svg {
 		width: 22px;

@@ -311,7 +311,11 @@ export const ACTION_LABEL: Record<string, string> = {
 	remove_personal_notice: '개인 공지 거둠',
 	answer_inquiry: '문의 답변',
 	grant_badge: '특별 업적 줌',
-	revoke_badge: '특별 업적 거둠'
+	revoke_badge: '특별 업적 거둠',
+	// Phase 50 · 51 — 운영진 관리
+	set_staff: '운영진 지정 · 변경',
+	set_role_perms: '역할 권한 변경',
+	set_owner: '최고 관리자 지정'
 };
 
 /** 한 학생의 특별 업적 (admin_user_badges, Phase 44) — 운영진이 주고 거두는 것만 */

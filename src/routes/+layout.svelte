@@ -10,6 +10,7 @@
 	import { hasSupabase } from '$lib/supabase';
 	import { S, UI, init, toasts } from '$lib/state.svelte';
 	import Maintenance from '$lib/ui/Maintenance.svelte';
+	import OfflineBar from '$lib/ui/OfflineBar.svelte';
 	import { loadThemeColor } from '$lib/themeColor.svelte';
 	import { loadTheme } from '$lib/theme.svelte';
 	import { loadPrefs } from '$lib/prefs.svelte';
@@ -209,6 +210,7 @@
 {/if}
 
 {#if !isAdmin}
+	<OfflineBar />
 	<InAppBanner />
 	<!-- 대화 상대 메달 자세히 (Phase 44) — 프로필 시트 위에도 뜨게 맨 위에 하나 -->
 	<BadgeSheet />

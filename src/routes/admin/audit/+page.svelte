@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ACTION_LABEL as LABEL, fmtTime, shortId } from '$lib/adminTypes';
+	import { PERM_INFO, ROLE_LABEL, type StaffRole } from '$lib/adminRoles';
 	import type { PageData } from './$types';
 
 	type AuditRow = PageData['log'][number];
@@ -24,9 +25,20 @@
 		ai_chat_per_user: 'AI 대화 사람당',
 		ai_chat_daily_cap: 'AI 대화 전체',
 		ai_chat_minutes: 'AI 대화 시간',
-		ai_chat_max_turns: 'AI 대화 턴'
+		ai_chat_max_turns: 'AI 대화 턴',
+		// Phase 44 · 52 · 53 — 기록에는 남는데 내용 칸이 비어 보이던 것 (Phase 54)
+		letters_gate: '익명편지 잠금',
+		letters_gate_min: '잠금 인원',
+		maintenance: '서버 점검',
+		maintenance_msg: '점검 안내',
+		maintenance_until: '점검 끝',
+		maintenance_at: '점검 예약'
 	};
-	const ONOFF = new Set(['is_open', 'ai_moderation', 'ai_chat']);
+	const ONOFF = new Set(['is_open', 'ai_moderation', 'ai_chat', 'letters_gate', 'maintenance']);
+	const WHEN = new Set(['maintenance_until', 'maintenance_at']);
+	const when = (v: unknown) =>
+		v ? new Date(String(v)).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '없음';
+	const perms = (v: unknown) => (Array.isArray(v) ? v.map((p) => PERM_INFO.find((x) => x.key === p)?.label ?? p).join(', ') || '없음' : '없음');
 
 	/** 편지 번호 — 예전 기록은 letter_id, 요즘 기록은 letter 로 남아 있다 */
 	const letterOf = (d: Record<string, unknown>) => (d.letter ?? d.letter_id) as number | undefined;
@@ -39,11 +51,19 @@
 				if (!SETTING[k]) continue;
 				if (k === 'is_open') parts.push(v ? '서비스 열기' : '서비스 닫기');
 				else if (ONOFF.has(k)) parts.push(`${SETTING[k]} ${v ? '켬' : '끔'}`);
+				else if (WHEN.has(k)) parts.push(`${SETTING[k]} ${when(v)}`);
+				else if (k === 'maintenance_msg') {
+					if (v) parts.push(`${SETTING[k]} "${v}"`);
+				}
 				else parts.push(`${SETTING[k]} ${k === 'notice' ? `"${v}"` : v}`);
 			}
 			return parts.join(' · ');
 		}
 		if (a.action === 'roster_import') return `${d.grade}학년 ${d.count}명`;
+		// 운영진 관리 (Phase 50 · 51)
+		const role = (v: unknown) => (v ? (ROLE_LABEL[v as StaffRole] ?? String(v)) : '');
+		if (a.action === 'set_staff') return `${role(d.from) || '(운영진 아님)'} → ${role(d.to) || '운영진에서 뺌'}${d.name ? ` · "${d.name}"` : ''}`;
+		if (a.action === 'set_role_perms') return `${role(d.role)}: ${perms(d.from)} → ${perms(d.to)}`;
 		if (a.action === 'update_banned_terms') return `${d.count}개`;
 		if (a.action === 'export_messages' && d.from && d.to) {
 			const day = (v: unknown) => new Date(String(v)).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' });
