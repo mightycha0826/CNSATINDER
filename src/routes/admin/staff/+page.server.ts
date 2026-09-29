@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
 import { friendly, guard } from '$lib/server/adminAuth';
-import type { StaffRole, StaffRow } from '$lib/adminRoles';
+import { EDITABLE_ROLES, PERM_INFO, type Perm, type StaffRole, type StaffRow } from '$lib/adminRoles';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -10,10 +10,14 @@ import type { Actions, PageServerLoad } from './$types';
  */
 export const load: PageServerLoad = async ({ locals, url }) => {
 	guard(locals, url);
-	return { list: await adminRpc<StaffRow[]>('admin_staff_list', { p_staff: locals.staff!.id }) };
+	const [list, perms] = await Promise.all([
+		adminRpc<StaffRow[]>('admin_staff_list', { p_staff: locals.staff!.id }),
+		adminRpc<Record<string, Perm[]>>('admin_role_perms', { p_staff: locals.staff!.id })
+	]);
+	return { list, perms };
 };
 
-const ROLES: StaffRole[] = ['moderator', 'developer', 'admin'];
+const ROLES: StaffRole[] = ['moderator', 'developer', 'beta', 'admin'];
 
 async function set(locals: App.Locals, no: string, role: StaffRole | null, name: string | null) {
 	if (!locals.staff?.owner) return fail(403, { error: '최고 관리자만 할 수 있어요' });
@@ -36,6 +40,25 @@ export const actions: Actions = {
 		const name = String(f.get('name') ?? '').trim().slice(0, 20) || null;
 		const r = await set(locals, no, role, name);
 		return r ?? { done: f.get('add') ? `${no} 지정됨` : '저장됨' };
+	},
+	/** 역할별 권한 표 저장 (Phase 51) — 체크박스 이름 "역할:권한". 바뀐 역할만 보낸다 */
+	perms: async ({ request, locals }) => {
+		if (!locals.staff?.owner) return fail(403, { error: '최고 관리자만 할 수 있어요' });
+		const f = await request.formData();
+		const keys = new Set(PERM_INFO.map((p) => p.key));
+		const now = await adminRpc<Record<string, Perm[]>>('admin_role_perms', { p_staff: locals.staff.id });
+		let changed = 0;
+		for (const role of EDITABLE_ROLES) {
+			const want = [...new Set(f.getAll(`${role}`).map(String).filter((p): p is Perm => keys.has(p as Perm)))].sort();
+			if (JSON.stringify(want) === JSON.stringify([...(now[role] ?? [])].sort())) continue;
+			try {
+				await adminRpc('admin_set_role_perms', { p_staff: locals.staff.id, p_role: role, p_perms: want });
+			} catch (e) {
+				return friendly(e);
+			}
+			changed++;
+		}
+		return { done: changed ? `권한 저장됨 · ${changed}개 역할` : '바뀐 권한이 없어요' };
 	},
 	/** 운영진에서 빼기 */
 	remove: async ({ request, locals }) => {

@@ -3416,5 +3416,32 @@ console.log('\n[87] 최고 관리자 · 운영진 관리 (Phase 50)');
 	check('기록에 남는다', Number((await one(`select count(*) n from private.audit_log where action = 'set_staff' and staff_id = $1`, [own])).n) === 3);
 }
 
+console.log('\n[88] 베타테스터 · 역할별 권한을 최고 관리자가 정한다 (Phase 51)');
+{
+	const own = (await one(`select user_id from private.staff where owner`)).user_id;
+	const other = await signUp('27904@cnsa.hs.kr', true);
+	await db.query(`insert into private.staff (user_id, role) values ($1, 'admin')`, [other]);
+	const b = (await svc('admin_staff_set', own, '27903', 'beta', '베타')).find((x) => x.no === '27903');
+	check('★ 베타테스터 지정', b?.role === 'beta');
+	const tb = await svc('admin_staff_touch', b.id, null);
+	check('★ 베타테스터 처음 권한 = 실시간만 (touch 의 perms)', JSON.stringify(tb.perms) === '["live"]', JSON.stringify(tb.perms));
+	check('베타테스터: 실시간 가능', Array.isArray(await svc('admin_live_users', b.id)));
+	await expectError('★ 베타테스터: 문의 불가', () => svc('admin_inquiries', b.id), 'no_permission');
+	await expectError('★ 베타테스터: 제재 불가', () => svc('admin_sanction', other, 'warn', null, b.id, null, ''), 'no_permission');
+	await expectError('베타테스터: 설정 불가', () => svc('admin_update_settings', JSON.stringify({ is_open: true }), b.id), 'no_permission');
+	check('관리자는 늘 전부 (perms 8개)', (await svc('admin_staff_touch', other, null)).perms.length === 8);
+	await expectError('★ 다른 관리자는 권한 표를 못 바꾼다', () => svc('admin_set_role_perms', other, 'beta', ['live', 'inquiry']), 'owner_only');
+	const after = await svc('admin_set_role_perms', own, 'beta', ['live', 'inquiry', 'inquiry']);
+	check('★ 최고 관리자: 베타테스터에 문의 권한 주기', JSON.stringify(after.beta) === '["inquiry","live"]', JSON.stringify(after));
+	check('★ 바꾸면 바로 적용 — 베타테스터 문의 가능', typeof (await svc('admin_inquiries', b.id)).open === 'number');
+	await expectError('관리자 역할 권한은 못 바꾼다', () => svc('admin_set_role_perms', own, 'admin', []), 'bad_role');
+	await expectError('없는 권한', () => svc('admin_set_role_perms', own, 'beta', ['root']), 'bad_perm');
+	await svc('admin_set_role_perms', own, 'moderator', ['live', 'service', 'inquiry', 'audit']);
+	const modId = (await one(`select user_id from private.staff where role = 'moderator' limit 1`)).user_id;
+	await expectError('★ 운영자에게서 신고 처리를 빼면 제재도 막힌다', () => svc('admin_sanction', other, 'warn', null, modId, null, ''), 'no_permission');
+	await svc('admin_set_role_perms', own, 'moderator', ['live', 'moderate', 'service', 'inquiry', 'audit']);
+	check('권한 바꾸기도 기록에 남는다', Number((await one(`select count(*) n from private.audit_log where action = 'set_role_perms'`)).n) === 3);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

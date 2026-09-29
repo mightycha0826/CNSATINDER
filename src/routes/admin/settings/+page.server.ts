@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc, supabaseAdmin } from '$lib/server/supabaseAdmin';
 import { checkAi } from '$lib/server/ai';
-import { allowed, friendly } from '$lib/server/adminAuth';
+import { allowed, friendly, guard } from '$lib/server/adminAuth';
 import type { Actions, PageServerLoad } from './$types';
 
 export type AppSettings = {
@@ -34,7 +34,8 @@ export type AiUsage = {
 	ai_chats_today: number;
 };
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals, url }) => {
+	guard(locals, url); // 서비스 열고 닫기 또는 운영 설정 권한 (Phase 51 표)
 	const [s, usage, terms, students] = await Promise.all([
 		adminRpc<AppSettings>('admin_get_settings'),
 		// Phase 19 함수 — DB 에 아직 없으면 null (화면이 "패치 필요"를 띄운다)

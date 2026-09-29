@@ -4,7 +4,7 @@
 	import '$lib/admin/admin.css';
 	import ConfirmDialog from '$lib/admin/ConfirmDialog.svelte';
 	import TeamPanel from '$lib/admin/TeamPanel.svelte';
-	import { ROLE_COLOR, ROLE_LABEL, can, pagePerm } from '$lib/adminRoles';
+	import { ROLE_COLOR, ROLE_LABEL, canSee } from '$lib/adminRoles';
 
 	let { data, children } = $props();
 
@@ -73,7 +73,7 @@
 	const NAV = $derived(
 		GROUPS.map((g) => ({
 			...g,
-			items: [...g.items.filter((n) => can(data.staff?.role, pagePerm(n.href))), ...(g.title === '운영' && data.staff?.owner ? [STAFF_ITEM] : [])]
+			items: [...g.items.filter((n) => canSee(data.staff, n.href)), ...(g.title === '운영' && data.staff?.owner ? [STAFF_ITEM] : [])]
 		})).filter((g) => g.items.length)
 	);
 	const active = (href: string) =>

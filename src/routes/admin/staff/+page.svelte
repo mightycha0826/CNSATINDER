@@ -5,16 +5,13 @@
 	 */
 	import { enhance } from '$app/forms';
 	import { ack, confirmed } from '$lib/admin/confirm';
-	import { ROLE_COLOR, ROLE_LABEL, type StaffRole } from '$lib/adminRoles';
+	import { EDITABLE_ROLES, PERM_INFO, ROLE_COLOR, ROLE_LABEL, type StaffRole } from '$lib/adminRoles';
 	import { agoText } from '$lib/time';
 
 	let { data } = $props();
-	const ROLES: StaffRole[] = ['moderator', 'developer', 'admin'];
-	const HINT: Record<StaffRole, string> = {
-		moderator: '신고 처리 · 제재 · 사용자 · 개인 공지 · 업적 · 문의',
-		developer: '운영 설정(수치 · AI · 금칙어 · 잠금) · 문의 · 활동 기록 — 학생 조치 · 신원은 못 봄',
-		admin: '전부 — 학생 신원(이메일 · 학번 이름) · 전체 대화 · 공지 올리기까지'
-	};
+	const ROLES: StaffRole[] = ['moderator', 'developer', 'beta', 'admin'];
+	// 역할별 권한 표 (Phase 51) — 관리자 열은 늘 전부(잠김)
+	const has = (role: StaffRole, perm: string) => !!data.perms?.[role]?.includes(perm as never);
 	const now = Date.now();
 	const askRemove = confirmed((f) => `${f.get('no')} 을(를) 운영진에서 뺄까요? 바로 운영 화면에 들어올 수 없게 돼요.`);
 	const askAdmin = confirmed((f) =>
@@ -25,7 +22,7 @@
 <header class="a-head">
 	<div>
 		<h1 class="a-h1">운영진 관리</h1>
-		<p class="a-sub">최고 관리자만 볼 수 있어요. 학번으로 운영자 · 개발자 · 관리자를 정하고, 바꾸고, 뺄 수 있어요. 바꾼 내용은 활동 기록에 남아요.</p>
+		<p class="a-sub">최고 관리자만 볼 수 있어요. 학번으로 운영자 · 개발자 · 베타테스터 · 관리자를 정하고, 역할마다 할 수 있는 일을 정해요. 바꾼 내용은 활동 기록에 남아요.</p>
 	</div>
 </header>
 
@@ -49,11 +46,36 @@
 		</label>
 		<button class="btn go">지정</button>
 	</form>
-	<ul class="legend">
-		{#each ROLES as r (r)}
-			<li><b style:color={ROLE_COLOR[r]}>{ROLE_LABEL[r]}</b> {HINT[r]}</li>
-		{/each}
-	</ul>
+</section>
+
+<!-- 역할별 권한 (Phase 51) — 체크를 바꾸고 "권한 저장". 바로 모든 화면 · DB 함수에 적용된다 -->
+<section class="a-card perms">
+	<h2 class="a-h2">역할별 권한 <span class="muted">체크한 일만 할 수 있어요 · 저장하면 바로 적용 · 관리자는 늘 전부</span></h2>
+	<form method="POST" action="?/perms" use:enhance={ack({ keep: true })}>
+		<div class="a-scroll">
+			<table class="a-table grid">
+				<thead>
+					<tr>
+						<th>권한</th>
+						{#each EDITABLE_ROLES as r (r)}<th class="c" style:color={ROLE_COLOR[r]}>{ROLE_LABEL[r]}</th>{/each}
+						<th class="c" style:color={ROLE_COLOR.admin}>관리자</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each PERM_INFO as p (p.key)}
+						<tr class:heavy={p.key === 'identity' || p.key === 'notice'}>
+							<td><b>{p.label}</b><small class="muted">{p.hint}</small></td>
+							{#each EDITABLE_ROLES as r (r)}
+								<td class="c"><input type="checkbox" name={r} value={p.key} checked={has(r, p.key)} aria-label="{ROLE_LABEL[r]} · {p.label}" /></td>
+							{/each}
+							<td class="c"><input type="checkbox" checked disabled aria-label="관리자 · {p.label} (늘 켜짐)" /></td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<button class="btn save">권한 저장</button>
+	</form>
 </section>
 
 <h2 class="a-h2 list-h">운영진 <span class="muted">{data.list.length}명</span></h2>
@@ -118,20 +140,37 @@
 		height: 42px;
 		padding: 0 22px;
 	}
-	.legend {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		margin: 14px 0 0;
-		padding: 12px 0 0;
-		border-top: 1px solid var(--line);
-		list-style: none;
-		font-size: 12px;
-		color: var(--text-2);
+	.perms {
+		margin-top: 16px;
 	}
-	.legend b {
-		display: inline-block;
-		width: 44px;
+	.perms .a-h2 .muted {
+		margin-left: 6px;
+		font-size: 12px;
+	}
+	.grid td b {
+		display: block;
+		font-size: 14px;
+	}
+	.grid td small {
+		font-size: 12px;
+	}
+	.grid .c {
+		width: 84px;
+		text-align: center;
+	}
+	.grid input[type='checkbox'] {
+		width: 20px;
+		height: 20px;
+		accent-color: var(--accent);
+	}
+	/* 무거운 권한(신원 · 공지) — 옅은 붉은 바탕 */
+	.grid tr.heavy td {
+		background: color-mix(in srgb, var(--danger) 5%, transparent);
+	}
+	.perms .save {
+		width: auto;
+		margin-top: 14px;
+		padding: 0 24px;
 	}
 	.list-h {
 		margin: 24px 0 10px;

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { can } from '$lib/adminRoles';
 	import { enhance } from '$app/forms';
 	import { ACTION_LABEL, CLOSE_LABEL, REASON_LABEL, STATUS_LABEL, fmtTime, type UserLetterRow, TARGET_LABEL } from '$lib/adminTypes';
 	import AccountStatus from '$lib/admin/AccountStatus.svelte';
@@ -12,7 +13,7 @@
 	let { data, form } = $props();
 	const d = $derived(data.d);
 	const p = $derived(d.profile);
-	const admin = $derived(data.staff?.role === 'admin');
+	const admin = $derived(can(data.staff, 'identity')); // 학생 신원 권한 (Phase 51 표)
 	// 지금 정지 중 (영구 · 기간 · 검토 대기) — 조치 칸 맨 위에 "정지 풀기" (Phase 44). 영구 정지는 관리자만 풀 수 있다
 	const restricted = $derived(isRestricted(p, Date.now()));
 	const canLift = $derived(restricted && (admin || p.status !== 'banned') && (admin || !d.staff_role));
@@ -249,7 +250,7 @@
 			{#if d.staff_role && !admin}
 				<p class="a-hint">운영진 계정은 관리자만 조치할 수 있습니다.</p>
 			{:else}
-				<SanctionForm isAdmin={admin} banned={p.status === 'banned'} {restricted} />
+				<SanctionForm isAdmin={data.staff?.role === 'admin'} banned={p.status === 'banned'} {restricted} />
 			{/if}
 		</section>
 

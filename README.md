@@ -567,4 +567,11 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       모든 변경은 활동 기록 `set_staff`. 사이드바 "최고 관리자", 현황 판에 "최고" 표시. 최고 관리자 넘기기는 DB 에서만:
       `update private.staff set owner = false where owner; update private.staff set owner = true where user_id = '…';`
       스키마 테스트 [87], 화면 테스트 `audit` [14], 실DB 반영 (phase50_staff_owner)
+- [x] **Phase 51 — 베타테스터 역할 · 역할별 권한을 최고 관리자가 정한다**
+      역할 넷: 운영자 · 개발자 · 베타테스터(beta, 처음엔 실시간 현황만 + 공지 목록) · 관리자(늘 전부). 권한 여덟: 실시간(live) · 활동 기록(audit) ·
+      문의(inquiry) · 서비스 열고 닫기(service) · 운영 설정(settings) · 신고 처리 · 제재(moderate) · 공지(notice) · 학생 신원(identity).
+      역할별 권한은 DB 표 `private.role_perms` — 운영진 관리 화면의 체크 표에서 최고 관리자가 바꾸고("권한 저장", 바뀐 역할만 · 활동 기록 `set_role_perms`),
+      저장하면 바로 모든 DB 함수(`staff_can` · `require_staff` · `require_perm`) · 화면(guard · 메뉴)에 적용. 내 권한 목록(perms)은 요청마다 역할 확인과 같이 온다.
+      관리자 역할은 표에 없다(늘 전부 — 잠겨 버리지 않게). 긴 정지(7일 넘게)는 여전히 관리자 역할만.
+      스키마 테스트 [88], 화면 테스트 `audit` [15], 실DB 반영 (phase51_role_perms_beta)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

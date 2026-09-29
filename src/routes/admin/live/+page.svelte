@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { can } from '$lib/adminRoles';
 	import { page } from '$app/state';
 	import { fmtClock, type LiveUser } from '$lib/adminTypes';
 	import { ROLE_LABEL } from '$lib/adminRoles';
@@ -8,7 +9,7 @@
 	import { whileVisible } from '$lib/visible';
 
 	let { data } = $props();
-	const admin = $derived(data.staff?.role === 'admin');
+	const admin = $derived(can(data.staff, 'identity')); // 학생 신원 권한 (Phase 51 표)
 
 	const REFRESH_MS = 20_000;
 	let fresh = $state<LiveUser[] | null>(null);

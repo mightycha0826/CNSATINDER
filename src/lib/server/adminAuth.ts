@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { adminRpc, emailOf, rosterNameOf } from './supabaseAdmin';
 import type { Identity } from '$lib/adminTypes';
-import { can, homeOf, pagePerm, type Perm } from '$lib/adminRoles';
+import { can, canSee, homeOf, type Perm } from '$lib/adminRoles';
 
 /**
  * 운영진(moderator) / 관리자(admin) 권한 — Phase 11
@@ -11,9 +11,10 @@ import { can, homeOf, pagePerm, type Perm } from '$lib/adminRoles';
  */
 export const MOD_MAX_SUSPEND_DAYS = 7;
 
-export const isAdmin = (locals: App.Locals) => locals.staff?.role === 'admin';
-/** 역할 권한표(lib/adminRoles.ts, Phase 49) — 운영자 · 개발자 · 관리자 */
-export const allowed = (locals: App.Locals, perm: Perm) => can(locals.staff?.role, perm);
+/** 학생 신원(이메일 · 학번 이름 · 전체 대화 · 편지 활동)을 볼 권한 — Phase 51 부터 역할별 권한 표(identity)를 따른다 */
+export const isAdmin = (locals: App.Locals) => can(locals.staff, 'identity');
+/** 역할별 권한 표(lib/adminRoles.ts · DB private.role_perms, Phase 49 · 51) */
+export const allowed = (locals: App.Locals, perm: Perm) => can(locals.staff, perm);
 
 /**
  * 역할마다 볼 수 있는 화면 (Phase 49) — 화면 load 맨 앞에서. 주소를 직접 쳐도 403.
@@ -26,8 +27,8 @@ export function guard(locals: App.Locals, url: URL) {
 		if (locals.staff?.owner) return;
 		error(403, '최고 관리자만 볼 수 있는 화면');
 	}
-	if (can(role, pagePerm(url.pathname))) return;
-	if (role && (url.pathname === '/admin' || url.pathname === '/admin/')) redirect(303, homeOf(role));
+	if (canSee(locals.staff, url.pathname)) return;
+	if (role && (url.pathname === '/admin' || url.pathname === '/admin/')) redirect(303, homeOf(locals.staff));
 	error(403, '이 역할로는 볼 수 없는 화면');
 }
 
@@ -72,6 +73,7 @@ const DB_ERR: Record<string, string> = {
 	owner_only: '최고 관리자만 할 수 있어요',
 	owner_locked: '최고 관리자는 여기서 바꿀 수 없어요',
 	bad_role: '없는 역할이에요',
+	bad_perm: '없는 권한이에요',
 	bad_name: '표시 이름은 20자까지',
 	days_required: '정지 기간을 입력해야 함',
 	user_not_found: '탈퇴한 계정이라 조치할 수 없음',
@@ -97,7 +99,7 @@ export function friendly(e: unknown) {
 export async function runSanction(locals: App.Locals, user: string, f: FormData, report: string | null) {
 	const action = String(f.get('action'));
 	if (!['warn', 'suspend', 'ban', 'reinstate'].includes(action)) return fail(400, { error: '잘못된 조치' });
-	const max = isAdmin(locals) ? 365 : MOD_MAX_SUSPEND_DAYS;
+	const max = locals.staff?.role === 'admin' ? 365 : MOD_MAX_SUSPEND_DAYS; // 긴 정지는 관리자 역할만 (DB 도 같은 규칙)
 	const days = action === 'suspend' ? Math.max(1, Math.min(max, Number(f.get('days')) || 0)) : null;
 	try {
 		await adminRpc('admin_sanction', {

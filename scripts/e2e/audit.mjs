@@ -16,6 +16,7 @@ const t = new Date().toISOString();
 let ROLE = 'admin';
 let SUSPENDED = false, BETA = false; // Phase 44 — 정지 풀기 · 특별 업적
 let OWNER = false; // Phase 50 — 최고 관리자
+let ROLE_PERMS = { moderator: ['audit', 'inquiry', 'live', 'moderate', 'service'], developer: ['audit', 'inquiry', 'live', 'service', 'settings'], beta: ['live'] };
 let STAFF_LIST = [
 	{ id: 'o1', no: '20529', nickname: '단단복숭아', display_name: null, role: 'admin', owner: true, created_at: new Date().toISOString(), last_seen: new Date().toISOString() },
 	{ id: 'a2', no: '20107', nickname: '얌전한참새', display_name: null, role: 'admin', owner: false, created_at: new Date().toISOString(), last_seen: null }
@@ -28,13 +29,16 @@ const RPC = {
 	// Phase 49 — 역할 확인 + 운영진 현황
 	// Phase 50 — 최고 관리자 · 운영진 관리
 	admin_staff_list: () => STAFF_LIST,
+	// Phase 51 — 역할별 권한 표
+	admin_role_perms: () => ROLE_PERMS,
+	admin_set_role_perms: (a) => ((ROLE_PERMS = { ...ROLE_PERMS, [a.p_role]: [...a.p_perms].sort() }), ROLE_PERMS),
 	admin_staff_set: (a) => {
 		if (a.p_role == null) STAFF_LIST = STAFF_LIST.filter((s) => s.no !== a.p_no);
 		else if (!STAFF_LIST.some((s) => s.no === a.p_no)) STAFF_LIST.push({ id: 'n' + a.p_no, no: a.p_no, nickname: '새운영', display_name: a.p_name, role: a.p_role, owner: false, created_at: t, last_seen: null });
 		else STAFF_LIST = STAFF_LIST.map((s) => (s.no === a.p_no ? { ...s, role: a.p_role, display_name: a.p_name } : s));
 		return STAFF_LIST;
 	},
-	admin_staff_touch: () => ({ role: ROLE, owner: OWNER, team: [
+	admin_staff_touch: () => ({ role: ROLE, owner: OWNER, perms: ({ moderator: ['live', 'moderate', 'service', 'inquiry', 'audit'], developer: ['live', 'settings', 'service', 'inquiry', 'audit'], beta: ['live'] })[ROLE] ?? [], team: [
 		{ id: STAFF, name: '나운영', role: ROLE, owner: OWNER, last_seen: t, path: '/admin', me: true },
 		{ id: 'm1', name: '김운영', role: 'moderator', last_seen: new Date().toISOString(), path: '/admin/reports/x', me: false },
 		{ id: 'd1', name: '박개발', role: 'developer', last_seen: new Date(Date.now() - 3 * 3600_000).toISOString(), path: '/admin/settings', me: false }
@@ -375,6 +379,31 @@ try {
 	check('★ 빼기 → 역할 없음(null)으로 · 명단에서 사라짐', calls.filter((c) => c[0] === 'admin_staff_set').at(-1)?.[1]?.p_role === null && (await ow.page.locator('.rows li', { hasText: '20107' }).count()) === 0);
 	await ow.page.screenshot({ path: `${SP}/audit-staff.png`, fullPage: true });
 	check('페이지 오류 없음 (최고 관리자)', ow.page.errs.length === 0, ow.page.errs.join(' / '));
+
+	console.log('\n[15] 베타테스터 · 역할별 권한 표 (Phase 51)');
+	await ow.page.go('/admin/staff');
+	check('★ 권한 표: 운영자 · 개발자 · 베타테스터 · 관리자(잠김) 열', (await ow.page.locator('.grid thead').innerText()).replace(/\s+/g, ' ').includes('운영자 개발자 베타테스터 관리자')
+		&& (await ow.page.locator('.grid input[disabled]').count()) === 8);
+	check('베타테스터 처음 권한 = 실시간만', (await ow.page.locator('.grid input[name=beta]:checked').evaluateAll((els) => els.map((e) => e.value))).join() === 'live');
+	check('지정할 때 베타테스터를 고를 수 있다', (await ow.page.locator('.add select[name=role] option').allInnerTexts()).includes('베타테스터'));
+	await ow.page.getByRole('checkbox', { name: '베타테스터 · 문의 보기 · 답변' }).check();
+	await ow.page.getByRole('button', { name: '권한 저장' }).click();
+	await ow.page.waitForTimeout(800);
+	const rp = calls.filter((c) => c[0] === 'admin_set_role_perms');
+	check('★ 권한 저장 → 바뀐 역할(베타테스터)만 admin_set_role_perms', rp.length === 1 && rp[0][1].p_role === 'beta' && JSON.stringify([...rp[0][1].p_perms].sort()) === '["inquiry","live"]', JSON.stringify(rp));
+	check('★ 결과는 누른 "권한 저장" 버튼에', (await ow.page.locator('.perms button.save').getAttribute('data-ack')) === 'ok');
+	await ow.page.screenshot({ path: `${SP}/audit-perms.png`, fullPage: true });
+	ROLE = 'beta';
+	OWNER = false;
+	const bt = await session();
+	await bt.page.go('/admin');
+	check('★ 베타테스터: 첫 화면은 실시간', new URL(bt.page.url()).pathname === '/admin/live', bt.page.url());
+	check('★ 베타테스터 메뉴: 실시간 · 공지사항만', (await bt.page.locator('.side nav a').allInnerTexts()).map((x) => x.trim()).join() === '실시간,공지사항', (await bt.page.locator('.side nav a').allInnerTexts()).join());
+	for (const p of ['/admin/users', '/admin/settings', '/admin/inquiries', '/admin/audit']) {
+		const r = await bt.page.goto(`${base}${p}`);
+		check(`★ 베타테스터: ${p} → 403`, r.status() === 403, String(r.status()));
+	}
+	check('사이드바에 "베타테스터"', (await bt.page.locator('.side .who').innerText()).includes('베타테스터'));
 } finally {
 	await browser.close();
 	vite.kill();

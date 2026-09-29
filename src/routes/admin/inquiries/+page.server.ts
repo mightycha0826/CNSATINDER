@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import { friendly, studentLabels } from '$lib/server/adminAuth';
+import { friendly, guard, studentLabels } from '$lib/server/adminAuth';
 import { deliver, type PushNote } from '$lib/server/pushSend';
 import type { InquiryRow } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
@@ -10,8 +10,9 @@ import type { Actions, PageServerLoad } from './$types';
  * 답변을 적으면 그 학생에게 개인 공지로 가고(하트 · 공지 · 푸시) 활동 기록에 남는다. 운영진 누구나.
  * 누가 보냈는지(학번 · 이름)는 관리자에게만 — 이름표를 부르면 활동 기록에 남는다 (studentLabels).
  */
-export const load: PageServerLoad = async ({ locals }) => {
-	const r = await adminRpc<{ open: number; items: InquiryRow[] }>('admin_inquiries', { p_staff: locals.staff!.id });
+export const load: PageServerLoad = async ({ locals, url }) => {
+	guard(locals, url); // 문의 권한 (Phase 51 표)
+	const r =await adminRpc<{ open: number; items: InquiryRow[] }>('admin_inquiries', { p_staff: locals.staff!.id });
 	const students = await studentLabels(locals, r.items.filter((x) => !x.answered_at).map((x) => x.user_id));
 	return { open: r.open, items: r.items, students };
 };

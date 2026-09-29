@@ -28,7 +28,7 @@ let world = [
 let liveCalls = 0, labelCalls = 0;
 const RPC = {
 	admin_staff_role: () => ROLE,
-	admin_staff_touch: () => ({ role: ROLE, team: [] }),
+	admin_staff_touch: () => ({ role: ROLE, perms: ({ moderator: ['live', 'moderate', 'service', 'inquiry', 'audit'], developer: ['live', 'settings', 'service', 'inquiry', 'audit'], beta: ['live'] })[ROLE] ?? [], team: [] }),
 	admin_live_users: () => {
 		liveCalls++;
 		return world.map((u) => ({ ...u, rooms: ROLE === 'admin' ? u.rooms : null }));

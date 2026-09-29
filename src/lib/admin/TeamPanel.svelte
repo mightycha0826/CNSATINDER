@@ -47,7 +47,7 @@
 		const age = m.last_seen ? now - new Date(m.last_seen).getTime() : Infinity;
 		return age < 120_000 ? 'on' : age < 600_000 ? 'idle' : 'off';
 	};
-	const ORDER: StaffRole[] = ['admin', 'developer', 'moderator'];
+	const ORDER: StaffRole[] = ['admin', 'developer', 'moderator', 'beta'];
 	const groups = $derived(
 		ORDER.map((role) => ({
 			role,

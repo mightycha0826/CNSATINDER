@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { can } from '$lib/adminRoles';
 	import { fmtTime } from '$lib/adminTypes';
 	import { ROLE_LABEL } from '$lib/adminRoles';
 	import Sid from '$lib/admin/Sid.svelte';
 	import { isRestricted as restricted } from '$lib/restriction';
 
 	let { data } = $props();
-	const admin = $derived(data.staff?.role === 'admin');
+	const admin = $derived(can(data.staff, 'identity')); // 학생 신원 권한 (Phase 51 표)
 
 	const TABS = [
 		{ v: 'all', label: '전체' },

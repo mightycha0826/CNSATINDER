@@ -3,7 +3,7 @@ declare global {
 		interface Locals {
 			/** Phase 6: /admin 서버 가드가 채운다. 학생 앱 경로에서는 항상 null. */
 			/** owner = 최고 관리자 (Phase 50 — 운영진을 지정 · 해제할 수 있는 단 한 사람) */
-			staff: { id: string; role: import('$lib/adminRoles').StaffRole; owner?: boolean } | null;
+			staff: { id: string; role: import('$lib/adminRoles').StaffRole; owner?: boolean; perms: import('$lib/adminRoles').Perm[] } | null;
 			/** Phase 49: 운영진 현황(오른쪽 판) — 역할 확인과 같은 요청(admin_staff_touch)으로 받는다 */
 			team: import('$lib/adminRoles').TeamMember[] | null;
 		}

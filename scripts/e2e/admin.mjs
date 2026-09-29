@@ -19,7 +19,7 @@ const labelCalls = [];
 
 const RPC = {
 	admin_staff_role: () => ROLE,
-	admin_staff_touch: () => ({ role: ROLE, team: [] }),
+	admin_staff_touch: () => ({ role: ROLE, perms: ({ moderator: ['live', 'moderate', 'service', 'inquiry', 'audit'], developer: ['live', 'settings', 'service', 'inquiry', 'audit'], beta: ['live'] })[ROLE] ?? [], team: [] }),
 	admin_student_labels: (a) => {
 		labelCalls.push(a.p_users);
 		if (ROLE !== 'admin') throw { status: 400, body: { message: 'admin_only' } };

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { can } from '$lib/adminRoles';
 	import { REASON_LABEL, fmtClock } from '$lib/adminTypes';
 	import FormMsg from '$lib/admin/FormMsg.svelte';
 	import IdentityCard from '$lib/admin/IdentityCard.svelte';
@@ -11,7 +12,7 @@
 	let { data, form } = $props();
 	const d = $derived(data.d);
 	const r = $derived(d.report);
-	const admin = $derived(data.staff?.role === 'admin');
+	const admin = $derived(can(data.staff, 'identity')); // 학생 신원 권한 (Phase 51 표)
 	/** AI 자동 감지 — 신고자가 없고, 사본의 1 은 '상대' */
 	const auto = $derived(r.source === 'auto');
 </script>
@@ -59,7 +60,7 @@
 		<section class="a-card">
 			<h2 class="a-h2">조치</h2>
 			<SanctionForm
-				isAdmin={admin}
+				isAdmin={data.staff?.role === 'admin'}
 				banned={d.reported?.status === 'banned'}
 				targets={auto
 					? [{ v: 'reported', label: '피신고자' }]

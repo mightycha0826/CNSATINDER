@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { can } from '$lib/adminRoles';
 	import { REASON_LABEL, REPORT_TABS, STATUS_LABEL, fmtTime, shortId, TARGET_LABEL } from '$lib/adminTypes';
 
 	let { data } = $props();
@@ -13,7 +14,7 @@
 	<div class="a-stat"><b class="num">{data.stats.restricted_users}</b><span>이용 제한 계정</span></div>
 </section>
 
-{#if data.staff?.role === 'admin'}
+{#if can(data.staff, 'identity')}
 	<form class="find" method="GET" action="/admin/posts">
 		<input class="field" name="n" placeholder="편지 번호 또는 편지 주소 (/letters/123)" autocomplete="off" />
 		<button class="btn-ghost a-sm">작성자 확인</button>

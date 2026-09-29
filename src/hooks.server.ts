@@ -1,7 +1,7 @@
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { readSession } from '$lib/server/adminSession';
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import type { TeamMember } from '$lib/adminRoles';
+import type { Perm, TeamMember } from '$lib/adminRoles';
 
 /**
  * /admin 가드 (dabang-kiosk hooks.server.ts 구조 + 강화된 인증).
@@ -26,10 +26,11 @@ export const handle: Handle = async ({ event, resolve }) => {
 				// 역할 확인 + "지금 보는 화면" 적기 + 운영진 현황(오른쪽 판)을 한 번에 (Phase 49 — 요청 수 그대로).
 				// 화면 주소는 페이지(또는 그 데이터)를 열 때만 — 현황 새로고침 · 파일 내려받기 같은 요청은 null(그대로 둔다)
 				const page = event.request.method === 'GET' && !/\/(status|team|export|session)(\/|$)/.test(path) ? path.replace(/\/__data\.json$/, '') || '/admin' : null;
-				const t = await adminRpc<{ role: string; owner?: boolean; team: TeamMember[] } | null>('admin_staff_touch', { p_uid: uid, p_path: page });
+				const t = await adminRpc<{ role: string; owner?: boolean; perms?: Perm[]; team: TeamMember[] } | null>('admin_staff_touch', { p_uid: uid, p_path: page });
 				const role = t?.role;
-				if (role === 'admin' || role === 'moderator' || role === 'developer') {
-					event.locals.staff = { id: uid, role, owner: !!t!.owner };
+				// perms = 내 역할의 권한 (Phase 51 — 최고 관리자가 정한 표)
+				if (role === 'admin' || role === 'moderator' || role === 'developer' || role === 'beta') {
+					event.locals.staff = { id: uid, role, owner: !!t!.owner, perms: t!.perms ?? [] };
 					event.locals.team = t!.team;
 				}
 			}

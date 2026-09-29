@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import { friendly, isAdmin } from '$lib/server/adminAuth';
+import { allowed, friendly } from '$lib/server/adminAuth';
 import type { NoticeRow } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -14,7 +14,7 @@ export const load: PageServerLoad = async ({ locals }) => ({
 
 export const actions: Actions = {
 	post: async ({ request, locals }) => {
-		if (!isAdmin(locals)) return fail(403, { error: '공지는 관리자만 올릴 수 있어요' });
+		if (!allowed(locals, 'notice')) return fail(403, { error: '공지를 올릴 권한이 없어요' });
 		const f = await request.formData();
 		const title = String(f.get('title') ?? '').trim();
 		const body = String(f.get('body') ?? '').trim();
@@ -30,7 +30,7 @@ export const actions: Actions = {
 	},
 
 	remove: async ({ request, locals }) => {
-		if (!isAdmin(locals)) return fail(403, { error: '공지는 관리자만 내릴 수 있어요' });
+		if (!allowed(locals, 'notice')) return fail(403, { error: '공지를 내릴 권한이 없어요' });
 		const id = Number((await request.formData()).get('id'));
 		if (!Number.isSafeInteger(id) || id < 1) return fail(400, { error: '잘못된 공지' });
 		try {

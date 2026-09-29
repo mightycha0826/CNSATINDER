@@ -12,7 +12,7 @@ const calls = [];
 const audit = [];
 const RPC = {
 	admin_staff_role: () => ROLE,
-	admin_staff_touch: () => ({ role: ROLE, team: [] }),
+	admin_staff_touch: () => ({ role: ROLE, perms: ({ moderator: ['live', 'moderate', 'service', 'inquiry', 'audit'], developer: ['live', 'settings', 'service', 'inquiry', 'audit'], beta: ['live'] })[ROLE] ?? [], team: [] }),
 	admin_notices: () => notices.filter((n) => !n.removed).sort((a, b) => b.id - a.id),
 	admin_post_notice: (a) => { calls.push(['post', a]); if (ROLE !== 'admin') throw { status: 400, body: { message: 'admin_only' } }; const id = ++seq; notices.push({ id, title: a.p_title, body: a.p_body, created_at: new Date().toISOString() }); audit.push({ id: audit.length + 1, staff_id: STAFF, action: 'post_notice', target_user: null, report_id: null, detail: { notice: id, title: a.p_title }, created_at: new Date().toISOString() }); return id; },
 	admin_remove_notice: (a) => { calls.push(['remove', a]); const n = notices.find((x) => x.id === a.p_id && !x.removed); if (!n) throw { status: 400, body: { message: 'notice_not_found' } }; n.removed = true; return null; },

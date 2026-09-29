@@ -7,7 +7,7 @@
 	let { data, form } = $props();
 	const s = $derived(data.s);
 	// 운영 수치 · AI · 금칙어 · 잠금은 개발자 · 관리자 (Phase 49). 서비스 열고 닫기는 누구나
-	const isAdmin = $derived(can(data.staff?.role, 'settings'));
+	const isAdmin = $derived(can(data.staff, 'settings'));
 
 	// 전교생에게 바로 적용되는 스위치라 한 번 더 묻는다
 	const askToggle = confirmed(() =>

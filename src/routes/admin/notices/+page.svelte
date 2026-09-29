@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { can } from '$lib/adminRoles';
 	import { enhance } from '$app/forms';
 	import { fmtTime } from '$lib/adminTypes';
 	import { confirmed } from '$lib/admin/confirm';
 	import FormMsg from '$lib/admin/FormMsg.svelte';
 
 	let { data, form } = $props();
-	const admin = $derived(data.staff?.role === 'admin');
+	const admin = $derived(can(data.staff, 'notice')); // 공지 권한 (Phase 51 표)
 	// 실패하면 쓰던 글을 되살린다
 	const draft = $derived((form ?? {}) as { title?: string; body?: string });
 

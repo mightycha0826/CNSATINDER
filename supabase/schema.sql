@@ -1301,10 +1301,15 @@ $fn$;
 -- 운영자(moderator)는 서비스 열고 닫기(is_open)만, 나머지 수치·홈 배너는 개발자 · 관리자 (Phase 49 권한표 settings)
 create or replace function public.admin_update_settings(p_patch jsonb, p_staff uuid)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare v text := private.require_perm(p_staff, 'any');
 begin
-  if not private.staff_can(private.require_perm(p_staff, 'service'), 'settings')
+  -- 수치 · 배너는 settings, 서비스 열고 닫기(is_open)는 service 또는 settings (Phase 51 표)
+  if not private.staff_can(v, 'settings')
      and exists (select 1 from jsonb_object_keys(coalesce(p_patch, '{}'::jsonb)) k where k <> 'is_open') then
     raise exception 'admin_only';
+  end if;
+  if p_patch ? 'is_open' and not (private.staff_can(v, 'service') or private.staff_can(v, 'settings')) then
+    raise exception 'no_permission';
   end if;
   update public.app_settings set
     is_open               = coalesce((p_patch->>'is_open')::boolean, is_open),
@@ -2684,10 +2689,10 @@ declare v text;
 begin
   select role into v from private.staff where user_id = p_staff;
   if v is null then raise exception 'not_staff'; end if;
-  if p_admin and v <> 'admin' then raise exception 'admin_only'; end if;
-  -- 개발자(Phase 49)는 학생을 다루는 조치(신고 · 제재 · 사용자 · 개인 공지 · 업적)를 못 한다.
-  -- 개발자도 되는 곳(설정 · 문의 · 실시간 · 공지 목록)은 private.require_perm 을 쓴다
-  if v = 'developer' then raise exception 'no_permission'; end if;
+  -- 역할별 권한표(Phase 51 — 최고 관리자가 운영진 관리에서 바꾼다)를 따른다:
+  --   p_admin = 학생 신원 · 전체 대화 · 편지 활동(identity), 아니면 신고 · 제재 · 사용자 · 개인 공지 · 업적(moderate)
+  if p_admin and not private.staff_can(v, 'identity') then raise exception 'admin_only'; end if;
+  if not p_admin and not private.staff_can(v, 'moderate') then raise exception 'no_permission'; end if;
   return v;
 end
 $fn$;
@@ -2701,17 +2706,29 @@ revoke all on function private.require_staff(uuid, boolean) from public, anon, a
 --   inquiry   문의 보기 · 답변                                   모두
 --   notice    공지 올리기 · 내리기                                관리자
 --   any       운영진이면 누구나 (실시간 · 공지 목록)
+-- Phase 51: 역할별 권한 표 — 최고 관리자가 운영진 관리 화면에서 바꾼다(관리자 줄은 없다 = 늘 전부).
+--   live 실시간 현황 · moderate · identity · settings · service · inquiry · notice · audit (뜻은 위 표, live 는 Phase 51 에서 'any' 에서 떼어 냄)
+create table if not exists private.role_perms (
+  role text not null check (role in ('moderator', 'developer', 'beta')),
+  perm text not null check (perm in ('live', 'moderate', 'identity', 'settings', 'service', 'inquiry', 'notice', 'audit')),
+  primary key (role, perm)
+);
+alter table private.role_perms enable row level security;
+-- 처음 값 = Phase 49 표 그대로 + 베타테스터(실시간만). 이미 있으면 건드리지 않는다
+insert into private.role_perms (role, perm)
+select r, p from (values
+  ('moderator', 'live'), ('moderator', 'moderate'), ('moderator', 'service'), ('moderator', 'inquiry'), ('moderator', 'audit'),
+  ('developer', 'live'), ('developer', 'settings'), ('developer', 'service'), ('developer', 'inquiry'), ('developer', 'audit'),
+  ('beta', 'live')) v(r, p)
+where not exists (select 1 from private.role_perms)
+on conflict do nothing;
+
+-- Phase 51: 표(private.role_perms)에서 읽는다 — 관리자는 늘 전부, 'any' 는 운영진이면 누구나
 create or replace function private.staff_can(p_role text, p_perm text)
-returns boolean language sql immutable set search_path = '' as $fn$
-  select case p_perm
-    when 'moderate' then p_role in ('moderator', 'admin')
-    when 'identity' then p_role = 'admin'
-    when 'settings' then p_role in ('developer', 'admin')
-    when 'service' then p_role in ('moderator', 'developer', 'admin')
-    when 'inquiry' then p_role in ('moderator', 'developer', 'admin')
-    when 'notice' then p_role = 'admin'
-    when 'any' then p_role in ('moderator', 'developer', 'admin')
-    else false end;
+returns boolean language sql stable security definer set search_path = '' as $fn$
+  select p_role = 'admin'
+      or (p_perm = 'any' and p_role is not null)
+      or exists (select 1 from private.role_perms r where r.role = p_role and r.perm = p_perm);
 $fn$;
 revoke all on function private.staff_can(text, text) from public, anon, authenticated;
 
@@ -3065,7 +3082,7 @@ $do$;
 
 create or replace function public.admin_live_users(p_staff uuid)
 returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare v_admin boolean := private.require_perm(p_staff, 'any') = 'admin'; -- 개발자도 본다 (Phase 49)
+declare v_admin boolean := private.staff_can(private.require_perm(p_staff, 'live'), 'identity'); -- 실시간 권한(Phase 51), 방 목록은 신원 권한
 begin
   return (select coalesce(jsonb_agg(x), '[]'::jsonb) from (
     select p.id, p.nickname, p.status, p.suspended_until, p.onboarded, s.role as staff_role,
@@ -3182,7 +3199,7 @@ create or replace function public.admin_post_notice(p_staff uuid, p_title text, 
 returns bigint language plpgsql security definer set search_path = public, private as $fn$
 declare v bigint;
 begin
-  perform private.require_staff(p_staff, true);
+  if not private.staff_can(private.require_perm(p_staff, 'any'), 'notice') then raise exception 'admin_only'; end if; -- 공지 권한 (Phase 51 표)
   insert into private.notices (title, body, created_by)
   values (btrim(p_title), btrim(coalesce(p_body, '')), p_staff)
   returning id into v;
@@ -3197,7 +3214,7 @@ create or replace function public.admin_remove_notice(p_staff uuid, p_id bigint)
 returns void language plpgsql security definer set search_path = public, private as $fn$
 declare v_title text;
 begin
-  perform private.require_staff(p_staff, true);
+  if not private.staff_can(private.require_perm(p_staff, 'any'), 'notice') then raise exception 'admin_only'; end if; -- 공지 권한 (Phase 51 표)
   update private.notices set removed_at = now()
    where id = p_id and removed_at is null
   returning title into v_title;
@@ -6404,7 +6421,11 @@ begin
    where user_id = p_uid returning role into v;
   if v is null then return null; end if;
   -- owner = 최고 관리자 (Phase 50 — 운영진을 지정 · 해제할 수 있는 단 한 사람)
-  return jsonb_build_object('role', v, 'owner', (select owner from private.staff where user_id = p_uid), 'team', (
+  -- perms = 내 역할의 권한(Phase 51 표, 관리자는 전부) — 서버 · 화면이 메뉴와 화면을 이걸로 가른다
+  return jsonb_build_object('role', v, 'owner', (select owner from private.staff where user_id = p_uid),
+    'perms', case when v = 'admin' then '["live","moderate","identity","settings","service","inquiry","notice","audit"]'::jsonb
+                  else (select coalesce(jsonb_agg(r.perm order by r.perm), '[]'::jsonb) from private.role_perms r where r.role = v) end,
+    'team', (
     select coalesce(jsonb_agg(jsonb_build_object(
              'id', s.user_id, 'name', coalesce(s.display_name, p.nickname, '이름 없음'), 'role', s.role, 'owner', s.owner,
              'last_seen', s.last_seen, 'path', s.last_path, 'me', s.user_id = p_uid)
@@ -6459,7 +6480,7 @@ declare
   before text;
 begin
   perform private.require_owner(p_staff);
-  if p_role is not null and p_role not in ('moderator', 'developer', 'admin') then raise exception 'bad_role'; end if;
+  if p_role is not null and p_role not in ('moderator', 'developer', 'beta', 'admin') then raise exception 'bad_role'; end if;
   if nm is not null and char_length(nm) > 20 then raise exception 'bad_name'; end if;
   select id into target from auth.users where lower(email) = lower(btrim(coalesce(p_no, ''))) || '@cnsa.hs.kr';
   if target is null then raise exception 'user_not_found'; end if;
@@ -6477,3 +6498,43 @@ begin
 end
 $fn$;
 revoke all on function public.admin_staff_set(uuid, text, text, text) from public, anon, authenticated;
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 51 — 베타테스터 역할 · 역할별 권한을 최고 관리자가 정한다
+-- 역할 넷: 운영자(moderator) · 개발자(developer) · 베타테스터(beta, 처음엔 실시간 현황만) · 관리자(admin, 늘 전부).
+-- 권한 표 private.role_perms (위 staff_can 옆에서 만든다) — 운영진 관리 화면의 체크 표. 모든 DB 함수가 이 표를 따른다.
+-- ════════════════════════════════════════════════════════════════════
+alter table private.staff drop constraint if exists staff_role_check;
+alter table private.staff add constraint staff_role_check check (role in ('moderator', 'developer', 'beta', 'admin'));
+
+-- 역할별 권한 (최고 관리자만) — { moderator: [...], developer: [...], beta: [...] }
+create or replace function public.admin_role_perms(p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  perform private.require_owner(p_staff);
+  return (select jsonb_object_agg(x.role, coalesce((select jsonb_agg(r.perm order by r.perm) from private.role_perms r where r.role = x.role), '[]'::jsonb))
+            from (values ('moderator'), ('developer'), ('beta')) x(role));
+end
+$fn$;
+revoke all on function public.admin_role_perms(uuid) from public, anon, authenticated;
+
+-- 한 역할의 권한을 통째로 바꾼다 (최고 관리자만, 관리자 역할은 바꿀 수 없다). 기록에 남는다
+create or replace function public.admin_set_role_perms(p_staff uuid, p_role text, p_perms text[])
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare before jsonb; clean text[];
+begin
+  perform private.require_owner(p_staff);
+  if p_role not in ('moderator', 'developer', 'beta') then raise exception 'bad_role'; end if;
+  select array(select distinct unnest(coalesce(p_perms, '{}'))) into clean;
+  if exists (select 1 from unnest(clean) p where p not in ('live', 'moderate', 'identity', 'settings', 'service', 'inquiry', 'notice', 'audit')) then
+    raise exception 'bad_perm';
+  end if;
+  select coalesce(jsonb_agg(perm order by perm), '[]'::jsonb) into before from private.role_perms where role = p_role;
+  delete from private.role_perms where role = p_role and perm <> all(clean);
+  insert into private.role_perms (role, perm) select p_role, unnest(clean) on conflict do nothing;
+  insert into private.audit_log (staff_id, action, detail)
+  values (p_staff, 'set_role_perms', jsonb_build_object('role', p_role, 'from', before, 'to', to_jsonb(clean)));
+  return public.admin_role_perms(p_staff);
+end
+$fn$;
+revoke all on function public.admin_set_role_perms(uuid, text, text[]) from public, anon, authenticated;
