@@ -21,6 +21,11 @@ export const allowed = (locals: App.Locals, perm: Perm) => can(locals.staff?.rol
  */
 export function guard(locals: App.Locals, url: URL) {
 	const role = locals.staff?.role;
+	// 운영진 관리 (Phase 50) — 최고 관리자 한 사람만
+	if (url.pathname.startsWith('/admin/staff')) {
+		if (locals.staff?.owner) return;
+		error(403, '최고 관리자만 볼 수 있는 화면');
+	}
 	if (can(role, pagePerm(url.pathname))) return;
 	if (role && (url.pathname === '/admin' || url.pathname === '/admin/')) redirect(303, homeOf(role));
 	error(403, '이 역할로는 볼 수 없는 화면');
@@ -64,6 +69,10 @@ const DB_ERR: Record<string, string> = {
 	mod_days_limit: `운영진은 최대 ${MOD_MAX_SUSPEND_DAYS}일까지 정지 가능`,
 	not_staff: '운영진 명단에 없는 계정',
 	no_permission: '이 역할로는 할 수 없는 조치',
+	owner_only: '최고 관리자만 할 수 있어요',
+	owner_locked: '최고 관리자는 여기서 바꿀 수 없어요',
+	bad_role: '없는 역할이에요',
+	bad_name: '표시 이름은 20자까지',
 	days_required: '정지 기간을 입력해야 함',
 	user_not_found: '탈퇴한 계정이라 조치할 수 없음',
 	notice_not_found: '이미 내린 공지',

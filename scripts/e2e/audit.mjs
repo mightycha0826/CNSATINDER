@@ -15,14 +15,27 @@ const [A, B, ROOM, REP, LREP, BOOM] = ['a', 'b', 'c', 'd', 'e', '9'].map(id);
 const t = new Date().toISOString();
 let ROLE = 'admin';
 let SUSPENDED = false, BETA = false; // Phase 44 — 정지 풀기 · 특별 업적
+let OWNER = false; // Phase 50 — 최고 관리자
+let STAFF_LIST = [
+	{ id: 'o1', no: '20529', nickname: '단단복숭아', display_name: null, role: 'admin', owner: true, created_at: new Date().toISOString(), last_seen: new Date().toISOString() },
+	{ id: 'a2', no: '20107', nickname: '얌전한참새', display_name: null, role: 'admin', owner: false, created_at: new Date().toISOString(), last_seen: null }
+];
 const calls = [];
 
 const user = (i, nick) => ({ id: i, nickname: nick, status: 'active', suspended_until: null, strikes: 0, verified: true, onboarded: true, created_at: t, online: false, last_seen: t, staff_role: null, reports_received: 1 });
 const RPC = {
 	admin_staff_role: () => ROLE,
 	// Phase 49 — 역할 확인 + 운영진 현황
-	admin_staff_touch: () => ({ role: ROLE, team: [
-		{ id: STAFF, name: '나운영', role: ROLE, last_seen: t, path: '/admin', me: true },
+	// Phase 50 — 최고 관리자 · 운영진 관리
+	admin_staff_list: () => STAFF_LIST,
+	admin_staff_set: (a) => {
+		if (a.p_role == null) STAFF_LIST = STAFF_LIST.filter((s) => s.no !== a.p_no);
+		else if (!STAFF_LIST.some((s) => s.no === a.p_no)) STAFF_LIST.push({ id: 'n' + a.p_no, no: a.p_no, nickname: '새운영', display_name: a.p_name, role: a.p_role, owner: false, created_at: t, last_seen: null });
+		else STAFF_LIST = STAFF_LIST.map((s) => (s.no === a.p_no ? { ...s, role: a.p_role, display_name: a.p_name } : s));
+		return STAFF_LIST;
+	},
+	admin_staff_touch: () => ({ role: ROLE, owner: OWNER, team: [
+		{ id: STAFF, name: '나운영', role: ROLE, owner: OWNER, last_seen: t, path: '/admin', me: true },
 		{ id: 'm1', name: '김운영', role: 'moderator', last_seen: new Date().toISOString(), path: '/admin/reports/x', me: false },
 		{ id: 'd1', name: '박개발', role: 'developer', last_seen: new Date(Date.now() - 3 * 3600_000).toISOString(), path: '/admin/settings', me: false }
 	] }),
@@ -324,6 +337,44 @@ try {
 		&& tt.includes('채팅 신고 보는 중') && tt.includes('3시간 전 접속') && (await team.locator('li.off').count()) === 1, tt);
 	await dv.page.screenshot({ path: `${SP}/audit-team-panel.png` });
 	check('페이지 오류 없음 (개발자)', dv.page.errs.length === 0, dv.page.errs.join(' / '));
+
+	console.log('\n[14] 최고 관리자 · 운영진 관리 (Phase 50)');
+	ROLE = 'admin';
+	OWNER = false;
+	const na = await session();
+	await na.page.go('/admin/live');
+	check('★ 그냥 관리자: "운영진 관리" 메뉴 없음', !(await na.page.locator('.side nav a').allInnerTexts()).some((x) => x.includes('운영진 관리')));
+	const s403 = await na.page.goto(`${base}/admin/staff`);
+	check('★ 그냥 관리자: /admin/staff → 403', s403.status() === 403, String(s403.status()));
+	OWNER = true;
+	const ow = await session(1440);
+	let okDialog = true;
+	await dialogs(ow.page, () => okDialog);
+	await ow.page.go('/admin/staff');
+	check('★ 최고 관리자: 메뉴 "운영진 관리" · 사이드바 "최고 관리자"', (await ow.page.locator('.side nav a.on').innerText()).includes('운영진 관리') && (await ow.page.locator('.side .who').innerText()).includes('최고 관리자'));
+	check('명단: 최고 관리자 줄은 잠김 · 다른 관리자는 바꾸기/빼기', (await ow.page.locator('.row.owner').innerText()).includes('바꿀 수 없음') && (await ow.page.locator('.row:not(.owner) select').count()) === 1);
+	await ow.page.locator('.add input[name=no]').fill('20314');
+	await ow.page.locator('.add select[name=role]').selectOption('developer');
+	await ow.page.locator('.add input[name=name]').fill('박개발');
+	await ow.page.locator('.add').getByRole('button', { name: '지정' }).click();
+	await ow.page.locator('.rows li', { hasText: '박개발' }).waitFor({ timeout: 5000 }).catch(() => {});
+	const set1 = calls.filter((c) => c[0] === 'admin_staff_set').at(-1)?.[1];
+	check('★ 학번으로 개발자 지정 → admin_staff_set · 명단에 보임', set1?.p_no === '20314' && set1?.p_role === 'developer' && set1?.p_name === '박개발' && (await ow.page.locator('.rows li', { hasText: '박개발' }).count()) === 1, JSON.stringify(set1));
+	const row = ow.page.locator('.rows li', { hasText: '20107' });
+	await row.locator('select[name=role]').selectOption('moderator');
+	await row.getByRole('button', { name: '저장' }).click();
+	await ow.page.waitForTimeout(700);
+	check('★ 역할 바꾸기 → 누른 저장 버튼에 결과', calls.filter((c) => c[0] === 'admin_staff_set').at(-1)?.[1]?.p_role === 'moderator' && (await row.getByRole('button', { name: /저장/ }).getAttribute('data-ack')) === 'ok');
+	okDialog = false;
+	await row.getByRole('button', { name: '빼기' }).click();
+	await ow.page.waitForTimeout(500);
+	check('빼기 확인창에서 취소 → 안 뺌', calls.filter((c) => c[0] === 'admin_staff_set').at(-1)?.[1]?.p_role === 'moderator');
+	okDialog = true;
+	await row.getByRole('button', { name: '빼기' }).click();
+	await ow.page.waitForTimeout(800);
+	check('★ 빼기 → 역할 없음(null)으로 · 명단에서 사라짐', calls.filter((c) => c[0] === 'admin_staff_set').at(-1)?.[1]?.p_role === null && (await ow.page.locator('.rows li', { hasText: '20107' }).count()) === 0);
+	await ow.page.screenshot({ path: `${SP}/audit-staff.png`, fullPage: true });
+	check('페이지 오류 없음 (최고 관리자)', ow.page.errs.length === 0, ow.page.errs.join(' / '));
 } finally {
 	await browser.close();
 	vite.kill();

@@ -73,7 +73,7 @@
 					</span>
 					<span class="txt">
 						<span class="name" style:color={st === 'off' ? undefined : ROLE_COLOR[m.role]}>
-							{m.name}{#if m.me}<small class="me">나</small>{/if}
+							{m.name}{#if m.owner}<small class="own" title="최고 관리자">최고</small>{/if}{#if m.me}<small class="me">나</small>{/if}
 						</span>
 						<span class="sub">
 							{#if st === 'off'}{m.last_seen ? `${agoText(m.last_seen, now)} 접속` : '아직 접속 안 함'}
@@ -188,6 +188,16 @@
 		color: var(--text-2);
 		font-size: 10px;
 		font-weight: 700;
+		vertical-align: 1px;
+	}
+	.own {
+		margin-left: 5px;
+		padding: 0 5px;
+		border-radius: 4px;
+		background: color-mix(in srgb, #f59e0b 20%, transparent);
+		color: #b45309;
+		font-size: 10px;
+		font-weight: 800;
 		vertical-align: 1px;
 	}
 	.sub {

@@ -561,4 +561,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       마지막 접속. 요청마다 하던 역할 확인을 `admin_staff_touch` 로 바꿔 그 한 번에 마지막 화면을 적고 팀 목록을 받는다(요청 수 그대로), 가만히 있으면 1분마다(탭이 보일 때만).
       역할 · 이름 정하기: `update private.staff set role = 'developer', display_name = '홍길동' where user_id = '…';`
       스키마 테스트 [86], 화면 테스트 `audit` [13], 실DB 반영 (phase49_staff_roles_presence)
+- [x] **Phase 50 — 최고 관리자 · 운영진 관리**
+      최고 관리자(`private.staff.owner`, 딱 한 명 · 관리자여야 — 유일 인덱스 · check 제약) = 20529. `/admin/staff`(최고 관리자에게만 메뉴 · guard · DB `require_owner`):
+      학번으로 운영자 · 개발자 · 관리자 지정(관리자로 줄 땐 한 번 더 묻는다), 줄마다 역할 · 표시 이름 저장, 빼기(확인창). 최고 관리자 줄은 잠김(스스로 잠기지 않게).
+      모든 변경은 활동 기록 `set_staff`. 사이드바 "최고 관리자", 현황 판에 "최고" 표시. 최고 관리자 넘기기는 DB 에서만:
+      `update private.staff set owner = false where owner; update private.staff set owner = true where user_id = '…';`
+      스키마 테스트 [87], 화면 테스트 `audit` [14], 실DB 반영 (phase50_staff_owner)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

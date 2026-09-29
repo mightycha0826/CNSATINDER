@@ -68,8 +68,13 @@
 			]
 		}
 	];
+	// 운영진 관리 (Phase 50) — 최고 관리자에게만
+	const STAFF_ITEM = { href: '/admin/staff', label: '운영진 관리', ic: 'M16 11a3 3 0 100-6 3 3 0 000 6zM8 12a3.5 3.5 0 100-7 3.5 3.5 0 000 7zM2 20c.6-3.4 3-5.5 6-5.5s5.4 2.1 6 5.5M15 14.6c2.8-.4 5.4 1.3 6 4.9' };
 	const NAV = $derived(
-		GROUPS.map((g) => ({ ...g, items: g.items.filter((n) => can(data.staff?.role, pagePerm(n.href))) })).filter((g) => g.items.length)
+		GROUPS.map((g) => ({
+			...g,
+			items: [...g.items.filter((n) => can(data.staff?.role, pagePerm(n.href))), ...(g.title === '운영' && data.staff?.owner ? [STAFF_ITEM] : [])]
+		})).filter((g) => g.items.length)
 	);
 	const active = (href: string) =>
 		href === '/admin'
@@ -123,7 +128,7 @@
 				{/each}
 			</nav>
 			<div class="me">
-				<span class="who"><i class="role" style:background={ROLE_COLOR[data.staff.role]}></i>{ROLE_LABEL[data.staff.role]}</span>
+				<span class="who"><i class="role" style:background={data.staff.owner ? '#f59e0b' : ROLE_COLOR[data.staff.role]}></i>{data.staff.owner ? '최고 관리자' : ROLE_LABEL[data.staff.role]}</span>
 				<button class="out" onclick={logout}>로그아웃</button>
 			</div>
 		</aside>

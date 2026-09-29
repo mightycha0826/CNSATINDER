@@ -6403,12 +6403,77 @@ begin
   update private.staff set last_seen = now(), last_path = coalesce(left(p_path, 80), last_path)
    where user_id = p_uid returning role into v;
   if v is null then return null; end if;
-  return jsonb_build_object('role', v, 'team', (
+  -- owner = 최고 관리자 (Phase 50 — 운영진을 지정 · 해제할 수 있는 단 한 사람)
+  return jsonb_build_object('role', v, 'owner', (select owner from private.staff where user_id = p_uid), 'team', (
     select coalesce(jsonb_agg(jsonb_build_object(
-             'id', s.user_id, 'name', coalesce(s.display_name, p.nickname, '이름 없음'), 'role', s.role,
+             'id', s.user_id, 'name', coalesce(s.display_name, p.nickname, '이름 없음'), 'role', s.role, 'owner', s.owner,
              'last_seen', s.last_seen, 'path', s.last_path, 'me', s.user_id = p_uid)
            order by s.last_seen desc nulls last), '[]'::jsonb)
       from private.staff s left join public.profiles p on p.id = s.user_id), 'now', now());
 end
 $fn$;
 revoke all on function public.admin_staff_touch(uuid, text) from public, anon, authenticated;
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 50 — 최고 관리자(owner) · 운영진 관리
+-- 최고 관리자는 딱 한 명(관리자 중에서). 운영진을 지정(학번으로) · 역할 바꾸기 · 표시 이름 · 빼기는 최고 관리자만.
+-- 최고 관리자 자신은 여기서 바꾸거나 뺄 수 없다(잠겨 버리지 않게). 넘기려면 DB 에서:
+--   update private.staff set owner = false where owner; update private.staff set owner = true where user_id = '…';
+-- ════════════════════════════════════════════════════════════════════
+alter table private.staff add column if not exists owner boolean not null default false;
+create unique index if not exists staff_one_owner on private.staff (owner) where owner;
+alter table private.staff drop constraint if exists staff_owner_admin;
+alter table private.staff add constraint staff_owner_admin check (not owner or role = 'admin');
+
+create or replace function private.require_owner(p_staff uuid)
+returns void language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  if not exists (select 1 from private.staff where user_id = p_staff) then raise exception 'not_staff'; end if;
+  if not exists (select 1 from private.staff where user_id = p_staff and owner) then raise exception 'owner_only'; end if;
+end
+$fn$;
+revoke all on function private.require_owner(uuid) from public, anon, authenticated;
+
+-- 운영진 명단 (최고 관리자만) — 학번(학교 이메일 앞부분) · 앱 닉네임 · 표시 이름 · 역할 · 지정한 날 · 마지막 접속
+create or replace function public.admin_staff_list(p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  perform private.require_owner(p_staff);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', s.user_id, 'no', split_part(u.email, '@', 1), 'nickname', p.nickname, 'display_name', s.display_name,
+             'role', s.role, 'owner', s.owner, 'created_at', s.created_at, 'last_seen', s.last_seen)
+           order by s.owner desc, case s.role when 'admin' then 0 when 'developer' then 1 else 2 end, s.created_at)
+      from private.staff s left join auth.users u on u.id = s.user_id left join public.profiles p on p.id = s.user_id
+  ), '[]'::jsonb);
+end
+$fn$;
+revoke all on function public.admin_staff_list(uuid) from public, anon, authenticated;
+
+-- 운영진 지정 · 역할 바꾸기 · 표시 이름 (최고 관리자만). p_no = 학번(학교 이메일 앞부분). p_role = null 이면 운영진에서 뺀다
+create or replace function public.admin_staff_set(p_staff uuid, p_no text, p_role text, p_name text default null)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  target uuid;
+  nm text := nullif(btrim(coalesce(p_name, '')), '');
+  before text;
+begin
+  perform private.require_owner(p_staff);
+  if p_role is not null and p_role not in ('moderator', 'developer', 'admin') then raise exception 'bad_role'; end if;
+  if nm is not null and char_length(nm) > 20 then raise exception 'bad_name'; end if;
+  select id into target from auth.users where lower(email) = lower(btrim(coalesce(p_no, ''))) || '@cnsa.hs.kr';
+  if target is null then raise exception 'user_not_found'; end if;
+  if exists (select 1 from private.staff where user_id = target and owner) then raise exception 'owner_locked'; end if;
+  select role into before from private.staff where user_id = target;
+  if p_role is null then
+    delete from private.staff where user_id = target;
+  else
+    insert into private.staff (user_id, role, display_name) values (target, p_role, nm)
+    on conflict (user_id) do update set role = excluded.role, display_name = excluded.display_name;
+  end if;
+  insert into private.audit_log (staff_id, action, target_user, detail)
+  values (p_staff, 'set_staff', target, jsonb_build_object('from', before, 'to', p_role, 'name', nm));
+  return public.admin_staff_list(p_staff);
+end
+$fn$;
+revoke all on function public.admin_staff_set(uuid, text, text, text) from public, anon, authenticated;

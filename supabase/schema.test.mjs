@@ -3394,5 +3394,27 @@ console.log('\n[86] 운영자 · 개발자 · 관리자 역할 나누기 · 운�
 	check('운영자: 서비스 열고 닫기 가능', (await svc('admin_update_settings', JSON.stringify({ is_open: true }), mod)).is_open === true);
 }
 
+console.log('\n[87] 최고 관리자 · 운영진 관리 (Phase 50)');
+{
+	const own = await signUp('27901@cnsa.hs.kr', true);
+	const adm2 = await signUp('27902@cnsa.hs.kr', true);
+	const kid = await signUp('27903@cnsa.hs.kr', true);
+	await db.query(`insert into private.staff (user_id, role, owner) values ($1, 'admin', true), ($2, 'admin', false)`, [own, adm2]);
+	await expectError('★ 최고 관리자는 한 명뿐', () => db.query(`update private.staff set owner = true where user_id = $1`, [adm2]), 'staff_one_owner');
+	await expectError('최고 관리자는 관리자여야', () => db.query(`update private.staff set role = 'moderator' where user_id = $1`, [own]), 'staff_owner_admin');
+	check('★ touch 에 owner 표시', (await svc('admin_staff_touch', own, null)).owner === true && (await svc('admin_staff_touch', adm2, null)).owner === false);
+	await expectError('★ 다른 관리자는 운영진 명단을 못 본다', () => svc('admin_staff_list', adm2), 'owner_only');
+	await expectError('★ 다른 관리자는 운영진을 못 정한다', () => svc('admin_staff_set', adm2, '27903', 'moderator', null), 'owner_only');
+	const l1 = await svc('admin_staff_set', own, '27903', 'developer', '  코딩왕 ');
+	const k1 = l1.find((x) => x.id === kid);
+	check('★ 최고 관리자: 학번으로 개발자 지정 · 표시 이름', k1?.role === 'developer' && k1.display_name === '코딩왕' && k1.no === '27903', JSON.stringify(k1));
+	check('역할 바꾸기', (await svc('admin_staff_set', own, '27903', 'moderator', '코딩왕')).find((x) => x.id === kid).role === 'moderator');
+	await expectError('없는 학번', () => svc('admin_staff_set', own, '99999', 'moderator', null), 'user_not_found');
+	await expectError('없는 역할', () => svc('admin_staff_set', own, '27903', 'owner', null), 'bad_role');
+	await expectError('★ 최고 관리자 자신은 여기서 못 바꾼다', () => svc('admin_staff_set', own, '27901', 'moderator', null), 'owner_locked');
+	check('★ 빼기 (역할 없음)', !(await svc('admin_staff_set', own, '27903', null, null)).some((x) => x.id === kid) && (await svc('admin_staff_role', kid)) === null);
+	check('기록에 남는다', Number((await one(`select count(*) n from private.audit_log where action = 'set_staff' and staff_id = $1`, [own])).n) === 3);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

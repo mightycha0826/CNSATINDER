@@ -35,6 +35,7 @@ const PAGES: [RegExp, Perm][] = [
 	[/^\/admin\/inquiries/, 'inquiry'],
 	[/^\/admin\/audit/, 'audit'],
 	[/^\/admin\/team/, 'any'],
+	[/^\/admin\/staff/, 'identity'], // 실제로는 최고 관리자만 (guard 가 따로 본다)
 	[/^\/admin\/?$/, 'moderate']
 ];
 export function pagePerm(path: string): Perm {
@@ -57,7 +58,10 @@ export function activityOf(path: string | null): string {
 	if (p.startsWith('/admin/inquiries')) return '문의 답하는 중';
 	if (p.startsWith('/admin/settings')) return '운영 설정 보는 중';
 	if (p.startsWith('/admin/audit')) return '활동 기록 보는 중';
+	if (p.startsWith('/admin/staff')) return '운영진 관리 중';
 	return '운영 화면';
 }
 
-export type TeamMember = { id: string; name: string; role: StaffRole; last_seen: string | null; path: string | null; me: boolean };
+export type TeamMember = { id: string; name: string; role: StaffRole; owner?: boolean; last_seen: string | null; path: string | null; me: boolean };
+/** 운영진 관리 화면 (Phase 50, 최고 관리자만) 한 줄 */
+export type StaffRow = { id: string; no: string | null; nickname: string | null; display_name: string | null; role: StaffRole; owner: boolean; created_at: string; last_seen: string | null };
