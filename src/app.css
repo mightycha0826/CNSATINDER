@@ -523,7 +523,13 @@ a {
 	font-family: var(--display);
 	font-weight: 400;
 	letter-spacing: 0;
-	padding-bottom: 0.06em; /* 통통한 글자의 아래 끝이 그라디언트 밖으로 잘리지 않게 */
+	/* 로고는 늘 한 줄 (Phase 47-2) — 아이패드 사파리는 글자 폭에 맞춘 칸을 글자보다 소수점만큼 좁게 재기도 해서,
+	   낱말 넘김(overflow-wrap)이 끝 글자를 다음 줄로 보냈다("CNSATINDE / R") */
+	white-space: nowrap;
+	/* 그라디언트는 칸 안에만 칠해진다 — 통통한 글자의 획이 칸 밖(양옆 · 아래)으로 조금 나와도 잘리지 않게 칸을 넓히고,
+	   넓힌 만큼 바깥 여백을 당겨 글자 자리는 그대로 */
+	padding: 0 0.12em 0.06em;
+	margin-inline: -0.12em;
 	background: linear-gradient(90deg, var(--g-orange), var(--g-coral) 50%, var(--g-pink));
 	-webkit-background-clip: text;
 	background-clip: text;
