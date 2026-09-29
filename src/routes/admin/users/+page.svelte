@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fmtTime } from '$lib/adminTypes';
+	import { ROLE_LABEL } from '$lib/adminRoles';
 	import Sid from '$lib/admin/Sid.svelte';
 	import { isRestricted as restricted } from '$lib/restriction';
 
@@ -63,7 +64,7 @@
 				<tr>
 					<td>
 						<a href="/admin/users/{u.id}"><b>{u.nickname ?? '(이름 없음)'}</b></a><Sid label={data.students[u.id]} />
-						{#if u.staff_role}<span class="pill acc">{u.staff_role === 'admin' ? '관리자' : '운영진'}</span>{/if}
+						{#if u.staff_role}<span class="pill acc">{ROLE_LABEL[u.staff_role]}</span>{/if}
 						{#if !u.onboarded}<span class="pill">가입 중</span>{/if}
 					</td>
 					<td class="mono">{u.id.slice(0, 8)}</td>

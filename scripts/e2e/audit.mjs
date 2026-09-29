@@ -20,6 +20,12 @@ const calls = [];
 const user = (i, nick) => ({ id: i, nickname: nick, status: 'active', suspended_until: null, strikes: 0, verified: true, onboarded: true, created_at: t, online: false, last_seen: t, staff_role: null, reports_received: 1 });
 const RPC = {
 	admin_staff_role: () => ROLE,
+	// Phase 49 — 역할 확인 + 운영진 현황
+	admin_staff_touch: () => ({ role: ROLE, team: [
+		{ id: STAFF, name: '나운영', role: ROLE, last_seen: t, path: '/admin', me: true },
+		{ id: 'm1', name: '김운영', role: 'moderator', last_seen: new Date().toISOString(), path: '/admin/reports/x', me: false },
+		{ id: 'd1', name: '박개발', role: 'developer', last_seen: new Date(Date.now() - 3 * 3600_000).toISOString(), path: '/admin/settings', me: false }
+	] }),
 	admin_stats: () => ({ open_reports: 1, reviewing: 0, open_letter_reports: 1, active_rooms: 1, seeking_now: 0, restricted_users: 0, rooms_24h: 3, letters_24h: 2, is_open: true }),
 	admin_list_reports: () => [{ id: REP, created_at: t, reason: 'harassment', note: '욕했어요', status: 'open', reported_id: A, reporter_id: B, reported_30d: 1, evidence_count: 2, reported_status: 'active' }],
 	admin_report: () => ({ report: { id: REP, created_at: t, reason: 'harassment', note: '욕했어요', status: 'open', reported_id: A, reporter_id: B, room_id: ROOM, handled_by: null, handled_at: null, action_note: null }, evidence: [{ ord: 1, sender: 2, body: '나쁜 말', sent_at: t }, { ord: 2, sender: 1, body: '그만해', sent_at: t }], reported: { status: 'active', strikes: 0, suspended_until: null, gender: 'm', created_at: t }, history: [], reporter_filed: 1, reporter_dismissed: 0 }),
@@ -75,7 +81,7 @@ const sb = http.createServer((req, res) => {
 		const fn = u.pathname.match(/^\/rest\/v1\/rpc\/([a-z_]+)/)?.[1];
 		if (!fn || !RPC[fn]) return send(404, { message: `no mock ${req.url}` });
 		const args = body ? JSON.parse(body) : {};
-		if (fn !== 'admin_staff_role') calls.push([fn, args]);
+		if (fn !== 'admin_staff_role' && fn !== 'admin_staff_touch') calls.push([fn, args]);
 		try { send(200, RPC[fn](args)); } catch (e) { send(e.status ?? 500, e.body ?? { message: String(e) }); }
 	});
 }).listen(54398);
@@ -296,6 +302,28 @@ try {
 	await md.page.go('/admin/settings');
 	check('운영진: 수치 입력칸 잠김', await md.page.locator('input[name=room_minutes]').isDisabled());
 	check('페이지 오류 없음', md.page.errs.length === 0, md.page.errs.join(' / '));
+
+	console.log('\n[13] 개발자(developer) · 운영진 현황 (Phase 49)');
+	ROLE = 'developer';
+	const dv = await session(1440); // 오른쪽 현황 판은 넓은 화면(1181~)에서
+	await dv.page.go('/admin');
+	check('★ 개발자: 첫 화면(채팅 신고) 대신 실시간으로', new URL(dv.page.url()).pathname === '/admin/live', dv.page.url());
+	const dnav = await dv.page.locator('.side nav a').allInnerTexts();
+	check('★ 개발자 메뉴: 신고 · 사용자 · 전체 대화 없음, 운영 설정 · 문의 · 활동 기록 있음',
+		!dnav.some((x) => /신고|사용자|전체 대화/.test(x)) && ['운영 설정', '문의', '활동 기록'].every((l) => dnav.some((x) => x.includes(l))), dnav.join(','));
+	for (const p of ['/admin/users', `/admin/reports/${REP}`, '/admin/letters', '/admin/rooms']) {
+		const r = await dv.page.goto(`${base}${p}`);
+		check(`★ 개발자: ${p} → 403`, r.status() === 403, String(r.status()));
+	}
+	await dv.page.go('/admin/settings');
+	check('★ 개발자: 운영 수치 · 금칙어를 바꿀 수 있다', !(await dv.page.locator('input[name=room_minutes]').isDisabled()) && (await dv.page.getByRole('button', { name: '저장', exact: true }).count()) === 1);
+	check('사이드바에 내 역할 "개발자"', (await dv.page.locator('.side .who').innerText()).includes('개발자'));
+	const team = dv.page.locator('aside.team');
+	const tt = (await team.innerText()).replace(/\s+/g, ' ');
+	check('★ 오른쪽 운영진 현황: 역할별 묶음 · 접속 수 · 하는 일 · 오프라인은 마지막 접속', tt.includes('운영진 2') && tt.includes('운영자 — 1') && tt.includes('개발자 — 2')
+		&& tt.includes('채팅 신고 보는 중') && tt.includes('3시간 전 접속') && (await team.locator('li.off').count()) === 1, tt);
+	await dv.page.screenshot({ path: `${SP}/audit-team-panel.png` });
+	check('페이지 오류 없음 (개발자)', dv.page.errs.length === 0, dv.page.errs.join(' / '));
 } finally {
 	await browser.close();
 	vite.kill();

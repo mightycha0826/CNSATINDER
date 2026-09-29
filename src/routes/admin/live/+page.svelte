@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { fmtClock, type LiveUser } from '$lib/adminTypes';
+	import { ROLE_LABEL } from '$lib/adminRoles';
 	import { agoText } from '$lib/time';
 	import Sid from '$lib/admin/Sid.svelte';
 	import { isRestricted } from '$lib/restriction';
@@ -147,7 +148,7 @@
 					</td>
 					<td>
 						<a href="/admin/users/{u.id}"><b>{u.nickname ?? '(이름 없음)'}</b></a><Sid label={data.students[u.id]} />
-						{#if u.staff_role}<span class="pill acc">{u.staff_role === 'admin' ? '관리자' : '운영진'}</span>{/if}
+						{#if u.staff_role}<span class="pill acc">{ROLE_LABEL[u.staff_role]}</span>{/if}
 						{#if u.status === 'banned'}<span class="pill red">영구정지</span>
 						{:else if restricted(u)}<span class="pill red">정지</span>{/if}
 						{#if !u.onboarded}<span class="pill">가입 중</span>{/if}

@@ -1,6 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import { friendly, isAdmin, revealIdentity, runSanction, studentLabels } from '$lib/server/adminAuth';
+import { friendly, guard, isAdmin, revealIdentity, runSanction, studentLabels } from '$lib/server/adminAuth';
 import type { PersonalNoticeRow, UserBadgeRow, UserDetail, UserLetterRow, UserRoomRow } from '$lib/adminTypes';
 import { deliver, type PushNote } from '$lib/server/pushSend';
 import type { Actions, PageServerLoad } from './$types';
@@ -12,7 +12,8 @@ async function detail(id: string, staff: string) {
 }
 
 // ★ load 에는 이메일이 없다. 이메일·편지 활동은 아래 액션으로만, 기록과 함께 나간다.
-export const load: PageServerLoad = async ({ params, locals }) => {
+export const load: PageServerLoad = async ({ params, locals, url }) => {
+	guard(locals, url); // 운영자 · 관리자 (Phase 49)
 	const staff = locals.staff!.id;
 	const [d, rooms, notices, badges] = await Promise.all([
 		detail(params.id, staff),

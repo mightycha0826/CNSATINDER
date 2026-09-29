@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc, supabaseAdmin } from '$lib/server/supabaseAdmin';
 import { checkAi } from '$lib/server/ai';
-import { friendly, isAdmin } from '$lib/server/adminAuth';
+import { allowed, friendly } from '$lib/server/adminAuth';
 import type { Actions, PageServerLoad } from './$types';
 
 export type AppSettings = {
@@ -81,7 +81,7 @@ export const actions: Actions = {
 	},
 
 	save: async ({ request, locals }) => {
-		if (!isAdmin(locals)) return fail(403, { error: '관리자만 바꿀 수 있어요' });
+		if (!allowed(locals, 'settings')) return fail(403, { error: '개발자 · 관리자만 바꿀 수 있어요' });
 		const f = await request.formData();
 		const patch: Record<string, unknown> = { notice: String(f.get('notice') ?? '').slice(0, 300) };
 		for (const [k, min, max] of INT) {
@@ -102,7 +102,7 @@ export const actions: Actions = {
 
 	/** 익명편지 잠금 (Phase 44, 관리자만) — 켜 두면 가입한 학생이 기준 인원이 될 때까지 편지 쓰기 · 찾기가 막힌다 */
 	letters: async ({ request, locals }) => {
-		if (!isAdmin(locals)) return fail(403, { error: '관리자만 바꿀 수 있어요' });
+		if (!allowed(locals, 'settings')) return fail(403, { error: '개발자 · 관리자만 바꿀 수 있어요' });
 		const f = await request.formData();
 		const min = Number(f.get('letters_gate_min'));
 		if (!Number.isInteger(min) || min < 1 || min > 10000) return fail(400, { error: '열리는 인원은 1~10000 사이의 정수여야 해요' });
@@ -117,7 +117,7 @@ export const actions: Actions = {
 
 	/** 검열봇 · AI 대화 상대 (관리자만) */
 	ai: async ({ request, locals }) => {
-		if (!isAdmin(locals)) return fail(403, { error: '관리자만 바꿀 수 있어요' });
+		if (!allowed(locals, 'settings')) return fail(403, { error: '개발자 · 관리자만 바꿀 수 있어요' });
 		const f = await request.formData();
 		const patch: Record<string, unknown> = {
 			ai_moderation: f.get('ai_moderation') === 'on',
@@ -140,13 +140,13 @@ export const actions: Actions = {
 
 	/** AI 연결 확인 — 짧은 질문 하나를 보내서 되는지, 안 되면 Cloudflare 가 준 오류를 그대로 보여 준다 (관리자만) */
 	aiCheck: async ({ locals, platform }) => {
-		if (!isAdmin(locals)) return fail(403, { error: '관리자만 확인할 수 있어요' });
+		if (!allowed(locals, 'settings')) return fail(403, { error: '개발자 · 관리자만 확인할 수 있어요' });
 		return { aiCheck: await checkAi(platform?.env?.AI) };
 	},
 
 	/** 금칙어 — 한 줄에 하나 (정규식). 통째로 바꾼다 */
 	terms: async ({ request, locals }) => {
-		if (!isAdmin(locals)) return fail(403, { error: '관리자만 바꿀 수 있어요' });
+		if (!allowed(locals, 'settings')) return fail(403, { error: '개발자 · 관리자만 바꿀 수 있어요' });
 		const lines = String((await request.formData()).get('terms') ?? '')
 			.split('\n')
 			.map((t) => t.trim())

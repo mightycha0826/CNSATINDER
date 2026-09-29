@@ -115,7 +115,8 @@ export type LetterReportDetail = {
 };
 
 // ── Phase 11 — 사용자 관리 · 관리자 열람 ────────────────────────────────
-export type StaffRole = 'admin' | 'moderator';
+export type { StaffRole } from './adminRoles';
+import type { StaffRole } from './adminRoles';
 
 export type UserRow = {
 	id: string;

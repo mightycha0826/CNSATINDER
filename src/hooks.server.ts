@@ -1,6 +1,7 @@
 import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
 import { readSession } from '$lib/server/adminSession';
 import { adminRpc } from '$lib/server/supabaseAdmin';
+import type { TeamMember } from '$lib/adminRoles';
 
 /**
  * /admin 가드 (dabang-kiosk hooks.server.ts 구조 + 강화된 인증).
@@ -13,6 +14,7 @@ const OPEN = new Set(['/admin/login', '/admin/session']);
 
 export const handle: Handle = async ({ event, resolve }) => {
 	event.locals.staff = null;
+	event.locals.team = null;
 	const path = event.url.pathname;
 	const isAdmin = path === '/admin' || path.startsWith('/admin/');
 
@@ -21,8 +23,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 		try {
 			const uid = await readSession(event.cookies);
 			if (uid) {
-				const role = await adminRpc<string | null>('admin_staff_role', { p_uid: uid });
-				if (role === 'admin' || role === 'moderator') event.locals.staff = { id: uid, role };
+				// 역할 확인 + "지금 보는 화면" 적기 + 운영진 현황(오른쪽 판)을 한 번에 (Phase 49 — 요청 수 그대로).
+				// 화면 주소는 페이지(또는 그 데이터)를 열 때만 — 현황 새로고침 · 파일 내려받기 같은 요청은 null(그대로 둔다)
+				const page = event.request.method === 'GET' && !/\/(status|team|export|session)(\/|$)/.test(path) ? path.replace(/\/__data\.json$/, '') || '/admin' : null;
+				const t = await adminRpc<{ role: string; team: TeamMember[] } | null>('admin_staff_touch', { p_uid: uid, p_path: page });
+				const role = t?.role;
+				if (role === 'admin' || role === 'moderator' || role === 'developer') {
+					event.locals.staff = { id: uid, role };
+					event.locals.team = t!.team;
+				}
 			}
 		} catch (e) {
 			// 설정 누락(서버 키·세션 비밀)은 로그인 화면에서 안내한다

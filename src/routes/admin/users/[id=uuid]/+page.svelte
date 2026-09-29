@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { ACTION_LABEL, CLOSE_LABEL, REASON_LABEL, STATUS_LABEL, fmtTime, type UserLetterRow, TARGET_LABEL } from '$lib/adminTypes';
 	import AccountStatus from '$lib/admin/AccountStatus.svelte';
+	import { ROLE_LABEL } from '$lib/adminRoles';
 	import FormMsg from '$lib/admin/FormMsg.svelte';
 	import SanctionForm from '$lib/admin/SanctionForm.svelte';
 	import { confirmed } from '$lib/admin/confirm';
@@ -63,7 +64,7 @@
 	<div>
 		<h1 class="a-h1">
 			{p.nickname ?? '(이름 없음)'}<Sid label={data.students[p.id]} />
-			{#if d.staff_role}<span class="pill acc">{d.staff_role === 'admin' ? '관리자' : '운영진'}</span>{/if}
+			{#if d.staff_role}<span class="pill acc">{ROLE_LABEL[d.staff_role]}</span>{/if}
 			<AccountStatus account={p} pill />
 		</h1>
 		<p class="a-sub">

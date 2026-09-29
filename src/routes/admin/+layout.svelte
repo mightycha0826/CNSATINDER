@@ -3,6 +3,8 @@
 	import { page } from '$app/state';
 	import '$lib/admin/admin.css';
 	import ConfirmDialog from '$lib/admin/ConfirmDialog.svelte';
+	import TeamPanel from '$lib/admin/TeamPanel.svelte';
+	import { ROLE_COLOR, ROLE_LABEL, can, pagePerm } from '$lib/adminRoles';
 
 	let { data, children } = $props();
 
@@ -34,7 +36,8 @@
 	});
 
 	// 메뉴 (Phase 48 — 하는 일별로 묶은 왼쪽 사이드바. 좁은 화면은 위쪽 한 줄로 밀기)
-	const GROUPS = [
+	// 역할(Phase 49)마다 볼 수 있는 메뉴만 — 권한표는 lib/adminRoles.ts
+	const GROUPS: { title: string; items: { href: string; label: string; ic: string }[] }[] = [
 		{ title: '지켜보기', items: [{ href: '/admin/live', label: '실시간', ic: 'M3 12h4l3-8 4 16 3-8h4' }] },
 		{
 			title: '신고 처리',
@@ -47,7 +50,7 @@
 			title: '사람 · 대화',
 			items: [
 				{ href: '/admin/users', label: '사용자', ic: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4.5-6 8-6s7 2 8 6' },
-				{ href: '/admin/rooms', label: '전체 대화', admin: true, ic: 'M3 5h12v9H7l-4 3V5zM9 17h8l4 3V9h-3' }
+				{ href: '/admin/rooms', label: '전체 대화', ic: 'M3 5h12v9H7l-4 3V5zM9 17h8l4 3V9h-3' }
 			]
 		},
 		{
@@ -66,7 +69,7 @@
 		}
 	];
 	const NAV = $derived(
-		GROUPS.map((g) => ({ ...g, items: g.items.filter((n) => !('admin' in n && n.admin) || data.staff?.role === 'admin') })).filter((g) => g.items.length)
+		GROUPS.map((g) => ({ ...g, items: g.items.filter((n) => can(data.staff?.role, pagePerm(n.href))) })).filter((g) => g.items.length)
 	);
 	const active = (href: string) =>
 		href === '/admin'
@@ -120,7 +123,7 @@
 				{/each}
 			</nav>
 			<div class="me">
-				<span class="who"><i class="role" class:adm={data.staff.role === 'admin'}></i>{data.staff.role === 'admin' ? '관리자' : '운영진'}</span>
+				<span class="who"><i class="role" style:background={ROLE_COLOR[data.staff.role]}></i>{ROLE_LABEL[data.staff.role]}</span>
 				<button class="out" onclick={logout}>로그아웃</button>
 			</div>
 		</aside>
@@ -129,6 +132,10 @@
 	<main class="wrap">
 		{@render children()}
 	</main>
+
+	{#if data.staff && data.team}
+		<TeamPanel team={data.team} />
+	{/if}
 </div>
 
 <ConfirmDialog />
@@ -136,12 +143,21 @@
 <style>
 	/* Phase 48 — 넓은 화면: 왼쪽 사이드바(하는 일별 묶음) + 오른쪽 본문. 좁은 화면(≤900): 위쪽 머리글 + 옆으로 미는 메뉴 한 줄 */
 	:global(body.admin #app) {
-		max-width: 1320px;
+		max-width: 1560px;
 	}
+	/* 왼쪽 메뉴 · 본문 · 오른쪽 운영진 현황(Phase 49, 넓은 화면만) */
 	.shell {
 		display: grid;
-		grid-template-columns: 220px minmax(0, 1fr);
+		grid-template-columns: 220px minmax(0, 1fr) 250px;
 		min-height: 100dvh;
+	}
+	@media (max-width: 1180px) {
+		.shell {
+			grid-template-columns: 220px minmax(0, 1fr);
+		}
+		.shell > :global(.team) {
+			display: none;
+		}
 	}
 	.shell.solo {
 		grid-template-columns: minmax(0, 1fr);
@@ -240,9 +256,6 @@
 		height: 8px;
 		border-radius: 50%;
 		background: #22c55e;
-	}
-	.role.adm {
-		background: var(--accent);
 	}
 	.out {
 		font-size: 13px;

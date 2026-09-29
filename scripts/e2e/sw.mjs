@@ -27,6 +27,7 @@ const settings = () => ({ is_open: isOpen, notice: '', room_minutes: 10, extend_
 
 const RPC = {
 	admin_staff_role: () => 'admin',
+	admin_staff_touch: () => ({ role: 'admin', team: [] }),
 	admin_stats: () => ({ open_reports: reports.filter((r) => r.status === 'open').length, reviewing: 0, open_letter_reports: 0, active_rooms: 1, seeking_now: 0, restricted_users: 0, rooms_24h: 2, letters_24h: 0, is_open: isOpen }),
 	admin_list_reports: (a) => reports.filter((r) => a.p_status === 'all' || r.status === a.p_status),
 	admin_list_letter_reports: () => [],

@@ -3367,5 +3367,32 @@ console.log('\n[85] 편지 폴더 — 여러 통 골라 폴더에 · 빼기 · �
 	check('없는 폴더를 열면 빈 목록', (await rpcAs(B, 'dm_mailbox', 'received', null, 999999)).letters.length === 0);
 }
 
+console.log('\n[86] 운영자 · 개발자 · 관리자 역할 나누기 · 운영진 현황 (Phase 49)');
+{
+	const dev = await person('m', 'f');
+	const mod = await person('f', 'm');
+	const adm = await person('m', 'm');
+	const kid = await person('f', 'f');
+	await db.query(`insert into private.staff (user_id, role, display_name) values ($1, 'developer', '개발'), ($2, 'moderator', null), ($3, 'admin', null)`, [dev, mod, adm]);
+	const t = await svc('admin_staff_touch', dev, '/admin/settings');
+	check('★ 개발자 역할 · 현황 판에 팀 · 지금 보는 화면', t.role === 'developer' && t.team.length >= 3 && t.team.find((x) => x.me)?.path === '/admin/settings' && t.team.find((x) => x.me)?.name === '개발', JSON.stringify(t).slice(0, 300));
+	check('경로 없이 부르면(현황 새로고침) 화면은 그대로', (await svc('admin_staff_touch', dev, null)).team.find((x) => x.me).path === '/admin/settings');
+	check('명단에 없으면 null', (await svc('admin_staff_touch', kid, '/admin')) === null);
+	await expectError('없는 역할은 못 넣는다', () => db.query(`update private.staff set role = 'owner' where user_id = $1`, [dev]), 'check');
+	// 개발자: 설정 · 금칙어 · 문의 · 실시간은 되고, 학생을 다루는 조치는 안 된다
+	check('★ 개발자: 운영 수치 변경 가능', (await svc('admin_update_settings', JSON.stringify({ room_minutes: 6 }), dev)).room_minutes === 6);
+	await svc('admin_update_settings', JSON.stringify({ room_minutes: 5 }), adm);
+	check('개발자: 금칙어 저장 가능', (await svc('admin_set_banned_terms', ['바\\s*보'], dev)) != null);
+	await svc('admin_set_banned_terms', [], adm);
+	check('개발자: 문의 목록 · 실시간 · 공지 목록', typeof (await svc('admin_inquiries', dev)).open === 'number' && Array.isArray(await svc('admin_live_users', dev)) && Array.isArray(await svc('admin_notices', dev)));
+	await expectError('★ 개발자: 제재 불가', () => svc('admin_sanction', kid, 'warn', null, dev, null, ''), 'no_permission');
+	await expectError('★ 개발자: 사용자 상세 불가', () => svc('admin_user', kid, dev), 'no_permission');
+	await expectError('★ 개발자: 신원 열람 불가', () => svc('admin_log_identity_view', dev, [kid], null), 'admin_only');
+	await expectError('개발자: 공지 올리기 불가', () => svc('admin_post_notice', dev, '제목', ''), 'admin_only');
+	// 운영자: 조치는 되고 설정 수치는 안 된다 (그대로)
+	await expectError('★ 운영자: 금칙어 변경 불가', () => svc('admin_set_banned_terms', ['x'], mod), 'admin_only');
+	check('운영자: 서비스 열고 닫기 가능', (await svc('admin_update_settings', JSON.stringify({ is_open: true }), mod)).is_open === true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

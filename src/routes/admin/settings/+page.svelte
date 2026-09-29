@@ -2,10 +2,12 @@
 	import { enhance } from '$app/forms';
 	import { ack, confirmed } from '$lib/admin/confirm';
 	import FormMsg from '$lib/admin/FormMsg.svelte';
+	import { can } from '$lib/adminRoles';
 
 	let { data, form } = $props();
 	const s = $derived(data.s);
-	const isAdmin = $derived(data.staff?.role === 'admin');
+	// 운영 수치 · AI · 금칙어 · 잠금은 개발자 · 관리자 (Phase 49). 서비스 열고 닫기는 누구나
+	const isAdmin = $derived(can(data.staff?.role, 'settings'));
 
 	// 전교생에게 바로 적용되는 스위치라 한 번 더 묻는다
 	const askToggle = confirmed(() =>
@@ -69,7 +71,7 @@
 	{#if isAdmin}
 		<button class="btn save">저장</button>
 	{:else}
-		<p class="muted small">운영 수치는 관리자만 바꿀 수 있어요. (서비스 열고 닫기는 운영진도 가능)</p>
+		<p class="muted small">운영 수치는 개발자 · 관리자만 바꿀 수 있어요. (서비스 열고 닫기는 운영자도 가능)</p>
 	{/if}
 </form>
 

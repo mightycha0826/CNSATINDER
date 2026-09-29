@@ -1298,11 +1298,11 @@ returns jsonb language sql security definer set search_path = public stable as $
 $fn$;
 
 -- 허용된 키만 반영. 범위는 테이블 check 제약이 지킨다.
--- 운영진(moderator)은 서비스 열고 닫기(is_open)만, 나머지 수치·공지는 관리자만.
+-- 운영자(moderator)는 서비스 열고 닫기(is_open)만, 나머지 수치·홈 배너는 개발자 · 관리자 (Phase 49 권한표 settings)
 create or replace function public.admin_update_settings(p_patch jsonb, p_staff uuid)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 begin
-  if private.require_staff(p_staff) <> 'admin'
+  if not private.staff_can(private.require_perm(p_staff, 'service'), 'settings')
      and exists (select 1 from jsonb_object_keys(coalesce(p_patch, '{}'::jsonb)) k where k <> 'is_open') then
     raise exception 'admin_only';
   end if;
@@ -2685,10 +2685,47 @@ begin
   select role into v from private.staff where user_id = p_staff;
   if v is null then raise exception 'not_staff'; end if;
   if p_admin and v <> 'admin' then raise exception 'admin_only'; end if;
+  -- 개발자(Phase 49)는 학생을 다루는 조치(신고 · 제재 · 사용자 · 개인 공지 · 업적)를 못 한다.
+  -- 개발자도 되는 곳(설정 · 문의 · 실시간 · 공지 목록)은 private.require_perm 을 쓴다
+  if v = 'developer' then raise exception 'no_permission'; end if;
   return v;
 end
 $fn$;
 revoke all on function private.require_staff(uuid, boolean) from public, anon, authenticated;
+
+-- 역할별 권한표 (Phase 49) — 운영자(moderator) · 개발자(developer) · 관리자(admin). 서버(lib/server/adminAuth.ts PERMS)도 같은 표
+--   moderate  신고 처리 · 제재 · 사용자 · 개인 공지 · 업적     운영자 · 관리자
+--   identity  학생 신원(이메일 · 학번 이름) · 전체 대화 · 편지 활동   관리자
+--   settings  운영 수치 · AI · 금칙어 · 익명편지 잠금 · 홈 배너       개발자 · 관리자
+--   service   서비스 열고 닫기                                    모두
+--   inquiry   문의 보기 · 답변                                   모두
+--   notice    공지 올리기 · 내리기                                관리자
+--   any       운영진이면 누구나 (실시간 · 공지 목록)
+create or replace function private.staff_can(p_role text, p_perm text)
+returns boolean language sql immutable set search_path = '' as $fn$
+  select case p_perm
+    when 'moderate' then p_role in ('moderator', 'admin')
+    when 'identity' then p_role = 'admin'
+    when 'settings' then p_role in ('developer', 'admin')
+    when 'service' then p_role in ('moderator', 'developer', 'admin')
+    when 'inquiry' then p_role in ('moderator', 'developer', 'admin')
+    when 'notice' then p_role = 'admin'
+    when 'any' then p_role in ('moderator', 'developer', 'admin')
+    else false end;
+$fn$;
+revoke all on function private.staff_can(text, text) from public, anon, authenticated;
+
+create or replace function private.require_perm(p_staff uuid, p_perm text)
+returns text language plpgsql security definer set search_path = public, private stable as $fn$
+declare v text;
+begin
+  select role into v from private.staff where user_id = p_staff;
+  if v is null then raise exception 'not_staff'; end if;
+  if not private.staff_can(v, p_perm) then raise exception 'no_permission'; end if;
+  return v;
+end
+$fn$;
+revoke all on function private.require_perm(uuid, text) from public, anon, authenticated;
 
 -- 운영진이 정지할 수 있는 최대 일수
 create or replace function private.mod_max_suspend_days() returns int
@@ -3028,7 +3065,7 @@ $do$;
 
 create or replace function public.admin_live_users(p_staff uuid)
 returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare v_admin boolean := private.require_staff(p_staff) = 'admin';
+declare v_admin boolean := private.require_perm(p_staff, 'any') = 'admin'; -- 개발자도 본다 (Phase 49)
 begin
   return (select coalesce(jsonb_agg(x), '[]'::jsonb) from (
     select p.id, p.nickname, p.status, p.suspended_until, p.onboarded, s.role as staff_role,
@@ -3131,7 +3168,7 @@ grant execute on function public.my_notices(), public.mark_notices_seen(bigint) 
 create or replace function public.admin_notices(p_staff uuid)
 returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
 begin
-  perform private.require_staff(p_staff);
+  perform private.require_perm(p_staff, 'any'); -- 개발자도 목록은 본다 (Phase 49)
   return coalesce((
     select jsonb_agg(jsonb_build_object('id', id, 'title', title, 'body', body, 'created_at', created_at)
                      order by id desc)
@@ -3787,7 +3824,7 @@ create or replace function public.admin_set_banned_terms(p_terms text[], p_staff
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare t text; v_clean text[] := '{}';
 begin
-  if private.require_staff(p_staff) <> 'admin' then raise exception 'admin_only'; end if;
+  if not private.staff_can(private.require_perm(p_staff, 'any'), 'settings') then raise exception 'admin_only'; end if; -- 개발자 · 관리자 (Phase 49)
   foreach t in array coalesce(p_terms, '{}') loop
     t := lower(btrim(t));
     if t = '' or t = any(v_clean) then continue; end if;
@@ -5945,7 +5982,7 @@ grant execute on function public.my_inquiries() to authenticated;
 create or replace function public.admin_inquiries(p_staff uuid)
 returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
 begin
-  perform private.require_staff(p_staff);
+  perform private.require_perm(p_staff, 'inquiry'); -- 개발자도 (버그 문의, Phase 49)
   return jsonb_build_object(
     'open', (select count(*) from private.inquiries where answered_at is null),
     'items', coalesce((
@@ -5963,7 +6000,7 @@ create or replace function public.admin_answer_inquiry(p_staff uuid, p_id bigint
 returns bigint language plpgsql security definer set search_path = public, private as $fn$
 declare q private.inquiries%rowtype; a text := btrim(coalesce(p_answer, '')); v bigint;
 begin
-  perform private.require_staff(p_staff);
+  perform private.require_perm(p_staff, 'inquiry'); -- 개발자도 (버그 문의, Phase 49)
   if char_length(a) not between 1 and 2000 then raise exception 'bad_answer'; end if;
   select * into q from private.inquiries where id = p_id for update;
   if not found then raise exception 'inquiry_not_found'; end if;
@@ -6344,3 +6381,34 @@ begin
   end loop;
 end
 $do$;
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 49 — 운영자 · 개발자 · 관리자 역할 나누기 · 운영진 현황(오른쪽 판)
+-- 역할: moderator(운영자) · developer(개발자, 새로) · admin(관리자). 권한표는 private.staff_can (위 require_staff 옆).
+-- 현황: 운영자 화면은 원래 요청마다 역할을 확인한다(admin_staff_role). 그 한 번에 "마지막으로 본 시각 · 화면"을 적고
+--       팀 목록을 같이 돌려준다(admin_staff_touch) — Supabase 요청 수는 그대로.
+-- 역할 바꾸기: update private.staff set role = 'developer', display_name = '이름' where user_id = '...';
+-- ════════════════════════════════════════════════════════════════════
+alter table private.staff drop constraint if exists staff_role_check;
+alter table private.staff add constraint staff_role_check check (role in ('moderator', 'developer', 'admin'));
+alter table private.staff add column if not exists display_name text check (display_name is null or char_length(display_name) between 1 and 20);
+alter table private.staff add column if not exists last_seen timestamptz;
+alter table private.staff add column if not exists last_path text;
+
+-- 역할 확인 + 지금 보는 화면 적기 + 팀 현황. 명단에 없으면 null. p_path 가 null 이면 화면은 그대로(현황 새로고침)
+create or replace function public.admin_staff_touch(p_uid uuid, p_path text default null)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare v text;
+begin
+  update private.staff set last_seen = now(), last_path = coalesce(left(p_path, 80), last_path)
+   where user_id = p_uid returning role into v;
+  if v is null then return null; end if;
+  return jsonb_build_object('role', v, 'team', (
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'id', s.user_id, 'name', coalesce(s.display_name, p.nickname, '이름 없음'), 'role', s.role,
+             'last_seen', s.last_seen, 'path', s.last_path, 'me', s.user_id = p_uid)
+           order by s.last_seen desc nulls last), '[]'::jsonb)
+      from private.staff s left join public.profiles p on p.id = s.user_id), 'now', now());
+end
+$fn$;
+revoke all on function public.admin_staff_touch(uuid, text) from public, anon, authenticated;

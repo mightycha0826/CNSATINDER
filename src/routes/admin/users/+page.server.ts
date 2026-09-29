@@ -1,5 +1,5 @@
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import { friendly, isAdmin, studentLabels } from '$lib/server/adminAuth';
+import { friendly, guard, isAdmin, studentLabels } from '$lib/server/adminAuth';
 import type { UserRow } from '$lib/adminTypes';
 import type { PageServerLoad } from './$types';
 
@@ -10,7 +10,8 @@ const FILTERS = ['all', 'restricted', 'staff'] as const;
  * 검색 결과에는 이메일이 없다. 이메일은 사용자 상세의 "이메일 확인" 으로만.
  */
 export const load: PageServerLoad = async ({ url, locals }) => {
-	const q = (url.searchParams.get('q') ?? '').trim().slice(0, 80);
+	guard(locals, url); // 운영자 · 관리자 (Phase 49)
+	const q =(url.searchParams.get('q') ?? '').trim().slice(0, 80);
 	const f = url.searchParams.get('filter');
 	const filter = (FILTERS as readonly string[]).includes(f ?? '') ? (f as (typeof FILTERS)[number]) : 'all';
 

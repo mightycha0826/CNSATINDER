@@ -1,6 +1,7 @@
-import { error, fail } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import { adminRpc, emailOf, rosterNameOf } from './supabaseAdmin';
 import type { Identity } from '$lib/adminTypes';
+import { can, homeOf, pagePerm, type Perm } from '$lib/adminRoles';
 
 /**
  * 운영진(moderator) / 관리자(admin) 권한 — Phase 11
@@ -11,6 +12,19 @@ import type { Identity } from '$lib/adminTypes';
 export const MOD_MAX_SUSPEND_DAYS = 7;
 
 export const isAdmin = (locals: App.Locals) => locals.staff?.role === 'admin';
+/** 역할 권한표(lib/adminRoles.ts, Phase 49) — 운영자 · 개발자 · 관리자 */
+export const allowed = (locals: App.Locals, perm: Perm) => can(locals.staff?.role, perm);
+
+/**
+ * 역할마다 볼 수 있는 화면 (Phase 49) — 화면 load 맨 앞에서. 주소를 직접 쳐도 403.
+ * 첫 화면(/admin = 채팅 신고)을 못 보는 역할(개발자)은 제 첫 화면으로 보낸다.
+ */
+export function guard(locals: App.Locals, url: URL) {
+	const role = locals.staff?.role;
+	if (can(role, pagePerm(url.pathname))) return;
+	if (role && (url.pathname === '/admin' || url.pathname === '/admin/')) redirect(303, homeOf(role));
+	error(403, '이 역할로는 볼 수 없는 화면');
+}
 
 /** 관리자 전용 화면 — 운영진이 주소를 직접 쳐서 들어와도 403 */
 export function requireAdmin(locals: App.Locals) {
@@ -49,6 +63,7 @@ const DB_ERR: Record<string, string> = {
 	admin_only: '관리자만 할 수 있는 조치',
 	mod_days_limit: `운영진은 최대 ${MOD_MAX_SUSPEND_DAYS}일까지 정지 가능`,
 	not_staff: '운영진 명단에 없는 계정',
+	no_permission: '이 역할로는 할 수 없는 조치',
 	days_required: '정지 기간을 입력해야 함',
 	user_not_found: '탈퇴한 계정이라 조치할 수 없음',
 	notice_not_found: '이미 내린 공지',

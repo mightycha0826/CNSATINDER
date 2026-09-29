@@ -24,6 +24,7 @@ let dmStatus = 'closed';
 const row = (id, source, reporter) => ({ id, created_at: t, reason: source === 'auto' ? 'self_harm' : 'harassment', note: source === 'auto' ? '[자동 감지] "요즘 사라지고 싶어" — 위기 신호' : '욕했어요', status: 'open', reported_id: A, reporter_id: reporter, source, reported_30d: 1, evidence_count: 2, reported_status: 'active' });
 const RPC = {
 	admin_staff_role: () => 'admin',
+	admin_staff_touch: () => ({ role: 'admin', team: [] }),
 	admin_stats: () => ({ open_reports: 2, reviewing: 0, open_letter_reports: 0, active_rooms: 1, seeking_now: 0, restricted_users: 0, rooms_24h: 1, letters_24h: 0, is_open: true }),
 	admin_list_reports: () => [row(REP, 'auto', null), row(HUMAN, 'user', B)],
 	admin_student_labels: () => ({}),

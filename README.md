@@ -552,4 +552,13 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       메뉴: 왼쪽 사이드바를 하는 일별로 묶음(지켜보기 · 신고 처리 · 사람과 대화 · 소통 · 운영) + 아이콘, 좁은 화면은 위쪽 한 줄 밀기.
       고친 칸 표시: 설정 폼에서 값을 바꾸면 그 줄에 테마 색 막대, 저장 단추에 빛 — 저장하면 걷힌다. 카드 · 표 · 수치 띠 다듬기.
       편지함: 책상 판자 230 → 300. 줄바꿈 검사(`wrap.mjs`)에 폴더 화면 · `WRAP_ENGINE=webkit`(사파리 엔진) 추가
+- [x] **Phase 49 — 운영자 · 개발자 · 관리자 역할 나누기 · 운영진 현황 판**
+      역할 셋(`private.staff.role`): 운영자(moderator) · 개발자(developer, 새로) · 관리자(admin). 권한표는 DB `private.staff_can` 과
+      `lib/adminRoles.ts` 가 같은 표 — moderate(신고 · 제재 · 사용자 · 개인 공지 · 업적: 운영자 · 관리자) / identity(신원 · 전체 대화 · 편지 활동: 관리자) /
+      settings(운영 수치 · AI · 금칙어 · 잠금 · 홈 배너: 개발자 · 관리자) / service(서비스 열고 닫기) · inquiry(문의) · audit(활동 기록): 모두 / notice(공지 올리기: 관리자).
+      세 겹으로 막는다: 메뉴(권한 없는 메뉴 숨김) · 화면 load(`guard()` — 주소를 쳐도 403, 개발자는 첫 화면이 실시간) · DB 함수(`require_staff` 는 개발자를 막고,
+      개발자도 되는 곳은 `require_perm`). 오른쪽 운영진 현황(디스코드 멤버 목록처럼): 역할별 묶음 · 접속 중(2분)/자리 비움(10분)/오프라인 · 하는 일("채팅 신고 보는 중") ·
+      마지막 접속. 요청마다 하던 역할 확인을 `admin_staff_touch` 로 바꿔 그 한 번에 마지막 화면을 적고 팀 목록을 받는다(요청 수 그대로), 가만히 있으면 1분마다(탭이 보일 때만).
+      역할 · 이름 정하기: `update private.staff set role = 'developer', display_name = '홍길동' where user_id = '…';`
+      스키마 테스트 [86], 화면 테스트 `audit` [13], 실DB 반영 (phase49_staff_roles_presence)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험
