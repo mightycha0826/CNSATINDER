@@ -38,12 +38,17 @@ function world({ named = true } = {}) {
 	};
 }
 const pub = (l) => { const { body, ...rest } = l; return { ...rest, removed: false, thread_status: 'open' }; };
-const folderList = (w) => w.folders.map((f) => ({ ...f, count: [...w.filed.values()].filter((x) => x === f.id).length }));
+// 폴더의 편지 수 — 전체 · 받은 편지 · 보낸 편지 (Phase 47-3)
+const folderCounts = (w, id) => {
+	const ls = w.letters.filter((l) => !w.hidden.has(l.thread_id) && w.filed.get(l.id) === id);
+	return { count: ls.length, received: ls.filter((l) => l.box === 'received').length, sent: ls.filter((l) => l.box === 'sent').length };
+};
+const folderList = (w) => w.folders.map((f) => ({ ...f, ...folderCounts(w, f.id) }));
 const mailbox = (w, box, folder = null) => {
 	const seen = w.letters.filter((l) => !w.hidden.has(l.thread_id)).sort((a, b) => b.id - a.id);
 	if (folder != null) {
 		const f = w.folders.find((x) => x.id === folder);
-		return { letters: f ? seen.filter((l) => w.filed.get(l.id) === folder).map(pub) : [], folder: f ? { id: f.id, name: f.name } : null, server_now: new Date().toISOString() };
+		return { letters: f ? seen.filter((l) => w.filed.get(l.id) === folder).map(pub) : [], folder: f ? { id: f.id, name: f.name, ...folderCounts(w, f.id) } : null, server_now: new Date().toISOString() };
 	}
 	return { letters: seen.filter((l) => l.box === box && !w.filed.has(l.id)).map(pub), folders: folderList(w), server_now: new Date().toISOString() };
 };
@@ -398,7 +403,8 @@ try {
 	await p7.waitForFunction(() => !document.querySelector('.bar'), null, { timeout: 4000 }).catch(() => {}); await p7.waitForTimeout(600);
 	check('★ 새 폴더를 만들고 넣는다 — dm_folder_put (고른 편지 · 이름)', JSON.stringify(called(w7, 'dm_folder_put').at(-1)?.[1]) === JSON.stringify({ p_msgs: [60, 50], p_folder: null, p_name: '소중한 편지' }), JSON.stringify(called(w7, 'dm_folder_put')));
 	check('넣으면 고르기가 끝나고 알림', (await p7.locator('.topbar .title').innerText()) === '편지 보관함' && (await p7.getByText("'소중한 편지' 폴더에 2통을 넣었어요").count()) === 1);
-	check('★ 폴더 서랍에 "소중한 편지 2통" · 넣은 편지는 목록에서 빠진다', (await p7.locator('.folders .folder').getAttribute('aria-label')) === '소중한 편지 폴더 — 편지 2통'
+	check('★ 폴더 서랍에 "소중한 편지" · 받은 · 보낸 편지 수를 나눠서 · 넣은 편지는 목록에서 빠진다', (await p7.locator('.folders .folder').getAttribute('aria-label')) === '소중한 편지 폴더 — 편지 2통 (받은 편지 1 · 보낸 편지 1)'
+		&& (await p7.locator('.folders .fcount').innerText()) === '받은 1 · 보낸 1'
 		&& (await p7.locator('.archive .stack .item').count()) === 0, await p7.locator('.folders').innerText().catch(() => ''));
 	await p7.screenshot({ path: `${SP}/letters-folder-3-shelf.png` });
 	await p7.goBack(); await p7.waitForTimeout(600);
@@ -411,10 +417,27 @@ try {
 		&& (await p7.locator('.stack .item').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).join('|') === '익명의 남학생에게서 온 편지|박받음에게 보낸 편지, 답장 옴',
 		(await p7.locator('.stack .item').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).join('|'));
 	await p7.screenshot({ path: `${SP}/letters-folder-4-folder.png` });
+	// 받은 · 보낸 편지 나눠 보기 (Phase 47-3)
+	const dirs = await p7.locator('.stack .item .dir').evaluateAll((els) => els.map((e) => `${e.textContent.trim()}${e.classList.contains('out') ? ':out' : ''}`));
+	check('★ 섞인 폴더: 봉투마다 "받은 편지" · "보낸 편지" 딱지 (보낸 편지는 다른 색)', dirs.join('|') === '받은 편지|보낸 편지:out', dirs.join('|'));
+	const tabs7 = await p7.getByRole('tab').evaluateAll((els) => els.map((e) => `${e.getAttribute('aria-label')}${e.getAttribute('aria-selected') === 'true' ? '*' : ''}`));
+	check('★ 섞인 폴더: 전체 · 받은 편지 · 보낸 편지 나눠 보기 (수와 함께)', tabs7.join('|') === '전체 2통*|받은 편지 1통|보낸 편지 1통', tabs7.join('|'));
+	await p7.getByRole('tab', { name: '보낸 편지' }).click(); await p7.waitForTimeout(500);
+	const sentOnly = await p7.locator('.stack .item').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+	check('★ "보낸 편지"를 누르면 보낸 편지만', sentOnly.join('|') === '박받음에게 보낸 편지, 답장 옴', sentOnly.join('|'));
+	await p7.setViewportSize({ width: 280, height: 620 }); await p7.waitForTimeout(300);
+	const segFits = await p7.locator('.seg button').evaluateAll((els) => els.every((e) => e.scrollWidth <= e.clientWidth + 1 && e.getBoundingClientRect().height < 44));
+	await p7.screenshot({ path: `${SP}/letters-folder-4b-kinds-280.png` });
+	check('좁은 폰(280)에서도 나눠 보기 세 칸이 한 줄에 넘치지 않고', segFits);
+	await p7.setViewportSize({ width: 390, height: 844 });
+	await p7.getByRole('tab', { name: '받은 편지' }).click(); await p7.waitForTimeout(500);
+	check('"받은 편지"를 누르면 받은 편지만', (await p7.locator('.stack .item').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).join('|') === '익명의 남학생에게서 온 편지');
+	await p7.getByRole('tab', { name: '전체' }).click(); await p7.waitForTimeout(500);
 	await p7.getByRole('button', { name: '고르기' }).click(); await p7.waitForTimeout(200);
 	await p7.locator('.stack .item').first().click(); await p7.waitForTimeout(150);
 	await p7.getByRole('button', { name: '폴더에서 빼기' }).click(); await p7.waitForTimeout(500);
 	check('★ 폴더에서 빼면 보관함으로 — dm_folder_take · 폴더에 한 통 남는다', JSON.stringify(called(w7, 'dm_folder_take').at(-1)?.[1]) === '{"p_msgs":[60]}' && (await p7.locator('.stack .item').count()) === 1);
+	check('한 가지만 남으면 나눠 보기는 걷히고 딱지는 그대로', (await p7.getByRole('tab').count()) === 0 && (await p7.locator('.stack .item .dir.out').count()) === 1);
 	await p7.getByRole('button', { name: '폴더 메뉴' }).click(); await p7.waitForTimeout(250);
 	await p7.locator('.sheet .item', { hasText: '이름 바꾸기' }).click(); await p7.waitForTimeout(150);
 	await p7.getByRole('textbox', { name: '새 폴더 이름' }).fill('추억');

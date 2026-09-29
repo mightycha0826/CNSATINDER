@@ -47,8 +47,8 @@ export type MailItem = {
 	box?: Box;
 };
 
-/** 편지 폴더 (Phase 47) — 내 것만. count = 지금 볼 수 있는 편지 수 */
-export type Folder = { id: number; name: string; count: number };
+/** 편지 폴더 (Phase 47) — 내 것만. count = 지금 볼 수 있는 편지 수, received · sent = 그중 받은 편지 · 보낸 편지 (Phase 47-3) */
+export type Folder = { id: number; name: string; count: number; received?: number; sent?: number };
 /** 폴더 이름은 20자까지 */
 export const FOLDER_MAX = 20;
 
@@ -121,9 +121,9 @@ export async function fetchMailbox(box: Box, before: number | null = null): Prom
 	return { letters: r?.letters ?? [], folders: r?.folders ?? null };
 }
 
-/** 폴더 하나의 편지 — 받은 · 보낸 편지가 섞여서(편지마다 box). 없는 폴더면 folder = null */
+/** 폴더 하나의 편지 — 받은 · 보낸 편지가 섞여서(편지마다 box) + 폴더 이름 · 편지 수. 없는 폴더면 folder = null */
 export async function fetchFolder(id: number, before: number | null = null) {
-	const r = await rpc<{ letters: MailItem[]; folder: { id: number; name: string } | null } | null>('dm_mailbox', { p_box: 'received', p_before: before, p_folder: id });
+	const r = await rpc<{ letters: MailItem[]; folder: Folder | null } | null>('dm_mailbox', { p_box: 'received', p_before: before, p_folder: id });
 	return { letters: r?.letters ?? [], folder: r?.folder ?? null };
 }
 

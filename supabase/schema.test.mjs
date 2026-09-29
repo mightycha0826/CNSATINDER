@@ -3327,7 +3327,9 @@ console.log('\n[85] 편지 폴더 — 여러 통 골라 폴더에 · 빼기 · �
 	const inF = await rpcAs(B, 'dm_mailbox', 'received', null, fid);
 	check('★ 폴더를 열면 받은 · 보낸 편지가 섞여서 · 편지마다 box · 폴더 이름', inF.folder.name === '고마운 편지'
 		&& JSON.stringify(inF.letters.map((x) => [x.id, x.box])) === JSON.stringify([[s3.msg_id, 'sent'], [s2.msg_id, 'received'], [s1.msg_id, 'received']]), JSON.stringify(inF));
-	check('폴더 목록에 이름 · 편지 수', JSON.stringify((await rpcAs(B, 'dm_mailbox', 'sent')).folders) === JSON.stringify([{ id: fid, name: '고마운 편지', count: 3 }]));
+	check('★ 폴더를 열면 편지 수도 — 전체 · 받은 편지 · 보낸 편지 (Phase 47-3)', inF.folder.count === 3 && inF.folder.received === 2 && inF.folder.sent === 1, JSON.stringify(inF.folder));
+	const fl = (await rpcAs(B, 'dm_mailbox', 'sent')).folders;
+	check('폴더 목록에 이름 · 편지 수(전체 · 받은 · 보낸)', fl.length === 1 && fl[0].id === fid && fl[0].name === '고마운 편지' && fl[0].count === 3 && fl[0].received === 2 && fl[0].sent === 1, JSON.stringify(fl));
 	check('다음 쪽(p_before)에는 폴더 목록을 다시 싣지 않는다', (await rpcAs(B, 'dm_mailbox', 'received', s4.msg_id + 1)).folders == null);
 
 	const again = await rpcAs(B, 'dm_folder_put', [s1.msg_id], null, '고마운 편지');
@@ -3353,8 +3355,9 @@ console.log('\n[85] 편지 폴더 — 여러 통 골라 폴더에 · 빼기 · �
 	check('남의 폴더 이름은 못 바꾼다', (await rpcAs(A, 'dm_folder_rename', fid, '해킹')).status === 'not_found');
 
 	await rpcAs(B, 'dm_close', s2.thread_id);
+	const fAfter = (await rpcAs(B, 'dm_mailbox', 'received')).folders.find((f) => f.id === fid);
 	check('★ 버린 편지는 폴더에서도 안 보이고 수에서도 빠진다', !(await rpcAs(B, 'dm_mailbox', 'received', null, fid)).letters.some((x) => x.id === s2.msg_id)
-		&& (await rpcAs(B, 'dm_mailbox', 'received')).folders.find((f) => f.id === fid).count === 1);
+		&& fAfter.count === 1 && fAfter.received === 1 && fAfter.sent === 0, JSON.stringify(fAfter));
 
 	check('남의 폴더는 못 지운다', (await rpcAs(A, 'dm_folder_delete', fid)).status === 'not_found');
 	check('★ 폴더를 지우면 편지는 보관함으로 돌아온다 (지워지지 않는다)', (await rpcAs(B, 'dm_folder_delete', fid)).status === 'ok' && (await box(B, 'received')).includes(s1.msg_id)

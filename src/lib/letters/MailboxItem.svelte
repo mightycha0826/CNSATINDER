@@ -6,6 +6,8 @@
 	 *   보낸 편지 — 주소 쪽(앞면): To. · 우표 · 소인(날짜) · 스티커(읽음 · 답장 옴)
 	 * 누르면 그 편지를 연다. 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 (LetterMenu).
 	 * 고르는 중(selecting, Phase 47)이면 누르기 · 길게 누르기 모두 고르기/풀기 — 오른쪽 위에 동그라미 체크. 안 연 받은 편지는 못 고른다(흐리게).
+	 * showBox(폴더 안, Phase 47-3) — 받은 · 보낸 편지가 섞여 있으니 왼쪽 위에 "받은 편지"(테마 색 · 들어오는 화살표) /
+	 *   "보낸 편지"(진한 색 · 종이비행기) 딱지. 답장이면 "받은 답장" · "보낸 답장" (따로 붙던 "답장" 딱지 대신)
 	 */
 	import Envelope from './Envelope.svelte';
 	import { borderOf, fromLabel, stampDate, toLabel, type Box, type MailItem } from './api';
@@ -19,6 +21,7 @@
 		tilt = 0,
 		selecting = false,
 		picked = false,
+		showBox = false,
 		onopen,
 		onmenu,
 		ontoggle
@@ -30,6 +33,7 @@
 		tilt?: number;
 		selecting?: boolean;
 		picked?: boolean;
+		showBox?: boolean;
 		onopen: () => void;
 		onmenu: () => void;
 		ontoggle?: () => void;
@@ -71,7 +75,16 @@
 		{sticker}
 		{w}
 	/>
-	{#if item.is_reply}<span class="tag">답장</span>{/if}
+	{#if showBox}
+		<span class="dir" class:out={!received} aria-hidden="true">
+			{#if received}
+				<svg viewBox="0 0 24 24"><path d="M12 4v9m0 0l-4-4m4 4l4-4M5 14v3.5A2.5 2.5 0 007.5 20h9a2.5 2.5 0 002.5-2.5V14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+			{:else}
+				<svg viewBox="0 0 24 24"><path d="M20.5 3.5L10 14M20.5 3.5L14 20.5l-4-6.5-6.5-4 17-6.5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+			{/if}
+			{received ? '받은' : '보낸'} {item.is_reply ? '답장' : '편지'}
+		</span>
+	{:else if item.is_reply}<span class="tag">답장</span>{/if}
 	{#if received && !item.opened}<span class="new">새 편지</span>{/if}
 	{#if item.removed}<span class="tag removed">내려진 편지</span>{/if}
 	{#if selecting && pickable}
@@ -176,5 +189,32 @@
 		top: auto;
 		bottom: -8px;
 		color: var(--danger);
+	}
+	/* 받은 · 보낸 딱지 (폴더 안) — 받은 편지는 흰 바탕 테마 색 글씨, 보낸 편지는 진한 바탕 흰 글씨 (다크 모드에선 반대로 밝은 바탕) */
+	.dir {
+		position: absolute;
+		top: -10px;
+		left: -4px;
+		z-index: 1;
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 10px 4px 8px;
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--accent);
+		font-size: 12px;
+		font-weight: 800;
+		white-space: nowrap;
+		box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent), 0 2px 6px rgb(0 0 0 / 0.15);
+	}
+	.dir.out {
+		background: var(--text);
+		color: var(--bg);
+		box-shadow: 0 2px 6px rgb(0 0 0 / 0.2);
+	}
+	.dir svg {
+		width: 14px;
+		height: 14px;
 	}
 </style>

@@ -5,6 +5,7 @@
 	 * 누르면 그 편지를 연다. 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴(LetterMenu) — 버리기 · 차단 · 신고를 하면 그 사람과의 편지를 목록에서 뺀다.
 	 * loading 이면 봉투 모양 빈 자리(ghosts 장)가 은은히 숨 쉰다 (G4).
 	 * 고르는 중(selecting, Phase 47)이면 누르면 고르기 — picked(고른 편지 id) · ontoggle. 폴더 안에서는 편지마다 받은/보낸이 달라서 it.box 를 먼저 본다.
+	 * showBox(폴더 안, Phase 47-3) — 봉투마다 "받은 편지" · "보낸 편지" 딱지.
 	 */
 	import { goto } from '$app/navigation';
 	import { S } from '$lib/state.svelte';
@@ -21,6 +22,7 @@
 		ghosts = 1,
 		selecting = false,
 		picked = [],
+		showBox = false,
 		ontoggle,
 		ondrop
 	}: {
@@ -30,6 +32,7 @@
 		ghosts?: number;
 		selecting?: boolean;
 		picked?: number[];
+		showBox?: boolean;
 		ontoggle?: (it: MailItem) => void;
 		/** 봉투 메뉴로 그 사람과의 편지를 지웠다 — BOX 밖의 목록(폴더 화면)도 고치게 */
 		ondrop?: (threadId: number) => void;
@@ -57,6 +60,7 @@
 					{w}
 					tilt={tilt(i)}
 					{selecting}
+					{showBox}
 					picked={picked.includes(it.id)}
 					onopen={() => goto(`/letters/m/${it.id}`)}
 					onmenu={() => (menuFor = it)}

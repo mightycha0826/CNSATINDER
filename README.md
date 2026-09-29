@@ -540,4 +540,9 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       소수점만큼 좁게 재면 낱말 넘김(`overflow-wrap`)이 끝 글자를 다음 줄로 보내고, 그라디언트 글자(`background-clip: text`)는 칸 밖으로 나온 획을
       칠하지 않는다(로그인 · 설치 화면은 자간을 좁혀서 R 의 끝이 늘 칸 밖이었다). `.wordmark` 는 늘 한 줄, 칸을 양옆으로 0.12em 넓히고 같은 만큼
       바깥 여백을 당겨 글자 자리는 그대로
+- [x] **Phase 47-3 — 폴더 안에서 받은 편지 · 보낸 편지 나눠 보기**
+      폴더 안 봉투마다 왼쪽 위 딱지 — "받은 편지"(흰 바탕 · 테마 색 · 들어오는 화살표) / "보낸 편지"(진한 바탕 · 종이비행기), 답장이면 "받은 답장" · "보낸 답장".
+      둘 다 들어 있는 폴더는 위에 전체 · 받은 편지 · 보낸 편지 나눠 보기(수와 함께, 한 가지만 남으면 걷힌다). 보관함 서랍의 폴더 카드도 "받은 2 · 보낸 3".
+      서버: `private.dm_folder_counts` — 폴더 목록(`dm_folder_list`)과 폴더 열기(`dm_mailbox` 의 folder)에 count · received · sent (요청 수 그대로).
+      스키마 테스트 [85], 화면 테스트 `letters`, 실DB 반영 (phase47_3_folder_box_counts)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

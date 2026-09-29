@@ -6174,21 +6174,29 @@ returns text language sql immutable set search_path = '' as $fn$
 $fn$;
 revoke all on function private.dm_box_of(private.dm_msgs, private.dm_threads, uuid) from public, anon, authenticated;
 
--- 내 폴더 목록 — 이름 · 들어 있는 편지 수(지금 볼 수 있는 것만), 만든 순서
+-- 폴더 하나의 편지 수 — 지금 볼 수 있는 것만. 전체 · 받은 편지 · 보낸 편지 (Phase 47-3 — 섞인 폴더에서 둘을 나눠 보이게)
+create or replace function private.dm_folder_counts(p_folder bigint, p_me uuid)
+returns jsonb language sql stable security definer set search_path = '' as $fn$
+  select jsonb_build_object('count', count(*), 'received', count(*) filter (where b.bx = 'received'), 'sent', count(*) filter (where b.bx = 'sent'))
+    from private.dm_folder_items i
+    join private.dm_msgs m on m.id = i.msg_id
+    join private.dm_threads t on t.id = m.thread_id
+    cross join lateral (select private.dm_box_of(m, t, p_me) as bx) b
+   where i.folder_id = p_folder and i.owner_id = p_me and m.is_letter and t.status <> 'removed' and b.bx is not null;
+$fn$;
+revoke all on function private.dm_folder_counts(bigint, uuid) from public, anon, authenticated;
+
+-- 내 폴더 목록 — 이름 · 들어 있는 편지 수(전체 · 받은 · 보낸), 만든 순서
 create or replace function private.dm_folder_list(p_me uuid)
 returns jsonb language sql stable security definer set search_path = '' as $fn$
-  select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name, 'count', (
-           select count(*) from private.dm_folder_items i
-             join private.dm_msgs m on m.id = i.msg_id
-             join private.dm_threads t on t.id = m.thread_id
-            where i.folder_id = f.id and m.is_letter and t.status <> 'removed'
-              and private.dm_box_of(m, t, p_me) is not null)) order by f.created_at, f.id), '[]'::jsonb)
+  select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name) || private.dm_folder_counts(f.id, p_me)
+           order by f.created_at, f.id), '[]'::jsonb)
     from private.dm_folders f where f.owner_id = p_me;
 $fn$;
 revoke all on function private.dm_folder_list(uuid) from public, anon, authenticated;
 
 -- 편지함 — 폴더를 알게 (p_folder). 폴더 없이: 그 칸(받은/보낸)의 폴더에 안 넣은 편지 + 첫 쪽이면 내 폴더 목록.
--- 폴더를 주면: 그 폴더의 편지 전부(받은 · 보낸 섞어서, 편지마다 box) + 폴더 이름.
+-- 폴더를 주면: 그 폴더의 편지 전부(받은 · 보낸 섞어서, 편지마다 box) + 폴더 이름 · 편지 수(전체 · 받은 · 보낸, Phase 47-3).
 drop function if exists public.dm_mailbox(text, bigint);
 create or replace function public.dm_mailbox(p_box text, p_before bigint default null, p_folder bigint default null)
 returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
@@ -6233,7 +6241,7 @@ begin
          and case when p_folder is null then b.bx = p_box and fi.msg_id is null else fi.folder_id = p_folder end
        order by m.id desc limit 30) x), '[]'::jsonb),
     'folders', case when p_before is null and p_folder is null then private.dm_folder_list(me) end,
-    'folder', case when p_folder is not null then jsonb_build_object('id', p_folder, 'name', fname) end,
+    'folder', case when p_folder is not null then jsonb_build_object('id', p_folder, 'name', fname) || private.dm_folder_counts(p_folder, me) end,
     'server_now', now());
 end
 $fn$;

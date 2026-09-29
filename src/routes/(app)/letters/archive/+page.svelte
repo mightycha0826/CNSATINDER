@@ -6,6 +6,7 @@
 	 * 누르면 그 편지를 연다. 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 — 열기 · 답장 · 버리기 · 차단 · 신고 (LetterMenu).
 	 * 폴더 (Phase 47): 위 "고르기"로 여러 통을 골라 폴더에 넣는다 (FolderPicker). 폴더는 탭 아래 서랍 줄 — 누르면 그 폴더(/letters/f/[id]).
 	 *   폴더에 넣은 편지는 받은/보낸 편지 목록에서 빠진다. 받은 편지는 봉투를 열어 본 것만 고를 수 있다.
+	 *   서랍의 폴더 카드는 받은 · 보낸 편지가 섞였으면 "받은 2 · 보낸 3" (Phase 47-3).
 	 *   고르는 중에는 안드로이드 뒤로가기가 고르기를 끝낸다 (backClose).
 	 */
 	import BackButton from '$lib/ui/BackButton.svelte';
@@ -76,11 +77,13 @@
 		<!-- 폴더 서랍 — 옆으로 밀어서 본다 -->
 		<ul class="folders" aria-label="내 폴더">
 			{#each BOX.folders as f (f.id)}
+				{@const both = !!f.received && !!f.sent}
+				<!-- 받은 · 보낸 편지가 섞였으면 둘을 나눠 센다 (Phase 47-3) -->
 				<li>
-					<a class="folder" href="/letters/f/{f.id}" aria-label="{f.name} 폴더 — 편지 {f.count}통">
+					<a class="folder" href="/letters/f/{f.id}" aria-label="{f.name} 폴더 — 편지 {f.count}통{both ? ` (받은 편지 ${f.received} · 보낸 편지 ${f.sent})` : ''}">
 						<span class="tabpiece" aria-hidden="true"></span>
 						<span class="fname">{f.name}</span>
-						<span class="fcount num">{f.count}통</span>
+						<span class="fcount num">{both ? `받은 ${f.received} · 보낸 ${f.sent}` : `${f.count}통`}</span>
 					</a>
 				</li>
 			{/each}

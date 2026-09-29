@@ -1,6 +1,7 @@
 <script lang="ts">
 	/**
 	 * 편지 폴더 한 개 (Phase 47) — 보관함의 폴더 서랍에서. 받은 · 보낸 편지가 섞여서 최근 것부터 (봉투는 편지마다 제 모양).
+	 * 봉투마다 "받은 편지" · "보낸 편지" 딱지, 둘 다 들어 있으면 위에 전체 · 받은 편지 · 보낸 편지 나눠 보기(편지 수는 서버가 센 것, Phase 47-3).
 	 * 누르면 편지를 연다. 고르기 → "폴더에서 빼기"(보관함으로) · "다른 폴더로". ⋯ → 이름 바꾸기 · 폴더 지우기(편지는 보관함으로).
 	 */
 	import { page } from '$app/state';
@@ -11,7 +12,7 @@
 	import FolderPicker from '$lib/letters/FolderPicker.svelte';
 	import SelectBar from '$lib/letters/SelectBar.svelte';
 	import { BOX, PAGE, refreshMailbox } from '$lib/letters/mailbox.svelte';
-	import { FOLDER_MAX, deleteFolder, fetchFolder, folderError, renameFolder, takeFromFolder, type MailItem } from '$lib/letters/api';
+	import { FOLDER_MAX, deleteFolder, fetchFolder, folderError, renameFolder, takeFromFolder, type Box, type MailItem } from '$lib/letters/api';
 	import { backClose, historySettled, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { errMsg, toast } from '$lib/state.svelte';
 
@@ -23,7 +24,26 @@
 	let more = $state(false);
 	let busy = $state(false);
 
+	// 받은 · 보낸 편지 수 (폴더 전체 — 아직 안 불러온 쪽까지) · 나눠 보기
+	let counts = $state({ received: 0, sent: 0 });
+	let kind = $state<'all' | Box>('all');
+	const mixed = $derived(counts.received > 0 && counts.sent > 0);
+	const view = $derived(mixed ? kind : 'all');
+	const shown = $derived(view === 'all' ? items : items.filter((x) => x.box === view));
+	const KINDS = [
+		['all', '전체'],
+		['received', '받은 편지'],
+		['sent', '보낸 편지']
+	] as const;
+	const countOf = (k: 'all' | Box) => (k === 'all' ? counts.received + counts.sent : counts[k]);
+	/** 목록에서 빠진 편지 — 수도 같이 줄인다 */
+	function drop(out: (x: MailItem) => boolean) {
+		for (const x of items) if (out(x)) counts[x.box === 'sent' ? 'sent' : 'received']--;
+		items = items.filter((x) => !out(x));
+	}
+
 	async function load() {
+		kind = 'all';
 		try {
 			const r = await fetchFolder(id);
 			if (!r.folder) {
@@ -33,6 +53,8 @@
 			name = r.folder.name;
 			items = r.letters;
 			more = r.letters.length === PAGE;
+			const n = (b: Box) => r.letters.filter((x) => x.box === b).length;
+			counts = { received: r.folder.received ?? n('received'), sent: r.folder.sent ?? n('sent') };
 		} catch (e) {
 			toast(errMsg(e));
 		} finally {
@@ -69,7 +91,7 @@
 	/** 폴더에서 나간 편지 — 목록에서 빼고, 보관함 목록 · 폴더 수를 새로 */
 	function leave(ids: number[]) {
 		const out = new Set(ids);
-		items = items.filter((x) => !out.has(x.id));
+		drop((x) => out.has(x.id));
 		refreshMailbox();
 	}
 	async function takeOut() {
@@ -159,16 +181,32 @@
 			<a class="btn-text" href="/letters/archive">보관함에서 편지 골라 넣기</a>
 		</div>
 	{:else}
-		<MailStack
-			{items}
-			box="received"
-			loading={!loaded}
-			ghosts={2}
-			{selecting}
-			{picked}
-			ontoggle={toggle}
-			ondrop={(t) => (items = items.filter((x) => x.thread_id !== t))}
-		/>
+		{#if mixed}
+			<!-- 받은 · 보낸 편지가 섞인 폴더 — 나눠 보기 (Phase 47-3) -->
+			<div class="seg" role="tablist" aria-label="폴더 편지 나눠 보기" style:--i={KINDS.findIndex(([k]) => k === view)}>
+				{#each KINDS as [k, label] (k)}
+					<button role="tab" class:on={view === k} aria-selected={view === k} aria-label="{label} {countOf(k)}통" onclick={() => (kind = k)}>{label}<span class="n num">{countOf(k)}</span></button>
+				{/each}
+				<span class="thumb" aria-hidden="true"></span>
+			</div>
+		{/if}
+		<!-- 나눠 보기를 바꾸면 봉투가 다시 한 통씩 내려앉는다 -->
+		{#key view}
+			<MailStack
+				items={shown}
+				box="received"
+				loading={!loaded}
+				ghosts={2}
+				{selecting}
+				{picked}
+				showBox
+				ontoggle={toggle}
+				ondrop={(t) => drop((x) => x.thread_id === t)}
+			/>
+		{/key}
+		{#if loaded && !shown.length && items.length}
+			<p class="muted center">불러온 편지 중에는 {view === 'sent' ? '보낸' : '받은'} 편지가 없어요</p>
+		{/if}
 		{#if more}<button class="more" onclick={loadMore} disabled={busy}>{busy ? '가져오는 중…' : '지난 편지 더 보기'}</button>{/if}
 	{/if}
 </div>
@@ -268,6 +306,61 @@
 		height: 9px;
 		border-radius: 4px 6px 0 0;
 		background: #f1d49a;
+	}
+	/* 세 칸 분할 버튼 (보관함의 두 칸과 같은 모양) — 고른 쪽 아래로 흰 알약이 미끄러진다 */
+	.seg {
+		position: relative;
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		padding: 4px;
+		border-radius: 999px;
+		background: var(--field);
+	}
+	.seg button {
+		position: relative;
+		z-index: 1;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		min-width: 0;
+		height: 38px;
+		padding: 0 4px;
+		border-radius: 999px;
+		font-size: 13px;
+		font-weight: 700;
+		white-space: nowrap;
+		color: var(--text-2);
+		transition: color 0.25s;
+	}
+	/* 보이는 칸은 38, 누름은 둘레 여백까지 44 (G1) */
+	.seg button::after {
+		content: '';
+		position: absolute;
+		inset: -4px 0;
+	}
+	.seg button:active {
+		opacity: 0.6;
+	}
+	.seg button.on {
+		color: var(--text);
+	}
+	.seg .n {
+		font-size: 12px;
+		font-weight: 800;
+		opacity: 0.75;
+	}
+	.thumb {
+		position: absolute;
+		top: 4px;
+		bottom: 4px;
+		left: 4px;
+		width: calc((100% - 8px) / 3);
+		border-radius: 999px;
+		background: var(--bg);
+		box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
+		transform: translateX(calc(var(--i, 0) * 100%));
+		transition: transform 0.35s cubic-bezier(0.3, 0.8, 0.25, 1.05);
 	}
 	.more {
 		align-self: center;
