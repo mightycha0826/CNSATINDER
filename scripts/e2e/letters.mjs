@@ -31,11 +31,22 @@ function world({ named = true } = {}) {
 		rooms: [{ room_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', status: 'active', my_seat: 1, partner_alias: '새벽수달', expires_at: new Date(Date.now() + 600_000).toISOString(), round: 1, joined: true, partner_online: false, last_body: '안녕', last_seat: 2, last_at: ago(1), unread: 0 }],
 		hidden: new Set(),
 		wait: false,
-		nextId: 100
+		nextId: 100,
+		// 편지 폴더 (Phase 47) — 폴더 목록 · 편지 id → 폴더 id
+		folders: [],
+		filed: new Map()
 	};
 }
-const pub = (l) => { const { box, body, ...rest } = l; return { ...rest, removed: false, thread_status: 'open' }; };
-const mailbox = (w, box) => ({ letters: w.letters.filter((l) => l.box === box && !w.hidden.has(l.thread_id)).sort((a, b) => b.id - a.id).map(pub), server_now: new Date().toISOString() });
+const pub = (l) => { const { body, ...rest } = l; return { ...rest, removed: false, thread_status: 'open' }; };
+const folderList = (w) => w.folders.map((f) => ({ ...f, count: [...w.filed.values()].filter((x) => x === f.id).length }));
+const mailbox = (w, box, folder = null) => {
+	const seen = w.letters.filter((l) => !w.hidden.has(l.thread_id)).sort((a, b) => b.id - a.id);
+	if (folder != null) {
+		const f = w.folders.find((x) => x.id === folder);
+		return { letters: f ? seen.filter((l) => w.filed.get(l.id) === folder).map(pub) : [], folder: f ? { id: f.id, name: f.name } : null, server_now: new Date().toISOString() };
+	}
+	return { letters: seen.filter((l) => l.box === box && !w.filed.has(l.id)).map(pub), folders: folderList(w), server_now: new Date().toISOString() };
+};
 function open(w, id) {
 	const l = w.letters.find((x) => x.id === id && !w.hidden.has(x.thread_id));
 	if (!l) return { status: 'not_found' };
@@ -62,7 +73,20 @@ async function openApp(browser, w, opts = {}) {
 		if (rpc === 'my_rooms') return json({ rooms: w.rooms, server_now: new Date().toISOString() });
 		if (rpc === 'leave_room' || rpc === 'block_partner' || rpc === 'report_partner') { w.rooms = w.rooms.filter((r) => r.room_id !== a.p_room); return json({ snap: {}, status: 'ok' }); }
 		if (rpc === 'my_notices') return json({ notices: [], last_seen: 0 });
-		if (rpc === 'dm_mailbox') return json(mailbox(w, a.p_box));
+		if (rpc === 'dm_mailbox') return json(mailbox(w, a.p_box, a.p_folder ?? null));
+		if (rpc === 'dm_folder_put') {
+			let f = a.p_folder != null ? w.folders.find((x) => x.id === a.p_folder) : w.folders.find((x) => x.name === String(a.p_name).trim());
+			if (!f) { f = { id: w.folders.length + 1, name: String(a.p_name).trim() }; w.folders.push(f); }
+			for (const id of a.p_msgs) w.filed.set(id, f.id);
+			return json({ status: 'ok', folder: { id: f.id, name: f.name }, moved: a.p_msgs.length });
+		}
+		if (rpc === 'dm_folder_take') { for (const id of a.p_msgs) w.filed.delete(id); return json({ status: 'ok', moved: a.p_msgs.length }); }
+		if (rpc === 'dm_folder_rename') { const f = w.folders.find((x) => x.id === a.p_folder); f.name = a.p_name; return json({ status: 'ok', folder: f }); }
+		if (rpc === 'dm_folder_delete') {
+			w.folders = w.folders.filter((x) => x.id !== a.p_folder);
+			for (const [k, v] of w.filed) if (v === a.p_folder) w.filed.delete(k);
+			return json({ status: 'ok' });
+		}
 		if (rpc === 'dm_unread') return json(w.letters.filter((l) => l.box === 'received' && !l.opened && !w.hidden.has(l.thread_id)).length);
 		if (rpc === 'dm_open') return json(open(w, a.p_msg));
 		if (rpc === 'dm_search') {
@@ -346,6 +370,70 @@ try {
 	await two.page.waitForURL(`${BASE}/`, { timeout: 8000 }).catch(() => {});
 	check('★ 적으면 저장하고 홈으로', called(w2, 'set_my_name').at(-1)?.[1]?.p_name === '이외부' && new URL(two.page.url()).pathname === '/', two.page.url());
 	check('페이지 오류 없음 (둘째)', two.errors.length === 0, two.errors.join(' / '));
+
+	console.log('[편지 폴더 — 여러 통 골라 폴더에 (Phase 47)]');
+	const w7 = world();
+	const r7 = await openApp(browser, w7);
+	const p7 = r7.page;
+	await p7.goto(`${BASE}/letters`); await p7.locator('button.desk').waitFor(); await p7.waitForTimeout(400);
+	await p7.locator('button.desk').click(); await p7.waitForURL('**/letters/archive'); await p7.locator('.archive .stack .item').first().waitFor(); await p7.waitForTimeout(500);
+	check('보관함에 "고르기" · 폴더가 없으면 서랍 줄도 없다', (await p7.getByRole('button', { name: '고르기' }).count()) === 1 && (await p7.locator('.folders').count()) === 0);
+	await p7.getByRole('button', { name: '고르기' }).click(); await p7.waitForTimeout(250);
+	const putBtn = p7.getByRole('button', { name: '폴더에 넣기' });
+	check('★ 고르기: 제목 "편지 고르기" · 아래 막대 · 아직 못 넣는다', (await p7.locator('.topbar .title').innerText()) === '편지 고르기' && (await p7.locator('.bar .count').innerText()).includes('골라 주세요') && await putBtn.isDisabled());
+	const env = (label) => p7.locator(`.archive .stack .item[aria-label^="${label}"]`);
+	await env('익명의 여학생에게서 온 편지, 안 읽음').click(); await p7.waitForTimeout(200);
+	check('★ 안 연 편지는 못 고른다 (봉투를 열어 본 것만)', (await env('익명의 여학생에게서 온 편지, 안 읽음').getAttribute('aria-pressed')) === 'false' && (await p7.getByText('봉투를 열어 본 편지만').count()) >= 1);
+	await env('익명의 남학생에게서 온 편지').click(); await p7.waitForTimeout(150);
+	check('누르면 고른다 (체크 · 테두리)', (await env('익명의 남학생에게서 온 편지').getAttribute('aria-pressed')) === 'true' && (await p7.locator('.bar .count').innerText()) === '1통 골랐어요');
+	await p7.getByRole('tab', { name: '보낸 편지' }).click(); await p7.waitForTimeout(500);
+	await p7.locator('.archive .stack .item').first().click(); await p7.waitForTimeout(150);
+	check('★ 받은 편지 · 보낸 편지를 함께 고를 수 있다', (await p7.locator('.bar .count').innerText()) === '2통 골랐어요' && !(await putBtn.isDisabled()));
+	await p7.screenshot({ path: `${SP}/letters-folder-1-select.png` });
+	await putBtn.click(); await p7.waitForTimeout(300);
+	check('폴더에 넣기 시트: 새 폴더 이름 칸', (await p7.getByRole('textbox', { name: '새 폴더 이름' }).count()) === 1);
+	await p7.getByRole('textbox', { name: '새 폴더 이름' }).fill('소중한 편지');
+	await p7.screenshot({ path: `${SP}/letters-folder-2-picker.png` });
+	await p7.getByRole('button', { name: '만들고 넣기' }).click();
+	await p7.waitForFunction(() => !document.querySelector('.bar'), null, { timeout: 4000 }).catch(() => {}); await p7.waitForTimeout(600);
+	check('★ 새 폴더를 만들고 넣는다 — dm_folder_put (고른 편지 · 이름)', JSON.stringify(called(w7, 'dm_folder_put').at(-1)?.[1]) === JSON.stringify({ p_msgs: [60, 50], p_folder: null, p_name: '소중한 편지' }), JSON.stringify(called(w7, 'dm_folder_put')));
+	check('넣으면 고르기가 끝나고 알림', (await p7.locator('.topbar .title').innerText()) === '편지 보관함' && (await p7.getByText("'소중한 편지' 폴더에 2통을 넣었어요").count()) === 1);
+	check('★ 폴더 서랍에 "소중한 편지 2통" · 넣은 편지는 목록에서 빠진다', (await p7.locator('.folders .folder').getAttribute('aria-label')) === '소중한 편지 폴더 — 편지 2통'
+		&& (await p7.locator('.archive .stack .item').count()) === 0, await p7.locator('.folders').innerText().catch(() => ''));
+	await p7.screenshot({ path: `${SP}/letters-folder-3-shelf.png` });
+	await p7.goBack(); await p7.waitForTimeout(600);
+	check('★ 뒤로가기 한 번이면 편지함 — 시트 · 고르기 기록이 남지 않는다', new URL(p7.url()).pathname === '/letters', p7.url());
+	check('편지함 책상 이름표에 폴더 수', (await p7.locator('.plate .muted').innerText()).includes('폴더 1'));
+	await p7.locator('button.desk').click(); await p7.waitForURL('**/letters/archive'); await p7.waitForTimeout(500);
+
+	await p7.locator('.folders .folder').click(); await p7.waitForURL('**/letters/f/1'); await p7.locator('.stack .item').first().waitFor(); await p7.waitForTimeout(500);
+	check('★ 폴더 화면: 폴더 이름 · 받은 편지와 보낸 편지가 섞여 최근 것부터', (await p7.locator('.topbar .title').innerText()) === '소중한 편지'
+		&& (await p7.locator('.stack .item').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).join('|') === '익명의 남학생에게서 온 편지|박받음에게 보낸 편지, 답장 옴',
+		(await p7.locator('.stack .item').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).join('|'));
+	await p7.screenshot({ path: `${SP}/letters-folder-4-folder.png` });
+	await p7.getByRole('button', { name: '고르기' }).click(); await p7.waitForTimeout(200);
+	await p7.locator('.stack .item').first().click(); await p7.waitForTimeout(150);
+	await p7.getByRole('button', { name: '폴더에서 빼기' }).click(); await p7.waitForTimeout(500);
+	check('★ 폴더에서 빼면 보관함으로 — dm_folder_take · 폴더에 한 통 남는다', JSON.stringify(called(w7, 'dm_folder_take').at(-1)?.[1]) === '{"p_msgs":[60]}' && (await p7.locator('.stack .item').count()) === 1);
+	await p7.getByRole('button', { name: '폴더 메뉴' }).click(); await p7.waitForTimeout(250);
+	await p7.locator('.sheet .item', { hasText: '이름 바꾸기' }).click(); await p7.waitForTimeout(150);
+	await p7.getByRole('textbox', { name: '새 폴더 이름' }).fill('추억');
+	await p7.locator('.sheet .item', { hasText: '바꾸기' }).last().click(); await p7.waitForTimeout(500);
+	check('이름 바꾸기', (await p7.locator('.topbar .title').innerText()) === '추억' && called(w7, 'dm_folder_rename').at(-1)?.[1]?.p_name === '추억');
+	await p7.getByRole('button', { name: '고르기' }).click(); await p7.waitForTimeout(200);
+	await p7.goBack(); await p7.waitForTimeout(400);
+	check('★ 고르는 중 뒤로가기 = 고르기만 끝낸다 (화면은 그대로)', new URL(p7.url()).pathname === '/letters/f/1' && (await p7.locator('.bar').count()) === 0 && (await p7.locator('.topbar .title').innerText()) === '추억');
+	await p7.getByRole('button', { name: '폴더 메뉴' }).click(); await p7.waitForTimeout(250);
+	await p7.locator('.sheet .item', { hasText: '폴더 지우기' }).click(); await p7.waitForTimeout(150);
+	check('지우기 확인: 편지는 보관함으로 돌아간다고 알림', (await p7.locator('.sheet .warn').innerText()).includes('보관함'));
+	await p7.locator('.sheet .item.danger', { hasText: '폴더 지우기' }).click();
+	await p7.waitForURL('**/letters/archive', { timeout: 4000 }).catch(() => {}); await p7.waitForTimeout(600);
+	await p7.getByRole('tab', { name: '보낸 편지' }).click(); await p7.waitForTimeout(500);
+	const back7 = await p7.locator('.archive .stack .item').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+	check('★ 폴더를 지우면 보관함으로 · 서랍에서 사라지고 안의 편지(보낸 편지)는 돌아온다', new URL(p7.url()).pathname === '/letters/archive' && (await p7.locator('.folders').count()) === 0
+		&& called(w7, 'dm_folder_delete').length === 1 && back7.includes('박받음에게 보낸 편지, 답장 옴'), `${p7.url()} | folders ${await p7.locator('.folders').count()} | ${back7.join(',')}`);
+	check('페이지 오류 없음 (폴더)', r7.errors.length === 0, r7.errors.join(' / '));
+	await r7.ctx.close();
 
 	console.log('[폰 키보드 — 찾기 → 고르기 (Phase 46)]');
 	const w6 = world();

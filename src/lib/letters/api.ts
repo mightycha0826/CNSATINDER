@@ -43,7 +43,14 @@ export type MailItem = {
 	to_gender?: Gender | null;
 	/** 보낸 편지에 답장이 왔는지 */
 	replied?: boolean | null;
+	/** 나에게 받은 편지인지 보낸 편지인지 — 폴더 안에서는 둘이 섞여 있다 (Phase 47) */
+	box?: Box;
 };
+
+/** 편지 폴더 (Phase 47) — 내 것만. count = 지금 볼 수 있는 편지 수 */
+export type Folder = { id: number; name: string; count: number };
+/** 폴더 이름은 20자까지 */
+export const FOLDER_MAX = 20;
 
 /** 봉투를 연 편지 한 통 */
 export type Letter = MailItem & {
@@ -108,9 +115,43 @@ export const paperDate = (iso: string) => new Date(iso).toLocaleDateString('ko-K
 /** 두 글자 이상. 받기를 끈 사람 · 차단한 사이는 나오지 않는다 */
 export const searchPeople = (q: string) => rpc<DmPerson[]>('dm_search', { p_q: q });
 
-export async function fetchMailbox(box: Box, before: number | null = null): Promise<MailItem[]> {
-	const r = await rpc<{ letters: MailItem[] } | null>('dm_mailbox', { p_box: box, p_before: before });
-	return r?.letters ?? [];
+/** 받은/보낸 편지 중 폴더에 넣지 않은 것. 첫 쪽이면 내 폴더 목록도 같이 온다 (요청을 늘리지 않게, G13) */
+export async function fetchMailbox(box: Box, before: number | null = null): Promise<{ letters: MailItem[]; folders: Folder[] | null }> {
+	const r = await rpc<{ letters: MailItem[]; folders?: Folder[] | null } | null>('dm_mailbox', { p_box: box, p_before: before });
+	return { letters: r?.letters ?? [], folders: r?.folders ?? null };
+}
+
+/** 폴더 하나의 편지 — 받은 · 보낸 편지가 섞여서(편지마다 box). 없는 폴더면 folder = null */
+export async function fetchFolder(id: number, before: number | null = null) {
+	const r = await rpc<{ letters: MailItem[]; folder: { id: number; name: string } | null } | null>('dm_mailbox', { p_box: 'received', p_before: before, p_folder: id });
+	return { letters: r?.letters ?? [], folder: r?.folder ?? null };
+}
+
+// ── 폴더 (Phase 47) ──
+export type FolderResult = { status: 'ok'; folder?: { id: number; name: string }; moved: number } | { status: 'bad_name' | 'bad_request' | 'not_found' | 'too_many' | 'exists' };
+/** 여러 통을 폴더에 — folder(있는 폴더) 또는 name(새 폴더, 같은 이름이 있으면 그 폴더) */
+export const putInFolder = (ids: number[], to: { folder: number } | { name: string }) =>
+	rpc<FolderResult>('dm_folder_put', { p_msgs: ids, p_folder: 'folder' in to ? to.folder : null, p_name: 'name' in to ? to.name : null });
+/** 폴더에서 빼기 — 보관함으로 돌아간다 */
+export const takeFromFolder = (ids: number[]) => rpc<FolderResult>('dm_folder_take', { p_msgs: ids });
+export const renameFolder = (id: number, name: string) => rpc<FolderResult>('dm_folder_rename', { p_folder: id, p_name: name });
+/** 폴더 지우기 — 안의 편지는 보관함으로 돌아간다 */
+export const deleteFolder = (id: number) => rpc<FolderResult>('dm_folder_delete', { p_folder: id });
+export function folderError(r: FolderResult): string | null {
+	switch (r.status) {
+		case 'ok':
+			return null;
+		case 'bad_name':
+			return `폴더 이름을 1~${FOLDER_MAX}자로 적어 주세요`;
+		case 'too_many':
+			return '폴더는 30개까지 만들 수 있어요';
+		case 'exists':
+			return '같은 이름의 폴더가 있어요';
+		case 'not_found':
+			return '폴더를 찾을 수 없어요';
+		default:
+			return '다시 시도해 주세요';
+	}
 }
 
 /** 안 연 받은 편지 수 (하단 탭 빨간 점) */

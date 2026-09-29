@@ -261,10 +261,21 @@
 		font-weight: 600;
 	}
 
+	/* 두 글자 단추는 각자 한 줄 — 둘이 한 줄에 안 들어가는 좁은 폰이면 가운데로 두 줄 (Phase 46) */
 	.links {
 		display: flex;
+		flex-wrap: wrap;
 		justify-content: space-between;
 		align-items: center;
+		column-gap: 12px;
+	}
+	.links .btn-text {
+		white-space: nowrap;
+	}
+	@media (max-width: 330px) {
+		.links {
+			justify-content: center;
+		}
 	}
 	.back {
 		align-self: center;

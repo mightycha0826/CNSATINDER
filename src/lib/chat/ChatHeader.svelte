@@ -83,9 +83,13 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	/* 머리글 두 줄(이름 · 상태)은 늘 한 줄씩 — 좁으면 말줄임 (두 줄로 넘치면 머리글 높이가 흔들린다) */
 	.sub {
+		overflow: hidden;
 		font-size: 12px;
 		color: var(--text-2);
+		white-space: nowrap;
+		text-overflow: ellipsis;
 	}
 	.timer {
 		margin-left: auto;

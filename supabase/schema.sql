@@ -5557,48 +5557,7 @@ returns uuid language sql immutable set search_path = '' as $fn$
   select case when m.from_sender then t.recipient_id else t.sender_id end;
 $fn$;
 
--- 편지함 — 받은 편지 / 보낸 편지 (편지만, 최근 것부터 30통씩, p_before = 이 id 보다 오래된 것)
-create or replace function public.dm_mailbox(p_box text, p_before bigint default null)
-returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare me uuid := auth.uid();
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  if p_box not in ('received', 'sent') then return jsonb_build_object('letters', '[]'::jsonb); end if;
-  return jsonb_build_object('letters', coalesce((
-    select jsonb_agg(x order by x.id desc) from (
-      select m.id, m.thread_id, m.created_at, m.status = 'removed' as removed, t.status as thread_status,
-             -- 받은 편지: 모르는 사람이면 성별만, 내가 이름으로 보낸 사람의 답장이면 그 이름
-             case when p_box = 'received' then m.from_gender end as from_gender,
-             case when p_box = 'received' and not m.from_sender then (select name from private.person(t.recipient_id)) end as from_name,
-             -- 서명 (Phase 35) — 익명 쪽이 적은 것. 받은 편지의 From. / 보낸 답장의 To. / 내가 익명 쪽이면 내 서명
-             case when p_box = 'received' and m.from_sender then m.from_nick end as from_nick,
-             case when p_box = 'sent' and not m.from_sender then
-               (select o.from_nick from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender and o.id < m.id order by o.id desc limit 1) end as to_nick,
-             case when t.sender_id = me then
-               (select o.from_nick from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender and o.id <= m.id order by o.id desc limit 1) end as my_nick,
-             m.opened_at is not null as opened,
-             exists (select 1 from private.dm_msgs o where o.thread_id = m.thread_id and o.id < m.id
-                      and o.is_letter and o.from_sender <> m.from_sender) as is_reply,
-             -- 보낸 편지: 이름으로 보낸 편지면 받는 사람 이름 · 학년, 답장이면 "익명의 ○학생"
-             case when p_box = 'sent' and m.from_sender then (select name from private.person(t.recipient_id)) end as to_name,
-             case when p_box = 'sent' and m.from_sender then (select grade from private.person(t.recipient_id)) end as to_grade,
-             case when p_box = 'sent' and not m.from_sender then
-               (select o.from_gender from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender order by o.id desc limit 1) end as to_gender,
-             case when p_box = 'sent' then exists (select 1 from private.dm_msgs o where o.thread_id = m.thread_id and o.id > m.id
-                      and o.is_letter and o.from_sender <> m.from_sender) end as replied
-        from private.dm_msgs m
-        join private.dm_threads t on t.id = m.thread_id
-       where m.is_letter and t.status <> 'removed'
-         and (p_before is null or m.id < p_before)
-         and case when p_box = 'received'
-                  then (m.from_sender and t.recipient_id = me and not t.recipient_hidden)
-                    or (not m.from_sender and t.sender_id = me and not t.sender_hidden)
-                  else (m.from_sender and t.sender_id = me and not t.sender_hidden)
-                    or (not m.from_sender and t.recipient_id = me and not t.recipient_hidden) end
-       order by m.id desc limit 30) x), '[]'::jsonb),
-    'server_now', now());
-end
-$fn$;
+-- 편지함 dm_mailbox — 받은 편지 / 보낸 편지, 최근 것부터 30통씩. 폴더를 알게 된 판은 Phase 47 (맨 아래)
 
 -- 안 연 받은 편지 수 (하단 탭 빨간 점)
 create or replace function public.dm_unread()
@@ -5688,7 +5647,7 @@ drop function if exists public.dm_chat(bigint);
 do $do$
 declare f text;
 begin
-  foreach f in array array['dm_mailbox(text, bigint)', 'dm_unread()', 'dm_open(bigint)', 'dm_reply_to(bigint, text, jsonb, text)', 'dm_letter(bigint, text, jsonb, text)']
+  foreach f in array array['dm_unread()', 'dm_open(bigint)', 'dm_reply_to(bigint, text, jsonb, text)', 'dm_letter(bigint, text, jsonb, text)']
   loop
     execute format('revoke all on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);
@@ -6176,3 +6135,204 @@ returns boolean language sql security definer set search_path = public stable as
                     where s.id and st.id), false);
 $fn$;
 revoke all on function private.letters_locked() from public, anon, authenticated;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 47 — 편지 폴더
+-- 보관함에서 편지를 여러 통 골라 이름 붙인 폴더에 넣는다 (내 것만 — 상대에게는 아무것도 안 보인다).
+-- 폴더에 넣은 편지는 받은/보낸 편지 목록에서 빠지고 그 폴더에서만 보인다(진짜 폴더처럼). 한 편지는 한 폴더에만.
+-- 받은 편지는 봉투를 열어 본 것만 넣는다 (안 연 편지가 새 편지 더미에서 사라지지 않게).
+-- 폴더를 지우면 안에 있던 편지는 보관함으로 돌아온다 (편지는 지워지지 않는다).
+-- ════════════════════════════════════════════════════════════════════
+create table if not exists private.dm_folders (
+  id         bigint generated always as identity primary key,
+  owner_id   uuid not null references public.profiles(id) on delete cascade,
+  name       text not null check (char_length(name) between 1 and 20 and name = btrim(name)),
+  created_at timestamptz not null default now()
+);
+create unique index if not exists dm_folders_owner_name on private.dm_folders (owner_id, lower(name));
+alter table private.dm_folders enable row level security;
+
+create table if not exists private.dm_folder_items (
+  owner_id  uuid not null references public.profiles(id) on delete cascade,
+  msg_id    bigint not null references private.dm_msgs(id) on delete cascade,
+  folder_id bigint not null references private.dm_folders(id) on delete cascade,
+  added_at  timestamptz not null default now(),
+  primary key (owner_id, msg_id)
+);
+create index if not exists dm_folder_items_folder on private.dm_folder_items (folder_id);
+create index if not exists dm_folder_items_msg on private.dm_folder_items (msg_id);
+alter table private.dm_folder_items enable row level security;
+
+-- 이 편지가 나에게 받은 편지인지 보낸 편지인지 (내가 버린 줄기면 null)
+create or replace function private.dm_box_of(m private.dm_msgs, t private.dm_threads, p_me uuid)
+returns text language sql immutable set search_path = '' as $fn$
+  select case when (m.from_sender and t.recipient_id = p_me and not t.recipient_hidden)
+                or (not m.from_sender and t.sender_id = p_me and not t.sender_hidden) then 'received'
+              when (m.from_sender and t.sender_id = p_me and not t.sender_hidden)
+                or (not m.from_sender and t.recipient_id = p_me and not t.recipient_hidden) then 'sent' end;
+$fn$;
+revoke all on function private.dm_box_of(private.dm_msgs, private.dm_threads, uuid) from public, anon, authenticated;
+
+-- 내 폴더 목록 — 이름 · 들어 있는 편지 수(지금 볼 수 있는 것만), 만든 순서
+create or replace function private.dm_folder_list(p_me uuid)
+returns jsonb language sql stable security definer set search_path = '' as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name, 'count', (
+           select count(*) from private.dm_folder_items i
+             join private.dm_msgs m on m.id = i.msg_id
+             join private.dm_threads t on t.id = m.thread_id
+            where i.folder_id = f.id and m.is_letter and t.status <> 'removed'
+              and private.dm_box_of(m, t, p_me) is not null)) order by f.created_at, f.id), '[]'::jsonb)
+    from private.dm_folders f where f.owner_id = p_me;
+$fn$;
+revoke all on function private.dm_folder_list(uuid) from public, anon, authenticated;
+
+-- 편지함 — 폴더를 알게 (p_folder). 폴더 없이: 그 칸(받은/보낸)의 폴더에 안 넣은 편지 + 첫 쪽이면 내 폴더 목록.
+-- 폴더를 주면: 그 폴더의 편지 전부(받은 · 보낸 섞어서, 편지마다 box) + 폴더 이름.
+drop function if exists public.dm_mailbox(text, bigint);
+create or replace function public.dm_mailbox(p_box text, p_before bigint default null, p_folder bigint default null)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare
+  me uuid := auth.uid();
+  fname text;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if p_folder is null and p_box not in ('received', 'sent') then return jsonb_build_object('letters', '[]'::jsonb); end if;
+  if p_folder is not null then
+    select name into fname from private.dm_folders where id = p_folder and owner_id = me;
+    if fname is null then return jsonb_build_object('letters', '[]'::jsonb, 'folder', null, 'server_now', now()); end if;
+  end if;
+  return jsonb_build_object('letters', coalesce((
+    select jsonb_agg(x order by x.id desc) from (
+      select m.id, m.thread_id, m.created_at, m.status = 'removed' as removed, t.status as thread_status, b.bx as box,
+             -- 받은 편지: 모르는 사람이면 성별만, 내가 이름으로 보낸 사람의 답장이면 그 이름
+             case when b.bx = 'received' then m.from_gender end as from_gender,
+             case when b.bx = 'received' and not m.from_sender then (select name from private.person(t.recipient_id)) end as from_name,
+             -- 서명 (Phase 35) — 익명 쪽이 적은 것. 받은 편지의 From. / 보낸 답장의 To. / 내가 익명 쪽이면 내 서명
+             case when b.bx = 'received' and m.from_sender then m.from_nick end as from_nick,
+             case when b.bx = 'sent' and not m.from_sender then
+               (select o.from_nick from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender and o.id < m.id order by o.id desc limit 1) end as to_nick,
+             case when t.sender_id = me then
+               (select o.from_nick from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender and o.id <= m.id order by o.id desc limit 1) end as my_nick,
+             m.opened_at is not null as opened,
+             exists (select 1 from private.dm_msgs o where o.thread_id = m.thread_id and o.id < m.id
+                      and o.is_letter and o.from_sender <> m.from_sender) as is_reply,
+             -- 보낸 편지: 이름으로 보낸 편지면 받는 사람 이름 · 학년, 답장이면 "익명의 ○학생"
+             case when b.bx = 'sent' and m.from_sender then (select name from private.person(t.recipient_id)) end as to_name,
+             case when b.bx = 'sent' and m.from_sender then (select grade from private.person(t.recipient_id)) end as to_grade,
+             case when b.bx = 'sent' and not m.from_sender then
+               (select o.from_gender from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender order by o.id desc limit 1) end as to_gender,
+             case when b.bx = 'sent' then exists (select 1 from private.dm_msgs o where o.thread_id = m.thread_id and o.id > m.id
+                      and o.is_letter and o.from_sender <> m.from_sender) end as replied
+        from private.dm_msgs m
+        join private.dm_threads t on t.id = m.thread_id
+        cross join lateral (select private.dm_box_of(m, t, me) as bx) b
+        left join private.dm_folder_items fi on fi.owner_id = me and fi.msg_id = m.id
+       where m.is_letter and t.status <> 'removed' and (t.sender_id = me or t.recipient_id = me) and b.bx is not null
+         and (p_before is null or m.id < p_before)
+         and case when p_folder is null then b.bx = p_box and fi.msg_id is null else fi.folder_id = p_folder end
+       order by m.id desc limit 30) x), '[]'::jsonb),
+    'folders', case when p_before is null and p_folder is null then private.dm_folder_list(me) end,
+    'folder', case when p_folder is not null then jsonb_build_object('id', p_folder, 'name', fname) end,
+    'server_now', now());
+end
+$fn$;
+revoke all on function public.dm_mailbox(text, bigint, bigint) from public, anon;
+grant execute on function public.dm_mailbox(text, bigint, bigint) to authenticated;
+
+-- 폴더 이름 — 앞뒤 공백을 자르고 가운데 공백은 하나로 (빈 이름은 null)
+create or replace function private.dm_folder_name(p_name text)
+returns text language sql immutable set search_path = '' as $fn$
+  select nullif(regexp_replace(btrim(coalesce(p_name, '')), '\s+', ' ', 'g'), '');
+$fn$;
+revoke all on function private.dm_folder_name(text) from public, anon, authenticated;
+
+-- 편지 여러 통을 폴더에 — p_folder(있는 폴더) 또는 p_name(새 폴더 · 같은 이름이 있으면 그 폴더). 다른 폴더에 있던 편지는 옮겨 온다.
+-- 내가 볼 수 있는 편지만, 받은 편지는 열어 본 것만. 이름은 20자 · 폴더는 30개까지.
+create or replace function public.dm_folder_put(p_msgs bigint[], p_folder bigint default null, p_name text default null)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  me uuid := auth.uid();
+  nm text := private.dm_folder_name(p_name);
+  fid bigint;
+  fname text;
+  n int;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if p_msgs is null or cardinality(p_msgs) = 0 or cardinality(p_msgs) > 200 then return jsonb_build_object('status', 'bad_request'); end if;
+  if p_folder is not null then
+    select id, name into fid, fname from private.dm_folders where id = p_folder and owner_id = me;
+    if fid is null then return jsonb_build_object('status', 'not_found'); end if;
+  else
+    if nm is null or char_length(nm) > 20 then return jsonb_build_object('status', 'bad_name'); end if;
+    select id, name into fid, fname from private.dm_folders where owner_id = me and lower(name) = lower(nm);
+    if fid is null then
+      if (select count(*) from private.dm_folders where owner_id = me) >= 30 then return jsonb_build_object('status', 'too_many'); end if;
+      insert into private.dm_folders (owner_id, name) values (me, nm)
+        on conflict (owner_id, lower(name)) do nothing returning id, name into fid, fname;
+      if fid is null then
+        select id, name into fid, fname from private.dm_folders where owner_id = me and lower(name) = lower(nm);
+      end if;
+    end if;
+  end if;
+  insert into private.dm_folder_items (owner_id, msg_id, folder_id)
+  select me, m.id, fid
+    from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
+   where m.id = any(p_msgs) and m.is_letter and t.status <> 'removed'
+     and case private.dm_box_of(m, t, me) when 'sent' then true when 'received' then m.opened_at is not null else false end
+  on conflict (owner_id, msg_id) do update set folder_id = excluded.folder_id, added_at = now();
+  get diagnostics n = row_count;
+  return jsonb_build_object('status', 'ok', 'folder', jsonb_build_object('id', fid, 'name', fname), 'moved', n);
+end
+$fn$;
+
+-- 폴더에서 빼기 — 보관함(받은/보낸 편지)으로 돌아간다
+create or replace function public.dm_folder_take(p_msgs bigint[])
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); n int;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  delete from private.dm_folder_items where owner_id = me and msg_id = any(coalesce(p_msgs, '{}'));
+  get diagnostics n = row_count;
+  return jsonb_build_object('status', 'ok', 'moved', n);
+end
+$fn$;
+
+-- 폴더 이름 바꾸기 — 같은 이름의 다른 폴더가 있으면 'exists'
+create or replace function public.dm_folder_rename(p_folder bigint, p_name text)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); nm text := private.dm_folder_name(p_name);
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if nm is null or char_length(nm) > 20 then return jsonb_build_object('status', 'bad_name'); end if;
+  if not exists (select 1 from private.dm_folders where id = p_folder and owner_id = me) then return jsonb_build_object('status', 'not_found'); end if;
+  if exists (select 1 from private.dm_folders where owner_id = me and lower(name) = lower(nm) and id <> p_folder) then
+    return jsonb_build_object('status', 'exists');
+  end if;
+  update private.dm_folders set name = nm where id = p_folder and owner_id = me;
+  return jsonb_build_object('status', 'ok', 'folder', jsonb_build_object('id', p_folder, 'name', nm));
+end
+$fn$;
+
+-- 폴더 지우기 — 편지는 지우지 않고 보관함으로 돌아간다
+create or replace function public.dm_folder_delete(p_folder bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  delete from private.dm_folders where id = p_folder and owner_id = me;
+  if not found then return jsonb_build_object('status', 'not_found'); end if;
+  return jsonb_build_object('status', 'ok');
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['dm_folder_put(bigint[], bigint, text)', 'dm_folder_take(bigint[])', 'dm_folder_rename(bigint, text)', 'dm_folder_delete(bigint)']
+  loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end
+$do$;

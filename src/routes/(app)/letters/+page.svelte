@@ -3,6 +3,7 @@
 	 * 익명편지 탭 = 편지함 (Phase 32 · 35).
 	 *   위: 아직 안 연 받은 편지만 — 봉인된 봉투가 비스듬히 쌓여 있다 (누르면 봉투를 연다).
 	 *   아래: 갈색 책상 위 서류 더미 = 편지 보관함. 읽은 편지 · 보낸 편지가 겹겹이 쌓여 있고, 누르면 지금까지 받은 · 쓴 편지 전부 (/letters/archive).
+	 *   책상은 화면 아래쪽에 놓이고(남는 자리는 위에), 책상 · 더미 · 봉투는 화면 크기에 맞춰 같은 비율로 커지고 작아진다 (Phase 46).
 	 * 오른쪽 아래 버튼으로 새 편지. 봉투를 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 — 열기 · 답장 · 버리기 · 차단 · 신고 (LetterMenu).
 	 * 목록은 앱 안에서 기억해 두고(mailbox.svelte.ts) 다시 들어오면 바로 그린 뒤 뒤에서 새로 읽는다.
 	 */
@@ -32,12 +33,19 @@
 		return s ? { it: s, box: 'sent' as const } : null;
 	});
 	// 한 통이라도 있으면 겹겹이 쌓인 느낌이 나게 최소 네 장
-	const pileSize = $derived(readCount + sentCount ? Math.min(7, Math.max(4, readCount + sentCount + 1)) : 0);
+	const filedCount = $derived(BOX.folders.reduce((n, f) => n + f.count, 0));
+	const pileSize = $derived(readCount + sentCount + filedCount ? Math.min(7, Math.max(4, readCount + sentCount + filedCount + 1)) : 0);
 	const loaded = $derived(BOX.loaded.received && BOX.loaded.sent);
 	// 봉투에 적힌 나 (받은 편지의 To. · 보낸 편지의 From.)
 	const me = (it: (typeof BOX.received)[number], box: 'received' | 'sent') => myLabel(it, box, { name: S.me?.name, gender: S.profile?.gender });
 
 	// 서류 더미 — 한 장씩 조금씩 어긋나게 (맨 아래일수록 크게)
+	// 책상 비율 — 폭 390 · 높이 844 폰에서 1. 좁거나 낮은 화면은 작게, 넓고 높은 화면(태블릿 · 데스크톱 창)은 크게
+	// 아래 끝 0.75 = 아이폰 SE(375×667) · 큰 글꼴 안드로이드(≈280×574)에서도 책상 이름표가 편지 쓰기 단추 위에 오게 (Phase 47)
+	let deskW = $state(390);
+	let vh = $state(844);
+	const k = $derived(Math.min(1.5, Math.max(0.75, Math.min(deskW / 390, vh / 844))));
+
 	const LAYERS = [
 		{ r: -7, x: -14, y: 10, kind: 'paper' },
 		{ r: 5, x: 16, y: 8, kind: 'env' },
@@ -47,6 +55,8 @@
 		{ r: 3, x: 6, y: 1, kind: 'paper' }
 	];
 </script>
+
+<svelte:window bind:innerHeight={vh} />
 
 <div class="topbar">
 	<span class="title display">익명편지</span>
@@ -72,7 +82,7 @@
 	{/if}
 
 	<!-- 편지 보관함 — 갈색 책상 위 서류 더미 -->
-	<button class="desk" onclick={() => goto('/letters/archive')} aria-label="편지 보관함 — 받은 편지 {count(readCount, BOX.more.received)}통, 보낸 편지 {count(sentCount, BOX.more.sent)}통">
+	<button class="desk" bind:clientWidth={deskW} style:--k={k} onclick={() => goto('/letters/archive')} aria-label="편지 보관함 — 받은 편지 {count(readCount, BOX.more.received)}통, 보낸 편지 {count(sentCount, BOX.more.sent)}통{BOX.folders.length ? `, 폴더 ${BOX.folders.length}개` : ''}">
 		<span class="wood" aria-hidden="true">
 			<span class="pile">
 				{#each LAYERS.slice(0, Math.max(0, pileSize - 1)) as l, i (i)}
@@ -86,10 +96,10 @@
 							date={stampDate(top.it.created_at)}
 							border={borderOf(top.it, top.box)}
 							postmark={stampDate(top.it.created_at)}
-							w={176}
+							w={Math.round(176 * k)}
 						/>
 					</span>
-				{:else if loaded}
+				{:else if loaded && !pileSize}
 					<span class="empty-desk">아직 쌓인 편지가 없어요</span>
 				{/if}
 			</span>
@@ -97,7 +107,7 @@
 		<span class="plate">
 			<span class="plate-text">
 				<strong>편지 보관함</strong>
-				<span class="muted num">받은 편지 {count(readCount, BOX.more.received)} · 보낸 편지 {count(sentCount, BOX.more.sent)}</span>
+				<span class="muted num">받은 편지 {count(readCount, BOX.more.received)} · 보낸 편지 {count(sentCount, BOX.more.sent)}{#if BOX.folders.length}&nbsp;· 폴더 {BOX.folders.length}{/if}</span>
 			</span>
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
 		</span>
@@ -117,7 +127,7 @@
 	.mailbox {
 		gap: 16px;
 		padding-top: 14px;
-		padding-bottom: 120px;
+		padding-bottom: 88px; /* 편지 쓰기 버튼(탭바 위 16 + 52) 바로 위에 보관함 이름표가 오게 */
 		background: var(--desk);
 	}
 	.head {
@@ -174,10 +184,11 @@
 	}
 
 	/* ── 책상 · 서류 더미 ── */
+	/* 책상은 화면 아래쪽 — 남는 자리는 새 편지와 책상 사이로 (margin-top: auto). 편지가 많아 화면을 넘으면 그냥 이어서 */
 	.desk {
 		display: flex;
 		flex-direction: column;
-		margin: 14px calc(var(--pad) * -1) 0;
+		margin: auto calc(var(--pad) * -1) 0;
 		text-align: left;
 		transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.3, 1);
 	}
@@ -188,7 +199,7 @@
 		position: relative;
 		display: grid;
 		place-items: center;
-		height: 230px;
+		height: calc(230px * var(--k, 1));
 		/* 나뭇결 — 가는 결 · 굵은 결 · 위에서 비치는 빛 */
 		background:
 			repeating-linear-gradient(91deg, rgb(255 255 255 / 0.035) 0 2px, transparent 2px 11px),
@@ -213,24 +224,24 @@
 		position: relative;
 		display: grid;
 		place-items: center;
-		width: 190px;
-		height: 130px;
-		margin-top: -8px;
+		width: calc(190px * var(--k, 1));
+		height: calc(130px * var(--k, 1));
+		margin-top: calc(-8px * var(--k, 1));
 		transform: perspective(700px) rotateX(18deg);
 	}
 	.layer {
 		position: absolute;
-		width: 176px;
-		height: 109px;
+		width: calc(176px * var(--k, 1));
+		height: calc(109px * var(--k, 1));
 		border-radius: 4px;
-		transform: translate(var(--x), var(--y)) rotate(var(--r));
+		transform: translate(calc(var(--x) * var(--k, 1)), calc(var(--y) * var(--k, 1))) rotate(var(--r));
 		box-shadow: 0 2px 5px rgb(30 10 0 / 0.35);
 	}
 	.layer.paper {
-		width: 150px;
-		height: 118px;
+		width: calc(150px * var(--k, 1));
+		height: calc(118px * var(--k, 1));
 		background:
-			repeating-linear-gradient(180deg, transparent 0 11px, rgb(90 70 50 / 0.14) 11px 12px) 0 14px / 100% 100% no-repeat,
+			repeating-linear-gradient(180deg, transparent 0 calc(11px * var(--k, 1)), rgb(90 70 50 / 0.14) calc(11px * var(--k, 1)) calc(12px * var(--k, 1))) 0 calc(14px * var(--k, 1)) / 100% 100% no-repeat,
 			#fffaf0;
 	}
 	.layer.env {

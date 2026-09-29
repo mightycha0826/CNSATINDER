@@ -216,9 +216,18 @@ body {
 	word-break: keep-all;
 	overflow-wrap: break-word;
 }
-/* 문단 끝에 한 글자만 외따로 남지 않게 */
-p {
+/* 줄바꿈 (Phase 46) — 폰마다 폭이 다르고, 안드로이드는 기기 글꼴을 키우면 웹 화면 폭이 그만큼 좁아진다(폭 360 · 글꼴 130% ≈ 280).
+   어느 폭에서든: 글 끝줄에 한두 글자만 외따로 남지 않게(pretty), 짧은 제목 · 단추 · 이름표는 줄 길이를 고르게(balance —
+   "이 채팅을 고정하시겠습/니까?" 대신 "이 채팅을 / 고정하시겠습니까?"). 둘 다 지원하지 않는 브라우저에서는 그냥 평소대로 */
+body {
 	text-wrap: pretty;
+}
+:where(h1, h2, h3, h4, button, label, dt, th, summary, strong, .title, [role='tab'], [role='radio']) {
+	text-wrap: balance;
+}
+/* 쓰는 칸은 평소대로 — 치는 동안 앞줄이 다시 나뉘며 글자가 움직이지 않게 */
+:where(input, textarea, [contenteditable='true']) {
+	text-wrap: wrap;
 }
 
 /*
@@ -603,6 +612,14 @@ a {
 	padding: 10px 16px;
 	font-size: 16px;
 	text-align: left;
+	/* 좁은 화면(글꼴을 키운 안드로이드 ≈ 280) — 이름표를 "글자/크기"처럼 쪼개는 대신, 오른쪽 값 · 단추가 아래 줄로 (Phase 46) */
+	flex-wrap: wrap;
+	row-gap: 8px;
+}
+/* 이름표는 제 길이만큼(한 줄) 차지하고 남는 자리를 먹는다 — 줄보다 길 때만 줄 안에서 넘긴다. 아이콘 칸(aria-hidden)은 빼고 */
+.g-row > span:first-child:not([aria-hidden]) {
+	flex: 1 0 auto;
+	max-width: 100%;
 }
 /* 줄 사이 선 — 왼쪽을 들여서 (아이폰처럼) */
 .g-row + .g-row::before,
@@ -628,6 +645,16 @@ a {
 	margin-left: -4px;
 	color: #c4c4c7;
 	transition: transform 0.2s;
+}
+/* › 는 줄 오른쪽 끝(세로 가운데)에 붙박이 — 좁아서 값이 아래 줄로 내려가도 › 만 혼자 떨어지지 않게 (Phase 47) */
+.g-row:has(> .g-chev) {
+	padding-right: 32px;
+}
+.g-row > .g-chev {
+	position: absolute;
+	top: 50%;
+	right: 16px;
+	margin: -7px 0 0;
 }
 .g-row[aria-expanded='true'] .g-chev {
 	transform: rotate(90deg);

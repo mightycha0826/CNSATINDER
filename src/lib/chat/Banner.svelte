@@ -34,8 +34,10 @@
 		background: var(--surface);
 		border-bottom: 1px solid var(--line);
 	}
+	/* 글 칸은 11em 아래로 줄지 않는다 — 좁은 폰(글꼴을 키운 안드로이드 ≈ 280)에서는 글을 낱말 중간에서 자르는 대신
+	   버튼 줄이 아래로 내려간다 ("이 채팅을 고정하시겠습/니까?" 였던 것, Phase 46) */
 	.q {
-		flex: 1;
+		flex: 1 1 11em;
 		min-width: 0;
 		display: flex;
 		flex-direction: column;
@@ -58,6 +60,7 @@
 		align-items: center;
 		gap: 10px;
 		flex: none;
+		margin-left: auto; /* 아래 줄로 내려가도 오른쪽에 */
 	}
 	.acts :global(.no) {
 		font-size: 14px;

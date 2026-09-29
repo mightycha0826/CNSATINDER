@@ -99,7 +99,7 @@
 							<Avatar name={p.name} size={44} />
 							<span class="who">
 								<b>{p.name}</b>
-								<small class="muted">{[p.grade ? `${p.grade}학년` : '', p.no ? `학번 ${p.no}` : '', p.checked ? '' : '직접 적은 이름'].filter(Boolean).join(' · ')}</small>
+								<small class="muted">{[p.grade ? `${p.grade}학년` : '', p.no ? `학번 ${p.no}` : '', p.checked ? '' : '직접 적은 이름'].filter(Boolean).join(' · ')}</small>
 							</span>
 							<span class="go">편지 쓰기</span>
 						</button>

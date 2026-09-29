@@ -67,6 +67,22 @@ export function backClose(onclose: () => void, opts: { auto?: boolean; open?: ()
 }
 
 /**
+ * 방금 닫은 창의 기록 칸이 걷힐 때까지(popstate) 기다린다 — 창 두 개(편지 고르기 + 폴더 시트)를 잇달아 닫을 때,
+ * 아래 창이 "내 칸이 맨 위인가"를 걷히기 전에 보면 back() 을 건너뛰어 빈 기록 칸이 남는다. 창이 없었으면 금방 끝난다.
+ */
+export function historySettled(ms = 600): Promise<void> {
+	return new Promise((resolve) => {
+		const done = () => {
+			clearTimeout(timer);
+			removeEventListener('popstate', done);
+			setTimeout(resolve, 0);
+		};
+		const timer = setTimeout(done, ms);
+		addEventListener('popstate', done);
+	});
+}
+
+/**
  * 창을 닫으면서 다른 화면으로 — 창의 기록 칸을 새 화면으로 바꿔 끼운다(새 화면에서 뒤로 가면 창 아래 화면으로).
  * 창이 없으면 평소 goto 와 같다.
  */

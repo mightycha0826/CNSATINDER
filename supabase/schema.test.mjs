@@ -3082,7 +3082,7 @@ console.log('\n[80] 점검 — 스키마 정리 · 쓰지 않는 RPC 권한 회�
 	const s80 = await rpcAs(P, 'dm_send', Q, '권한 확인 편지');
 	check('★ dm_letter 를 거둬도 받은 편지에 답장(dm_reply_to)은 된다', s80.status === 'ok' && (await rpcAs(Q, 'dm_reply_to', s80.msg_id, '답장')).status === 'ok');
 	await expectError('dm_letter 는 학생이 직접 부를 수 없다', () => rowsAs(Q, `select public.dm_letter($1, 'x')`, [s80.thread_id]), 'permission denied');
-	check('지금 쓰는 RPC 는 그대로 (편지함 · 평가 · 업적)', (await one(`select has_function_privilege('authenticated', 'public.dm_mailbox(text, bigint)', 'execute') and has_function_privilege('authenticated', 'public.rate_partner(uuid, text, text[])', 'execute') and has_function_privilege('authenticated', 'public.my_achievements()', 'execute') a`)).a === true);
+	check('지금 쓰는 RPC 는 그대로 (편지함 · 평가 · 업적)', (await one(`select has_function_privilege('authenticated', 'public.dm_mailbox(text, bigint, bigint)', 'execute') and has_function_privilege('authenticated', 'public.rate_partner(uuid, text, text[])', 'execute') and has_function_privilege('authenticated', 'public.my_achievements()', 'execute') a`)).a === true);
 }
 
 
@@ -3292,6 +3292,76 @@ console.log('\n[84] 특별 업적(베타 테스터) · 업적 카탈로그 · �
 	check('★ 운영자가 잠금을 끄면 바로 열린다', (await rpcAs(Y, 'dm_send', Z, '또 안녕', null, null)).status !== 'letters_locked');
 	await expectError('운영진(관리자 아님)은 잠금을 못 바꾼다', () => svc('admin_update_settings', JSON.stringify({ letters_gate: true }), mod), 'admin_only');
 	await expectError('기준은 1명 이상', () => svc('admin_update_settings', JSON.stringify({ letters_gate_min: 0 }), adm), 'app_settings_letters_gate_min');
+}
+
+console.log('\n[85] 편지 폴더 — 여러 통 골라 폴더에 · 빼기 · 이름 바꾸기 · 지우기 (Phase 47)');
+{
+	let no = 27500;
+	const named = async (name, grade, gender) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name, grade = excluded.grade', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set gender=$2, onboarded=true where id=$1', [id, gender]);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const A = await named('폴더보냄', 1, 'f');
+	const B = await named('폴더받음', 2, 'm');
+	const C = await named('폴더셋째', 3, 'f');
+	const E = await named('폴더남', 3, 'm');
+	const box = async (u, which) => (await rpcAs(u, 'dm_mailbox', which)).letters.map((x) => x.id);
+	const s1 = await rpcAs(A, 'dm_send', B, '첫 편지');
+	const s2 = await rpcAs(C, 'dm_send', B, '다른 사람 편지');
+	const s3 = await rpcAs(B, 'dm_send', E, '내가 보낸 편지');
+	const s4 = await rpcAs(A, 'dm_send', B, '두 번째 편지');
+	check('편지 넷 준비', [s1, s2, s3, s4].every((x) => x.status === 'ok'), JSON.stringify([s1, s2, s3, s4]));
+	await rpcAs(B, 'dm_open', s1.msg_id);
+	await rpcAs(B, 'dm_open', s2.msg_id);
+
+	const first = await rpcAs(B, 'dm_mailbox', 'received');
+	check('처음엔 폴더 없음 (편지함 첫 쪽에 폴더 목록이 같이 온다)', JSON.stringify(first.folders) === '[]' && first.letters.every((x) => x.box === 'received'));
+	const put = await rpcAs(B, 'dm_folder_put', [s1.msg_id, s2.msg_id, s3.msg_id, s4.msg_id], null, '  고마운   편지 ');
+	check('★ 여러 통을 골라 새 폴더에 — 이름은 공백 정리, 안 연 편지(s4)는 빠진다', put.status === 'ok' && put.folder.name === '고마운 편지' && put.moved === 3, JSON.stringify(put));
+	const fid = put.folder.id;
+	check('★ 폴더에 넣은 편지는 받은/보낸 편지 목록에서 빠진다 (안 연 편지는 그대로)', JSON.stringify(await box(B, 'received')) === JSON.stringify([s4.msg_id]) && (await box(B, 'sent')).length === 0);
+	const inF = await rpcAs(B, 'dm_mailbox', 'received', null, fid);
+	check('★ 폴더를 열면 받은 · 보낸 편지가 섞여서 · 편지마다 box · 폴더 이름', inF.folder.name === '고마운 편지'
+		&& JSON.stringify(inF.letters.map((x) => [x.id, x.box])) === JSON.stringify([[s3.msg_id, 'sent'], [s2.msg_id, 'received'], [s1.msg_id, 'received']]), JSON.stringify(inF));
+	check('폴더 목록에 이름 · 편지 수', JSON.stringify((await rpcAs(B, 'dm_mailbox', 'sent')).folders) === JSON.stringify([{ id: fid, name: '고마운 편지', count: 3 }]));
+	check('다음 쪽(p_before)에는 폴더 목록을 다시 싣지 않는다', (await rpcAs(B, 'dm_mailbox', 'received', s4.msg_id + 1)).folders == null);
+
+	const again = await rpcAs(B, 'dm_folder_put', [s1.msg_id], null, '고마운 편지');
+	check('★ 같은 이름이면 그 폴더에 — 새로 만들지 않는다', again.folder.id === fid && Number((await one('select count(*) n from private.dm_folders where owner_id = $1', [B])).n) === 1);
+	const f2 = await rpcAs(B, 'dm_folder_put', [s1.msg_id], null, '보관');
+	check('★ 다른 폴더에 넣으면 옮겨 간다 (한 편지는 한 폴더에만)', f2.status === 'ok' && (await rpcAs(B, 'dm_mailbox', 'received', null, fid)).letters.length === 2
+		&& (await rpcAs(B, 'dm_mailbox', 'received', null, f2.folder.id)).letters.map((x) => x.id).join() === String(s1.msg_id));
+	check('있는 폴더를 번호로 골라 넣기', (await rpcAs(B, 'dm_folder_put', [s1.msg_id], fid, null)).folder.id === fid);
+
+	check('빈 이름은 안 된다', (await rpcAs(B, 'dm_folder_put', [s1.msg_id], null, '   ')).status === 'bad_name');
+	check('이름은 20자까지', (await rpcAs(B, 'dm_folder_put', [s1.msg_id], null, '가'.repeat(21))).status === 'bad_name');
+	check('빈 목록은 안 된다', (await rpcAs(B, 'dm_folder_put', [], null, '빈')).status === 'bad_request');
+	check('★ 남의 폴더에는 못 넣는다', (await rpcAs(A, 'dm_folder_put', [s1.msg_id], fid, null)).status === 'not_found');
+	const stolen = await rpcAs(E, 'dm_folder_put', [s1.msg_id, s2.msg_id], null, '남의 편지');
+	check('★ 남의 편지는 내 폴더에 안 들어간다', stolen.status === 'ok' && stolen.moved === 0 && (await rpcAs(E, 'dm_mailbox', 'received', null, stolen.folder.id)).letters.length === 0);
+	check('★ 상대 쪽에는 아무것도 바뀌지 않는다 (A 의 보낸 편지 그대로)', (await box(A, 'sent')).includes(s1.msg_id));
+	await expectError('★ 폴더 표는 직접 못 읽는다', () => rowsAs(B, 'select * from private.dm_folders'), 'permission denied');
+	await expectError('로그인 안 하면 못 부른다', () => rowsAs(null, `select public.dm_folder_put('{1}'::bigint[], null, 'x')`), 'permission denied');
+
+	check('★ 폴더에서 빼면 보관함으로 돌아온다', (await rpcAs(B, 'dm_folder_take', [s3.msg_id])).moved === 1 && (await box(B, 'sent')).includes(s3.msg_id));
+	check('이름 바꾸기', (await rpcAs(B, 'dm_folder_rename', fid, '소중한 편지')).status === 'ok' && (await rpcAs(B, 'dm_mailbox', 'received', null, fid)).folder.name === '소중한 편지');
+	check('다른 폴더와 같은 이름으로는 못 바꾼다', (await rpcAs(B, 'dm_folder_rename', fid, '보관')).status === 'exists');
+	check('남의 폴더 이름은 못 바꾼다', (await rpcAs(A, 'dm_folder_rename', fid, '해킹')).status === 'not_found');
+
+	await rpcAs(B, 'dm_close', s2.thread_id);
+	check('★ 버린 편지는 폴더에서도 안 보이고 수에서도 빠진다', !(await rpcAs(B, 'dm_mailbox', 'received', null, fid)).letters.some((x) => x.id === s2.msg_id)
+		&& (await rpcAs(B, 'dm_mailbox', 'received')).folders.find((f) => f.id === fid).count === 1);
+
+	check('남의 폴더는 못 지운다', (await rpcAs(A, 'dm_folder_delete', fid)).status === 'not_found');
+	check('★ 폴더를 지우면 편지는 보관함으로 돌아온다 (지워지지 않는다)', (await rpcAs(B, 'dm_folder_delete', fid)).status === 'ok' && (await box(B, 'received')).includes(s1.msg_id)
+		&& Number((await one('select count(*) n from private.dm_msgs where id = $1', [s1.msg_id])).n) === 1);
+	for (let i = 0; i < 29; i++) await rpcAs(B, 'dm_folder_put', [s1.msg_id], null, `폴더${i}`);
+	check('폴더는 30개까지', (await rpcAs(B, 'dm_folder_put', [s1.msg_id], null, '서른한째')).status === 'too_many');
+	check('없는 폴더를 열면 빈 목록', (await rpcAs(B, 'dm_mailbox', 'received', null, 999999)).letters.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

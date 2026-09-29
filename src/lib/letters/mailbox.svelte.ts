@@ -1,4 +1,4 @@
-import { fetchMailbox, type Box, type MailItem } from './api';
+import { fetchMailbox, type Box, type Folder, type MailItem } from './api';
 import { refreshUnread } from './unread.svelte';
 
 /**
@@ -12,14 +12,17 @@ export const BOX = $state({
 	received: [] as MailItem[],
 	sent: [] as MailItem[],
 	loaded: { received: false, sent: false } as Record<Box, boolean>,
-	more: { received: false, sent: false } as Record<Box, boolean>
+	more: { received: false, sent: false } as Record<Box, boolean>,
+	/** 내 편지 폴더 (Phase 47) — 편지함 첫 쪽과 같이 온다. 폴더에 넣은 편지는 received · sent 에 없다 */
+	folders: [] as Folder[]
 });
 
 export async function loadBox(box: Box) {
 	try {
 		const r = await fetchMailbox(box);
-		BOX[box] = r;
-		BOX.more[box] = r.length === PAGE;
+		BOX[box] = r.letters;
+		BOX.more[box] = r.letters.length === PAGE;
+		if (r.folders) BOX.folders = r.folders;
 	} catch {
 		/* 다음 번에 — 기억해 둔 목록을 그대로 보여 준다 */
 	} finally {
@@ -41,7 +44,7 @@ export function pollMailbox() {
 export async function loadMore(box: Box) {
 	const last = BOX[box].at(-1);
 	if (!last) return;
-	const r = await fetchMailbox(box, last.id).catch(() => [] as MailItem[]);
+	const r = (await fetchMailbox(box, last.id).catch(() => null))?.letters ?? [];
 	BOX[box] = [...BOX[box], ...r];
 	BOX.more[box] = r.length === PAGE;
 }
@@ -50,6 +53,14 @@ export async function loadMore(box: Box) {
 export function dropThread(threadId: number) {
 	BOX.received = BOX.received.filter((x) => x.thread_id !== threadId);
 	BOX.sent = BOX.sent.filter((x) => x.thread_id !== threadId);
+	refreshMailbox();
+}
+
+/** 폴더에 넣었다 · 폴더를 바꿨다 — 목록에서 바로 빼고(폴더에 간 편지는 보관함 목록에 없다) 새로 읽어 폴더 수를 맞춘다 */
+export function filed(ids: number[]) {
+	const gone = new Set(ids);
+	BOX.received = BOX.received.filter((x) => !gone.has(x.id));
+	BOX.sent = BOX.sent.filter((x) => !gone.has(x.id));
 	refreshMailbox();
 }
 
