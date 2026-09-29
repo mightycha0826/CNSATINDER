@@ -111,7 +111,10 @@ const analyze = (page) =>
 				if (o.some((x) => x === 'auto' || x === 'scroll')) return 'skip';
 				if (o.some((x) => x === 'hidden' || x === 'clip')) {
 					const r = p.getBoundingClientRect();
-					return r.width <= 2 || r.height <= 2 ? 'skip' : p;
+					if (r.width <= 2 || r.height <= 2) return 'skip';
+					// 자르는 방향만 본다 — overflow-x: clip 은 옆으로만 자르고 아래로는 그대로 흐른다 (학생 앱 #app, Phase 54)
+					const cuts = (x) => x === 'hidden' || x === 'clip';
+					return { el: p, x: cuts(cs.overflowX), y: cuts(cs.overflowY) };
 				}
 			}
 			return null;
@@ -128,7 +131,7 @@ const analyze = (page) =>
 			const c = clipper(el);
 			const skip = c === 'skip';
 			const clip = skip ? null : c;
-			const cr = clip?.getBoundingClientRect();
+			const cr = clip?.el.getBoundingClientRect();
 			const lines = [];
 			let lastTop = null, clipped = false, out = false;
 			for (let i = 0; i < text.length; i++) {
@@ -140,7 +143,7 @@ const analyze = (page) =>
 				else lines.at(-1).to = i;
 				// 굵은 글꼴의 획이 글자 칸 밖으로 조금 나오는 것(3px)은 봐준다
 				if (!clip && !skip && (r.right > vw + 0.5 || r.left < -0.5)) out = true;
-				if (cr && (r.right > cr.right + 3 || r.left < cr.left - 3 || r.bottom > cr.bottom + 3 || r.top < cr.top - 3)) clipped = true;
+				if (cr && ((clip.x && (r.right > cr.right + 3 || r.left < cr.left - 3)) || (clip.y && (r.bottom > cr.bottom + 3 || r.top < cr.top - 3)))) clipped = true;
 			}
 			if (out) res.넘침.push(say(el));
 			if (clipped) res.잘림.push(say(el));
