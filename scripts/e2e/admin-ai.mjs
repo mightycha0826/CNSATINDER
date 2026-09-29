@@ -128,7 +128,9 @@ try {
 	await page.getByLabel(/대화 봇/).check();
 	await page.locator('input[name=ai_chat_daily_cap]').fill('5');
 	await page.getByRole('button', { name: 'AI 설정 저장' }).click();
-	await page.getByText('AI 설정 저장 완료').waitFor();
+	// 결과는 누른 버튼 자체(data-ack-msg) 또는 알림(.toast)에 (Phase 48)
+	const acked = (t) => page.locator(`[data-ack-msg*="${t}"], .toast:has-text("${t}")`).first();
+	await acked('AI 설정 저장 완료').waitFor();
 	const p = calls.filter((c) => c[0] === 'settings').at(-1)?.[1];
 	check('AI 설정 저장 (켜기 · 한도)', p?.ai_moderation === true && p.ai_chat === true && p.ai_chat_daily_cap === 5 && p.ai_mod_daily_cap === 250, JSON.stringify(p));
 	check('AI 저장이 다른 운영 수치를 건드리지 않는다', p && !('room_minutes' in p) && !('notice' in p));
@@ -145,7 +147,7 @@ try {
 	check('금칙어 목록이 한 줄에 하나', (await ta.inputValue()) === '섹\\s*스\n니\\s*애\\s*미');
 	await ta.fill('섹\\s*스\n니\\s*애\\s*미\n  바보멍청이  \n\n');
 	await page.getByRole('button', { name: '금칙어 저장' }).click();
-	await page.getByText('금칙어 3개 저장 완료').waitFor();
+	await acked('금칙어 3개 저장 완료').waitFor();
 	check('저장: 빈 줄 · 앞뒤 공백 정리', JSON.stringify(calls.filter((c) => c[0] === 'terms').at(-1)?.[1]) === JSON.stringify(['섹\\s*스', '니\\s*애\\s*미', '바보멍청이']));
 	await ta.fill('(깨진');
 	await page.getByRole('button', { name: '금칙어 저장' }).click();
@@ -163,7 +165,7 @@ try {
 	check('예전 편지용 "편지 전체 보기" 링크는 없다', (await page.getByRole('link', { name: /편지 전체/ }).count()) === 0);
 	check('상태: 끝남', (await page.locator('.now').innerText()).includes('끝남'));
 	await page.getByRole('button', { name: '편지 내리기' }).click();
-	await page.getByText('편지 내림').first().waitFor();
+	await acked('편지 내림').waitFor();
 	const rd = calls.filter((c) => c[0] === 'remove_dm').at(-1)?.[1];
 	check('★ 편지 내리기 → 그 줄기 · 신고 · 운영자 기록으로', rd?.p_thread === 42 && rd?.p_report === DMREP && rd?.p_staff === STAFF, JSON.stringify(rd));
 	check('신고는 조치 완료로', calls.some((c) => c[0] === 'letter_status' && c[1].p_status === 'actioned'));

@@ -2,6 +2,7 @@
 	/** 신고 상세 머리 — 목록으로 · 제목 · 접수 시각과 상태 · 검토 시작/기각/다시 열기 */
 	import { enhance } from '$app/forms';
 	import { STATUS_LABEL, fmtTime, type ReportStatus } from '$lib/adminTypes';
+	import { ack } from './confirm';
 
 	let {
 		back,
@@ -18,7 +19,7 @@
 		<h1 class="a-h1">{title}</h1>
 		<p class="a-sub">{fmtTime(report.created_at)} 접수 · <span class="st st-{report.status}">{STATUS_LABEL[report.status]}</span></p>
 	</div>
-	<form class="actions" method="POST" action="?/status" use:enhance>
+	<form class="actions" method="POST" action="?/status" use:enhance={ack()}>
 		{#if report.status === 'open'}
 			<button class="btn-ghost a-sm" name="status" value="reviewing">검토 시작</button>
 		{/if}

@@ -44,9 +44,11 @@ try {
 	const errs = []; page.on('pageerror', (e) => errs.push(String(e)));
 	let answer = true; await answerDialogs(page, () => answer);
 	const settle = async () => { await page.waitForLoadState('networkidle'); await page.waitForTimeout(300); };
+	// 결과는 누른 버튼 자체(data-ack-msg) 또는 버튼이 사라졌으면 알림(.toast)에 (Phase 48)
+	const acked = () => page.evaluate(() => [...document.querySelectorAll('[data-ack]')].map((b) => b.dataset.ackMsg).join(' ') + ' ' + [...document.querySelectorAll('.toast')].map((t) => t.textContent).join(' '));
 	console.log(`\n[${ROLE}]`);
 	await page.goto(`http://localhost:${PORT}/admin`); await settle();
-	await page.locator('header.bar nav a', { hasText: '공지사항' }).click(); await settle();
+	await page.locator('.side nav a', { hasText: '공지사항' }).click(); await settle();
 	check('메뉴 "공지사항" → 목록', page.url().endsWith('/admin/notices') && (await page.getByText('기존 공지').count()) === 1);
 	if (ROLE === 'admin') {
 		await page.getByPlaceholder('제목 (80자까지)').fill('  ');
@@ -60,13 +62,13 @@ try {
 		answer = true; await page.getByRole('button', { name: '공지 올리기' }).click(); await settle();
 		check('올리기 → 서버에 제목·내용', JSON.stringify(calls.at(-1)?.[1]).includes('축제 안내') && calls.at(-1)[1].p_body === '금요일 오후\n운동장');
 		check('목록에 새 공지가 맨 위', (await page.locator('.list li').first().innerText()).includes('축제 안내'));
-		check('완료 안내 + 입력칸 비움', (await page.locator('.a-ok').innerText()).includes('공지 올림') && (await page.getByPlaceholder('제목 (80자까지)').inputValue()) === '');
+		check('★ 완료 안내는 누른 버튼에 + 입력칸 비움', (await acked()).includes('✓') && (await acked()).includes('공지 올림') &&(await page.getByPlaceholder('제목 (80자까지)').inputValue()) === '');
 		await page.screenshot({ path: `${SP}/admin-notices.png`, fullPage: true });
 		answer = false; await page.locator('.list li', { hasText: '기존 공지' }).getByRole('button', { name: '내리기' }).click(); await settle();
 		check('★ 내리기 취소 → 그대로', calls.filter((c) => c[0] === 'remove').length === 0 && (await page.getByText('기존 공지').count()) === 1);
 		answer = true; await page.locator('.list li', { hasText: '기존 공지' }).getByRole('button', { name: '내리기' }).click(); await settle();
 		check('내리기 → 목록에서 빠짐', (await page.getByText('기존 공지').count()) === 0 && calls.at(-1)?.[1].p_id === 1);
-		await page.locator('header.bar nav a', { hasText: '활동 기록' }).click(); await settle();
+		await page.locator('.side nav a', { hasText: '활동 기록' }).click(); await settle();
 		check('활동 기록: "공지 올림 · 제목"', /공지 올림[\s\S]*"축제 안내"/.test(await page.locator('main').innerText()));
 	} else {
 		check('운영진: 올리기 폼 없음 · 안내', (await page.locator('form.post').count()) === 0 && (await page.getByText('관리자만 올리고 내릴 수').count()) === 1);
@@ -75,7 +77,7 @@ try {
 		check('★ 운영진이 직접 요청해도 서버가 막음', calls.length === 0 && (await r.text()).includes('관리자만'), String(r.status()));
 	}
 	console.log('  [문의]');
-	await page.locator('header.bar nav a', { hasText: '문의' }).click(); await settle();
+	await page.locator('.side nav a', { hasText: '문의' }).click(); await settle();
 	check('★ 메뉴 "문의" → 답변 대기 · 답변한 문의', page.url().endsWith('/admin/inquiries') && (await page.locator('h1').innerText()).includes('답변 대기 1개')
 		&& (await page.locator('.list li').first().innerText()).includes('편지 봉투가 안 열려요') && (await page.locator('.a-card.done').innerText()).includes('답했어요'));
 	check(ROLE === 'admin' ? '관리자: 보낸 학생 이름표 (기록에 남음)' : '운영진: 이름표 없이 "보낸 학생 보기"',
@@ -86,7 +88,7 @@ try {
 	check('확인창 취소 → 안 보냄', !calls.some((c) => c[0] === 'answer'));
 	answer = true; await reply.getByRole('button', { name: '답변 보내기' }).click(); await settle();
 	check('★ 답변 → 서버에 문의 번호 · 답변', calls.find((c) => c[0] === 'answer')?.[1].p_id === 1 && calls.find((c) => c[0] === 'answer')[1].p_answer === '새로고침 후 다시 열어 보세요');
-	check('★ 답변하면 답변한 문의로 옮겨 간다', (await page.locator('h1').innerText()).includes('답변 대기 0개') && (await page.locator('.a-ok').innerText()).includes('답변을 보냈어요')
+	check('★ 답변하면 답변한 문의로 옮겨 간다', (await page.locator('h1').innerText()).includes('답변 대기 0개') && (await acked()).includes('답변을 보냈어요')
 		&& (await page.locator('.a-card.done').count()) === 2);
 	await page.screenshot({ path: `${SP}/admin-inquiries-${ROLE}.png`, fullPage: true });
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));

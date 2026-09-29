@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { confirmed } from '$lib/admin/confirm';
+	import { ack, confirmed } from '$lib/admin/confirm';
 	import FormMsg from '$lib/admin/FormMsg.svelte';
 
 	let { data, form } = $props();
@@ -52,7 +52,7 @@
 	</form>
 </section>
 
-<form method="POST" action="?/save" use:enhance={() => ({ update }) => update({ reset: false })} class="form">
+<form method="POST" action="?/save" use:enhance={ack({ keep: true })} class="form">
 	<label class="row notice">
 		<span class="label">홈 배너<small>채팅 홈 맨 위 한 줄 · 서비스를 닫았을 때 안내로도 보임. 여러 줄 공지는 <a href="/admin/notices">공지사항</a>에서</small></span>
 		<input class="field" name="notice" value={s.notice} maxlength="300" placeholder="(없음)" disabled={!isAdmin} />
@@ -82,7 +82,7 @@
 		지금 <b class:gate-locked={locked}>{locked ? '잠김' : '열림'}</b> · 가입한 학생 <b class="num">{data.students ?? '?'}</b>명
 		{#if s.letters_gate}· {min}명이 되면 저절로 열려요{:else}· 잠금이 꺼져 있어요{/if}
 	</p>
-	<form method="POST" action="?/letters" use:enhance={() => ({ update }) => update({ reset: false })} class="form">
+	<form method="POST" action="?/letters" use:enhance={ack({ keep: true })} class="form">
 		<label class="row">
 			<span class="label">잠금 켜기<small>켜 두면 학생 앱의 익명편지 탭에 "가입 인원이 모이면 열려요"와 실시간 가입 인원이 보이고, 편지 쓰기 · 찾기가 막혀요</small></span>
 			<input type="checkbox" name="letters_gate" checked={s.letters_gate} disabled={!isAdmin} />
@@ -114,7 +114,7 @@
 			<span>오늘 AI 대화 <b class="num">{data.usage.ai_chats_today}</b>번</span>
 		</div>
 	{/if}
-	<form method="POST" action="?/ai" use:enhance={() => ({ update }) => update({ reset: false })} class="form">
+	<form method="POST" action="?/ai" use:enhance={ack({ keep: true })} class="form">
 		<label class="row">
 			<span class="label">AI 검토 (검열봇 2단)<small>올라간 채팅·편지·댓글을 AI 가 보고, 걸리면 신고함에 '자동 감지'로</small></span>
 			<input type="checkbox" name="ai_moderation" checked={s.ai_moderation} disabled={!isAdmin} />
@@ -137,7 +137,7 @@
 
 	{#if isAdmin}
 		{@const chk = (form as { aiCheck?: { ok: boolean; binding: boolean; model: string; ms: number; reply?: string; error?: string } } | null)?.aiCheck}
-		<form method="POST" action="?/aiCheck" use:enhance={() => ({ update }) => update({ reset: false })} class="ai-check">
+		<form method="POST" action="?/aiCheck" use:enhance={ack({ keep: true })} class="ai-check">
 			<button class="btn-ghost">AI 연결 확인</button>
 			<span class="muted small">짧은 질문 하나를 보내 봐요 (무료 몫을 아주 조금 씀)</span>
 		</form>
@@ -158,7 +158,7 @@
 	{/if}
 
 	{#if data.terms}
-		<form method="POST" action="?/terms" use:enhance={() => ({ update }) => update({ reset: false })} class="form terms">
+		<form method="POST" action="?/terms" use:enhance={ack({ keep: true })} class="form terms">
 			<label class="label" for="terms">
 				금칙어 ({data.terms.length}개)
 				<small>한 줄에 하나. 이 말이 들어간 채팅·편지·댓글은 보내지지 않아요. 띄어쓰기 우회는 <code>\s*</code> (예: <code>바\s*보</code>)</small>

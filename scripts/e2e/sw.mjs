@@ -71,7 +71,7 @@ try {
 	await answerDialogs(page, () => true);
 	const text = async () => (await page.locator('main').innerText()).replace(/\s+/g, ' ');
 	const nav = async (label) => {
-		await page.locator('header.bar nav a', { hasText: label }).click();
+		await page.locator('.side nav a', { hasText: label }).click();
 		await page.waitForLoadState('networkidle');
 		await page.waitForTimeout(300);
 	};

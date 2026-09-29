@@ -33,18 +33,40 @@
 		})();
 	});
 
+	// 메뉴 (Phase 48 — 하는 일별로 묶은 왼쪽 사이드바. 좁은 화면은 위쪽 한 줄로 밀기)
+	const GROUPS = [
+		{ title: '지켜보기', items: [{ href: '/admin/live', label: '실시간', ic: 'M3 12h4l3-8 4 16 3-8h4' }] },
+		{
+			title: '신고 처리',
+			items: [
+				{ href: '/admin', label: '채팅 신고', ic: 'M4 5h16v11H9l-5 4V5z' },
+				{ href: '/admin/letters', label: '편지 신고', ic: 'M3 6h18v12H3zM3 7l9 6 9-6' }
+			]
+		},
+		{
+			title: '사람 · 대화',
+			items: [
+				{ href: '/admin/users', label: '사용자', ic: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4.5-6 8-6s7 2 8 6' },
+				{ href: '/admin/rooms', label: '전체 대화', admin: true, ic: 'M3 5h12v9H7l-4 3V5zM9 17h8l4 3V9h-3' }
+			]
+		},
+		{
+			title: '소통',
+			items: [
+				{ href: '/admin/notices', label: '공지사항', ic: 'M4 10v4h4l6 5V5L8 10H4zM18 9a4 4 0 010 6' },
+				{ href: '/admin/inquiries', label: '문의', ic: 'M12 21a9 9 0 10-8-5l-1 5 5-1a9 9 0 004 1zM9.5 9.5a2.5 2.5 0 114 2c-1 .6-1.5 1-1.5 2M12 16.5v.01' }
+			]
+		},
+		{
+			title: '운영',
+			items: [
+				{ href: '/admin/settings', label: '운영 설정', ic: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19 12l2-1-2-4-2 1-2-1.5V4h-4v2.5L9 8 7 7l-2 4 2 1v0l-2 1 2 4 2-1 2 1.5V20h4v-2.5l2-1.5 2 1 2-4-2-1z' },
+				{ href: '/admin/audit', label: '활동 기록', ic: 'M12 7v5l3 2M21 12a9 9 0 11-18 0 9 9 0 0118 0z' }
+			]
+		}
+	];
 	const NAV = $derived(
-		[
-			{ href: '/admin/live', label: '실시간' },
-			{ href: '/admin', label: '채팅 신고' },
-			{ href: '/admin/letters', label: '편지 신고' },
-			{ href: '/admin/users', label: '사용자' },
-			{ href: '/admin/rooms', label: '전체 대화', admin: true },
-			{ href: '/admin/notices', label: '공지사항' },
-			{ href: '/admin/inquiries', label: '문의' },
-			{ href: '/admin/settings', label: '운영 설정' },
-			{ href: '/admin/audit', label: '활동 기록' }
-		].filter((n) => !n.admin || data.staff?.role === 'admin')
+		GROUPS.map((g) => ({ ...g, items: g.items.filter((n) => !('admin' in n && n.admin) || data.staff?.role === 'admin') })).filter((g) => g.items.length)
 	);
 	const active = (href: string) =>
 		href === '/admin'
@@ -52,6 +74,24 @@
 			: href === '/admin/letters'
 				? page.url.pathname.startsWith(href) || page.url.pathname.startsWith('/admin/posts')
 				: page.url.pathname.startsWith(href);
+
+	// 고친 칸 표시 (Phase 48) — 폼 안의 값을 바꾸면 그 줄(label · .row)에 표시, 폼에는 data-dirty(저장 단추가 눈에 띄게).
+	// 저장이 성공하면 lib/admin/confirm.ts(ack)가 지운다
+	$effect(() => {
+		const on = (e: Event) => {
+			const t = e.target as HTMLElement | null;
+			const form = t?.closest?.('main form');
+			if (!form || t?.getAttribute('type') === 'hidden') return;
+			(form as HTMLElement).dataset.dirty = '1';
+			(t!.closest('label, .row') as HTMLElement | null)?.setAttribute('data-changed', '');
+		};
+		document.addEventListener('input', on);
+		document.addEventListener('change', on);
+		return () => {
+			document.removeEventListener('input', on);
+			document.removeEventListener('change', on);
+		};
+	});
 
 	async function logout() {
 		await fetch('/admin/session', { method: 'DELETE' });
@@ -64,43 +104,60 @@
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
-{#if data.staff}
-	<header class="bar">
-		<a class="brand" href="/admin">CNSATINDER <span>운영</span></a>
-		<nav>
-			{#each NAV as n (n.href)}
-				<a href={n.href} class:on={active(n.href)}>{n.label}</a>
-			{/each}
-		</nav>
-		<span class="who">{data.staff.role === 'admin' ? '관리자' : '운영진'}</span>
-		<button class="out" onclick={logout}>로그아웃</button>
-	</header>
-{/if}
+<div class="shell" class:solo={!data.staff}>
+	{#if data.staff}
+		<aside class="side">
+			<a class="brand" href="/admin">CNSATINDER <span>운영</span></a>
+			<nav aria-label="운영 메뉴">
+				{#each NAV as g (g.title)}
+					<p class="group">{g.title}</p>
+					{#each g.items as n (n.href)}
+						<a href={n.href} class:on={active(n.href)} aria-current={active(n.href) ? 'page' : undefined}>
+							<svg viewBox="0 0 24 24" aria-hidden="true"><path d={n.ic} fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+							{n.label}
+						</a>
+					{/each}
+				{/each}
+			</nav>
+			<div class="me">
+				<span class="who"><i class="role" class:adm={data.staff.role === 'admin'}></i>{data.staff.role === 'admin' ? '관리자' : '운영진'}</span>
+				<button class="out" onclick={logout}>로그아웃</button>
+			</div>
+		</aside>
+	{/if}
 
-<main class="wrap">
-	{@render children()}
-</main>
+	<main class="wrap">
+		{@render children()}
+	</main>
+</div>
 
 <ConfirmDialog />
 
 <style>
+	/* Phase 48 — 넓은 화면: 왼쪽 사이드바(하는 일별 묶음) + 오른쪽 본문. 좁은 화면(≤900): 위쪽 머리글 + 옆으로 미는 메뉴 한 줄 */
 	:global(body.admin #app) {
-		max-width: 1080px;
+		max-width: 1320px;
 	}
-	.bar {
+	.shell {
+		display: grid;
+		grid-template-columns: 220px minmax(0, 1fr);
+		min-height: 100dvh;
+	}
+	.shell.solo {
+		grid-template-columns: minmax(0, 1fr);
+	}
+	.side {
 		position: sticky;
 		top: 0;
-		z-index: 10;
 		display: flex;
-		align-items: center;
-		gap: 4px 20px;
-		min-height: 52px;
-		padding: 0 24px;
-		background: var(--bg);
-		border-bottom: 1px solid var(--line);
+		flex-direction: column;
+		height: 100dvh;
+		padding: 20px 12px 16px;
+		border-right: 1px solid var(--line);
+		background: color-mix(in srgb, var(--field) 45%, var(--bg));
 	}
 	.brand {
-		flex: none;
+		padding: 0 10px 14px;
 		white-space: nowrap;
 		color: var(--text);
 		font-weight: 800;
@@ -108,71 +165,148 @@
 		letter-spacing: -0.03em;
 	}
 	.brand span {
-		color: var(--text-2);
-		font-weight: 600;
+		color: var(--accent);
+		font-weight: 700;
 	}
-	/* 메뉴가 화면보다 길면 옆으로 민다 — 좁은 화면에서 글자가 한 자씩 줄바꿈되지 않게 */
 	nav {
 		display: flex;
-		gap: 4px;
-		min-width: 0;
-		overflow-x: auto;
+		flex-direction: column;
+		gap: 2px;
+		overflow-y: auto;
 		scrollbar-width: none;
 	}
 	nav::-webkit-scrollbar {
 		display: none;
 	}
+	.group {
+		margin: 14px 10px 4px;
+		font-size: 11px;
+		font-weight: 700;
+		letter-spacing: 0.02em;
+		color: var(--text-2);
+	}
+	.group:first-child {
+		margin-top: 0;
+	}
 	nav a {
-		flex: none;
-		white-space: nowrap;
-		padding: 6px 10px;
-		border-radius: var(--r-sm);
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 9px 10px;
+		border-radius: 10px;
 		color: var(--text-2);
 		font-size: 14px;
 		font-weight: 600;
+		white-space: nowrap;
+		text-decoration: none;
+		transition: background 0.15s, color 0.15s;
+	}
+	nav a:hover {
+		background: var(--field);
+		color: var(--text);
 	}
 	nav a.on {
+		background: var(--surface);
 		color: var(--text);
-		background: var(--field);
+		box-shadow: 0 1px 3px rgb(0 0 0 / 0.08), inset 3px 0 0 var(--accent);
+	}
+	nav svg {
+		flex: none;
+		width: 18px;
+		height: 18px;
+	}
+	nav a.on svg {
+		color: var(--accent);
+	}
+	.me {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		margin-top: auto;
+		padding: 12px 10px 0;
+		border-top: 1px solid var(--line);
 	}
 	.who {
-		margin-left: auto;
-		flex: none;
-		font-size: 13px;
-		color: var(--text-2);
-	}
-	.out {
-		flex: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 		font-size: 13px;
 		font-weight: 600;
+		color: var(--text-2);
+	}
+	.role {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #22c55e;
+	}
+	.role.adm {
+		background: var(--accent);
+	}
+	.out {
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text-2);
+	}
+	.out:hover {
+		color: var(--danger);
 	}
 	.wrap {
-		flex: 1;
-		padding: 24px;
+		min-width: 0;
+		padding: 28px 32px 48px;
 	}
-	/* 좁은 화면: 첫 줄 = 이름 · 로그아웃, 둘째 줄 = 메뉴(옆으로 밀기) */
+	/* 좁은 화면: 머리글(이름 · 로그아웃) + 메뉴 한 줄(옆으로 밀기), 묶음 제목은 숨긴다 */
 	@media (max-width: 900px) {
-		.bar {
-			flex-wrap: wrap;
-			padding: 8px 24px 6px;
+		.shell {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.side {
+			z-index: 10;
+			display: grid;
+			grid-template-columns: 1fr auto;
+			align-items: center;
+			height: auto;
+			padding: 10px 16px 6px;
+			border-right: 0;
+			border-bottom: 1px solid var(--line);
+			background: var(--bg);
+		}
+		.brand {
+			padding: 0;
 		}
 		nav {
-			order: 3;
-			flex: 1 1 100%;
-			margin: 0 -10px;
+			grid-column: 1 / -1;
+			grid-row: 2;
+			flex-direction: row;
+			margin: 8px -16px 0;
+			padding: 0 12px;
+			overflow-x: auto;
 		}
-		.who {
-			margin-left: auto;
+		.group {
+			display: none;
+		}
+		nav a {
+			flex: none;
+			padding: 7px 10px;
+		}
+		nav a.on {
+			box-shadow: inset 0 -2px 0 var(--accent);
+			border-radius: 10px 10px 0 0;
+		}
+		.me {
+			grid-column: 2;
+			grid-row: 1;
+			margin: 0;
+			padding: 0;
+			border: 0;
+			gap: 14px;
+		}
+		.wrap {
+			padding: 20px 24px 40px;
 		}
 	}
 	@media (max-width: 640px) {
-		.bar {
-			padding: 8px var(--pad) 6px;
-		}
-		nav {
-			margin: 0 calc(-1 * var(--pad));
-			padding: 0 calc(var(--pad) - 10px);
-		}
 		.wrap {
 			padding: var(--pad);
 		}

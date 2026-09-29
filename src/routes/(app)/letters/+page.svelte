@@ -199,7 +199,7 @@
 		position: relative;
 		display: grid;
 		place-items: center;
-		height: calc(230px * var(--k, 1));
+		height: calc(300px * var(--k, 1)); /* Phase 48 — 판자를 더 길게 (230 → 300) */
 		/* 나뭇결 — 가는 결 · 굵은 결 · 위에서 비치는 빛 */
 		background:
 			repeating-linear-gradient(91deg, rgb(255 255 255 / 0.035) 0 2px, transparent 2px 11px),

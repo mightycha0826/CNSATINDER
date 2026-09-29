@@ -1,6 +1,6 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
 import { spawn } from 'node:child_process';
-import { chromium } from 'playwright-core';
+import { chromium, webkit } from 'playwright-core';
 // 줄바꿈 · 폭 (Phase 46) — 폭 280 ~ 520 의 모든 화면에서 글이 낱말 중간에서 끊기거나, 칸 밖으로 넘치거나, 잘리지 않는지.
 // 280 = 폭 360 폰 + 안드로이드 큰 글꼴(약 130%) — 기기 글꼴을 키우면 웹 화면의 폭이 그만큼 좁아진다.
 // 찾는 것:
@@ -11,7 +11,9 @@ import { chromium } from 'playwright-core';
 //   외톨이   여러 줄 글의 마지막 줄에 한두 글자 낱말 하나만 ("요", "공개")
 // 일부러 자유롭게 흐르는 글(사람이 쓴 긴 글 등)은 data-wrap-free, 화면 밖 장식은 data-wrap-exempt 로 뺀다.
 // WRAP_REPORT=1 이면 전부 늘어놓기만 하고 실패로 세지 않는다. SHOTS=1 이면 화면마다 스크린샷.
+// WRAP_ENGINE=webkit 이면 사파리 엔진으로 (Phase 47-4 — 사용자 대부분이 아이폰 · 아이패드. `npx playwright-core install webkit` 한 번 필요)
 const PORT = 5186;
+const ENGINE = process.env.WRAP_ENGINE === 'webkit' ? 'webkit' : 'chromium';
 const BASE = `http://localhost:${PORT}`;
 const REPORT = !!process.env.WRAP_REPORT;
 const env = { ...process.env, PUBLIC_SUPABASE_URL: 'https://fake-proj.supabase.co', PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_testtesttesttesttest' };
@@ -40,14 +42,15 @@ const letters = [
 	{ id: 50, thread_id: 9, box: 'sent', to_name: '박받음', to_grade: 2, opened: true, replied: true, is_reply: false, body: '발표 멋있었어', created_at: iso(-3600) }
 ];
 const pub = (l) => { const { box, body, ...rest } = l; return { ...rest, removed: false, thread_status: 'open' }; };
+const folder = { id: 1, name: '고마웠던 편지들 모아 두기', count: 2, received: 1, sent: 1 };
 const notices = [{ id: 1, title: '11월 정기 점검 안내 — 토요일 새벽 두 시부터 네 시까지 잠깐 쉬어요', body: '점검하는 동안에는 대화와 편지를 쓸 수 없어요.\n점검이 끝나면 알림으로 알려 드릴게요. 불편을 드려 죄송해요!', created_at: iso(-60) }];
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
-const browser = await chromium.launch({ executablePath: CHROME });
+const browser = ENGINE === 'webkit' ? await webkit.launch() : await chromium.launch({ executablePath: CHROME });
 
 async function context(width, { gate = false } = {}) {
-	const ctx = await browser.newContext({ viewport: { width, height: Math.round(width * 2.05) }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+	const ctx = await browser.newContext({ viewport: { width, height: Math.round(width * 2.05) }, hasTouch: true, isMobile: ENGINE === 'chromium', deviceScaleFactor: 2 });
 	await ctx.route('https://fake-proj.supabase.co/**', async (route) => {
 		const req = route.request(); const p = new URL(req.url()).pathname;
 		const a = req.method() === 'POST' ? req.postDataJSON() ?? {} : {};
@@ -60,7 +63,10 @@ async function context(width, { gate = false } = {}) {
 		if (rpc === 'my_notices') return json({ notices, last_seen: 0, personal: [] });
 		if (rpc === 'my_achievements') return json({ items: [], featured: [], chosen: [] });
 		if (rpc === 'achievement_catalog') return json([]);
-		if (rpc === 'dm_mailbox') return json({ letters: letters.filter((l) => l.box === a.p_box).map(pub), server_now: iso() });
+		// 폴더 하나 (Phase 47) — 받은 · 보낸 편지가 섞여서
+		if (rpc === 'dm_mailbox') return json(a.p_folder != null
+			? { letters: letters.filter((l) => l.id !== 70).map((l) => ({ ...pub(l), box: l.box })), folder, server_now: iso() }
+			: { letters: letters.filter((l) => l.box === a.p_box).map(pub), folders: [folder], server_now: iso() });
 		if (rpc === 'dm_unread') return json(1);
 		if (rpc === 'dm_open') { const l = letters.find((x) => x.id === a.p_msg); return json({ status: 'ok', ...pub(l), role: l.box, body: l.body, fmt: null, closed_by: null, can_reply: l.box === 'received', wait_reply: false, first_open: false, server_now: iso() }); }
 		if (rpc === 'dm_search') return json([{ id: 'u-b', name: '박받음', grade: 2, no: 20314, checked: true }, { id: 'u-c', name: '남궁받음', grade: 3, no: 30522, checked: false }]);
@@ -161,6 +167,7 @@ const SCREENS = [
 	['tour', '/?tour', async (p) => { await p.locator('.tour').waitFor({ timeout: 4000 }).catch(() => {}); }],
 	['letters', '/letters'],
 	['archive', '/letters/archive'],
+	['folder', '/letters/f/1'],
 	['letters-new', '/letters/new', async (p) => { await p.getByRole('searchbox').fill('받음'); await p.waitForTimeout(700); }],
 	['letter', '/letters/m/60'],
 	['letter-sent', '/letters/m/50'],
@@ -200,7 +207,7 @@ try {
 		for (const [name, path] of [['login', '/login'], ['install', '/install']]) {
 			// 처음 한 번은 vite 가 화면을 만드느라 늦다 — 화면이 뜰 때까지 기다린다
 			await p0.goto(`${BASE}${path}`); await p0.locator('.page').first().waitFor({ timeout: 30000 }).catch(() => {}); await p0.waitForTimeout(1200);
-			if (process.env.SHOTS) await p0.screenshot({ path: `${OUT}/wrap-${name}-${w}.png`, fullPage: true }).catch(() => {});
+			if (process.env.SHOTS) await p0.screenshot({ path: `${OUT}/wrap-${ENGINE}-${name}-${w}.png`, fullPage: true }).catch(() => {});
 			const r = await analyze(p0);
 			for (const [k, list] of Object.entries(r)) for (const m of list) note(name, k, m, w);
 		}
@@ -218,11 +225,12 @@ try {
 			await page.goto(`${BASE}${path}`);
 			await page.waitForTimeout(1300);
 			if (prep) await prep(page);
-			if (process.env.SHOTS) await page.screenshot({ path: `${OUT}/wrap-${name}-${w}.png`, fullPage: true }).catch(() => {});
+			if (process.env.SHOTS) await page.screenshot({ path: `${OUT}/wrap-${ENGINE}-${name}-${w}.png`, fullPage: true }).catch(() => {});
 			const r = await analyze(page);
 			for (const [k, list] of Object.entries(r)) for (const m of list) note(name, k, m, w);
 		}
-		for (const e of errs) if (!/Failed to fetch dynamically imported module|Importing a module script failed/.test(e)) note('*', '오류', e, w);
+		// 화면을 옮기며 끊긴 요청(WebKit 은 "access control checks" 로 알린다)은 오류가 아니다
+		for (const e of errs) if (!/Failed to fetch dynamically imported module|Importing a module script failed|due to access control checks/.test(e)) note('*', '오류', e, w);
 		await ctx.close();
 
 		// 익명편지 잠금 화면
@@ -234,7 +242,7 @@ try {
 		await gp.getByRole('button', { name: '로그인', exact: true }).click();
 		await gp.locator('button.heart').waitFor({ timeout: 15000 });
 		await gp.goto(`${BASE}/letters`); await gp.waitForTimeout(1300);
-		if (process.env.SHOTS) await gp.screenshot({ path: `${OUT}/wrap-gate-${w}.png`, fullPage: true }).catch(() => {});
+		if (process.env.SHOTS) await gp.screenshot({ path: `${OUT}/wrap-${ENGINE}-gate-${w}.png`, fullPage: true }).catch(() => {});
 		const gr = await analyze(gp);
 		for (const [k, list] of Object.entries(gr)) for (const m of list) note('gate', k, m, w);
 		await gctx.close();

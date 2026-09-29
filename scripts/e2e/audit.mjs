@@ -122,6 +122,8 @@ try {
 	}
 	check('페이지 오류 없음', page.errs.length === 0, page.errs.join(' / '));
 
+	// 결과는 누른 버튼 자체(data-ack-msg) 또는 알림(.toast)에 (Phase 48)
+	const acked = (t) => page.locator(`[data-ack-msg*="${t}"], .toast:has-text("${t}")`).first();
 	console.log('\n[2] ★ 확인창에서 "취소"하면 아무것도 보내지 않는다');
 	await page.go(`/admin/reports/${REP}`);
 	let answer = false;
@@ -142,7 +144,7 @@ try {
 	await page.getByRole('radio', { name: '신고자', exact: true }).check();
 	got = since();
 	await page.getByRole('button', { name: '조치하기' }).click();
-	await page.getByText('조치 완료').waitFor({ timeout: 5000 }).catch(() => {});
+	await acked('조치 완료').waitFor({ timeout: 5000 }).catch(() => {});
 	const sc = calls.filter((c) => c[0] === 'admin_sanction').at(-1)?.[1];
 	check('제재 실행 — 고른 대상·조치 그대로', sc?.p_user === B && sc?.p_action === 'warn', JSON.stringify(sc));
 	check('조치 뒤에도 고른 조치·대상이 유지된다', (await page.locator('select[name=action]').inputValue()) === 'warn' && (await page.getByRole('radio', { name: '신고자', exact: true }).isChecked()));
@@ -189,7 +191,7 @@ try {
 	check('★ 서비스 닫기 취소 → 안 닫음', !got().includes('admin_update_settings'));
 	await page.locator('input[name=room_minutes]').fill('12');
 	await page.getByRole('button', { name: '저장', exact: true }).click();
-	await page.getByText('저장 완료').waitFor({ timeout: 5000 }).catch(() => {});
+	await acked('저장 완료').waitFor({ timeout: 5000 }).catch(() => {});
 	const save = calls.filter((c) => c[0] === 'admin_update_settings').at(-1)?.[1];
 	check('저장은 확인창 없이 바로', save?.p_patch?.room_minutes === 12, JSON.stringify(save));
 
@@ -206,7 +208,7 @@ try {
 	answer = true;
 	await page.locator('.lift input[name=note]').fill('오해였음');
 	await page.getByRole('button', { name: '정지 풀기' }).click();
-	await page.getByText('정지를 풀었어요').waitFor({ timeout: 5000 }).catch(() => {});
+	await acked('정지를 풀었어요').waitFor({ timeout: 5000 }).catch(() => {});
 	const lift = calls.filter((c) => c[0] === 'admin_sanction').at(-1)?.[1];
 	check('★ 정지 풀기 → reinstate · 사유 기록', lift?.p_action === 'reinstate' && lift?.p_user === A && lift?.p_note === '오해였음', JSON.stringify(lift));
 	SUSPENDED = false;
@@ -215,7 +217,7 @@ try {
 		&& !(await page.locator('select[name=action] option').allInnerTexts()).includes('정지 풀기 (제한 해제)'));
 	check('특별 업적 칸 — 베타 테스터 · 없음', (await page.locator('.badges').innerText()).includes('베타 테스터') && (await page.locator('.badges').innerText()).includes('없음'));
 	await page.locator('.badges').getByRole('button', { name: '주기' }).click();
-	await page.getByText('업적을 줬어요').waitFor({ timeout: 5000 }).catch(() => {});
+	await acked('업적을 줬어요').waitFor({ timeout: 5000 }).catch(() => {});
 	const give = calls.filter((c) => c[0] === 'admin_set_badge').at(-1)?.[1];
 	check('★ 베타 테스터 주기 → admin_set_badge(on)', give?.p_code === 'beta' && give?.p_on === true && give?.p_user === A, JSON.stringify(give));
 	check('준 뒤에는 "거두기"', (await page.locator('.badges').getByRole('button', { name: '거두기' }).count()) === 1);
@@ -225,7 +227,7 @@ try {
 	await page.locator('input[name=letters_gate]').uncheck();
 	await page.locator('input[name=letters_gate_min]').fill('80');
 	await page.getByRole('button', { name: '잠금 설정 저장' }).click();
-	await page.getByText('익명편지 잠금 끔').waitFor({ timeout: 5000 }).catch(() => {});
+	await acked('익명편지 잠금 끔').waitFor({ timeout: 5000 }).catch(() => {});
 	const gate = calls.filter((c) => c[0] === 'admin_update_settings').at(-1)?.[1];
 	check('★ 잠금 끄기 · 인원 저장', gate?.p_patch?.letters_gate === false && gate?.p_patch?.letters_gate_min === 80, JSON.stringify(gate));
 
@@ -242,7 +244,7 @@ try {
 	const er = await page.goto(`${base}/admin/rooms/${BOOM}`);
 	await page.waitForTimeout(500);
 	const errText = await page.locator('main').innerText();
-	check('500 이어도 운영자 메뉴가 남는다', er.status() === 500 && (await page.locator('header.bar nav').count()) === 1, String(er.status()));
+	check('500 이어도 운영자 메뉴가 남는다', er.status() === 500 && (await page.locator('.side nav').count()) === 1, String(er.status()));
 	check('오류 번호 안내', /서버 오류 \([0-9a-f]{8}\)/.test(errText), errText);
 	const nf = await page.goto(`${base}/admin/users/not-a-uuid`);
 	await page.waitForTimeout(300);
@@ -256,7 +258,7 @@ try {
 	console.log('\n[10] 폰 화면 메뉴');
 	const m = await session(390);
 	await m.page.go('/admin/live');
-	const heights = await m.page.locator('header.bar nav a').evaluateAll((as) => as.map((a) => a.getBoundingClientRect().height));
+	const heights = await m.page.locator('.side nav a').evaluateAll((as) => as.map((a) => a.getBoundingClientRect().height));
 	check('메뉴 글자가 줄바꿈되지 않는다', heights.every((h) => h < 40), heights.join());
 	const tabH = await m.page.locator('nav.a-tabs a').evaluateAll((as) => as.map((a) => a.getBoundingClientRect().height));
 	check('화면 안 탭도 줄바꿈되지 않는다', tabH.length > 0 && tabH.every((h) => h < 48), tabH.join());

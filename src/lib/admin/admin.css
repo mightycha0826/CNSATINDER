@@ -318,6 +318,91 @@ body.admin .a-sm {
 body.admin .a-danger-btn {
 	background: var(--danger);
 }
+/* ── 누른 버튼 자체에 결과 (Phase 48, lib/admin/confirm.ts ack) ──
+   버튼 글자는 그대로 두고 위에 덮개를 씌운다: 처리 중(회색) → ✓ 적용됨(초록) / ✕ 실패(빨강), 잠시 뒤 걷힌다 */
+body.admin button[data-ack] {
+	position: relative;
+	overflow: hidden;
+}
+body.admin button[data-ack]::after {
+	content: attr(data-ack-msg);
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	padding: 0 8px;
+	border-radius: inherit;
+	font-size: 13px;
+	font-weight: 800;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	animation: ack-in 0.18s ease-out;
+	pointer-events: none;
+}
+body.admin button[data-ack='busy'] {
+	cursor: progress;
+}
+body.admin button[data-ack='busy']::after {
+	background: color-mix(in srgb, var(--field) 92%, transparent);
+	color: var(--text-2);
+}
+body.admin button[data-ack='ok']::after {
+	background: #16a34a;
+	color: #fff;
+}
+body.admin button[data-ack='err']::after {
+	background: var(--danger);
+	color: #fff;
+	animation: ack-shake 0.35s ease-out;
+}
+@keyframes ack-in {
+	from {
+		opacity: 0;
+	}
+}
+@keyframes ack-shake {
+	25% {
+		transform: translateX(-3px);
+	}
+	75% {
+		transform: translateX(3px);
+	}
+}
+
+/* 고친 칸 (Phase 48) — 저장 전까지 줄 왼쪽에 테마 색 막대 · 옅은 바탕, 저장 단추는 테두리 빛 */
+body.admin [data-changed] {
+	background: color-mix(in srgb, var(--accent) 6%, transparent);
+	box-shadow: inset 3px 0 0 var(--accent);
+	border-radius: 6px;
+	padding-left: 10px;
+	padding-right: 10px;
+}
+body.admin form[data-dirty] button.save,
+body.admin form[data-dirty] > button:last-of-type:not([type='button']) {
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* ── 카드 · 표 · 수치 띠를 조금 더 또렷하게 (Phase 48) ── */
+body.admin .a-card {
+	background: var(--surface);
+	border-radius: 14px;
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+}
+body.admin .a-stats {
+	border-radius: 14px;
+	background: var(--surface);
+}
+body.admin .a-stat b {
+	font-size: 24px;
+}
+body.admin .a-h1 {
+	font-size: 24px;
+}
+body.admin .a-table tr:hover td {
+	background: color-mix(in srgb, var(--accent) 4%, var(--surface));
+}
+
 /* 표가 화면보다 넓으면 표만 옆으로 민다 (페이지 전체가 밀리지 않게) */
 body.admin .a-scroll {
 	overflow-x: auto;
