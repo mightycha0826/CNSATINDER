@@ -135,6 +135,10 @@
 	{/if}
 
 	<main class="wrap">
+		{#if data.staff && data.maintenance}
+			<!-- 서버 점검 중 (Phase 52) — 켜 둔 채 잊지 않게 모든 운영 화면 위에 -->
+			<a class="maint-bar" href="/admin/settings">🔧 서버 점검 중 — 학생 앱이 닫혀 있어요 <span>운영 설정에서 끄기 ›</span></a>
+		{/if}
 		{@render children()}
 	</main>
 
@@ -269,6 +273,24 @@
 	}
 	.out:hover {
 		color: var(--danger);
+	}
+	.maint-bar {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 4px 12px;
+		margin: -8px 0 18px;
+		padding: 10px 14px;
+		border-radius: 10px;
+		background: color-mix(in srgb, #f59e0b 16%, var(--bg));
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, #f59e0b 45%, transparent);
+		color: #92400e;
+		font-size: 14px;
+		font-weight: 800;
+		text-decoration: none;
+	}
+	.maint-bar span {
+		font-weight: 600;
 	}
 	.wrap {
 		min-width: 0;

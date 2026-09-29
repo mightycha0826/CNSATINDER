@@ -43,13 +43,14 @@ const letters = [
 ];
 const pub = (l) => { const { box, body, ...rest } = l; return { ...rest, removed: false, thread_status: 'open' }; };
 const folder = { id: 1, name: '고마웠던 편지들 모아 두기', count: 2, received: 1, sent: 1 };
+const MAINT = { maintenance: true, maintenance_msg: '새 기능을 준비하고 있어요.\n오후 세 시에 다시 만나요!', maintenance_until: new Date(Date.now() + 95 * 60_000).toISOString() };
 const notices = [{ id: 1, title: '11월 정기 점검 안내 — 토요일 새벽 두 시부터 네 시까지 잠깐 쉬어요', body: '점검하는 동안에는 대화와 편지를 쓸 수 없어요.\n점검이 끝나면 알림으로 알려 드릴게요. 불편을 드려 죄송해요!', created_at: iso(-60) }];
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
 const browser = ENGINE === 'webkit' ? await webkit.launch() : await chromium.launch({ executablePath: CHROME });
 
-async function context(width, { gate = false } = {}) {
+async function context(width, { gate = false, maint = false } = {}) {
 	const ctx = await browser.newContext({ viewport: { width, height: Math.round(width * 2.05) }, hasTouch: true, isMobile: ENGINE === 'chromium', deviceScaleFactor: 2 });
 	await ctx.route('https://fake-proj.supabase.co/**', async (route) => {
 		const req = route.request(); const p = new URL(req.url()).pathname;
@@ -71,7 +72,9 @@ async function context(width, { gate = false } = {}) {
 		if (rpc === 'dm_open') { const l = letters.find((x) => x.id === a.p_msg); return json({ status: 'ok', ...pub(l), role: l.box, body: l.body, fmt: null, closed_by: null, can_reply: l.box === 'received', wait_reply: false, first_open: false, server_now: iso() }); }
 		if (rpc === 'dm_search') return json([{ id: 'u-b', name: '박받음', grade: 2, no: 20314, checked: true }, { id: 'u-c', name: '남궁받음', grade: 3, no: 30522, checked: false }]);
 		if (p === '/rest/v1/profiles') return json({ id: uid, nickname: '푸른고래', bio: '밴드 음악 좋아해요 · 주말엔 러닝', interests: ['음악', '러닝', '보드게임'], mbti: 'INFP', gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true, allow_rematch: true, letters_open: true, manner_temp: 36.5, featured_badges: [] });
-		if (p === '/rest/v1/app_settings') return json({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 90, join_grace_sec: 60, max_rounds: 0, heartbeat_sec: 15, presence_ttl_sec: 45, msg_max_len: 500, max_open_rooms: 5, letter_max_len: 1000, comment_max_len: 300, ai_moderation: false, ai_chat: true, letters_gate: gate, letters_gate_min: 100 });
+		if (p === '/rest/v1/app_settings') return json({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 90, join_grace_sec: 60, max_rounds: 0, heartbeat_sec: 15, presence_ttl_sec: 45, msg_max_len: 500, max_open_rooms: 5, letter_max_len: 1000, comment_max_len: 300, ai_moderation: false, ai_chat: true, letters_gate: gate, letters_gate_min: 100, ...(maint ? MAINT : {}) });
+		// 서버 점검 (Phase 52) — 박동 대답에도
+		if (rpc === 'heartbeat') return json(maint ? { server_now: iso(), maintenance: { msg: MAINT.maintenance_msg, until: MAINT.maintenance_until } } : { server_now: iso() });
 		if (p === '/rest/v1/signup_stats') return json({ students: 17 });
 		if (rpc) return json(null);
 		return json([]);
@@ -246,6 +249,23 @@ try {
 		const gr = await analyze(gp);
 		for (const [k, list] of Object.entries(gr)) for (const m of list) note('gate', k, m, w);
 		await gctx.close();
+
+		// 서버 점검 화면 (Phase 52) — 로그인하면 앱 전체가 점검 화면
+		const mctx = await context(w, { maint: true });
+		const mp = await mctx.newPage();
+		await mp.goto(`${BASE}/login`);
+		await mp.getByPlaceholder('학교 이메일 앞부분').fill('29999');
+		await mp.getByPlaceholder('비밀번호').fill('abcd1234');
+		await mp.getByRole('button', { name: '로그인', exact: true }).click();
+		const shown = await mp.locator('.maint').waitFor({ timeout: 15000 }).then(() => true, () => false);
+		if (w === WIDTHS[0]) {
+			const txt = shown ? (await mp.locator('.maint').innerText()).replace(/\s+/g, ' ') : '';
+			check('★ 서버 점검 중이면 앱 전체가 점검 화면 · 안내 문구 · 끝나는 시각 · 탭바 없음', shown && txt.includes('서버 점검 중이에요') && txt.includes('오후 세 시에') && /쯤 끝나요/.test(txt) && (await mp.locator('nav.tabbar, .tabbar').count()) === 0, txt);
+		}
+		if (process.env.SHOTS) await mp.screenshot({ path: `${OUT}/wrap-${ENGINE}-maint-${w}.png`, fullPage: true }).catch(() => {});
+		const mr = await analyze(mp);
+		for (const [k, list] of Object.entries(mr)) for (const m of list) note('maint', k, m, w);
+		await mctx.close();
 	}
 	console.log('[결과]');
 	const keys = Object.keys(found).sort();

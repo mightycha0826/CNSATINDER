@@ -6,6 +6,8 @@ declare global {
 			staff: { id: string; role: import('$lib/adminRoles').StaffRole; owner?: boolean; perms: import('$lib/adminRoles').Perm[] } | null;
 			/** Phase 49: 운영진 현황(오른쪽 판) — 역할 확인과 같은 요청(admin_staff_touch)으로 받는다 */
 			team: import('$lib/adminRoles').TeamMember[] | null;
+			/** Phase 52: 서버 점검 중 — 운영 화면 위 띠 */
+			maintenance: boolean;
 		}
 		/** 얕은 기록 항목 (pushState) — guard = 탭 첫 화면의 "뒤로가기 한 번 더" 표식 ((app)/+layout.svelte) */
 		interface PageState {

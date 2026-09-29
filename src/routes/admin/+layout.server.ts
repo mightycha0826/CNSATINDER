@@ -7,5 +7,5 @@ import type { LayoutServerLoad } from './$types';
  */
 export const load: LayoutServerLoad = ({ locals, url }) => {
 	void url.pathname;
-	return { staff: locals.staff, team: locals.team };
+	return { staff: locals.staff, team: locals.team, maintenance: locals.maintenance };
 };

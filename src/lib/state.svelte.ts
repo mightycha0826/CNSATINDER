@@ -46,6 +46,10 @@ export type Settings = {
 	/** Phase 44 — 익명편지 잠금: 켜져 있으면 가입한 학생이 letters_gate_min 명이 될 때까지 편지가 잠긴다 (lib/letters/gate.svelte.ts) */
 	letters_gate?: boolean;
 	letters_gate_min?: number;
+	/** Phase 52 — 서버 점검 */
+	maintenance?: boolean;
+	maintenance_msg?: string;
+	maintenance_until?: string | null;
 };
 
 export const S = $state({
@@ -62,6 +66,11 @@ export const S = $state({
 	 * undefined = 아직 모름(또는 DB 가 Phase 23 전), null = 이름이 없어 적어야 함
 	 */
 	me: undefined as { name: string; grade: number | null; source: 'roster' | 'self' } | null | undefined,
+	/**
+	 * 서버 점검 중 (Phase 52) — 켜져 있으면 앱 전체가 점검 화면. 앱을 열 때 설정으로, 그 뒤엔 1분마다 보내는 heartbeat 의 대답으로 안다
+	 * (점검이 끝나면 다음 박동에 저절로 풀린다). null = 점검 아님
+	 */
+	maint: null as { msg: string; until: string | null } | null,
 	/** 전역 1초 틱. 카운트다운·상대시간 표시가 여기에 붙는다. */
 	now: Date.now()
 });
@@ -214,11 +223,18 @@ const SETTINGS_COLS =
 async function loadSettings() {
 	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();
 	const AI = 'ai_moderation, ai_chat, ai_chat_per_user';
-	let { data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min`);
-	// 편지 잠금(Phase 44) · AI 설정(Phase 19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
+	let { data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, maintenance, maintenance_msg, maintenance_until`);
+	// 서버 점검(Phase 52) · 편지 잠금(Phase 44) · AI 설정(Phase 19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
+	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min`));
 	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}`));
 	if (error) ({ data } = await read(SETTINGS_COLS));
 	S.settings = (data as unknown as Settings) ?? null;
+	setMaint(S.settings?.maintenance ? { msg: S.settings.maintenance_msg ?? '', until: S.settings.maintenance_until ?? null } : null);
+}
+
+/** 점검 상태 바꾸기 — 바뀔 때만 (같은 값을 다시 넣어 화면을 다시 그리지 않게) */
+function setMaint(m: { msg: string; until: string | null } | null) {
+	if (JSON.stringify(m) !== JSON.stringify(S.maint)) S.maint = m;
 }
 
 export async function loadAccount() {
@@ -246,11 +262,19 @@ let beatTimer: ReturnType<typeof setInterval> | null = null;
 async function beat(online: boolean) {
 	if (!S.session) return;
 	try {
-		await supabase.rpc('heartbeat', { p_online: online });
+		const { data, error } = await supabase.rpc('heartbeat', { p_online: online });
+		// 서버 점검(Phase 52) — 박동 대답에 실려 온다. 오류(오프라인 등)면 그대로 둔다
+		if (!error && online) {
+			const m = (data as { maintenance?: { msg?: string; until?: string | null } | null } | null)?.maintenance;
+			setMaint(m ? { msg: m.msg ?? '', until: m.until ?? null } : null);
+		}
 	} catch {
 		/* 다음 박동에 다시 */
 	}
 }
+
+/** 점검 화면의 "다시 확인" (Phase 52) — 박동 한 번으로 점검이 끝났는지 본다 */
+export const recheckMaint = () => beat(true);
 
 function startHeartbeat() {
 	if (beatTimer || typeof document === 'undefined') return;

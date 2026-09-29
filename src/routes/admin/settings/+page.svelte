@@ -10,6 +10,9 @@
 	const isAdmin = $derived(can(data.staff, 'settings'));
 
 	// 전교생에게 바로 적용되는 스위치라 한 번 더 묻는다
+	// 서버 점검 (Phase 52) — 모든 학생이 앱을 못 쓰게 되니 한 번 더 묻는다
+	const askMaintOn = confirmed(() => '서버 점검을 시작할까요? 1분 안에 모든 학생 앱이 점검 화면으로 바뀌어요.');
+	const askMaintOff = confirmed(() => '점검을 끝내고 앱을 다시 열까요?');
 	const askToggle = confirmed(() =>
 		s.is_open ? '서비스를 닫을까요? 새 대화가 시작되지 않아요 (진행 중인 대화는 유지).' : '서비스를 다시 열까요?'
 	);
@@ -38,6 +41,39 @@
 <h1 class="a-h1 title">운영 설정</h1>
 
 <FormMsg {form} />
+
+<!-- 서버 점검 (Phase 52) — 켜면 학생 앱 전체가 점검 화면 -->
+{#if s.maintenance !== undefined}
+	<section class="maint" class:on={s.maintenance}>
+		<div class="mhead">
+			<b>{s.maintenance ? '🔧 서버 점검 중' : '서버 점검'}</b>
+			<span>
+				{s.maintenance
+					? `학생들은 앱을 열면 점검 화면을 봐요${s.maintenance_until ? ` · ${new Date(s.maintenance_until).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}쯤 끝남으로 안내 중` : ''}.`
+					: '켜면 1분 안에 모든 학생 앱이 점검 화면으로 바뀌고, 새 대화 · 편지가 막혀요. 운영 화면은 그대로 쓸 수 있어요.'}
+			</span>
+		</div>
+		{#if s.maintenance}
+			<form method="POST" action="?/maint" use:enhance={askMaintOff}>
+				<input type="hidden" name="on" value="false" />
+				<button class="btn">점검 끝내기</button>
+			</form>
+		{:else}
+			<form class="mform" method="POST" action="?/maint" use:enhance={askMaintOn}>
+				<input type="hidden" name="on" value="true" />
+				<label class="mfield grow">
+					<span>학생에게 보일 안내 <small>(비우면 기본 문구)</small></span>
+					<textarea class="field" name="msg" rows="2" maxlength="300" placeholder="예: 새 기능을 준비하고 있어요. 오후 3시에 다시 만나요!"></textarea>
+				</label>
+				<label class="mfield">
+					<span>끝나는 시각 <small>(선택)</small></span>
+					<input class="field" type="datetime-local" name="until" />
+				</label>
+				<button class="btn a-danger-btn">점검 시작</button>
+			</form>
+		{/if}
+	</section>
+{/if}
 
 <section class="kill" class:off={!s.is_open}>
 	<div>
@@ -203,6 +239,70 @@
 	}
 	.title {
 		margin-bottom: 16px;
+	}
+	.maint {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		max-width: 720px;
+		margin-bottom: 14px;
+		padding: 16px;
+		border: 1px solid var(--line);
+		border-radius: var(--r-sm);
+	}
+	.maint.on {
+		border-color: #f59e0b;
+		background: color-mix(in srgb, #f59e0b 9%, transparent);
+	}
+	.mhead {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.mhead b {
+		font-size: 16px;
+	}
+	.maint.on .mhead b {
+		color: #b45309;
+	}
+	.mhead span {
+		font-size: 13px;
+		color: var(--text-2);
+	}
+	.mform {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 10px;
+	}
+	.mfield {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		font-size: 12px;
+		font-weight: 700;
+		color: var(--text-2);
+	}
+	.mfield small {
+		font-weight: 500;
+	}
+	.mfield.grow {
+		flex: 1 1 260px;
+	}
+	.mfield textarea {
+		height: auto;
+		padding: 10px 14px;
+		font-size: 14px;
+	}
+	.mfield input {
+		height: 42px;
+		font-size: 14px;
+	}
+	.maint .btn {
+		width: auto;
+		height: 42px;
+		padding: 0 20px;
+		white-space: nowrap;
 	}
 	.kill {
 		display: flex;

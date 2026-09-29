@@ -574,4 +574,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       저장하면 바로 모든 DB 함수(`staff_can` · `require_staff` · `require_perm`) · 화면(guard · 메뉴)에 적용. 내 권한 목록(perms)은 요청마다 역할 확인과 같이 온다.
       관리자 역할은 표에 없다(늘 전부 — 잠겨 버리지 않게). 긴 정지(7일 넘게)는 여전히 관리자 역할만.
       스키마 테스트 [88], 화면 테스트 `audit` [15], 실DB 반영 (phase51_role_perms_beta)
+- [x] **Phase 52 — 서버 점검**
+      운영 설정 맨 위 "서버 점검" 카드(서비스 열고 닫기 또는 운영 설정 권한): 안내 문구(300자) · 끝나는 시각(선택, 한국 시간)을 적고 "점검 시작"(확인창) / "점검 끝내기".
+      켜면 학생 앱 전체가 점검 화면(`lib/ui/Maintenance.svelte` — 도는 톱니 · 안내 · "오후 3:00쯤 끝나요 · 1시간 33분 남음" · 다시 확인(10초에 한 번)),
+      새 대화(`request_match`) · 편지(`letter_eligible`)는 DB 도 막는다. 학생 앱은 앱을 열 때 설정으로, 그 뒤엔 1분마다 보내던 `heartbeat` 의 대답(maintenance)으로 알아서
+      요청이 늘지 않고, 끄면 다음 박동에 저절로 열린다. 점검 중엔 모든 운영 화면 위에 주황 띠(역할 확인 요청에 같이 실림). 운영 화면은 점검 중에도 그대로.
+      스키마 테스트 [89], 화면 테스트 `audit` [16] · `wrap`(점검 화면 모든 폭), 실DB 반영 (phase52_maintenance)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

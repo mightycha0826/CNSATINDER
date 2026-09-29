@@ -818,7 +818,7 @@ declare
 begin
   if me is null then raise exception 'unauthenticated'; end if;
   select * into cfg from public.app_settings where id;
-  if not cfg.is_open then
+  if not cfg.is_open or cfg.maintenance then -- 서버 점검 중(Phase 52)에도 새 대화 없음
     return jsonb_build_object('status', 'service_closed', 'notice', cfg.notice, 'server_now', v_now);
   end if;
 
@@ -1304,11 +1304,14 @@ returns jsonb language plpgsql security definer set search_path = public, privat
 declare v text := private.require_perm(p_staff, 'any');
 begin
   -- 수치 · 배너는 settings, 서비스 열고 닫기(is_open)는 service 또는 settings (Phase 51 표)
+  -- 서비스 열고 닫기 · 서버 점검(Phase 52)은 service 또는 settings, 나머지는 settings
   if not private.staff_can(v, 'settings')
-     and exists (select 1 from jsonb_object_keys(coalesce(p_patch, '{}'::jsonb)) k where k <> 'is_open') then
+     and exists (select 1 from jsonb_object_keys(coalesce(p_patch, '{}'::jsonb)) k
+                  where k not in ('is_open', 'maintenance', 'maintenance_msg', 'maintenance_until')) then
     raise exception 'admin_only';
   end if;
-  if p_patch ? 'is_open' and not (private.staff_can(v, 'service') or private.staff_can(v, 'settings')) then
+  if (p_patch ?| array['is_open', 'maintenance', 'maintenance_msg', 'maintenance_until'])
+     and not (private.staff_can(v, 'service') or private.staff_can(v, 'settings')) then
     raise exception 'no_permission';
   end if;
   update public.app_settings set
@@ -1331,7 +1334,11 @@ begin
     ai_chat_max_turns     = coalesce((p_patch->>'ai_chat_max_turns')::int, ai_chat_max_turns),
     -- Phase 44 — 익명편지 잠금 (가입한 학생이 letters_gate_min 명이 될 때까지)
     letters_gate          = coalesce((p_patch->>'letters_gate')::boolean, letters_gate),
-    letters_gate_min      = coalesce((p_patch->>'letters_gate_min')::int, letters_gate_min)
+    letters_gate_min      = coalesce((p_patch->>'letters_gate_min')::int, letters_gate_min),
+    -- Phase 52 — 서버 점검 (끝나는 시각은 빈 값이면 지운다)
+    maintenance           = coalesce((p_patch->>'maintenance')::boolean, maintenance),
+    maintenance_msg       = coalesce(left(p_patch->>'maintenance_msg', 300), maintenance_msg),
+    maintenance_until     = case when p_patch ? 'maintenance_until' then nullif(p_patch->>'maintenance_until', '')::timestamptz else maintenance_until end
   where id;
   insert into private.audit_log (staff_id, action, detail) values (p_staff, 'update_settings', p_patch);
   return public.admin_get_settings();
@@ -1501,7 +1508,9 @@ begin
        set online_until = now(), seeking_until = null, seeking_since = null
      where user_id = auth.uid();
   end if;
-  return jsonb_build_object('server_now', now());
+  -- 서버 점검(Phase 52) — 앱이 1분마다 보내는 이 박동의 대답으로 알린다(요청을 따로 늘리지 않는다)
+  return jsonb_build_object('server_now', now(),
+    'maintenance', case when cfg.maintenance then jsonb_build_object('msg', cfg.maintenance_msg, 'until', cfg.maintenance_until) end);
 end
 $fn$;
 
@@ -1982,7 +1991,7 @@ declare cfg public.app_settings%rowtype; m public.profiles%rowtype;
 begin
   if p_user is null then raise exception 'unauthenticated'; end if;
   select * into cfg from public.app_settings where id;
-  if not cfg.is_open then return 'service_closed'; end if;
+  if not cfg.is_open or cfg.maintenance then return 'service_closed'; end if; -- 서버 점검 중(Phase 52)에도
   select * into m from public.profiles where id = p_user;
   if not found or not m.verified or not m.onboarded or m.status <> 'active'
      or (m.suspended_until is not null and m.suspended_until > now()) then
@@ -6422,7 +6431,9 @@ begin
   if v is null then return null; end if;
   -- owner = 최고 관리자 (Phase 50 — 운영진을 지정 · 해제할 수 있는 단 한 사람)
   -- perms = 내 역할의 권한(Phase 51 표, 관리자는 전부) — 서버 · 화면이 메뉴와 화면을 이걸로 가른다
+  -- maintenance = 서버 점검 중인지 (Phase 52 — 운영 화면 위 띠)
   return jsonb_build_object('role', v, 'owner', (select owner from private.staff where user_id = p_uid),
+    'maintenance', (select to_jsonb(s) ->> 'maintenance' = 'true' from public.app_settings s where id),
     'perms', case when v = 'admin' then '["live","moderate","identity","settings","service","inquiry","notice","audit"]'::jsonb
                   else (select coalesce(jsonb_agg(r.perm order by r.perm), '[]'::jsonb) from private.role_perms r where r.role = v) end,
     'team', (
@@ -6538,3 +6549,13 @@ begin
 end
 $fn$;
 revoke all on function public.admin_set_role_perms(uuid, text, text[]) from public, anon, authenticated;
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 52 — 서버 점검
+-- 운영자 화면에서 켜고 끈다(서비스 열고 닫기 권한). 켜면 학생 앱은 통째로 점검 화면(안내 문구 · 끝나는 시각), 새 대화 · 편지는 DB 도 막는다.
+-- 학생 앱은 1분마다 보내는 heartbeat 의 대답(maintenance)과 앱을 열 때 읽는 설정으로 안다 — 요청을 따로 늘리지 않는다.
+-- 운영자 화면은 점검 중에도 그대로.
+-- ════════════════════════════════════════════════════════════════════
+alter table public.app_settings add column if not exists maintenance boolean not null default false;
+alter table public.app_settings add column if not exists maintenance_msg text not null default '' check (char_length(maintenance_msg) <= 300);
+alter table public.app_settings add column if not exists maintenance_until timestamptz;

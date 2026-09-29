@@ -3443,5 +3443,24 @@ console.log('\n[88] 베타테스터 · 역할별 권한을 최고 관리자가 �
 	check('권한 바꾸기도 기록에 남는다', Number((await one(`select count(*) n from private.audit_log where action = 'set_role_perms'`)).n) === 3);
 }
 
+console.log('\n[89] 서버 점검 (Phase 52)');
+{
+	const own = (await one(`select user_id from private.staff where owner`)).user_id;
+	const b = (await one(`select user_id from private.staff where role = 'beta' limit 1`)).user_id;
+	const kid = await person('m', 'f');
+	check('평소엔 heartbeat 에 점검 없음', (await rpcAs(kid, 'heartbeat', true)).maintenance == null);
+	await expectError('★ 서비스 권한 없는 역할(베타테스터)은 점검을 못 켠다', () => svc('admin_update_settings', JSON.stringify({ maintenance: true }), b), 'no_permission');
+	const until = new Date(Date.now() + 3600_000).toISOString();
+	const st = await svc('admin_update_settings', JSON.stringify({ maintenance: true, maintenance_msg: '서버 점검 중이에요', maintenance_until: until }), own);
+	check('★ 점검 켜기 (문구 · 끝나는 시각)', st.maintenance === true && st.maintenance_msg === '서버 점검 중이에요' && !!st.maintenance_until);
+	const hb = await rpcAs(kid, 'heartbeat', true);
+	check('★ 학생 heartbeat 대답에 점검 안내', hb.maintenance?.msg === '서버 점검 중이에요' && !!hb.maintenance?.until, JSON.stringify(hb));
+	check('★ 점검 중엔 새 대화 찾기 막힘', (await rpcAs(kid, 'request_match')).status === 'service_closed');
+	check('운영 화면(touch)에도 점검 중 표시', (await svc('admin_staff_touch', own, null)).maintenance === true);
+	check('설정 표에서도 읽힌다 (앱을 열 때)',(await rowsAs(kid, 'select maintenance from public.app_settings'))[0]?.maintenance === true);
+	const off = await svc('admin_update_settings', JSON.stringify({ maintenance: false, maintenance_until: '' }), own);
+	check('★ 점검 끄기 · 끝나는 시각 지우기', off.maintenance === false && off.maintenance_until === null && (await rpcAs(kid, 'heartbeat', true)).maintenance == null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

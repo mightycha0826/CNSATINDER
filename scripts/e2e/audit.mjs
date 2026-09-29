@@ -16,6 +16,7 @@ const t = new Date().toISOString();
 let ROLE = 'admin';
 let SUSPENDED = false, BETA = false; // Phase 44 — 정지 풀기 · 특별 업적
 let OWNER = false; // Phase 50 — 최고 관리자
+let MAINT_ON = false; // Phase 52 — 서버 점검
 let ROLE_PERMS = { moderator: ['audit', 'inquiry', 'live', 'moderate', 'service'], developer: ['audit', 'inquiry', 'live', 'service', 'settings'], beta: ['live'] };
 let STAFF_LIST = [
 	{ id: 'o1', no: '20529', nickname: '단단복숭아', display_name: null, role: 'admin', owner: true, created_at: new Date().toISOString(), last_seen: new Date().toISOString() },
@@ -38,7 +39,7 @@ const RPC = {
 		else STAFF_LIST = STAFF_LIST.map((s) => (s.no === a.p_no ? { ...s, role: a.p_role, display_name: a.p_name } : s));
 		return STAFF_LIST;
 	},
-	admin_staff_touch: () => ({ role: ROLE, owner: OWNER, perms: ({ moderator: ['live', 'moderate', 'service', 'inquiry', 'audit'], developer: ['live', 'settings', 'service', 'inquiry', 'audit'], beta: ['live'] })[ROLE] ?? [], team: [
+	admin_staff_touch: () => ({ role: ROLE, owner: OWNER, maintenance: MAINT_ON,perms: ({ moderator: ['live', 'moderate', 'service', 'inquiry', 'audit'], developer: ['live', 'settings', 'service', 'inquiry', 'audit'], beta: ['live'] })[ROLE] ?? [], team: [
 		{ id: STAFF, name: '나운영', role: ROLE, owner: OWNER, last_seen: t, path: '/admin', me: true },
 		{ id: 'm1', name: '김운영', role: 'moderator', last_seen: new Date().toISOString(), path: '/admin/reports/x', me: false },
 		{ id: 'd1', name: '박개발', role: 'developer', last_seen: new Date(Date.now() - 3 * 3600_000).toISOString(), path: '/admin/settings', me: false }
@@ -62,8 +63,11 @@ const RPC = {
 	admin_set_badge: (a) => ((BETA = a.p_on), RPC.admin_user_badges()),
 	admin_user_rooms: () => [],
 	admin_user_letters: () => [{ letter_id: 7, alias: '맑은 하늘', is_author: true, status: 'open', created_at: t, preview: '광고 편지', my_comments: 0 }],
-	admin_get_settings: () => ({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5, letters_gate: true, letters_gate_min: 100 }),
-	admin_update_settings: () => RPC.admin_get_settings(),
+	admin_get_settings: () => ({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5, letters_gate: true, letters_gate_min: 100, maintenance: MAINT_ON, maintenance_msg: '', maintenance_until: null }),
+	admin_update_settings: (a) => {
+		if (a.p_patch && 'maintenance' in a.p_patch) MAINT_ON = a.p_patch.maintenance; // Phase 52
+		return RPC.admin_get_settings();
+	},
 	admin_audit: () => [
 		{ id: 1, staff_id: STAFF, action: 'remove_letter', target_user: null, report_id: LREP, detail: { letter_id: 7, comment_id: null }, created_at: t },
 		{ id: 2, staff_id: null, action: 'roster_import', target_user: null, report_id: null, detail: { grade: 1, count: 373 }, created_at: t },
@@ -404,6 +408,31 @@ try {
 		check(`★ 베타테스터: ${p} → 403`, r.status() === 403, String(r.status()));
 	}
 	check('사이드바에 "베타테스터"', (await bt.page.locator('.side .who').innerText()).includes('베타테스터'));
+
+	console.log('\n[16] 서버 점검 (Phase 52)');
+	ROLE = 'admin';
+	OWNER = true;
+	await ow.page.go('/admin/settings');
+	check('점검 카드: 꺼져 있으면 안내 · 시작 버튼', (await ow.page.locator('section.maint').innerText()).includes('서버 점검') && (await ow.page.getByRole('button', { name: '점검 시작' }).count()) === 1 && (await ow.page.locator('.maint-bar').count()) === 0);
+	await ow.page.locator('section.maint textarea[name=msg]').fill('오후 세 시에 다시 만나요');
+	await ow.page.locator('section.maint input[name=until]').fill('2026-10-01T15:00');
+	okDialog = false;
+	await ow.page.getByRole('button', { name: '점검 시작' }).click();
+	await ow.page.waitForTimeout(500);
+	check('★ 확인창에서 취소 → 점검 안 켬', !MAINT_ON);
+	okDialog = true;
+	await ow.page.getByRole('button', { name: '점검 시작' }).click();
+	await ow.page.getByRole('button', { name: '점검 끝내기' }).waitFor({ timeout: 5000 }).catch(() => {});
+	const mp = calls.filter((c) => c[0] === 'admin_update_settings').at(-1)?.[1]?.p_patch;
+	check('★ 점검 시작 → 문구 · 끝나는 시각(한국 시간 → UTC)', mp?.maintenance === true && mp.maintenance_msg === '오후 세 시에 다시 만나요' && mp.maintenance_until === '2026-10-01T06:00:00.000Z', JSON.stringify(mp));
+	check('★ 점검 중이면 모든 운영 화면 위에 주황 띠', (await ow.page.locator('.maint-bar').innerText()).includes('서버 점검 중'));
+	await ow.page.go('/admin/live');
+	check('다른 운영 화면에도 띠', (await ow.page.locator('.maint-bar').count()) === 1);
+	await ow.page.screenshot({ path: `${SP}/audit-maint.png` });
+	await ow.page.go('/admin/settings');
+	await ow.page.getByRole('button', { name: '점검 끝내기' }).click();
+	await ow.page.getByRole('button', { name: '점검 시작' }).waitFor({ timeout: 5000 }).catch(() => {});
+	check('★ 점검 끝내기 → 띠가 걷힌다', !MAINT_ON && (await ow.page.locator('.maint-bar').count()) === 0);
 } finally {
 	await browser.close();
 	vite.kill();

@@ -25,6 +25,10 @@ export type AppSettings = {
 	/** Phase 44 — 익명편지 잠금 (가입한 학생이 letters_gate_min 명이 될 때까지) */
 	letters_gate?: boolean;
 	letters_gate_min?: number;
+	/** Phase 52 — 서버 점검 */
+	maintenance?: boolean;
+	maintenance_msg?: string;
+	maintenance_until?: string | null;
 };
 
 export type AiUsage = {
@@ -70,6 +74,28 @@ const INT: [keyof AppSettings, number, number][] = [
 ];
 
 export const actions: Actions = {
+	/**
+	 * 서버 점검 (Phase 52) — 켜면 학생 앱 전체가 점검 화면(1분 안에, 앱을 열면 바로). 새 대화 · 편지도 DB 가 막는다.
+	 * 문구(300자) · 끝나는 시각(선택, 한국 시간 datetime-local). 서비스 열고 닫기 또는 운영 설정 권한
+	 */
+	maint: async ({ request, locals }) => {
+		if (!allowed(locals, 'service') && !allowed(locals, 'settings')) return fail(403, { error: '서버 점검을 켜고 끌 권한이 없어요' });
+		const f = await request.formData();
+		const on = f.get('on') === 'true';
+		const msg = String(f.get('msg') ?? '').trim().slice(0, 300);
+		const raw = String(f.get('until') ?? '').trim();
+		// datetime-local 은 시간대가 없다 — 운영진은 한국에 있으니 +09:00 으로 읽는다
+		const until = raw ? new Date(`${raw}:00+09:00`) : null;
+		if (until && Number.isNaN(until.getTime())) return fail(400, { error: '끝나는 시각을 확인해 주세요' });
+		const patch: Record<string, unknown> = on ? { maintenance: true, maintenance_msg: msg, maintenance_until: until ? until.toISOString() : '' } : { maintenance: false };
+		try {
+			await adminRpc('admin_update_settings', { p_patch: patch, p_staff: locals.staff!.id });
+		} catch (e) {
+			return friendly(e);
+		}
+		return { done: on ? '점검 시작 · 1분 안에 모든 학생에게 점검 화면' : '점검 끝 · 1분 안에 다시 열려요' };
+	},
+
 	/** 킬 스위치 — 한 번 눌러서 바로 */
 	toggle: async ({ request, locals }) => {
 		const open = (await request.formData()).get('open') === 'true';

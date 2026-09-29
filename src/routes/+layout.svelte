@@ -9,6 +9,7 @@
 	import { page } from '$app/state';
 	import { hasSupabase } from '$lib/supabase';
 	import { S, UI, init, toasts } from '$lib/state.svelte';
+	import Maintenance from '$lib/ui/Maintenance.svelte';
 	import { loadThemeColor } from '$lib/themeColor.svelte';
 	import { loadTheme } from '$lib/theme.svelte';
 	import { loadPrefs } from '$lib/prefs.svelte';
@@ -194,6 +195,9 @@
 			<code>.env.example</code> 을 복사하면 됩니다.
 		</p>
 	</div>
+{:else if S.maint && S.session}
+	<!-- 서버 점검 (Phase 52) — 앱 전체를 가린다. 끝나면 다음 박동(1분)이나 앱으로 돌아올 때 저절로 풀린다 -->
+	<Maintenance msg={S.maint.msg} until={S.maint.until} />
 {:else if !S.booted || (S.session && S.profileLoading)}
 	<!-- 부팅 중 · 로그인 직후 계정을 불러오는 중 (홈이 잠깐 보였다가 온보딩으로 튀지 않게) -->
 	<div class="splash">
