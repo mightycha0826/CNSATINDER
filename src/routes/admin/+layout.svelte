@@ -138,6 +138,11 @@
 		{#if data.staff && data.maintenance}
 			<!-- 서버 점검 중 (Phase 52) — 켜 둔 채 잊지 않게 모든 운영 화면 위에 -->
 			<a class="maint-bar" href="/admin/settings">🔧 서버 점검 중 — 학생 앱이 닫혀 있어요 <span>운영 설정에서 끄기 ›</span></a>
+		{:else if data.staff && data.maintenanceAt}
+			<!-- 점검 예약 (Phase 53) -->
+			<a class="maint-bar soon" href="/admin/settings"
+				>⏰ 서버 점검 예약 — {new Date(data.maintenanceAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', weekday: 'short', hour: 'numeric', minute: '2-digit' })}부터 <span>운영 설정에서 바꾸기 ›</span></a
+			>
 		{/if}
 		{@render children()}
 	</main>
@@ -291,6 +296,11 @@
 	}
 	.maint-bar span {
 		font-weight: 600;
+	}
+	.maint-bar.soon {
+		background: color-mix(in srgb, #2563eb 10%, var(--bg));
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, #2563eb 35%, transparent);
+		color: #1d4ed8;
 	}
 	.wrap {
 		min-width: 0;

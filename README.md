@@ -580,4 +580,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       새 대화(`request_match`) · 편지(`letter_eligible`)는 DB 도 막는다. 학생 앱은 앱을 열 때 설정으로, 그 뒤엔 1분마다 보내던 `heartbeat` 의 대답(maintenance)으로 알아서
       요청이 늘지 않고, 끄면 다음 박동에 저절로 열린다. 점검 중엔 모든 운영 화면 위에 주황 띠(역할 확인 요청에 같이 실림). 운영 화면은 점검 중에도 그대로.
       스키마 테스트 [89], 화면 테스트 `audit` [16] · `wrap`(점검 화면 모든 폭), 실DB 반영 (phase52_maintenance)
+- [x] **Phase 53 — 점검 예약**
+      점검 카드에 "시작 시각(비우면 지금 바로)" — 적으면 "점검 예약". `app_settings.maintenance_at` 에 시각만 적어 두고, 점검 여부를 물을 때마다
+      `private.in_maintenance()`(켜져 있거나 예약 시각이 지났거나)로 본다 — 따로 도는 작업(cron) 없이 시각이 되면 1분 안에 모든 학생 앱이 점검 화면.
+      예약 중엔 카드가 "⏰ 예약됨 · 지금 바로 시작 · 예약 취소", 운영 화면 위 파란 예약 띠, 24시간 안의 예약은 학생 홈에 "오늘 오후 3:00부터 서버 점검" 예고
+      (heartbeat 대답의 maintenance_at). 점검 끝내기 · 예약 취소 = 점검 · 예약 둘 다 지운다. 운영 화면 시각은 늘 한국 시간(서버에서 그려도).
+      스키마 테스트 [90], 화면 테스트 `audit` [17], 실DB 반영 (phase53_maintenance_schedule)
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

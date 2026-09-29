@@ -10,8 +10,19 @@
 	const isAdmin = $derived(can(data.staff, 'settings'));
 
 	// 전교생에게 바로 적용되는 스위치라 한 번 더 묻는다
-	// 서버 점검 (Phase 52) — 모든 학생이 앱을 못 쓰게 되니 한 번 더 묻는다
-	const askMaintOn = confirmed(() => '서버 점검을 시작할까요? 1분 안에 모든 학생 앱이 점검 화면으로 바뀌어요.');
+	// 서버 점검 (Phase 52) · 예약 (Phase 53) — 모든 학생이 앱을 못 쓰게 되니 한 번 더 묻는다
+	let atInput = $state('');
+	// 운영 화면은 서버(UTC)에서도 그려진다 — 늘 한국 시간으로
+	const fmtWhen = (iso: string) => new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+	/** UTC → datetime-local(한국 시간) 값 */
+	const toLocal = (iso: string) => new Date(new Date(iso).getTime() + 9 * 3600_000).toISOString().slice(0, 16);
+	const askMaintOn = confirmed((f) =>
+		f.get('at')
+			? `${fmtWhen(new Date(`${f.get('at')}:00+09:00`).toISOString())}에 서버 점검을 예약할까요? 그 시각이 되면 저절로 모든 학생 앱이 점검 화면으로 바뀌어요.`
+			: '서버 점검을 지금 시작할까요? 1분 안에 모든 학생 앱이 점검 화면으로 바뀌어요.'
+	);
+	const askMaintNow = confirmed(() => '예약을 기다리지 않고 지금 바로 점검을 시작할까요?');
+	const askMaintCancel = confirmed(() => '점검 예약을 취소할까요?');
 	const askMaintOff = confirmed(() => '점검을 끝내고 앱을 다시 열까요?');
 	const askToggle = confirmed(() =>
 		s.is_open ? '서비스를 닫을까요? 새 대화가 시작되지 않아요 (진행 중인 대화는 유지).' : '서비스를 다시 열까요?'
@@ -42,22 +53,42 @@
 
 <FormMsg {form} />
 
-<!-- 서버 점검 (Phase 52) — 켜면 학생 앱 전체가 점검 화면 -->
+<!-- 서버 점검 (Phase 52) · 예약 (Phase 53) — 켜면(또는 예약 시각이 되면) 학생 앱 전체가 점검 화면 -->
 {#if s.maintenance !== undefined}
-	<section class="maint" class:on={s.maintenance}>
+	{@const at = s.maintenance_at ? new Date(s.maintenance_at) : null}
+	{@const mOn = s.maintenance || (!!at && at.getTime() <= Date.now())}
+	<section class="maint" class:on={mOn} class:soon={!mOn && !!at}>
 		<div class="mhead">
-			<b>{s.maintenance ? '🔧 서버 점검 중' : '서버 점검'}</b>
+			<b>{mOn ? '🔧 서버 점검 중' : at ? '⏰ 서버 점검 예약됨' : '서버 점검'}</b>
 			<span>
-				{s.maintenance
-					? `학생들은 앱을 열면 점검 화면을 봐요${s.maintenance_until ? ` · ${new Date(s.maintenance_until).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}쯤 끝남으로 안내 중` : ''}.`
-					: '켜면 1분 안에 모든 학생 앱이 점검 화면으로 바뀌고, 새 대화 · 편지가 막혀요. 운영 화면은 그대로 쓸 수 있어요.'}
+				{#if mOn}
+					학생들은 앱을 열면 점검 화면을 봐요{#if s.maintenance_until} · {fmtWhen(s.maintenance_until)}쯤 끝남으로 안내 중{/if}.
+				{:else if at}
+					<b class="when">{fmtWhen(s.maintenance_at!)}</b>부터 저절로 점검이 시작돼요. 하루 전부터 학생 홈에 예고가 떠요.
+					{#if s.maintenance_msg}<br />안내: “{s.maintenance_msg}”{/if}
+				{:else}
+					켜면 1분 안에 모든 학생 앱이 점검 화면으로 바뀌고, 새 대화 · 편지가 막혀요. 시작 시각을 적으면 그때 저절로 켜져요(예약).
+				{/if}
 			</span>
 		</div>
-		{#if s.maintenance}
+		{#if mOn}
 			<form method="POST" action="?/maint" use:enhance={askMaintOff}>
 				<input type="hidden" name="on" value="false" />
 				<button class="btn">점검 끝내기</button>
 			</form>
+		{:else if at}
+			<div class="mbtns">
+				<form method="POST" action="?/maint" use:enhance={askMaintNow}>
+					<input type="hidden" name="on" value="true" />
+					<input type="hidden" name="msg" value={s.maintenance_msg ?? ''} />
+					<input type="hidden" name="until" value={s.maintenance_until ? toLocal(s.maintenance_until) : ''} />
+					<button class="btn a-danger-btn">지금 바로 시작</button>
+				</form>
+				<form method="POST" action="?/maint" use:enhance={askMaintCancel}>
+					<input type="hidden" name="on" value="false" />
+					<button class="btn-ghost cancel">예약 취소</button>
+				</form>
+			</div>
 		{:else}
 			<form class="mform" method="POST" action="?/maint" use:enhance={askMaintOn}>
 				<input type="hidden" name="on" value="true" />
@@ -66,10 +97,14 @@
 					<textarea class="field" name="msg" rows="2" maxlength="300" placeholder="예: 새 기능을 준비하고 있어요. 오후 3시에 다시 만나요!"></textarea>
 				</label>
 				<label class="mfield">
+					<span>시작 시각 <small>(비우면 지금 바로)</small></span>
+					<input class="field" type="datetime-local" name="at" bind:value={atInput} />
+				</label>
+				<label class="mfield">
 					<span>끝나는 시각 <small>(선택)</small></span>
 					<input class="field" type="datetime-local" name="until" />
 				</label>
-				<button class="btn a-danger-btn">점검 시작</button>
+				<button class="btn a-danger-btn">{atInput ? '점검 예약' : '점검 시작'}</button>
 			</form>
 		{/if}
 	</section>
@@ -264,6 +299,26 @@
 	}
 	.maint.on .mhead b {
 		color: #b45309;
+	}
+	.maint.soon {
+		border-color: color-mix(in srgb, #2563eb 50%, transparent);
+		background: color-mix(in srgb, #2563eb 6%, transparent);
+	}
+	.maint.soon .mhead > b {
+		color: #1d4ed8;
+	}
+	.mhead .when {
+		font-size: 13px;
+		color: var(--text);
+	}
+	.mbtns {
+		display: flex;
+		gap: 8px;
+	}
+	.mbtns .cancel {
+		width: auto;
+		height: 42px;
+		padding: 0 18px;
 	}
 	.mhead span {
 		font-size: 13px;

@@ -8,6 +8,8 @@ declare global {
 			team: import('$lib/adminRoles').TeamMember[] | null;
 			/** Phase 52: 서버 점검 중 — 운영 화면 위 띠 */
 			maintenance: boolean;
+			/** Phase 53: 예약된 점검 시각 (아직 안 켜짐) */
+			maintenanceAt: string | null;
 		}
 		/** 얕은 기록 항목 (pushState) — guard = 탭 첫 화면의 "뒤로가기 한 번 더" 표식 ((app)/+layout.svelte) */
 		interface PageState {

@@ -150,6 +150,15 @@
 		<div class="notice selectable">{S.settings.notice}</div>
 	{/if}
 
+	{#if S.maintAt}
+		<!-- 점검 예고 (Phase 53) — 24시간 안에 예약된 서버 점검 -->
+		{@const at = new Date(S.maintAt)}
+		<div class="notice maint-soon" role="status">
+			🔧 {at.toDateString() === new Date(S.now).toDateString() ? '오늘' : '내일'}
+			{at.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })}부터 서버 점검이 있어요 · 잠시 앱을 쓸 수 없어요
+		</div>
+	{/if}
+
 	<PinnedStories rooms={pinnedRooms} onmenu={(r) => (menuFor = r)} />
 
 	<!-- 대화 목록 -->
@@ -339,6 +348,11 @@
 		background: var(--surface);
 		box-shadow: var(--shadow-1);
 		font-size: 13px;
+	}
+	.maint-soon {
+		background: color-mix(in srgb, #f59e0b 14%, var(--surface));
+		color: var(--text);
+		font-weight: 600;
 	}
 
 	/* 찾는 중 — 버튼 자리에 그대로 들어간다 (유리 알약) */

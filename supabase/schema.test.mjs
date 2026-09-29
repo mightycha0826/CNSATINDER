@@ -3462,5 +3462,27 @@ console.log('\n[89] 서버 점검 (Phase 52)');
 	check('★ 점검 끄기 · 끝나는 시각 지우기', off.maintenance === false && off.maintenance_until === null && (await rpcAs(kid, 'heartbeat', true)).maintenance == null);
 }
 
+console.log('\n[90] 점검 예약 (Phase 53)');
+{
+	const own = (await one(`select user_id from private.staff where owner`)).user_id;
+	const kid = await person('f', 'm');
+	const soon = new Date(Date.now() + 2 * 3600_000).toISOString();
+	await svc('admin_update_settings', JSON.stringify({ maintenance: false, maintenance_at: soon, maintenance_msg: '예약 점검' }), own);
+	const hb1 = await rpcAs(kid, 'heartbeat', true);
+	check('★ 예약만 — 아직 점검 아님 · heartbeat 에 예고(24시간 안)', hb1.maintenance == null && !!hb1.maintenance_at, JSON.stringify(hb1));
+	check('예약 중에도 새 대화는 된다', (await rpcAs(kid, 'request_match')).status !== 'service_closed');
+	check('운영 화면(touch)에 예약 시각', !!(await svc('admin_staff_touch', own, null)).maintenance_at && (await svc('admin_staff_touch', own, null)).maintenance === false);
+	await db.query(`update public.app_settings set maintenance_at = now() - interval '1 minute' where id`); // 시각이 지났다
+	const hb2 = await rpcAs(kid, 'heartbeat', true);
+	check('★ 예약 시각이 지나면 저절로 점검 중 (heartbeat · 새 대화 막힘 · touch)', hb2.maintenance?.msg === '예약 점검' && hb2.maintenance_at == null
+		&& (await rpcAs(kid, 'request_match')).status === 'service_closed' && (await svc('admin_staff_touch', own, null)).maintenance === true, JSON.stringify(hb2));
+	await svc('admin_update_settings', JSON.stringify({ maintenance: false, maintenance_at: '' }), own);
+	check('★ 점검 끝내기 = 예약도 지운다', (await rpcAs(kid, 'heartbeat', true)).maintenance == null && (await one(`select maintenance_at from public.app_settings where id`)).maintenance_at === null);
+	const far = new Date(Date.now() + 3 * 86400_000).toISOString();
+	await svc('admin_update_settings', JSON.stringify({ maintenance_at: far }), own);
+	check('24시간보다 먼 예약은 학생에게 아직 안 알린다', (await rpcAs(kid, 'heartbeat', true)).maintenance_at == null);
+	await svc('admin_update_settings', JSON.stringify({ maintenance_at: '' }), own);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

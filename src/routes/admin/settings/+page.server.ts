@@ -29,6 +29,8 @@ export type AppSettings = {
 	maintenance?: boolean;
 	maintenance_msg?: string;
 	maintenance_until?: string | null;
+	/** Phase 53 — 점검 예약 */
+	maintenance_at?: string | null;
 };
 
 export type AiUsage = {
@@ -83,16 +85,26 @@ export const actions: Actions = {
 		const f = await request.formData();
 		const on = f.get('on') === 'true';
 		const msg = String(f.get('msg') ?? '').trim().slice(0, 300);
-		const raw = String(f.get('until') ?? '').trim();
 		// datetime-local 은 시간대가 없다 — 운영진은 한국에 있으니 +09:00 으로 읽는다
-		const until = raw ? new Date(`${raw}:00+09:00`) : null;
-		if (until && Number.isNaN(until.getTime())) return fail(400, { error: '끝나는 시각을 확인해 주세요' });
-		const patch: Record<string, unknown> = on ? { maintenance: true, maintenance_msg: msg, maintenance_until: until ? until.toISOString() : '' } : { maintenance: false };
+		const kst = (name: string) => {
+			const raw = String(f.get(name) ?? '').trim();
+			return raw ? new Date(`${raw}:00+09:00`) : null;
+		};
+		const until = kst('until');
+		const at = kst('at'); // 점검 예약 (Phase 53) — 비우면 지금 바로
+		if ((until && Number.isNaN(until.getTime())) || (at && Number.isNaN(at.getTime()))) return fail(400, { error: '시각을 확인해 주세요' });
+		const later = !!at && at.getTime() > Date.now() + 30_000;
+		if (on && later && until && until <= at!) return fail(400, { error: '끝나는 시각은 시작 시각보다 뒤여야 해요' });
+		// 끄기 = 점검 · 예약 둘 다 지운다. 예약 = 아직 켜지 않고 시각만. 지금 = 바로 켜고 예약은 지운다
+		const patch: Record<string, unknown> = !on
+			? { maintenance: false, maintenance_at: '' }
+			: { maintenance: !later, maintenance_at: later ? at!.toISOString() : '', maintenance_msg: msg, maintenance_until: until ? until.toISOString() : '' };
 		try {
 			await adminRpc('admin_update_settings', { p_patch: patch, p_staff: locals.staff!.id });
 		} catch (e) {
 			return friendly(e);
 		}
+		if (on && later) return { done: `점검 예약됨 · ${at!.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}부터` };
 		return { done: on ? '점검 시작 · 1분 안에 모든 학생에게 점검 화면' : '점검 끝 · 1분 안에 다시 열려요' };
 	},
 

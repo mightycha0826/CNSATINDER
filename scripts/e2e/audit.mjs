@@ -17,6 +17,7 @@ let ROLE = 'admin';
 let SUSPENDED = false, BETA = false; // Phase 44 — 정지 풀기 · 특별 업적
 let OWNER = false; // Phase 50 — 최고 관리자
 let MAINT_ON = false; // Phase 52 — 서버 점검
+let MAINT_AT = null; // Phase 53 — 점검 예약
 let ROLE_PERMS = { moderator: ['audit', 'inquiry', 'live', 'moderate', 'service'], developer: ['audit', 'inquiry', 'live', 'service', 'settings'], beta: ['live'] };
 let STAFF_LIST = [
 	{ id: 'o1', no: '20529', nickname: '단단복숭아', display_name: null, role: 'admin', owner: true, created_at: new Date().toISOString(), last_seen: new Date().toISOString() },
@@ -39,7 +40,7 @@ const RPC = {
 		else STAFF_LIST = STAFF_LIST.map((s) => (s.no === a.p_no ? { ...s, role: a.p_role, display_name: a.p_name } : s));
 		return STAFF_LIST;
 	},
-	admin_staff_touch: () => ({ role: ROLE, owner: OWNER, maintenance: MAINT_ON,perms: ({ moderator: ['live', 'moderate', 'service', 'inquiry', 'audit'], developer: ['live', 'settings', 'service', 'inquiry', 'audit'], beta: ['live'] })[ROLE] ?? [], team: [
+	admin_staff_touch: () => ({ role: ROLE, owner: OWNER, maintenance: MAINT_ON, maintenance_at: MAINT_AT, perms: ({ moderator: ['live', 'moderate', 'service', 'inquiry', 'audit'], developer: ['live', 'settings', 'service', 'inquiry', 'audit'], beta: ['live'] })[ROLE] ?? [], team: [
 		{ id: STAFF, name: '나운영', role: ROLE, owner: OWNER, last_seen: t, path: '/admin', me: true },
 		{ id: 'm1', name: '김운영', role: 'moderator', last_seen: new Date().toISOString(), path: '/admin/reports/x', me: false },
 		{ id: 'd1', name: '박개발', role: 'developer', last_seen: new Date(Date.now() - 3 * 3600_000).toISOString(), path: '/admin/settings', me: false }
@@ -63,9 +64,10 @@ const RPC = {
 	admin_set_badge: (a) => ((BETA = a.p_on), RPC.admin_user_badges()),
 	admin_user_rooms: () => [],
 	admin_user_letters: () => [{ letter_id: 7, alias: '맑은 하늘', is_author: true, status: 'open', created_at: t, preview: '광고 편지', my_comments: 0 }],
-	admin_get_settings: () => ({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5, letters_gate: true, letters_gate_min: 100, maintenance: MAINT_ON, maintenance_msg: '', maintenance_until: null }),
+	admin_get_settings: () => ({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5, letters_gate: true, letters_gate_min: 100, maintenance: MAINT_ON, maintenance_msg: '', maintenance_until: null, maintenance_at: MAINT_AT }),
 	admin_update_settings: (a) => {
 		if (a.p_patch && 'maintenance' in a.p_patch) MAINT_ON = a.p_patch.maintenance; // Phase 52
+		if (a.p_patch && 'maintenance_at' in a.p_patch) MAINT_AT = a.p_patch.maintenance_at || null; // Phase 53
 		return RPC.admin_get_settings();
 	},
 	admin_audit: () => [
@@ -433,6 +435,18 @@ try {
 	await ow.page.getByRole('button', { name: '점검 끝내기' }).click();
 	await ow.page.getByRole('button', { name: '점검 시작' }).waitFor({ timeout: 5000 }).catch(() => {});
 	check('★ 점검 끝내기 → 띠가 걷힌다', !MAINT_ON && (await ow.page.locator('.maint-bar').count()) === 0);
+
+	console.log('\n[17] 점검 예약 (Phase 53)');
+	await ow.page.locator('section.maint input[name=at]').fill('2030-01-01T15:00');
+	check('시작 시각을 적으면 버튼이 "점검 예약"', (await ow.page.getByRole('button', { name: '점검 예약' }).count()) === 1);
+	await ow.page.getByRole('button', { name: '점검 예약' }).click();
+	await ow.page.getByRole('button', { name: '예약 취소' }).waitFor({ timeout: 5000 }).catch(() => {});
+	const sp = calls.filter((c) => c[0] === 'admin_update_settings').at(-1)?.[1]?.p_patch;
+	check('★ 예약 → 아직 안 켜고 시각만 (한국 시간 → UTC)', sp?.maintenance === false && sp.maintenance_at === '2030-01-01T06:00:00.000Z', JSON.stringify(sp));
+	check('★ 예약 카드 · 운영 화면 위 파란 예약 띠', (await ow.page.locator('section.maint.soon').innerText()).includes('저절로 점검이 시작돼요') && (await ow.page.locator('.maint-bar.soon').innerText()).includes('서버 점검 예약'));
+	await ow.page.getByRole('button', { name: '예약 취소' }).click();
+	await ow.page.getByRole('button', { name: '점검 시작' }).waitFor({ timeout: 5000 }).catch(() => {});
+	check('★ 예약 취소 → 점검 · 예약 둘 다 지움', MAINT_AT === null && !MAINT_ON && (await ow.page.locator('.maint-bar').count()) === 0);
 } finally {
 	await browser.close();
 	vite.kill();

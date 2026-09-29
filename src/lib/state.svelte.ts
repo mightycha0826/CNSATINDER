@@ -50,6 +50,8 @@ export type Settings = {
 	maintenance?: boolean;
 	maintenance_msg?: string;
 	maintenance_until?: string | null;
+	/** Phase 53 — 점검 예약 (이 시각부터 저절로 점검 중) */
+	maintenance_at?: string | null;
 };
 
 export const S = $state({
@@ -71,6 +73,8 @@ export const S = $state({
 	 * (점검이 끝나면 다음 박동에 저절로 풀린다). null = 점검 아님
 	 */
 	maint: null as { msg: string; until: string | null } | null,
+	/** 예약된 점검 시각 (Phase 53) — 24시간 안이면 홈에 미리 알린다. null = 예약 없음 */
+	maintAt: null as string | null,
 	/** 전역 1초 틱. 카운트다운·상대시간 표시가 여기에 붙는다. */
 	now: Date.now()
 });
@@ -223,13 +227,19 @@ const SETTINGS_COLS =
 async function loadSettings() {
 	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();
 	const AI = 'ai_moderation, ai_chat, ai_chat_per_user';
-	let { data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, maintenance, maintenance_msg, maintenance_until`);
-	// 서버 점검(Phase 52) · 편지 잠금(Phase 44) · AI 설정(Phase 19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
+	const MAINT = 'maintenance, maintenance_msg, maintenance_until';
+	let { data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}, maintenance_at`);
+	// 점검 예약(53) · 서버 점검(52) · 편지 잠금(44) · AI 설정(19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
+	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}`));
 	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min`));
 	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}`));
 	if (error) ({ data } = await read(SETTINGS_COLS));
 	S.settings = (data as unknown as Settings) ?? null;
-	setMaint(S.settings?.maintenance ? { msg: S.settings.maintenance_msg ?? '', until: S.settings.maintenance_until ?? null } : null);
+	// 예약 시각이 지났으면 점검 중 (Phase 53 — DB 의 private.in_maintenance 와 같은 규칙)
+	const at = S.settings?.maintenance_at ? new Date(S.settings.maintenance_at).getTime() : null;
+	const on = !!S.settings?.maintenance || (at !== null && at <= Date.now());
+	setMaint(on ? { msg: S.settings?.maintenance_msg ?? '', until: S.settings?.maintenance_until ?? null } : null);
+	S.maintAt = !on && at !== null && at - Date.now() < 86_400_000 ? S.settings!.maintenance_at! : null;
 }
 
 /** 점검 상태 바꾸기 — 바뀔 때만 (같은 값을 다시 넣어 화면을 다시 그리지 않게) */
@@ -265,8 +275,12 @@ async function beat(online: boolean) {
 		const { data, error } = await supabase.rpc('heartbeat', { p_online: online });
 		// 서버 점검(Phase 52) — 박동 대답에 실려 온다. 오류(오프라인 등)면 그대로 둔다
 		if (!error && online) {
-			const m = (data as { maintenance?: { msg?: string; until?: string | null } | null } | null)?.maintenance;
+			const d = data as { maintenance?: { msg?: string; until?: string | null } | null; maintenance_at?: string | null } | null;
+			const m = d?.maintenance;
 			setMaint(m ? { msg: m.msg ?? '', until: m.until ?? null } : null);
+			// 점검 예약 예고 (Phase 53) — 24시간 안의 예약만 온다
+			const at = d?.maintenance_at ?? null;
+			if (at !== S.maintAt) S.maintAt = at;
 		}
 	} catch {
 		/* 다음 박동에 다시 */
