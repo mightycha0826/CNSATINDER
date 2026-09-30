@@ -143,84 +143,68 @@
 		<span class="wood" aria-hidden="true">
 			<!-- 책상 위 물건들 (Phase 58) — 서류 더미를 피해 가장자리에. 위에서 내려다본 모습, 책상 비율(--k)대로 커지고 작아진다 -->
 			<span class="props">
-				<!-- 포스트잇 — 하트 낙서 -->
-				<svg class="prop note" viewBox="0 0 64 64">
-					<path d="M2 2h60v46L48 62H2z" fill="#ffe68a" />
-					<path d="M62 48H51a3 3 0 0 0-3 3v11z" fill="#e6c455" />
-					<path d="M11 17h36M11 27h29M11 37h17" stroke="#c9a53a" stroke-width="2.4" stroke-linecap="round" opacity=".55" />
-					<path d="M42 44c-3-2.3-6-4.6-6-7.4a3 3 0 0 1 6-1.2 3 3 0 0 1 6 1.2c0 2.8-3 5.1-6 7.4z" fill="none" stroke="#e0456a" stroke-width="1.9" stroke-linejoin="round" />
-				</svg>
-				<!-- 커피 — 컵 자국 · 라테 아트 하트 -->
-				<svg class="prop ring" viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgb(40 15 0 / .2)" stroke-width="3" stroke-dasharray="120 14 30 8" /></svg>
-				<svg class="prop mug" viewBox="0 0 86 72">
+				<!-- 책상 위 물건 (Phase 58 · 76) — 우체통과 같은 결: 납작하고 부드러운 그림 · 브랜드색(주황 → 코랄 → 핑크) · 크림 -->
+				<svg class="prop defs" viewBox="0 0 1 1" aria-hidden="true">
 					<defs>
-						<radialGradient id="desk-coffee" cx="45%" cy="40%" r="60%">
-							<stop offset="0" stop-color="#9a6436" />
-							<stop offset=".65" stop-color="#5e3218" />
-							<stop offset="1" stop-color="#3f1e0c" />
-						</radialGradient>
-					</defs>
-					<path d="M64 25a12 12 0 0 1 0 22" fill="none" stroke="#efe8df" stroke-width="7.5" stroke-linecap="round" />
-					<circle cx="36" cy="36" r="32" fill="#f6f1ea" />
-					<circle cx="36" cy="36" r="32" fill="none" stroke="rgb(90 60 30 / .18)" stroke-width="1.2" />
-					<circle cx="36" cy="36" r="25.5" fill="url(#desk-coffee)" />
-					<path d="M36 47c-6.5-4.2-11-7.6-11-11.6a5.3 5.3 0 0 1 11-1.5 5.3 5.3 0 0 1 11 1.5c0 4-4.5 7.4-11 11.6z" fill="#ecd3b2" opacity=".9" />
-					<ellipse cx="25" cy="18" rx="9" ry="3.2" fill="#fff" opacity=".55" transform="rotate(-32 25 18)" />
-				</svg>
-				<!-- 만년필 (펜촉이 왼쪽 아래로) -->
-				<svg class="prop pen" viewBox="0 0 170 20">
-					<defs>
-						<linearGradient id="desk-pen" x1="0" y1="0" x2="0" y2="1">
-							<stop offset="0" stop-color="#b3304f" />
-							<stop offset=".55" stop-color="#7d1731" />
-							<stop offset="1" stop-color="#4c0a1c" />
+						<linearGradient id="desk-brand" x1="0" y1="0" x2="1" y2="1">
+							<stop offset="0" stop-color="#ff7a50" />
+							<stop offset=".5" stop-color="#fb5c68" />
+							<stop offset="1" stop-color="#f0396e" />
 						</linearGradient>
-					</defs>
-					<path d="M1 10l21-4.5h4v9h-4z" fill="#e8c46c" />
-					<path d="M5 10h17" stroke="#8a6a20" stroke-width=".9" />
-					<circle cx="18" cy="10" r="1.3" fill="#8a6a20" />
-					<rect x="26" y="5" width="16" height="10" rx="2" fill="#2b2a31" />
-					<rect x="42" y="3" width="120" height="14" rx="7" fill="url(#desk-pen)" />
-					<rect x="98" y="3" width="4.5" height="14" fill="#e8c46c" />
-					<rect x="106" y="1.3" width="48" height="3.4" rx="1.7" fill="#e8c46c" />
-					<rect x="47" y="5.2" width="108" height="2.2" rx="1.1" fill="#fff" opacity=".22" />
-				</svg>
-				<!-- 연필 (지우개 달린) -->
-				<svg class="prop pencil" viewBox="0 0 150 14">
-					<path d="M0 7l20-6v12z" fill="#f0d2a6" />
-					<path d="M0 7l7-2.1v4.2z" fill="#3b3b3b" />
-					<rect x="20" y="1" width="106" height="12" fill="#f6c343" />
-					<rect x="20" y="5" width="106" height="4" fill="#e7ad2a" />
-					<rect x="126" y="1" width="10" height="12" fill="#c8cbd1" />
-					<path d="M129 1v12M132.5 1v12" stroke="#9ea3ab" stroke-width=".9" />
-					<rect x="136" y="1" width="13" height="12" rx="3" fill="#f28ca0" />
-				</svg>
-				<!-- 봉인 밀랍 막대 · 놋쇠 도장 -->
-				<svg class="prop sealkit" viewBox="0 0 96 52">
-					<defs>
-						<radialGradient id="desk-brass" cx="34%" cy="28%" r="78%">
-							<stop offset="0" stop-color="#fff3c4" />
-							<stop offset=".3" stop-color="#e6bb5c" />
-							<stop offset=".72" stop-color="#a8752a" />
-							<stop offset="1" stop-color="#5f3f10" />
-						</radialGradient>
+						<linearGradient id="desk-brand-x" x1="0" y1="0" x2="1" y2="0">
+							<stop offset="0" stop-color="#ff7a50" />
+							<stop offset=".5" stop-color="#fb5c68" />
+							<stop offset="1" stop-color="#f0396e" />
+						</linearGradient>
 						<radialGradient id="desk-knob" cx="38%" cy="32%" r="72%">
-							<stop offset="0" stop-color="#b98356" />
-							<stop offset=".55" stop-color="#6e3f22" />
-							<stop offset="1" stop-color="#3a1f0d" />
+							<stop offset="0" stop-color="#fff" />
+							<stop offset="1" stop-color="#f3e3de" />
 						</radialGradient>
 					</defs>
-					<rect x="2" y="34" width="56" height="11" rx="3" fill="#b8142f" transform="rotate(-8 30 40)" />
-					<rect x="6" y="35.5" width="46" height="2.4" rx="1.2" fill="#fff" opacity=".25" transform="rotate(-8 30 40)" />
-					<path d="M55 33.5c3 .4 5 2.6 4.4 5.6-.5 2.4-2.6 3.6-5.2 3.2z" fill="#8a0c20" />
-					<circle cx="72" cy="24" r="21" fill="url(#desk-brass)" />
-					<circle cx="72" cy="24" r="17.5" fill="none" stroke="rgb(80 50 8 / .5)" stroke-width=".9" />
-					<circle cx="72" cy="24" r="13.5" fill="url(#desk-knob)" />
-					<ellipse cx="67.2" cy="17.2" rx="5" ry="2.7" fill="#fff" opacity=".3" transform="rotate(-32 67.2 17.2)" />
+				</svg>
+				<!-- 포스트잇 — 살구빛 · 코랄 하트 -->
+				<svg class="prop note" viewBox="0 0 64 64">
+					<rect x="2" y="2" width="60" height="60" rx="6" fill="#ffe3b8" />
+					<path d="M11 17h36M11 27h29" stroke="#f0b27a" stroke-width="2.6" stroke-linecap="round" />
+					<path d="M42 48c-3.4-2.5-6.6-5-6.6-8a3.3 3.3 0 0 1 6.6-1.3 3.3 3.3 0 0 1 6.6 1.3c0 3-3.2 5.5-6.6 8z" fill="#fb5c68" />
+				</svg>
+				<!-- 컵 자국 -->
+				<svg class="prop ring" viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgb(230 110 90 / .2)" stroke-width="3" stroke-dasharray="120 14 30 8" /></svg>
+				<!-- 머그 — 브랜드 그라디언트 잔 · 라테 하트 -->
+				<svg class="prop mug" viewBox="0 0 86 72">
+					<path d="M64 25a12 12 0 0 1 0 22" fill="none" stroke="url(#desk-brand)" stroke-width="7.5" stroke-linecap="round" />
+					<circle cx="36" cy="36" r="32" fill="url(#desk-brand)" />
+					<circle cx="36" cy="36" r="27" fill="#fff" />
+					<circle cx="36" cy="36" r="23" fill="#c98a5e" />
+					<path d="M36 46c-6-3.8-10-6.9-10-10.5a4.8 4.8 0 0 1 10-1.4 4.8 4.8 0 0 1 10 1.4c0 3.6-4 6.7-10 10.5z" fill="#fbe7d3" />
+				</svg>
+				<!-- 펜 — 브랜드 그라디언트 몸통 · 흰 클립 (펜촉이 왼쪽 아래로) -->
+				<svg class="prop pen" viewBox="0 0 170 20">
+					<path d="M2 10l22-5h6v10h-6z" fill="#ffe0cc" />
+					<circle cx="8" cy="10" r="2" fill="#7a1330" />
+					<rect x="28" y="3" width="134" height="14" rx="7" fill="url(#desk-brand-x)" />
+					<rect x="104" y="1" width="46" height="4" rx="2" fill="#fff" />
+					<rect x="34" y="5" width="120" height="2.4" rx="1.2" fill="#fff" opacity=".35" />
+				</svg>
+				<!-- 연필 — 살구색 · 분홍 지우개 -->
+				<svg class="prop pencil" viewBox="0 0 150 14">
+					<path d="M0 7l20-6v12z" fill="#ffe0cc" />
+					<path d="M0 7l7-2.1v4.2z" fill="#6b3a44" />
+					<rect x="20" y="1" width="106" height="12" fill="#ffb28f" />
+					<rect x="20" y="5" width="106" height="4" fill="#ff9f7c" />
+					<rect x="126" y="1" width="10" height="12" fill="#f2e6e0" />
+					<rect x="136" y="1" width="13" height="12" rx="3" fill="#f78aa6" />
+				</svg>
+				<!-- 봉인 — 분홍 밀랍 막대 · 하트 도장 -->
+				<svg class="prop sealkit" viewBox="0 0 96 52">
+					<rect x="2" y="34" width="56" height="11" rx="5.5" fill="url(#desk-brand-x)" transform="rotate(-8 30 40)" />
+					<circle cx="72" cy="24" r="21" fill="url(#desk-brand)" />
+					<circle cx="72" cy="24" r="15" fill="url(#desk-knob)" />
+					<path d="M72 30c-3.4-2.4-6-4.4-6-6.8a3 3 0 0 1 6-.9 3 3 0 0 1 6 .9c0 2.4-2.6 4.4-6 6.8z" fill="#fb5c68" />
 				</svg>
 				<!-- 종이 클립 -->
-				<svg class="prop clip c1" viewBox="0 0 14 40"><path d="M4 30V8a3.5 3.5 0 0 1 7 0v24a5.5 5.5 0 0 1-11 0V10" fill="none" stroke="#d3d7de" stroke-width="1.7" stroke-linecap="round" /></svg>
-				<svg class="prop clip c2" viewBox="0 0 14 40"><path d="M4 30V8a3.5 3.5 0 0 1 7 0v24a5.5 5.5 0 0 1-11 0V10" fill="none" stroke="#e7a3b4" stroke-width="1.7" stroke-linecap="round" /></svg>
+				<svg class="prop clip c1" viewBox="0 0 14 40"><path d="M4 30V8a3.5 3.5 0 0 1 7 0v24a5.5 5.5 0 0 1-11 0V10" fill="none" stroke="#f7a6a0" stroke-width="2" stroke-linecap="round" /></svg>
+				<svg class="prop clip c2" viewBox="0 0 14 40"><path d="M4 30V8a3.5 3.5 0 0 1 7 0v24a5.5 5.5 0 0 1-11 0V10" fill="none" stroke="#ffc39a" stroke-width="2" stroke-linecap="round" /></svg>
 			</span>
 			<span class="pile">
 				{#each LAYERS.slice(0, Math.max(0, pileSize - 1)) as l, i (i)}
@@ -301,11 +285,9 @@
 		display: flex;
 		flex-direction: column;
 		margin: 0 calc(var(--side) * -1);
-		background:
-			radial-gradient(90% 260px at 45% 0%, rgb(255 210 160 / 0.2), transparent 70%),
-			var(--wood);
-		border-top: 2px solid rgb(255 214 170 / 0.3);
-		box-shadow: inset 0 14px 16px -12px rgb(30 10 0 / 0.6);
+		background: var(--wood);
+		border-top: 2px solid rgb(255 255 255 / 0.35);
+		box-shadow: inset 0 14px 16px -12px var(--wood-shade);
 	}
 	.surface::after {
 		content: '';
@@ -314,8 +296,8 @@
 		right: 0;
 		bottom: 0;
 		height: 12px;
-		background: linear-gradient(180deg, #5a3016, #3f200d);
-		box-shadow: 0 -1px 0 rgb(255 220 180 / 0.18);
+		background: var(--wood-edge);
+		box-shadow: 0 -1px 0 rgb(255 255 255 / 0.3);
 		pointer-events: none;
 	}
 	/* 우체통에서 나온 새 편지 — 책상 위쪽에 */
@@ -359,7 +341,11 @@
 	.prop {
 		position: absolute;
 		height: auto;
-		filter: drop-shadow(0 calc(3px * var(--k, 1)) calc(3px * var(--k, 1)) rgb(30 10 0 / 0.42));
+		filter: drop-shadow(0 calc(3px * var(--k, 1)) calc(4px * var(--k, 1)) var(--wood-drop));
+	}
+	.defs {
+		width: 0;
+		height: 0;
 	}
 	.note {
 		left: calc(16px * var(--k, 1));
@@ -452,7 +438,7 @@
 		height: calc(109px * var(--k, 1));
 		border-radius: 4px;
 		transform: translate(calc(var(--x) * var(--k, 1)), calc(var(--y) * var(--k, 1))) rotate(var(--r));
-		box-shadow: 0 2px 5px rgb(30 10 0 / 0.35);
+		box-shadow: 0 3px 8px var(--wood-drop);
 	}
 	.layer.paper {
 		width: calc(150px * var(--k, 1));
@@ -470,7 +456,7 @@
 	.top-env {
 		position: relative;
 		transform: rotate(-2deg);
-		filter: drop-shadow(0 4px 6px rgb(30 10 0 / 0.4));
+		filter: drop-shadow(0 4px 8px var(--wood-drop));
 	}
 	/* 방금 보낸 편지가 더미 위로 내려앉는다 (Phase 72) */
 	.top-env.land {
@@ -483,7 +469,7 @@
 		}
 	}
 	.empty-desk {
-		color: rgb(255 235 215 / 0.8);
+		color: var(--wood-ink);
 		font-size: 13px;
 		font-weight: 700;
 	}

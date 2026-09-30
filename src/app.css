@@ -67,9 +67,17 @@
 	/* 편지함 장면 (Phase 73 · 75) — 벽(우체통이 걸린 곳)은 앱 바탕 그대로에 브랜드색 빛 번짐(--ambient, 테마마다 따라 바뀐다) ·
 	   나무 책상 판자는 물건이라 다크 모드에서도 그대로 */
 	--wall: var(--ambient), linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 93%, #f3b49c));
-	--wood: repeating-linear-gradient(91deg, rgb(255 255 255 / 0.035) 0 2px, transparent 2px 11px),
-		repeating-linear-gradient(89deg, rgb(40 15 0 / 0.08) 0 1px, transparent 1px 27px),
-		linear-gradient(180deg, #9a5f33, #7b4623 55%, #633619);
+	/* 책상 (Phase 76) — 우체통과 결이 맞게 밝은 단풍나무: 옅은 결 · 위에서 비치는 빛. 앞 모서리 · 벽 쪽 그늘 · 물건 그림자는 같은 따뜻한 색 */
+	--wood: radial-gradient(90% 260px at 45% 0%, rgb(255 255 255 / 0.35), transparent 70%),
+		repeating-linear-gradient(91deg, rgb(255 255 255 / 0.12) 0 2px, transparent 2px 13px),
+		repeating-linear-gradient(89deg, rgb(160 90 40 / 0.07) 0 1px, transparent 1px 31px),
+		linear-gradient(180deg, #f5dcc2, #ecc7a3 60%, #e3b690);
+	--wood-edge: linear-gradient(180deg, #dca47c, #c98d64);
+	--wood-shade: rgb(170 80 40 / 0.35);
+	--wood-drop: rgb(170 70 50 / 0.28);
+	--wood-ink: #9a5b3a;
+	/* 판자 아래쪽 색 — 책상 위에 붙는 띠(편지 쓰기의 보내기 줄)의 바탕 */
+	--wood-base: #e3b690;
 	--hand: 'Nanum Pen Script', var(--sans);
 	/* 탭 첫 화면 위쪽의 빛 번짐 */
 	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.16), transparent 70%),
@@ -141,6 +149,15 @@
 		--paper-rule: rgb(236 229 216 / 0.1);
 		--env-paper: #e6d9c2;
 		--env-shade: #d4c3a6;
+		--wood: radial-gradient(90% 260px at 45% 0%, rgb(255 220 190 / 0.12), transparent 70%),
+			repeating-linear-gradient(91deg, rgb(255 255 255 / 0.05) 0 2px, transparent 2px 13px),
+			repeating-linear-gradient(89deg, rgb(40 15 0 / 0.1) 0 1px, transparent 1px 31px),
+			linear-gradient(180deg, #a97c5c, #946a4c 60%, #825c42);
+		--wood-edge: linear-gradient(180deg, #6f4b33, #5b3c28);
+		--wood-shade: rgb(20 5 0 / 0.55);
+		--wood-drop: rgb(20 5 0 / 0.45);
+		--wood-ink: #f3dcc6;
+		--wood-base: #825c42;
 		--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.13), transparent 70%),
 			radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.12), transparent 70%);
 		--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -8px rgb(0 0 0 / 0.6);
@@ -167,6 +184,15 @@
 	--paper-rule: rgb(236 229 216 / 0.1);
 	--env-paper: #e6d9c2;
 	--env-shade: #d4c3a6;
+	--wood: radial-gradient(90% 260px at 45% 0%, rgb(255 220 190 / 0.12), transparent 70%),
+		repeating-linear-gradient(91deg, rgb(255 255 255 / 0.05) 0 2px, transparent 2px 13px),
+		repeating-linear-gradient(89deg, rgb(40 15 0 / 0.1) 0 1px, transparent 1px 31px),
+		linear-gradient(180deg, #a97c5c, #946a4c 60%, #825c42);
+	--wood-edge: linear-gradient(180deg, #6f4b33, #5b3c28);
+	--wood-shade: rgb(20 5 0 / 0.55);
+	--wood-drop: rgb(20 5 0 / 0.45);
+	--wood-ink: #f3dcc6;
+	--wood-base: #825c42;
 	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.13), transparent 70%),
 		radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.12), transparent 70%);
 	--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -8px rgb(0 0 0 / 0.6);

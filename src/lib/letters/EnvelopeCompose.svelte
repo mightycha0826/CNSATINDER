@@ -219,11 +219,9 @@
 	}
 	.desk .wood {
 		flex: 1;
-		background:
-			radial-gradient(90% 260px at 45% 0%, rgb(255 210 160 / 0.2), transparent 70%),
-			var(--wood);
-		border-top: 2px solid rgb(255 214 170 / 0.3);
-		box-shadow: inset 0 14px 16px -12px rgb(30 10 0 / 0.6);
+		background: var(--wood);
+		border-top: 2px solid rgb(255 255 255 / 0.35);
+		box-shadow: inset 0 14px 16px -12px var(--wood-shade);
 	}
 
 	/* ── 봉투 자리: 들어올 때 가운데 → 쓰는 동안은 화면 아래로 내려가 숨는다 → 보낼 때 다시 가운데 → 날아간다 ── */
@@ -334,10 +332,10 @@
 		gap: 12px;
 		margin: 0 calc(var(--pad) * -1);
 		padding: 10px var(--pad) calc(10px + env(safe-area-inset-bottom));
-		/* 책상 위라 어두운 나무색 받침 */
-		background: linear-gradient(to top, #4f2a13 55%, rgb(79 42 19 / 0));
+		/* 책상 위라 판자색 받침 */
+		background: linear-gradient(to top, var(--wood-base) 55%, color-mix(in srgb, var(--wood-base) 0%, transparent));
 		font-size: 12px;
-		color: #efdcc4;
+		color: var(--wood-ink);
 	}
 	/* 키보드가 떠 있을 때는 홈 인디케이터 여백이 필요 없다 */
 	:global(html.kb-open) .foot {
@@ -400,8 +398,7 @@
 		text-align: center;
 		font-size: 14px;
 		font-weight: 700;
-		color: #fbeedd;
-		text-shadow: 0 1px 3px rgb(30 10 0 / 0.6);
+		color: var(--wood-ink);
 		z-index: 2;
 	}
 </style>
