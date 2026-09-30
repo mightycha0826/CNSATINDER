@@ -3,7 +3,9 @@
 	 * 극작소 (연극 동아리) 뱃지 — 실제 에나멜 핀을 그대로 옮긴 그림 (Phase 70, CNSA 분류의 첫 뱃지).
 	 * 빨간 상자 위로 솟은 검은 슬레이트(클래퍼보드: 흰 화살 셋 · 점 셋 · 줄 셋) + 오른쪽 아래 막이 걷힌 무대 상자.
 	 * 에나멜 핀처럼: 칸마다 검은 금속 테두리가 도드라지고, 에나멜 위에 유리 같은 빛 · 아래로 떨어지는 그림자.
-	 * 모양은 사진에서 잰 점 그대로 (viewBox 단위, 사진 픽셀 ÷ 10). 모서리는 사진처럼 뾰족하게 (miter) — 화살은 끝이 곧은 채운 도형.
+	 * 모양은 사진에서 잰 점 그대로 (정면 사진을 격자에 대고 잰 것, 사진 픽셀 × 0.142).
+ * 아래 가장자리는 사진처럼 오른쪽으로 올라간다 — 앞면 아래 선 · 무대 아래 선 모두, 무대 왼쪽 아래 끝은 뾰족하게.
+ * 칸 사이 금속 선 · 막 선은 굵게 (사진의 도드라진 금속 테). 모서리는 사진처럼 뾰족하게 (miter) — 화살은 끝이 곧은 채운 도형.
 	 */
 	let { shine = false, delay = 0 }: { shine?: boolean; delay?: number } = $props();
 	const uid = $props.id();
@@ -11,8 +13,8 @@
 	// 꼭짓점 — A·B 슬레이트 위 · C 슬레이트가 앞면에 닿는 곳 · D·E 옆면 위 · F·G 옆면 아래
 	// H·I 무대 상자 위 모서리 · Q 윗면 안쪽 · J·K 무대 앞면 위 · L·M 무대 앞면 아래 · N 무대 옆면 아래 · W 앞면이 무대 뒤로 들어가는 곳
 	const P = {
-		A: [23, 20], B: [78.5, 6.5], C: [69.5, 44], D: [19, 33.5], E: [36, 49.5], F: [9, 81], G: [26.5, 96],
-		H: [86, 41], Q: [84.5, 45.5], I: [108, 59.5], J: [103, 62.5], K: [54.5, 69], L: [99, 96.5], M: [46.5, 106], N: [104.5, 94], W: [48, 99.5]
+		A: [23, 20], B: [78.5, 6.5], C: [68.5, 40.6], D: [21.5, 33.5], E: [36.5, 49.2], F: [8.8, 78.3], G: [25.8, 96.1],
+		H: [86.3, 36.4], Q: [84.8, 41.4], I: [107, 57.7], J: [102, 60.6], K: [55.7, 67.7], L: [94.2, 101.1], M: [45.8, 107.5], N: [99.8, 98.3], W: [49.3, 93.3]
 	} as const;
 	const poly = (...k: (keyof typeof P)[]) => k.map((n) => P[n].join(' ')).join(' ');
 	const outline = poly('A', 'B', 'C', 'H', 'I', 'N', 'L', 'M', 'W', 'G', 'F', 'D');
@@ -44,7 +46,7 @@
 	<polygon points={outline} fill="#1b1b1f" stroke="#1b1b1f" stroke-width="5" stroke-linejoin="miter" stroke-miterlimit="4" transform="translate(0 1.6)" />
 	<polygon points={outline} fill="#3b3b42" stroke="#4a4a52" stroke-width="4.4" stroke-linejoin="miter" stroke-miterlimit="4" />
 
-	<g clip-path="url(#{uid}-clip)" stroke="#26262b" stroke-width="1.9" stroke-linejoin="miter" stroke-miterlimit="6">
+	<g clip-path="url(#{uid}-clip)" stroke="#26262b" stroke-width="2.8" stroke-linejoin="miter" stroke-miterlimit="6">
 		<!-- 슬레이트 -->
 		<polygon points={poly('A', 'B', 'C', 'E', 'D')} fill="url(#{uid}-slate)" />
 		<!-- 빨간 상자: 옆면 · 앞면 -->
@@ -61,8 +63,8 @@
 		<polygon points="-3.4 -3.6 -0.4 -3.6 2.8 0 -0.4 3.6 -3.4 3.6 -0.2 0" fill="#f3f4f7" transform="translate({x} {y}) rotate(-13.7)" />
 	{/each}
 	<g fill="none" stroke="#f3f4f7" stroke-linecap="butt" stroke-linejoin="miter">
-		<path d="M27.8 33.6L64 27.2M32 39.6L64.2 33.6M37 45.4L64.6 40.2" stroke-width="1.5" />
-		<path d="M42.6 31V37.4M47.6 36.8V43.3" stroke-width="1.3" />
+		<path d="M28.7 34.2L65 27.8M33 39.9L63.6 34.2M37.9 45.4L61.8 40.9" stroke-width="2.1" />
+		<path d="M43.2 31.2V37.6M48.2 37V43.2" stroke-width="1.8" />
 	</g>
 	<g fill="#f3f4f7">
 		<circle cx="26.8" cy="25.8" r="1.35" />
@@ -71,18 +73,18 @@
 	</g>
 
 	<!-- 무대 막 — 위로 드리운 휘장 두 겹 · 양쪽으로 걷어 묶은 막 (금속 선) -->
-	<g fill="none" stroke="#3d0a0e" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="miter">
-		<path d="M55.8 72C68 78.5 88 76 101.6 66.2M56.6 75.4C69 82 88.5 79.2 101 69.4" />
-		<path d="M58 73.4C62.4 80.6 60.2 88.4 53.4 94.4M55.6 76.6C57 84.4 55.6 90 52.2 94.2M52.8 94.8L48.6 104.6M53.2 94.8L54.8 103.6M52.9 94.8L51.6 104.2" />
-		<path d="M100.6 66.8C97.6 74.2 97.4 82 99.2 88.4M102.2 69.4C100.2 76.4 100.2 83 100.8 88.4M99.8 88.8L97.4 95.8M100.2 88.8L101.8 95.3" />
+	<g fill="none" stroke="#3d0a0e" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="miter">
+		<path d="M57 70.8C69 77.2 87 74.2 99.6 64M57.8 74.4C70 81 88 78 99 67.2" />
+		<path d="M59.4 72.4C63.8 80 61.2 88.4 53.6 95.6M56.4 75.6C57.8 83.4 56.2 90.2 52.4 95.4M53 96L46.8 106.4M53.4 96L54 105.2M53.2 96L50.4 105.8" />
+		<path d="M99 64.8C95.6 72.6 94.6 80.8 94.4 88.2M100.2 67.4C97.8 74.6 96.6 81.6 95.8 88.4M94.8 88.8L91.8 101M95.4 88.8L94.2 100.6" />
 	</g>
 
 	<!-- 에나멜 위 유리 빛 — 윗 모서리마다 가는 흰 빛, 오른쪽 위에 넓은 빛 -->
 	<g clip-path="url(#{uid}-clip)" fill="none" stroke="#fff" stroke-linecap="butt">
-		<path d="M38.5 53L67 48.3M22 38.5L33 49" stroke-opacity="0.45" stroke-width="1.4" />
-		<path d="M88 44.5L104 59.5" stroke-opacity="0.35" stroke-width="1.2" />
-		<path d="M12.5 80L20.5 40" stroke-opacity="0.2" stroke-width="2.2" />
-		<path d="M96 84L99.5 67" stroke-opacity="0.18" stroke-width="1.6" />
+		<path d="M39.5 52.6L67 45.2M24 38.5L34 48.4" stroke-opacity="0.45" stroke-width="1.4" />
+		<path d="M88.6 40.2L103.4 55.4" stroke-opacity="0.35" stroke-width="1.2" />
+		<path d="M12.5 77L22 40" stroke-opacity="0.2" stroke-width="2.2" />
+		<path d="M91.6 86L95.4 69" stroke-opacity="0.18" stroke-width="1.6" />
 		<path d="M28 21.5L74 10.5" stroke-opacity="0.25" stroke-width="1.2" />
 	</g>
 
