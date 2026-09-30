@@ -285,7 +285,7 @@
 	}
 	.post {
 		display: block;
-		width: min(82%, calc(300px * var(--k, 1)));
+		width: min(74%, calc(270px * var(--k, 1)));
 		-webkit-tap-highlight-color: transparent;
 	}
 	.post:focus-visible {

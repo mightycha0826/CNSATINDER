@@ -202,8 +202,8 @@
 	}
 	/* 벽(우체통이 걸린 곳) + 나무 책상 — 편지함과 같은 장면 */
 	.compose {
-		--mb-w: min(80vw, 300px);
-		--wall-h: calc(var(--header-h) + var(--safe-top) + 30px + var(--mb-w) * 0.669 + 22px);
+		--mb-w: min(72vw, 270px);
+		--wall-h: calc(var(--header-h) + var(--safe-top) + 30px + var(--mb-w) * 0.7 + 22px);
 	}
 	.desk {
 		position: fixed;
