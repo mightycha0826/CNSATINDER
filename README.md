@@ -715,5 +715,5 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       서버: 나에게서만 숨기는 `private.dm_hidden_msgs`, `dm_letter_delete(p_msgs)` — 받은 편지는 열어 본 것만(폴더와 같은 규칙), 200통까지, 폴더에서도 뺀다.
       편지 줄기는 그대로라 버리기 · 차단과 달리 답장이 오가고 새 편지는 보인다. `dm_box_of`(편지함 · 폴더 수 · 폴더 넣기) · `dm_open` 이 지운 편지를 없는 것으로 본다(제자리에서 고침).
       스키마 테스트 [92], 화면 테스트 `letters`(선택 · 삭제 · 320 폭 · 프로필 배지 옮기기 · 거절 시 되돌림) · `achievements`(터치 꾹 눌러 끌기 · 짧게 밀면 스크롤 · 교복 보이기 ·
-      잠긴 메달 · 칸 밖 · 마우스 · 리본 꼬리가 조끼 위 · 꼬리 폭). **실DB 반영 필요** — `schema.sql` 의 Phase 69 절 + 고친 `dm_box_of` · `dm_open` (아직 안 함, 안 하면 삭제만 실패한다).
+      잠긴 메달 · 칸 밖 · 마우스 · 리본 꼬리가 조끼 위 · 꼬리 폭). 실DB 반영 (phase69_letter_delete — 2026-09-30, 세 함수 본문이 레포와 같음을 확인).
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험
