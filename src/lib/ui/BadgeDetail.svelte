@@ -32,7 +32,7 @@
 		<p class="how">{def.description}{#if sub}<span class="muted"> · {sub}</span>{/if}</p>
 		{#if def.granted}
 			<p class="special" class:done={badge.tier > 0}>
-				<span class="spark" aria-hidden="true">✦</span>운영진이 주는 특별 업적
+				<span class="spark" aria-hidden="true">✦</span>{def.category === 'cnsa' ? '동아리 부원에게 주는 CNSA 뱃지' : '운영진이 주는 특별 업적'}
 				{#if badge.tier > 0}<span class="check" aria-label="받음">✓</span>{/if}
 			</p>
 		{:else}

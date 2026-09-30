@@ -53,13 +53,19 @@
 		// 운영진이 주는 특별 업적 (Phase 44) — 무지갯빛 · 등급 대신 "특별"
 		A('beta', '베타 테스터', '🧪', 'special', [1, 1, 1], 0, 3, { unit: '', description: '출시 전 베타 테스트에 함께한 사람', granted: true }),
 		A('streak', '개근상', '📅', 'special', [3, 7, 30], 5, 1, { unit: '일', description: '며칠 연속으로 접속' }),
-		A('pioneer', '개척자', '🚩', 'special', [1000, 300, 100], 42, 3, { unit: '번째', description: '가입한 순서', lower_better: true })
+		A('pioneer', '개척자', '🚩', 'special', [1000, 300, 100], 42, 3, { unit: '번째', description: '가입한 순서', lower_better: true }),
+		// CNSA 뱃지 (Phase 70) — 실제 동아리 핀 모양
+		A('club_geukjakso', '극작소', '🎬', 'cnsa', [1, 1, 1], 0, 3, { unit: '', description: '연극 동아리 극작소 부원', granted: true })
 	];
 	const feat = (c: string): BadgeLite => {
 		const a = items.find((x) => x.code === c)!;
 		return { code: a.code, title: a.title, icon: a.icon, tier: a.tier };
 	};
-	let data = $state<MyAchievements>({ items, featured: [feat('fun'), feat('pioneer'), feat('warm')], chosen: [] });
+	let data = $state<MyAchievements>({
+		items,
+		featured: page.url.searchParams.has('club') ? [feat('club_geukjakso'), feat('fun'), feat('warm')] : [feat('fun'), feat('pioneer'), feat('warm')],
+		chosen: []
+	});
 	const celebrate = page.url.searchParams.has('celebrate');
 	const uniform = page.url.searchParams.has('uniform');
 	let picked = $state('');
@@ -88,6 +94,7 @@
 							{neck}
 							badges={data.featured.slice(0, n)}
 							emptyHref="/dev/achievements"
+							allHref={n === 3 ? '/dev/achievements' : undefined}
 							onpick={(b) => (picked = b.title)}
 							onplace={n === 3 ? (code, slot) => void feature(placedFeatured(data, code, slot)) : undefined}
 						/>

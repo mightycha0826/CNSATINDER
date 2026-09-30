@@ -5,7 +5,8 @@ import { rpc } from './rpc';
  * 서버: supabase/schema.sql Phase 31 (private.achievement_defs · user_stats · user_achievements).
  */
 export type Tier = 0 | 1 | 2 | 3;
-export type Category = 'chat' | 'manner' | 'letter' | 'special';
+/** cnsa — 학교 동아리 · 행사 뱃지 (Phase 70, 운영진이 준다 · 실제 핀 모양) */
+export type Category = 'chat' | 'manner' | 'letter' | 'special' | 'cnsa';
 
 /** 상대 프로필 · 대표 업적에 쓰는 짧은 모양 */
 export type BadgeLite = { code: string; title: string; icon: string; tier: Tier };
@@ -43,7 +44,8 @@ export const CATEGORIES: { k: Category | 'all'; label: string }[] = [
 	{ k: 'chat', label: '대화' },
 	{ k: 'manner', label: '매너' },
 	{ k: 'letter', label: '편지' },
-	{ k: 'special', label: '특별' }
+	{ k: 'special', label: '특별' },
+	{ k: 'cnsa', label: 'CNSA' }
 ];
 
 /** 비어 있으면(Phase 31 전 DB 등) 오류로 — 화면이 "불러오지 못했어요"를 띄운다 */

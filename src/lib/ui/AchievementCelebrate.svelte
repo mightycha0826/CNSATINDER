@@ -12,6 +12,7 @@
 	import { backClose, navigateFromOverlay } from '$lib/overlay.svelte';
 	import Badge from './Badge.svelte';
 	import { SPECIAL_BADGES } from './badgeIcons';
+	import { PIN_BADGES } from './pins';
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
 	import { UI } from '$lib/state.svelte';
 
@@ -125,7 +126,7 @@
 				{/each}
 			</div>
 			<p class="kicker">새 업적</p>
-			<h2>{one ? (SPECIAL_BADGES.has(fresh[0].code) ? `특별 업적 ${fresh[0].title}!` : `${fresh[0].title} ${TIER_NAME[fresh[0].tier]} 등급!`) : `업적 ${fresh.length}개를 모았어요!`}</h2>
+			<h2>{one ? (PIN_BADGES[fresh[0].code] ? `CNSA 뱃지 ${fresh[0].title}!` : SPECIAL_BADGES.has(fresh[0].code) ? `특별 업적 ${fresh[0].title}!` : `${fresh[0].title} ${TIER_NAME[fresh[0].tier]} 등급!`) : `업적 ${fresh.length}개를 모았어요!`}</h2>
 			{#if fresh.length > top.length}<p class="more muted">외 {fresh.length - top.length}개</p>{/if}
 			<div class="acts">
 				<button class="btn" onclick={() => close(true)}>업적 보러 가기</button>

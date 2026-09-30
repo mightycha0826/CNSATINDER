@@ -30,9 +30,12 @@
 	 * 리본: 가운데 조인 띠 · 위 면은 빛 · 아래 면은 접혀 그늘인 두 날개(안쪽은 모아 잡은 주름) · 바깥으로 벌어지는 제비꼬리 두 개(끝이 조끼 목둘레 단 바로 위)
 	 * · 꼬리 사이로 셔츠 여밈 단추. 목 둘레 모양은 모두 목 가운데를 0 으로 둔 좌표 (translate(C 0)).
 	 * Phase 69 — 리본 꼬리를 굵게(폭 약 1.35배) · 길게 — 조끼보다 나중에 그려 조끼 목둘레 단을 넘어 조끼 위로 늘어진다 (조끼 밖).
+	 * Phase 70 — 움직이지 않는다 (숨 쉬기 · 넥타이 · 리본 흔들림을 뺐다). 배지를 그림 폭에 맞춰 크게(폰 폭에서 약 50).
+	 *   오른쪽 아래에 작은 "전체 업적 보기 ›" (allHref).
 	 *   neck — 넥타이(남학생 · 상대 프로필) / 리본(여학생)
 	 *   badges — 깃에 위에서부터 (최대 LAPEL_SLOTS)
 	 *   emptyHref — 있으면 빈 칸을 점선 동그라미 "+" 로 (내 프로필 → 업적 화면)
+	 *   allHref — 있으면 오른쪽 아래에 "전체 업적 보기 ›" (내 프로필)
 	 *   onplace — 있으면 배지를 꾹 눌러 다른 칸으로 끌어 옮긴다 (Phase 69, lib/ui/badgeDrag). 빈 칸도 점선 동그라미로 보이고
 	 *             밖에서 끌어 온 메달(업적 목록)도 받는다 — 칸마다 data-drop-slot. 옮긴 결과는 onplace(배지 코드, 칸 번호)
 	 * 교복 색은 라이트 · 다크 모두 같다 (진짜 교복 색). 교표 그림: static/school-crest.png (scripts/generate-crest.mjs)
@@ -46,19 +49,26 @@
 		badges = [],
 		onpick,
 		emptyHref,
+		allHref,
 		onplace
 	}: {
 		neck?: 'tie' | 'ribbon';
 		badges?: BadgeLite[];
 		onpick?: (b: BadgeLite) => void;
 		emptyHref?: string;
+		allHref?: string;
 		onplace?: (code: string, slot: number) => void;
 	} = $props();
 	let root: HTMLDivElement | undefined = $state();
-
 	const uid = $props.id();
 	const W = 360;
 	const H = 280;
+	/** 그림 폭 — 배지 크기를 여기에 맞춘다 (칸 사이 62 가 폭 280 에서 약 50 으로 줄어도 서로 닿지 않게) */
+	let cw = $state(343);
+	const badgeSize = $derived(Math.round(Math.max(38, Math.min(58, cw * 0.15))));
+	/** 배지 그림자 반지름 (viewBox 단위) — 그림은 틀보다 4% 크게(.body inset -2%) */
+	const shadowR = $derived((badgeSize / 2) * (W / (cw * 1.04)));
+
 	/** 몸 가운데 (넥타이 · 셔츠 칼라 · 조끼 목둘레) — 스케치대로 넥타이가 왼쪽 끝에 오게 (Phase 64 · 66) */
 	const C = 46;
 	/** 목 둘레를 조금 아래로 — 그림 위 가장자리에 매듭 윗변이 잘리지 않게 */
@@ -147,11 +157,9 @@
 	].slice(0, LAPEL_SLOTS);
 	const slots = $derived(SLOTS.map((s, i) => ({ ...s, b: badges[i] as BadgeLite | undefined })));
 	const pct = (v: number, of: number) => `${(v / of) * 100}%`;
-	/** SVG 안에서 도는 것의 중심 (viewBox 좌표) */
-	const pivot = (x: number, y: number) => `transform-origin:${x}px ${y}px`;
 </script>
 
-<div class="uniform" bind:this={root} data-neck={neck} role="group" aria-label="교복 · 대표 업적 {badges.length}개">
+<div class="uniform" bind:this={root} bind:clientWidth={cw} data-neck={neck} role="group" aria-label="교복 · 대표 업적 {badges.length}개">
 	<div class="body">
 		<svg viewBox="0 0 {W} {H}" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
 			<defs>
@@ -368,7 +376,7 @@
 				{#if neck === 'tie'}
 					<g class="tie">
 						<!-- 날 — 매듭에 매달려 살짝 흔들리고, 조끼 속으로 들어간다 -->
-						<g class="sway" style={pivot(C, 46)}>
+						<g>
 							<g transform="translate({C} 0)">
 								<!-- 셔츠 위에 드리운 그림자 -->
 								<path d={blade} fill="#0a1230" opacity="0.3" transform="translate(3.2 3.4)" filter="url(#{uid}-blur2)" />
@@ -463,7 +471,7 @@
 				{#if neck === 'ribbon'}
 					<!-- 꼬리 (Phase 69) — 머리 뒤에서 내려와 살짝 벌어지고, 조끼 목둘레 단을 넘어 조끼 위로 늘어진다. 끝은 제비꼬리 -->
 					<g class="ribbon-tails" transform="translate({C} 0)">
-						<g class="sway tails" style="transform-origin:0px 22px">
+						<g>
 							{#each [[1, 7], [-1, 9]] as const as [sg, deg] (sg)}
 								<g transform="scale({sg} 1) rotate({-deg} 0 22)">
 									<!-- 조끼 · 셔츠 위에 드리운 그림자 -->
@@ -483,7 +491,7 @@
 					</g>
 					<g class="ribbon" filter="url(#{uid}-drop)" transform="translate({C} 0)">
 						<!-- 날개 — 가운데 주름으로 위 면은 빛을, 아래 면은 그늘을. 머리 쪽은 모아 잡은 주름 -->
-						<g class="sway loops" style="transform-origin:0px 20px">
+						<g>
 							{#each [[-1, 'b', 2.4], [1, 'a', -3]] as const as [sg, k, tilt] (sg)}
 								<g transform="scale({sg * 0.91} 1) rotate({tilt} 0 20)">
 									<path class="loop" d={wing} fill="url(#{uid}-tie-{k})" />
@@ -544,7 +552,7 @@
 
 			<!-- 배지가 천에 드리운 그림자 -->
 			{#each slots as s, i (i)}
-				{#if s.b}<ellipse cx={s.x + 1.5} cy={s.y + 4} rx="17" ry="16" fill="#000" opacity="0.35" filter="url(#{uid}-blur2)" />{/if}
+				{#if s.b}<ellipse cx={s.x + 1.5} cy={s.y + 4} rx={shadowR * 0.95} ry={shadowR * 0.9} fill="#000" opacity="0.35" filter="url(#{uid}-blur2)" />{/if}
 			{/each}
 
 			<!-- 가슴 주머니(수평) + 바로 아래 가운데 교표 (보는 사람 기준 오른쪽, 사진처럼) -->
@@ -570,11 +578,12 @@
 					data-drop-slot={i}
 					style:left={pct(s.x, W)}
 					style:top={pct(s.y, H)}
+					style:--pin="{Math.max(44, badgeSize + 4)}px"
 					onclick={() => onpick?.(b)}
 					aria-label="{b.title} 업적 자세히"
 					use:badgeDrag={{ enabled: !!onplace, scope: () => root, ondrop: (to) => to !== i && onplace?.(b.code, to) }}
 				>
-					<span class="tilt" style:rotate="{s.tilt}deg"><Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={40} shine delay={i * 260} /></span>
+					<span class="tilt" style:rotate="{s.tilt}deg"><Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={badgeSize} shine delay={i * 260} /></span>
 				</button>
 			{:else if emptyHref}
 				<a class="pin empty" data-drop-slot={i} href={emptyHref} style:left={pct(s.x, W)} style:top={pct(s.y, H)} aria-label="대표 업적 비어 있음 · 업적 보기">
@@ -586,6 +595,9 @@
 			{/if}
 		{/each}
 	</div>
+	{#if allHref}
+		<a class="all u-tap" href={allHref}>전체 업적 보기 <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.2 2.4L7.8 6l-3.6 3.6" /></svg></a>
+	{/if}
 </div>
 
 <style>
@@ -599,63 +611,23 @@
 		box-shadow: var(--shadow-1);
 		isolation: isolate;
 	}
-	/* 숨 쉬듯 아주 살짝 — 가장자리가 비지 않게 틀보다 조금 크게 */
 	.body {
 		position: absolute;
 		inset: -2%;
-		transform-origin: 50% 100%;
-		animation: breathe 5.6s ease-in-out infinite alternate;
-	}
-	@keyframes breathe {
-		to {
-			transform: translateY(-0.5%) scale(1.012);
-		}
 	}
 	svg {
 		display: block;
 		width: 100%;
 		height: 100%;
 	}
-	/* 넥타이 날 · 리본 꼬리 · 고리 — 매달린 곳을 중심으로 천천히 흔들린다 (숨과 다른 박자) */
-	.sway {
-		transform-box: view-box;
-		animation: sway 4.3s ease-in-out infinite alternate;
-	}
-	.tie .sway {
-		rotate: -0.9deg;
-		animation-name: sway-tie;
-	}
-	@keyframes sway-tie {
-		to {
-			rotate: 0.9deg;
-		}
-	}
-	.tails {
-		rotate: -1.6deg;
-		animation-duration: 3.7s;
-	}
-	.loops {
-		rotate: -0.6deg;
-		animation-name: sway-loop;
-		animation-duration: 5.1s;
-	}
-	@keyframes sway {
-		to {
-			rotate: 1.6deg;
-		}
-	}
-	@keyframes sway-loop {
-		to {
-			rotate: 0.6deg;
-		}
-	}
-	/* 배지 — 깃에 꽂은 핀. 누름 영역 44 */
+	/* 배지 — 깃에 꽂은 핀. 누름 영역은 배지보다 조금 크게 (44 이상) */
 	.pin {
+		--pin: 44px;
 		position: absolute;
 		display: grid;
 		place-items: center;
-		width: 44px;
-		height: 44px;
+		width: var(--pin);
+		height: var(--pin);
 		border-radius: 50%;
 		transform: translate(-50%, -50%);
 		filter: drop-shadow(0 2px 1.5px rgb(5 8 25 / 0.6));
@@ -697,6 +669,34 @@
 		border: 2.5px solid #ffe08a;
 		box-shadow: 0 0 14px 2px rgb(255 224 138 / 0.65);
 		animation: none;
+	}
+	/* 전체 업적 보기 — 오른쪽 아래 작게 (누름 높이 44) */
+	.all {
+		position: absolute;
+		right: 4px;
+		bottom: 0;
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		min-height: 44px;
+		padding: 0 10px;
+		color: rgb(225 232 255 / 0.82);
+		font-size: 12px;
+		font-weight: 600;
+		text-decoration: none;
+		text-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+	}
+	.all svg {
+		width: 11px;
+		height: 11px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.8;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.all:active {
+		opacity: 0.6;
 	}
 	@keyframes slot-pulse {
 		to {

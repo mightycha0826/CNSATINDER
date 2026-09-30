@@ -6745,3 +6745,20 @@ end
 $fn$;
 revoke all on function public.dm_letter_delete(bigint[]) from public, anon;
 grant execute on function public.dm_letter_delete(bigint[]) to authenticated;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 70 — CNSA 뱃지 (학교 동아리 · 행사)
+-- 새 업적 분류 cnsa — 실제 에나멜 핀을 그대로 그린 뱃지 (화면: src/lib/ui/pins). 운영진이 주고 거둔다 (granted, Phase 44 와 같은 길).
+-- 첫 번째는 연극 동아리 극작소. 새 뱃지는 여기에 한 줄 + 그림 컴포넌트 하나.
+-- ════════════════════════════════════════════════════════════════════
+alter table private.achievement_defs drop constraint if exists achievement_defs_category_check;
+alter table private.achievement_defs add constraint achievement_defs_category_check
+  check (category in ('chat', 'manner', 'letter', 'special', 'cnsa'));
+
+insert into private.achievement_defs (code, title, description, icon, category, stat, unit, bronze, silver, gold, lower_better, sort, granted) values
+  ('club_geukjakso', '극작소', '연극 동아리 극작소 부원', '🎬', 'cnsa', 'club_geukjakso', '', 1, 1, 1, false, 60, true)
+on conflict (code) do update
+  set title = excluded.title, description = excluded.description, icon = excluded.icon, category = excluded.category,
+      stat = excluded.stat, unit = excluded.unit, bronze = excluded.bronze, silver = excluded.silver, gold = excluded.gold,
+      lower_better = excluded.lower_better, sort = excluded.sort, granted = excluded.granted;

@@ -185,6 +185,7 @@
 				neck={S.profile?.gender === 'f' ? 'ribbon' : 'tie'}
 				badges={fame.featured}
 				emptyHref="/me/achievements"
+				allHref="/me/achievements"
 				onpick={(b) => (medal = fame?.items.find((a) => a.code === b.code) ?? null)}
 				onplace={place}
 			/>

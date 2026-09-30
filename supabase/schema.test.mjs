@@ -2895,7 +2895,7 @@ console.log('\n[78] 업적 — 카운터 · 동/은/금 · 대표 업적 (Phase 
 	const openRoom = async (x, y) => (await one(`select private.dev_open_room($1, $2, 10) as id`, [x.email, y.email])).id;
 	const say = async (room, seat) => (await one(`insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, $2, '안녕', gen_random_uuid()) returning id`, [room, seat])).id;
 
-	check('카탈로그 25종 (Phase 44 베타 테스터 포함)', Number((await one('select count(*) n from private.achievement_defs')).n) === 25);
+	check('카탈로그 26종 (Phase 44 베타 테스터 · Phase 70 극작소 포함)', Number((await one('select count(*) n from private.achievement_defs')).n) === 26);
 
 	console.log('  [대화]');
 	let room = await openRoom(A, B);
@@ -2980,7 +2980,7 @@ console.log('\n[78] 업적 — 카운터 · 동/은/금 · 대표 업적 (Phase 
 	console.log('  [보이는 곳]');
 	const mine = await rpcAs(A.id, 'my_achievements');
 	const ext = mine.items.find((x) => x.code === 'extend');
-	check('★ 내 업적: 25종 · 진행도 · 등급 · 새로 딴 것', mine.items.length === 25 && ext.tier === 2 && ext.value === 0 && JSON.stringify(ext.tiers) === '[5,20,50]' && ext.new === true, JSON.stringify(ext));
+	check('★ 내 업적: 26종 · 진행도 · 등급 · 새로 딴 것', mine.items.length === 26 && ext.tier === 2 && ext.value === 0 && JSON.stringify(ext.tiers) === '[5,20,50]' && ext.new === true, JSON.stringify(ext));
 	check('개척자는 가입 순서 (작을수록 좋음)', mine.items.find((x) => x.code === 'pioneer').lower_better === true);
 	check('대표 업적은 자동으로 높은 등급부터 3개', mine.featured.length === 3 && mine.featured.every((x, i, a) => i === 0 || a[i - 1].tier >= x.tier), JSON.stringify(mine.featured));
 	check('새 업적 목록', (await rpcAs(A.id, 'new_achievements')).length > 0);
@@ -3276,7 +3276,7 @@ console.log('\n[84] 특별 업적(베타 테스터) · 업적 카탈로그 · �
 	// 카탈로그 — 누구나(로그인한 학생) 설명 · 기준을 본다
 	const cat = await rpcAs(X, 'achievement_catalog');
 	const beta = cat.find((d) => d.code === 'beta');
-	check('★ 카탈로그: 25종 · 설명 · 등급 기준 · 베타 테스터는 운영진이 주는 업적', cat.length === 25 && beta?.granted === true && beta.title === '베타 테스터'
+	check('★ 카탈로그: 26종 · 설명 · 등급 기준 · 베타 테스터는 운영진이 주는 업적', cat.length === 26 && beta?.granted === true && beta.title === '베타 테스터'
 		&& JSON.stringify(cat.find((d) => d.code === 'extend').tiers) === '[5,20,50]' && cat.find((d) => d.code === 'extend').granted === false, JSON.stringify(beta));
 	await expectError('비로그인은 카탈로그를 못 본다', () => rowsAs(null, 'select public.achievement_catalog()'), 'permission denied');
 	check('내 업적에도 granted 가 온다 (아직 없음)', (await rpcAs(X, 'my_achievements')).items.find((a) => a.code === 'beta')?.granted === true
@@ -3650,6 +3650,21 @@ console.log('\n[92] 편지 지우기 — 선택한 편지를 나에게서만 (Ph
 	check('안 읽은 수는 안 연 편지만 (지운 편지와 상관없다)', (await rpcAs(B, 'dm_unread')) === 1);
 	await expectError('★ 지운 편지 표는 직접 못 읽는다', () => rowsAs(B, 'select * from private.dm_hidden_msgs'), 'permission denied');
 	await expectError('로그인 안 하면 못 부른다', () => rowsAs(null, `select public.dm_letter_delete('{1}'::bigint[])`), 'permission denied');
+}
+
+console.log('\n[93] CNSA 뱃지 — 극작소 (Phase 70)');
+{
+	const X = await person('f', 'm');
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+	const club = (await rpcAs(X, 'achievement_catalog')).find((d) => d.code === 'club_geukjakso');
+	check('★ 카탈로그에 극작소 — CNSA 분류 · 운영진이 주는 뱃지', club?.category === 'cnsa' && club.granted === true && club.title === '극작소', JSON.stringify(club));
+	check('아직 없으면 잠김', (await rpcAs(X, 'my_achievements')).items.find((a) => a.code === 'club_geukjakso')?.tier === 0);
+	check('운영자 화면의 줄 수 있는 뱃지 목록에 있다', (await svc('admin_user_badges', mod, X)).some((b) => b.code === 'club_geukjakso' && !b.has));
+	await svc('admin_set_badge', mod, X, 'club_geukjakso', true);
+	const mine = (await rpcAs(X, 'my_achievements')).items.find((a) => a.code === 'club_geukjakso');
+	check('★ 주면 가진 것으로 · 새 업적 축하 · 대표 업적으로 걸 수 있다', mine?.tier === 3 && (await rpcAs(X, 'new_achievements')).some((b) => b.code === 'club_geukjakso')
+		&& (await rpcAs(X, 'set_featured_badges', ['club_geukjakso'])).featured[0].code === 'club_geukjakso', JSON.stringify(mine));
+	await expectError('★ 없는 분류는 못 넣는다', () => one(`insert into private.achievement_defs (code, title, description, icon, category, stat, bronze, silver, gold, sort) values ('x', 'x', 'x', 'x', 'club', 'x', 1, 1, 1, 99)`), 'achievement_defs_category_check');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

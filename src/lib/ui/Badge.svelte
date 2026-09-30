@@ -3,9 +3,11 @@
 	 * 업적 메달 (Phase 31 · 35 다시 그림) — 동 · 은 · 금 금속 테두리(톱니 결) + 가운데 면에 새긴 선 그림(badgeIcons, 이모지 대신).
 	 * 잠긴 업적(tier 0)은 흑백. shine 이면 빛이 한 번 부드럽게 스친다. enter 면 동전이 돌며 튀어나온다 (축하 화면).
 	 * 동작 줄이기면 app.css 가 애니메이션을 끈다.
+	 * CNSA 뱃지 (Phase 70, pins/) — 동그란 메달 대신 실제 에나멜 핀 모양 그대로. 잠겼으면 흑백 · 흐리게.
 	 */
 	import { TIER_NAME, type Tier } from '$lib/achievements';
 	import { BADGE_ICONS, FALLBACK_ICON, SPECIAL_BADGES } from './badgeIcons';
+	import { PIN_BADGES } from './pins';
 
 	let {
 		code = '',
@@ -35,25 +37,30 @@
 	const path = $derived(BADGE_ICONS[code] ?? (icon ? null : FALLBACK_ICON));
 	// 운영진이 주는 특별 업적 (Phase 44) — 동 · 은 · 금이 아니라 "특별" (가진 사람만 무지갯빛)
 	const special = $derived(SPECIAL_BADGES.has(code));
-	const tierName = $derived(special && tier > 0 ? '특별' : TIER_NAME[tier]);
+	const Pin = $derived(PIN_BADGES[code] as (typeof PIN_BADGES)[string] | undefined);
+	const tierName = $derived(Pin && tier > 0 ? 'CNSA' : special && tier > 0 ? '특별' : TIER_NAME[tier]);
 </script>
 
-<span class="medal t{tier}" class:sp={special && tier > 0} class:shine class:enter style:--s="{size}px" style:--d="{delay}ms" role="img" aria-label="{title} {tierName}">
-	<span class="coin" aria-hidden="true">
-		<span class="rim">
-			<span class="disk">
-				{#if path}
-					<svg viewBox="0 0 24 24" class="ico">
-						<!-- 새긴 자국: 아래쪽 밝은 테 + 위쪽 어두운 홈 -->
-						<path d={path} class="lit" />
-						<path d={path} class="ink" />
-					</svg>
-				{:else}
-					<span class="emo">{icon}</span>
-				{/if}
+<span class="medal t{tier}" class:sp={special && tier > 0} class:pin={!!Pin} class:shine class:enter style:--s="{size}px" style:--d="{delay}ms" role="img" aria-label="{title} {tierName}">
+	{#if Pin}
+		<span class="coin art" aria-hidden="true"><Pin shine={shine && tier > 0} {delay} /></span>
+	{:else}
+		<span class="coin" aria-hidden="true">
+			<span class="rim">
+				<span class="disk">
+					{#if path}
+						<svg viewBox="0 0 24 24" class="ico">
+							<!-- 새긴 자국: 아래쪽 밝은 테 + 위쪽 어두운 홈 -->
+							<path d={path} class="lit" />
+							<path d={path} class="ink" />
+						</svg>
+					{:else}
+						<span class="emo">{icon}</span>
+					{/if}
+				</span>
 			</span>
 		</span>
-	</span>
+	{/if}
 	{#if label && tier > 0}<span class="tier" aria-hidden="true">{tierName}</span>{/if}
 </span>
 
@@ -174,6 +181,18 @@
 		opacity: 0.35;
 	}
 
+	/* CNSA 뱃지 — 핀 그림이 칸을 채운다. 잠긴 것은 흑백 · 흐리게 */
+	.pin .art {
+		border-radius: 0;
+		filter: drop-shadow(0 calc(var(--s) * 0.05) calc(var(--s) * 0.06) rgb(0 0 0 / 0.3));
+	}
+	.pin {
+		--tier: #b3121a;
+	}
+	.pin.t0 .art {
+		filter: grayscale(1);
+		opacity: 0.35;
+	}
 	/* 빛이 한 번 부드럽게 스친다 (비스듬한 넓은 빛 띠) */
 	.shine .rim::after {
 		content: '';

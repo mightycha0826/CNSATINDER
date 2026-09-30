@@ -17,10 +17,10 @@ try {
 
 	console.log('[업적 화면]');
 	await page.goto(U('/dev/achievements')); await page.locator('.grid').waitFor(); await page.waitForTimeout(400);
-	check('요약: 모은 업적 수 · 금 · 은 · 동 (특별 업적은 금 · 은 · 동에 안 셈)', (await page.locator('.summary').innerText()).replace(/\s+/g, ' ').includes('10 / 13') && (await page.locator('.metals').innerText()).replace(/\s+/g, '') === '금2은3동4', await page.locator('.summary').innerText());
+	check('요약: 모은 업적 수 · 금 · 은 · 동 (특별 업적은 금 · 은 · 동에 안 셈)', (await page.locator('.summary').innerText()).replace(/\s+/g, ' ').includes('11 / 14') && (await page.locator('.metals').innerText()).replace(/\s+/g, '') === '금2은3동4', await page.locator('.summary').innerText());
 	check('★ 대표 업적 = 교복 깃의 배지 3개 (Phase 69 — 칸 줄 대신 교복)', (await page.locator('.featured .uniform button.pin [role="img"]').count()) === 3
 		&& (await page.locator('.featured .hint').innerText()) === '메달을 꾹 눌러 교복에 달아요');
-	check('메달 13개 · 잠긴 것은 잠김으로', (await page.locator('.grid .card').count()) === 13 && (await page.locator('.card.locked').count()) === 3);
+	check('메달 14개 · 잠긴 것은 잠김으로', (await page.locator('.grid .card').count()) === 14 && (await page.locator('.card.locked').count()) === 3);
 	check('★ 베타 테스터 — 특별 업적 ("특별" · 받음)', (await page.locator('.card', { hasText: '베타 테스터' }).locator('[aria-label="베타 테스터 특별"]').count()) === 1
 		&& (await page.locator('.card', { hasText: '베타 테스터' }).innerText()).includes('받음'));
 	check('새로 딴 업적에 NEW', (await page.locator('.card .new').count()) === 2);
@@ -28,7 +28,14 @@ try {
 	check('개척자는 가입 순서로', (await page.locator('.card', { hasText: '개척자' }).innerText()).includes('가입 42번째'));
 	await page.screenshot({ path: `${SP}/ach-1-grid.png`, fullPage: true });
 	await page.getByRole('button', { name: '편지', exact: true }).click();
+	check('★ 분류 탭에 CNSA', (await page.locator('.cats button').allInnerTexts()).at(-1) === 'CNSA');
 	check('분류 탭: 편지만', (await page.locator('.grid .card').count()) === 2);
+	await page.getByRole('button', { name: 'CNSA', exact: true }).click();
+	check('★ CNSA 탭: 극작소 뱃지 하나 — 동그란 메달 대신 핀 그림', (await page.locator('.grid .card').count()) === 1
+		&& (await page.locator('.card [aria-label="극작소 CNSA"] .pin-art').count()) === 1 && (await page.locator('.card .medal.pin .rim').count()) === 0);
+	await page.locator('.grid .card').first().click(); await page.waitForTimeout(300);
+	check('★ 극작소 자세히 — "동아리 부원에게 주는 CNSA 뱃지"', (await page.locator('.detail').innerText()).includes('동아리 부원에게 주는 CNSA 뱃지'));
+	await page.keyboard.press('Escape'); await page.waitForTimeout(400);
 	await page.getByRole('button', { name: '전체', exact: true }).click();
 
 	console.log('[자세히 · 대표 업적]');
@@ -116,17 +123,17 @@ try {
 	console.log('[교복 — 대표 업적은 깃의 배지 (Phase 60)]');
 	await page.goto(U('/dev/achievements?uniform')); await page.locator('.uniform').first().waitFor(); await page.waitForTimeout(400);
 	const uni = (neck, n) => page.locator(`.u[data-neck="${neck}"][data-n="${n}"] .uniform`);
-	// Phase 62 — 숨 쉬듯 움직이고 넥타이 날 · 리본 꼬리가 흔들린다. 동작 줄이기면 멈춘다
-	const motion = async () => uni('tie', 3).evaluate((u) => {
-		const a = getComputedStyle(u.querySelector('.body')), t = getComputedStyle(u.querySelector('.tie .sway'));
-		return { body: a.animationName !== 'none' && a.animationIterationCount === 'infinite', sway: t.animationName !== 'none' && t.animationIterationCount === 'infinite' };
-	});
-	const moving = await motion();
-	check('★ 교복이 숨 쉬듯 움직이고 넥타이가 흔들린다', moving.body && moving.sway, JSON.stringify(moving));
+	// Phase 70 — 교복은 움직이지 않는다 (숨 쉬기 · 넥타이 · 리본 흔들림 없음)
+	const moving = await page.locator('.u .uniform').evaluateAll((us) => us.flatMap((u) => [...u.querySelectorAll('.body, .body g, .body path')])
+		.filter((e) => { const c = getComputedStyle(e); return c.animationName !== 'none' || (c.rotate !== 'none' && c.rotate !== '0deg'); }).length);
+	check('★ 교복 · 넥타이 · 리본이 움직이지 않는다', moving === 0, String(moving));
+	check('★ 오른쪽 아래 "전체 업적 보기" → 업적 화면', (await uni('tie', 3).locator('a.all').getAttribute('href')) === '/dev/achievements'
+		&& (await uni('tie', 2).locator('a.all').count()) === 0);
+	const [ub, ab] = await Promise.all([uni('tie', 3).boundingBox(), uni('tie', 3).locator('a.all').boundingBox()]);
+	check('전체 업적 보기는 교복 오른쪽 아래 구석 · 누름 높이 44', ab.x + ab.width > ub.x + ub.width * 0.8 && ab.y + ab.height > ub.y + ub.height * 0.85 && ab.height >= 44, JSON.stringify([ub, ab]));
+	const medal = await uni('tie', 3).locator('button.pin .medal').first().boundingBox();
+	check('★ 교복의 배지가 크다 (폰 폭에서 48 이상)', medal.width >= 48, JSON.stringify(medal));
 	await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(150);
-	const still = await motion();
-	check('동작 줄이기면 멈춘다', !still.body && !still.sway, JSON.stringify(still));
-	// 아래 누르기 · 재기는 움직임을 멈춘 채로 (배지가 숨 쉬듯 움직여 playwright 가 "멈춘 요소"를 기다린다)
 	check('★ 넥타이 · 리본 교복', (await uni('tie', 3).getAttribute('data-neck')) === 'tie' && (await uni('ribbon', 3).getAttribute('data-neck')) === 'ribbon');
 	check('★ 대표 업적 수만큼 깃에 배지 · 남은 칸은 점선 "+" (업적 화면으로)', (await uni('tie', 3).locator('button.pin').count()) === 3 && (await uni('tie', 3).locator('.empty').count()) === 0
 		&& (await uni('tie', 2).locator('button.pin').count()) === 2 && (await uni('tie', 2).locator('a.empty').getAttribute('href')) === '/dev/achievements'
