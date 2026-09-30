@@ -725,4 +725,5 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       운영진이 주고 거둔다 (베타 테스터와 같은 `granted` 길 — 운영자 화면 사용자 상세). 자세히는 "동아리 부원에게 주는 CNSA 뱃지".
       새 뱃지는 `achievement_defs` 한 줄(category `cnsa`, granted) + `lib/ui/pins` 에 그림 컴포넌트 하나.
       스키마 테스트 [93], 화면 테스트 `achievements`(움직임 없음 · 전체 업적 보기 · 배지 크기 · CNSA 탭 · 핀 그림).
+      실DB 반영 (phase70_cnsa_badge — 2026-09-30, 카탈로그 26종 · 주기 · 내 업적 · 대표 걸기를 되돌리는 트랜잭션으로 확인).
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험
