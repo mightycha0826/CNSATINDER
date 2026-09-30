@@ -114,23 +114,29 @@
 	<TopbarMe />
 </div>
 
-<div class="page mailbox" style:--k={k}>
+<div class="page mailbox" style:--k={k} style:--plate-h="{plateH}px">
 	<h2 class="sr-only">새 편지</h2>
-	<!-- 우체통 — 새 편지가 여기로 온다 -->
-	<button
-		class="post"
-		onclick={tapPostbox}
-		aria-label={unread.length ? `우체통 — 새 편지 ${unread.length}통, 눌러서 가장 최근 편지 열기` : BOX.loaded.received ? '우체통 — 새 편지 없음' : '우체통'}
-	>
-		<Postbox count={unread.length} {drop} {dropN} {added} {bump} />
-	</button>
+	<!-- 벽 — 우체통이 걸려 있다. 새 편지가 여기로 온다 -->
+	<div class="wall">
+		<button
+			class="post"
+			onclick={tapPostbox}
+			aria-label={unread.length ? `우체통 — 새 편지 ${unread.length}통, 눌러서 가장 최근 편지 열기` : BOX.loaded.received ? '우체통 — 새 편지 없음' : '우체통'}
+		>
+			<Postbox count={unread.length} {drop} {dropN} {added} {bump} />
+		</button>
+	</div>
 
+	<!-- 책상 — 벽 아래로 이어지는 한 장의 나무 판. 우체통에서 나온 새 편지가 위쪽에 놓이고, 아래쪽엔 편지 보관함(서류 더미) -->
+	<div class="surface">
 	{#if !BOX.loaded.received || unread.length}
-		<MailStack items={unread} box="received" loading={!BOX.loaded.received} {emerge} />
+		<div class="fresh">
+			<MailStack items={unread} box="received" loading={!BOX.loaded.received} {emerge} />
+		</div>
 	{/if}
 
-	<!-- 편지 보관함 — 갈색 책상 위 서류 더미. 앞 한 줄은 [이름표 | 편지 쓰기] -->
-	<div class="desk-area" style:--plate-h="{plateH}px">
+	<!-- 편지 보관함 — 책상 위 서류 더미. 앞 한 줄은 [이름표 | 편지 쓰기] -->
+	<div class="desk-area">
 	<button class="desk" bind:clientWidth={deskW} onclick={() => goto('/letters/archive')} aria-label="편지 보관함 — 받은 편지 {count(readCount, BOX.more.received)}통, 보낸 편지 {count(sentCount, BOX.more.sent)}통{BOX.folders.length ? `, 폴더 ${BOX.folders.length}개` : ''}">
 		<span class="wood" aria-hidden="true">
 			<!-- 책상 위 물건들 (Phase 58) — 서류 더미를 피해 가장자리에. 위에서 내려다본 모습, 책상 비율(--k)대로 커지고 작아진다 -->
@@ -250,26 +256,34 @@
 		<span>편지 쓰기</span>
 	</a>
 	</div>
+	</div>
 </div>
 
 
 <style>
+	/* 한 장면 (Phase 73): 벽(우체통) → 그 아래로 이어지는 나무 책상 한 장(새 편지 · 물건 · 서류 더미) → 책상 앞 모서리에 [이름표 | 편지 쓰기] */
 	.mailbox {
 		/* 책상이 화면 양옆보다 이만큼 더 넓다 (Phase 71) — 눌러서 살짝 줄어도 모서리에 바깥 바탕이 비치지 않게 */
 		--bleed: 14px;
-		gap: 16px;
-		padding-top: 14px;
-		padding-bottom: 18px;
+		--side: calc(var(--pad) + var(--bleed));
+		gap: 0;
+		/* 이름표 줄이 책상 앞 모서리 아래로 내려온 만큼 */
+		padding-bottom: calc(18px + var(--plate-h, 64px) - 26px);
 		background: var(--desk);
 		overflow-x: clip;
 	}
 
-	/* ── 우체통 (Phase 71 · 72) — 화면 폭 가득한 납작한 네모. 위 여백은 "+✉" 가 튀어나올 자리 ── */
+	/* ── 벽 · 우체통 (Phase 71 · 72 · 73) — 벽에 걸린 칠한 쇠 우편함. 위 여백은 "+✉" 가 튀어나올 자리 ── */
+	.wall {
+		display: flex;
+		justify-content: center;
+		margin: 0 calc(var(--side) * -1);
+		padding: calc(30px * var(--k, 1)) var(--side) calc(22px * var(--k, 1));
+		background: var(--wall);
+	}
 	.post {
-		--h: calc(196px * var(--k, 1));
 		display: block;
-		width: 100%;
-		margin-top: 14px;
+		width: min(82%, calc(300px * var(--k, 1)));
 		-webkit-tap-highlight-color: transparent;
 	}
 	.post:focus-visible {
@@ -278,11 +292,43 @@
 		border-radius: 12px;
 	}
 
-	/* ── 책상 · 서류 더미 ── */
-	/* 책상은 화면 아래쪽 — 남는 자리는 새 편지와 책상 사이로 (margin-top: auto). 편지가 많아 화면을 넘으면 그냥 이어서 */
+	/* ── 책상 — 벽 바로 아래에서 시작하는 나무 판 한 장. 벽과 닿는 뒤쪽 가장자리엔 그늘, 앞 모서리엔 두께 ── */
+	.surface {
+		position: relative;
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		margin: 0 calc(var(--side) * -1);
+		background:
+			radial-gradient(90% 260px at 45% 0%, rgb(255 210 160 / 0.2), transparent 70%),
+			var(--wood);
+		border-top: 2px solid rgb(255 214 170 / 0.3);
+		box-shadow: inset 0 14px 16px -12px rgb(30 10 0 / 0.6);
+	}
+	.surface::after {
+		content: '';
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 12px;
+		background: linear-gradient(180deg, #5a3016, #3f200d);
+		box-shadow: 0 -1px 0 rgb(255 220 180 / 0.18);
+		pointer-events: none;
+	}
+	/* 우체통에서 나온 새 편지 — 책상 위쪽에 */
+	.fresh {
+		display: flex;
+		flex-direction: column;
+		padding: 18px var(--side) 4px;
+	}
+
+	/* ── 책상 위 서류 더미 · 이름표 줄 ── */
+	/* 더미는 책상 아래쪽 — 남는 자리는 새 편지와 더미 사이로 (margin-top: auto). 이름표 줄은 책상 앞 모서리에 걸쳐 아래로 나온다 */
 	.desk-area {
 		position: relative;
-		margin: auto calc(var(--pad) * -1 - var(--bleed)) 0;
+		z-index: 1;
+		margin: auto 0 calc(26px - var(--plate-h, 64px));
 	}
 	.desk {
 		display: flex;
@@ -299,25 +345,8 @@
 		display: grid;
 		place-items: center;
 		height: calc(380px * var(--k, 1)); /* Phase 48 — 판자를 더 길게 (230 → 300), Phase 58 — 물건을 올려 둘 자리까지 (300 → 380) */
-		/* 나뭇결 — 가는 결 · 굵은 결 · 위에서 비치는 빛 */
-		background:
-			repeating-linear-gradient(91deg, rgb(255 255 255 / 0.035) 0 2px, transparent 2px 11px),
-			repeating-linear-gradient(89deg, rgb(40 15 0 / 0.08) 0 1px, transparent 1px 27px),
-			radial-gradient(90% 70% at 40% 0%, rgb(255 210 160 / 0.22), transparent 70%),
-			linear-gradient(180deg, #9a5f33, #7b4623 55%, #633619);
-		box-shadow: inset 0 10px 18px -12px rgb(0 0 0 / 0.5);
+		/* 나뭇결은 책상 한 장(.surface)에 — 여기는 물건 · 더미가 놓이는 자리일 뿐 (눌러서 줄어도 판자는 그대로) */
 		overflow: hidden;
-	}
-	/* 책상 앞 모서리 두께 */
-	.wood::after {
-		content: '';
-		position: absolute;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		height: 12px;
-		background: linear-gradient(180deg, #5a3016, #3f200d);
-		box-shadow: 0 -1px 0 rgb(255 220 180 / 0.18);
 	}
 	/* ── 책상 위 물건들 (Phase 58) — 가운데 서류 더미(190 × 130)와 아래 이름표(아래 26px)를 피해 가장자리에 ── */
 	.props {

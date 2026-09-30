@@ -157,8 +157,13 @@ try {
 	check('채팅 말풍선은 없다 (편지만)', (await page.locator('.bubble').count()) === 0 && (await page.getByRole('textbox', { name: '메시지' }).count()) === 0);
 	check('★ 우체통 — 새 편지 수 (Phase 71)', (await page.locator('.post .count').innerText()) === '2' && (await page.locator('button.post').getAttribute('aria-label')).includes('새 편지 2통'));
 	check('"새로 온 편지가 없어요" 문구는 없다', (await page.getByText('새로 온 편지가 없어요').count()) === 0);
-	const pb = await page.evaluate(() => { const r = document.querySelector('.post .postbox').getBoundingClientRect(), p = document.querySelector('.page.mailbox').getBoundingClientRect(); return { w: r.width, page: p.width, h: r.height }; });
-	check('★ 우체통은 화면 폭 가득한 납작한 네모 (Phase 72 — 2D)', pb.w >= pb.page - 33 && pb.w > pb.h * 1.4, JSON.stringify(pb));
+	const scene = await page.evaluate(() => {
+		const r = (q) => document.querySelector(q)?.getBoundingClientRect();
+		const box = r('.wall .post .postbox'), wall = r('.wall'), surf = r('.surface');
+		return { boxW: box.width, boxH: box.height, wallL: wall.left, wallR: wall.right - innerWidth, touch: Math.abs(wall.bottom - surf.top),
+			fresh: !!document.querySelector('.surface .fresh .stack'), desk: !!document.querySelector('.surface .desk-area .desk') };
+	});
+	check('★ 한 장면 — 벽에 걸린 2D 네모 우체통 → 바로 아래 책상 한 장에 새 편지 · 서류 더미 (Phase 73)', scene.boxW > scene.boxH * 1.3 && scene.wallL <= 0 && scene.wallR >= 0 && scene.touch < 1 && scene.fresh && scene.desk, JSON.stringify(scene));
 	check('★ 처음 보는 안 읽은 편지는 우체통에서 나온다', (await page.locator('.stack li.emerge').count()) === 2);
 	const rowOf = (pg) => pg.evaluate(() => {
 		const p = document.querySelector('.desk .plate').getBoundingClientRect(), f = document.querySelector('.desk-area .fab').getBoundingClientRect();

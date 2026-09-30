@@ -4,7 +4,7 @@
 	 *   들어올 때: 봉투가 올라와 덮개가 열리고 → 편지지가 솟아올라 → 화면 가득 펼쳐지며 편지 쓰는 칸이 된다 (봉투는 아래로 내려가 숨는다).
 	 *   보낼 때: 편지지가 접혀 봉투로 들어가고 → 덮개가 닫히고 → 밀랍이 떨어지고 놋쇠 도장이 쿵 찍힌다(진동) → 봉투를 뒤집어 주소 면(소인 "보냄")
 	 *            → 봉투가 작아지며 화면 위쪽 빨간 우체통의 투입구 위로 → 투입구로 쏙 들어간다 → 우체통이 출렁 (Phase 71 · 72, 전엔 하늘로 날아갔다).
-	 * 우체통(납작한 2D 네모)은 처음부터 화면 위쪽에 서 있고, 편지지는 그 앞을 덮는다 (Phase 72).
+	 * 편지함과 같은 장면 (Phase 72 · 73) — 위쪽 벽에 우체통이 걸려 있고 그 아래는 나무 책상. 편지지는 책상 위에 펼쳐져 우체통 앞을 덮는다.
 	 * 쓰는 동안에는 봉투를 화면에서 치운다 — 휴대폰 키보드가 올라와 화면이 줄어도 편지지 · 보내기 단추를 가리지 않게 (Phase 35).
 	 * 보내기 단추 줄은 화면 아래(키보드 위)에 붙는다.
 	 * nickable 이면 From. 칸에 서명(닉네임)을 직접 적는다 — 비우면 anon("익명의 ○학생") 그대로.
@@ -95,7 +95,7 @@
 	// ── 우체통에 넣기 (Phase 71) — 투입구 자리를 재서 봉투를 그 위로 옮기고(작게), 그다음 봉투만 아래로 밀어 넣는다.
 	// 봉투 자리(env-wrap)의 아래 가장자리가 투입구 가운데 선에 오게 — post 에서 그 선 아래는 잘려 보이지 않는다(들어간 것처럼)
 	let envEl = $state<HTMLElement>();
-	let slotEl = $state<HTMLElement>();
+	let slotEl = $state<Element>();
 	let bump = $state(0);
 	let target = $state({ x: 0, y: 0, s: 0.3 });
 	function aim() {
@@ -123,7 +123,7 @@
 
 
 <div class="compose" data-phase={phase}>
-	<div class="desk" aria-hidden="true"></div>
+	<div class="desk" aria-hidden="true"><i class="wall"></i><i class="wood"></i></div>
 
 	<div class="sheet-wrap" class:shown={writing || phase === 'fold'} aria-hidden={!writing}>
 		<LetterEditor bind:body bind:fmt {placeholder}>
@@ -200,11 +200,30 @@
 		/* clip — hidden 이면 이 칸이 스크롤 상자가 되어 서식 막대(sticky)가 어긋난다 */
 		overflow-x: clip;
 	}
+	/* 벽(우체통이 걸린 곳) + 나무 책상 — 편지함과 같은 장면 */
+	.compose {
+		--mb-w: min(80vw, 300px);
+		--wall-h: calc(var(--header-h) + var(--safe-top) + 30px + var(--mb-w) * 0.669 + 22px);
+	}
 	.desk {
 		position: fixed;
 		inset: 0;
-		background: var(--desk);
+		display: flex;
+		flex-direction: column;
 		pointer-events: none;
+	}
+	.desk .wall {
+		flex: none;
+		height: var(--wall-h);
+		background: var(--wall);
+	}
+	.desk .wood {
+		flex: 1;
+		background:
+			radial-gradient(90% 260px at 45% 0%, rgb(255 210 160 / 0.2), transparent 70%),
+			var(--wood);
+		border-top: 2px solid rgb(255 214 170 / 0.3);
+		box-shadow: inset 0 14px 16px -12px rgb(30 10 0 / 0.6);
 	}
 
 	/* ── 봉투 자리: 들어올 때 가운데 → 쓰는 동안은 화면 아래로 내려가 숨는다 → 보낼 때 다시 가운데 → 날아간다 ── */
@@ -260,12 +279,11 @@
 
 	/* ── 빨간 우체통 — 화면 위쪽, 편지함과 같은 납작한 네모 (들어올 때 위에서 살짝 내려온다) ── */
 	.post {
-		--h: clamp(120px, 21vh, 180px);
 		position: fixed;
 		left: 50%;
-		top: calc(var(--header-h) + var(--safe-top) + 16px);
+		top: calc(var(--header-h) + var(--safe-top) + 30px);
 		z-index: 1;
-		width: min(100vw - var(--pad) * 2, 488px);
+		width: var(--mb-w);
 		translate: -50% 0;
 		pointer-events: none;
 		animation: post-in 0.5s cubic-bezier(0.25, 0.9, 0.3, 1.05) both;
@@ -316,9 +334,10 @@
 		gap: 12px;
 		margin: 0 calc(var(--pad) * -1);
 		padding: 10px var(--pad) calc(10px + env(safe-area-inset-bottom));
-		background: linear-gradient(to top, var(--bg) 70%, color-mix(in srgb, var(--bg) 0%, transparent));
+		/* 책상 위라 어두운 나무색 받침 */
+		background: linear-gradient(to top, #4f2a13 55%, rgb(79 42 19 / 0));
 		font-size: 12px;
-		color: var(--text-2);
+		color: #efdcc4;
 	}
 	/* 키보드가 떠 있을 때는 홈 인디케이터 여백이 필요 없다 */
 	:global(html.kb-open) .foot {
@@ -381,7 +400,8 @@
 		text-align: center;
 		font-size: 14px;
 		font-weight: 700;
-		color: var(--text-2);
+		color: #fbeedd;
+		text-shadow: 0 1px 3px rgb(30 10 0 / 0.6);
 		z-index: 2;
 	}
 </style>
