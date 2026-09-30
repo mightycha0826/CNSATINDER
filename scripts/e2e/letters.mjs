@@ -458,6 +458,22 @@ try {
 	check('페이지 오류 없음 (폴더)', r7.errors.length === 0, r7.errors.join(' / '));
 	await r7.ctx.close();
 
+	console.log('[아이패드 사파리 — 책상이 폭을 채운다 (Phase 59)]');
+	{
+		const r9 = await openApp(browser, world(), { viewport: { width: 1180, height: 820 } });
+		const p9 = r9.page;
+		await p9.goto(`${BASE}/letters`); await p9.locator('button.desk').waitFor(); await p9.waitForTimeout(500);
+		// 사파리 18 까지의 기본 스타일(button { align-items: flex-start })을 흉내 — :where() 라 앱의 button 초기화보다 약하다(기본 스타일처럼)
+		await p9.addStyleTag({ content: ':where(button) { align-items: flex-start; }' }); await p9.waitForTimeout(300);
+		const fill = await p9.evaluate(() => {
+			const w = (s) => document.querySelector(s).getBoundingClientRect().width;
+			return { desk: w('button.desk'), wood: w('.desk .wood'), plate: w('.desk .plate') };
+		});
+		await p9.screenshot({ path: `${SP}/letters-ipad-safari.png` });
+		check('★ 사파리 기본 스타일에서도 책상 판자 · 이름표가 폭을 채운다', Math.abs(fill.wood - fill.desk) < 1 && fill.plate > fill.desk - 60, JSON.stringify(fill));
+		await r9.ctx.close();
+	}
+
 	console.log('[낮은 화면 편지 쓰기 단추 · 인터넷 끊김 띠 (Phase 54)]');
 	{
 		const w8 = world();

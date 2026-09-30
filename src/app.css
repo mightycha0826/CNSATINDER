@@ -309,6 +309,9 @@ button {
 	border: 0;
 	padding: 0;
 	cursor: pointer;
+	/* 사파리 18 까지는 기본 스타일이 button 에 align-items: flex-start 를 준다 — 크롬처럼 되돌린다.
+	   안 하면 display: flex 로 쓴 단추(편지함 책상 등)의 안쪽이 폭을 채우지 못하고 왼쪽에 쪼그라든다 (Phase 59, 아이패드) */
+	align-items: normal;
 }
 
 input,
