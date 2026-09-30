@@ -79,6 +79,12 @@ try {
 		return { knotW: k.width, covers: k.y < b.y && k.y + k.height > b.y + 2, wider: k.width > 2 * 7.5 + 10 };
 	});
 	check('★ 넥타이 매듭(머리) — 날 위를 덮고 날 윗부분보다 넓다', tie.covers && tie.wider, JSON.stringify(tie));
+	// Phase 64 — 사진처럼 조끼 V넥이 칼라 끝 바로 아래(그림 위쪽 절반, 매듭보다 아래), 스케치처럼 넥타이는 왼쪽 끝
+	const lay = await uni('tie', 3).evaluate((u) => {
+		const f = u.getBoundingClientRect(), v = u.querySelector('.vneck').getBoundingClientRect(), k = u.querySelector('.tie .knot').getBoundingClientRect();
+		return { vBottom: (v.bottom - f.top) / f.height, knotBottom: (k.bottom - f.top) / f.height, knotX: (k.left + k.width / 2 - f.left) / f.width };
+	});
+	check('★ 조끼 V넥은 칼라 끝 바로 아래 · 넥타이는 왼쪽 끝', lay.vBottom < 0.5 && lay.vBottom > lay.knotBottom && lay.knotX < 0.15, JSON.stringify(lay));
 	check('★ 리본 — 고리 둘 · 꼬리 둘', (await uni('ribbon', 3).locator('.ribbon .loop').count()) === 2 && (await uni('ribbon', 3).locator('.ribbon .tail').count()) === 2
 		&& (await uni('tie', 3).locator('.ribbon').count()) === 0 && (await uni('ribbon', 3).locator('.tie').count()) === 0);
 	// Phase 61 — 깃이 커서 배지 3개가 다 깃 안에 (가운데 · 위아래 · 좌우 끝), 주머니는 수평으로 교표 바로 위 가운데 (움직임을 멈추고 잰다)
