@@ -3,7 +3,7 @@
 	 * 극작소 (연극 동아리) 뱃지 — 실제 에나멜 핀을 그대로 옮긴 그림 (Phase 70, CNSA 분류의 첫 뱃지).
 	 * 빨간 상자 위로 솟은 검은 슬레이트(클래퍼보드: 흰 화살 셋 · 점 셋 · 줄 셋) + 오른쪽 아래 막이 걷힌 무대 상자.
 	 * 에나멜 핀처럼: 칸마다 검은 금속 테두리가 도드라지고, 에나멜 위에 유리 같은 빛 · 아래로 떨어지는 그림자.
-	 * 모양은 사진에서 잰 점 그대로 (viewBox 단위, 사진 픽셀 ÷ 10).
+	 * 모양은 사진에서 잰 점 그대로 (viewBox 단위, 사진 픽셀 ÷ 10). 모서리는 사진처럼 뾰족하게 (miter) — 화살은 끝이 곧은 채운 도형.
 	 */
 	let { shine = false, delay = 0 }: { shine?: boolean; delay?: number } = $props();
 	const uid = $props.id();
@@ -41,10 +41,10 @@
 	</defs>
 
 	<!-- 금속 판 (테두리 · 두께) — 조금 아래로 겹쳐 핀의 옆면처럼 -->
-	<polygon points={outline} fill="#1b1b1f" stroke="#1b1b1f" stroke-width="5" stroke-linejoin="round" transform="translate(0 1.6)" />
-	<polygon points={outline} fill="#3b3b42" stroke="#4a4a52" stroke-width="4.4" stroke-linejoin="round" />
+	<polygon points={outline} fill="#1b1b1f" stroke="#1b1b1f" stroke-width="5" stroke-linejoin="miter" stroke-miterlimit="4" transform="translate(0 1.6)" />
+	<polygon points={outline} fill="#3b3b42" stroke="#4a4a52" stroke-width="4.4" stroke-linejoin="miter" stroke-miterlimit="4" />
 
-	<g clip-path="url(#{uid}-clip)" stroke="#26262b" stroke-width="1.9" stroke-linejoin="round">
+	<g clip-path="url(#{uid}-clip)" stroke="#26262b" stroke-width="1.9" stroke-linejoin="miter" stroke-miterlimit="6">
 		<!-- 슬레이트 -->
 		<polygon points={poly('A', 'B', 'C', 'E', 'D')} fill="url(#{uid}-slate)" />
 		<!-- 빨간 상자: 옆면 · 앞면 -->
@@ -57,10 +57,10 @@
 	</g>
 
 	<!-- 슬레이트 무늬 (흰 에나멜) -->
-	<g fill="none" stroke="#f3f4f7" stroke-linecap="round" stroke-linejoin="round">
-		{#each [[37.5, 23.2], [50, 20.2], [62.5, 17.1]] as [x, y] (x)}
-			<path d="M-2.4 -3.2L1.9 0L-2.4 3.2" stroke-width="2.7" transform="translate({x} {y}) rotate(-13.7)" />
-		{/each}
+	{#each [[37.5, 23.2], [50, 20.2], [62.5, 17.1]] as [x, y] (x)}
+		<polygon points="-3.4 -3.6 -0.4 -3.6 2.8 0 -0.4 3.6 -3.4 3.6 -0.2 0" fill="#f3f4f7" transform="translate({x} {y}) rotate(-13.7)" />
+	{/each}
+	<g fill="none" stroke="#f3f4f7" stroke-linecap="butt" stroke-linejoin="miter">
 		<path d="M27.8 33.6L64 27.2M32 39.6L64.2 33.6M37 45.4L64.6 40.2" stroke-width="1.5" />
 		<path d="M42.6 31V37.4M47.6 36.8V43.3" stroke-width="1.3" />
 	</g>
@@ -71,14 +71,14 @@
 	</g>
 
 	<!-- 무대 막 — 위로 드리운 휘장 두 겹 · 양쪽으로 걷어 묶은 막 (금속 선) -->
-	<g fill="none" stroke="#3d0a0e" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round">
+	<g fill="none" stroke="#3d0a0e" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="miter">
 		<path d="M55.8 72C68 78.5 88 76 101.6 66.2M56.6 75.4C69 82 88.5 79.2 101 69.4" />
 		<path d="M58 73.4C62.4 80.6 60.2 88.4 53.4 94.4M55.6 76.6C57 84.4 55.6 90 52.2 94.2M52.8 94.8L48.6 104.6M53.2 94.8L54.8 103.6M52.9 94.8L51.6 104.2" />
 		<path d="M100.6 66.8C97.6 74.2 97.4 82 99.2 88.4M102.2 69.4C100.2 76.4 100.2 83 100.8 88.4M99.8 88.8L97.4 95.8M100.2 88.8L101.8 95.3" />
 	</g>
 
 	<!-- 에나멜 위 유리 빛 — 윗 모서리마다 가는 흰 빛, 오른쪽 위에 넓은 빛 -->
-	<g clip-path="url(#{uid}-clip)" fill="none" stroke="#fff" stroke-linecap="round">
+	<g clip-path="url(#{uid}-clip)" fill="none" stroke="#fff" stroke-linecap="butt">
 		<path d="M38.5 53L67 48.3M22 38.5L33 49" stroke-opacity="0.45" stroke-width="1.4" />
 		<path d="M88 44.5L104 59.5" stroke-opacity="0.35" stroke-width="1.2" />
 		<path d="M12.5 80L20.5 40" stroke-opacity="0.2" stroke-width="2.2" />
