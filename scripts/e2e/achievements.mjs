@@ -89,7 +89,7 @@ try {
 		&& (await uni('tie', 3).locator('.ribbon').count()) === 0 && (await uni('ribbon', 3).locator('.tie').count()) === 0);
 	// Phase 65 · 66 — 실제로 입은 것처럼 겹친다: 칼라는 조끼 목둘레에 닿지 않고, 리본 머리와 넥타이 매듭은 재킷에 닿지 않으며
 	// 리본 고리(1.5배 — 앞섶 사이보다 넓다)는 끝이 재킷 밑으로 들어가고(재킷보다 먼저 그린다), 보이는 곳은 조끼 위에 걸치지 않고,
-	// 넥타이 날 · 리본 꼬리 끝은 조끼 속에 있다
+	// 넥타이 날 끝은 조끼 속에 있고, 리본 꼬리는 벌어져 조끼 목둘레 단 바로 위에서 끝난다 (Phase 68 — 제비꼬리 끝이 보이게)
 	const layering = async (neck) => uni(neck, 3).evaluate((u) => {
 		const into = (el, target) => { const m = target.getScreenCTM().inverse().multiply(el.getScreenCTM()); return (x, y) => new DOMPoint(x, y).matrixTransform(m); };
 		const outline = (el) => { const L = el.getTotalLength(), out = []; for (let d = 0; d <= L; d += 2) out.push(el.getPointAtLength(d)); return out; };
@@ -110,7 +110,8 @@ try {
 			neckClearOfJacket: clear('.tie .knot, .ribbon .bow-knot', lap),
 			loopsUnderJacket: under('.ribbon .loop', lap),
 			bowAboveVest: clear('.ribbon .loop, .ribbon .bow-knot', vest, 4, lap),
-			tuckedInVest: tucked('.tie .blade, .ribbon-tails .tail', vest),
+			tuckedInVest: tucked('.tie .blade', vest),
+			tailsAboveVest: clear('.ribbon-tails .tail', vest, 5),
 			bowOverVest: over('.ribbon .loop, .ribbon .bow-knot', vest)
 		};
 	});
@@ -142,11 +143,57 @@ try {
 		const dev = Math.max(...fp.map((p) => Math.abs((a1.y - a0.y) * p.x - (a1.x - a0.x) * p.y + a1.x * a0.y - a1.y * a0.x) / Math.hypot(a1.y - a0.y, a1.x - a0.x)));
 		return { loops: loops.map((v) => +v.toFixed(2)), bladeRatio: +(w / kb.width).toFixed(2), vTip: +(bottom.y - side.y).toFixed(1), frontDev: +dev.toFixed(1) };
 	});
-	// 왼쪽 고리는 넥타이 자리(왼쪽 끝)라 그림 가장자리에서 조금 잘린다 — 고리마다 절반 넘게, 둘 합쳐 3/4 넘게 보이면 리본으로 읽힌다
-	check('★ 리본 고리가 거의 다 보인다 (넥타이처럼 보이지 않게)', shape.loops.length === 2 && shape.loops.every((v) => v >= 0.5) && shape.loops[0] + shape.loops[1] >= 1.5, JSON.stringify(shape));
+	// Phase 68 — 리본은 프레임 안에 통째로 들어온다 (고리마다 윤곽 거의 전부가 보인다)
+	check('★ 리본 고리가 다 보인다 (넥타이처럼 보이지 않게)', shape.loops.length === 2 && shape.loops.every((v) => v >= 0.95), JSON.stringify(shape));
 	check('★ 넥타이 날은 머리에 맞게 넓다', shape.bladeRatio >= 0.45, JSON.stringify(shape));
 	check('★ 조끼 목둘레는 끝만 살짝 둥근 V (라운드넥 아님)', shape.vTip >= 2, JSON.stringify(shape));
 	check('★ 재킷 앞섶은 거의 곧다', shape.frontDev <= 2.5, JSON.stringify(shape));
+	// Phase 68 — 카라 · 넥타이 · 리본을 한 비례로 다시 그렸다. 카라 벌어짐(뾰족한 두 끝 사이)이 기준: 매듭은 그 절반쯤, 리본은 2/3쯤.
+	// 카라 잎은 끝이 뾰족하고(60 도쯤) 매듭 어깨를 덮으며, 리본 날개는 카라 위에 얹힌다. 리본 꼬리는 서로 벌어지고 날개는 프레임 안.
+	const fit = async (neck) => uni(neck, 3).evaluate((u) => {
+		const pts = (el, step = 0.5) => { const L = el.getTotalLength(), out = []; for (let d = 0; d <= L; d += step) out.push(el.getPointAtLength(d)); return out; };
+		const frame = u.getBoundingClientRect(), leaves = [...u.querySelectorAll('.leaf')], leaf = leaves[0], m = leaf.getScreenCTM();
+		const P = pts(leaf), ti = P.reduce((a, p, i) => (p.y > P[a].y ? i : a), 0), tip = P[ti];
+		// 끝 각도 — 끝에서 윤곽을 양쪽으로 12 만큼 간 두 점이 이루는 각 (잎 좌표 그대로)
+		const va = { x: P[ti - 24].x - tip.x, y: P[ti - 24].y - tip.y }, vb = { x: P[ti + 24].x - tip.x, y: P[ti + 24].y - tip.y };
+		const angle = (Math.acos((va.x * vb.x + va.y * vb.y) / (Math.hypot(va.x, va.y) * Math.hypot(vb.x, vb.y))) * 180) / Math.PI;
+		const cx = new DOMPoint(0, 0).matrixTransform(m).x, spread = 2 * (new DOMPoint(tip.x, tip.y).matrixTransform(m).x - cx);
+		const out = { leaves: leaves.length, tipAngle: +angle.toFixed(0) };
+		const knot = u.querySelector('.tie .knot');
+		if (knot) {
+			out.knotRatio = +(knot.getBoundingClientRect().width / spread).toFixed(2);
+			// 카라 잎이 매듭 어깨를 덮는다 — 매듭 윤곽 점이 잎 안에 들어 있고, 잎이 매듭보다 나중에 그려진다
+			const km = knot.getScreenCTM();
+			out.collarCoversKnot = pts(knot, 1).filter((p) => leaves.some((l) => l.isPointInFill(new DOMPoint(p.x, p.y).matrixTransform(km).matrixTransform(l.getScreenCTM().inverse())))).length >= 8
+				&& leaves.every((l) => !!(knot.compareDocumentPosition(l) & Node.DOCUMENT_POSITION_FOLLOWING));
+		}
+		const loops = [...u.querySelectorAll('.ribbon .loop')];
+		if (loops.length) {
+			const rs = loops.map((l) => l.getBoundingClientRect());
+			out.bowRatio = +((Math.max(...rs.map((r) => r.right)) - Math.min(...rs.map((r) => r.left))) / spread).toFixed(2);
+			out.bowInFrame = rs.every((r) => r.left >= frame.left + 4 && r.right <= frame.right - 4 && r.top >= frame.top);
+			out.bowOverCollar = loops.every((l) => leaves.every((c) => !!(l.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_PRECEDING)));
+			// 꼬리 — 가장 아래 두 점(제비꼬리 두 끝)의 안쪽 끝 사이 간격 ÷ 그림 너비
+			const inner = [...u.querySelectorAll('.ribbon-tails .tail')].map((t) => {
+				const tm = t.getScreenCTM(), Q = pts(t, 1).map((p) => new DOMPoint(p.x, p.y).matrixTransform(tm)), yMax = Math.max(...Q.map((q) => q.y));
+				const low = Q.filter((q) => q.y > yMax - 14 * (frame.height / 280)).map((q) => q.x);
+				return { lo: Math.min(...low), hi: Math.max(...low) };
+			});
+			const [r, l] = inner[0].lo > inner[1].lo ? inner : [inner[1], inner[0]];
+			out.tails = inner.length;
+			out.tailGap = +((r.lo - l.hi) / frame.width).toFixed(3);
+		}
+		return out;
+	});
+	for (const neck of ['tie', 'ribbon']) {
+		const f = await fit(neck);
+		check(`★ 카라 잎 둘 · 끝이 뾰족하다 (${neck})`, f.leaves === 2 && f.tipAngle >= 40 && f.tipAngle <= 85, JSON.stringify(f));
+		if (neck === 'tie') check('★ 넥타이 매듭은 카라 벌어짐의 절반쯤 · 카라 잎이 매듭 어깨를 덮는다', f.knotRatio >= 0.4 && f.knotRatio <= 0.62 && f.collarCoversKnot, JSON.stringify(f));
+		else {
+			check('★ 리본은 카라 벌어짐의 2/3쯤 · 프레임 안 · 카라 위에 얹힌다', f.bowRatio >= 0.55 && f.bowRatio <= 0.8 && f.bowInFrame && f.bowOverCollar, JSON.stringify(f));
+			check('★ 리본 꼬리 둘이 서로 벌어진다 (한 장처럼 겹치지 않게)', f.tails === 2 && f.tailGap >= 0.04, JSON.stringify(f));
+		}
+	}
 	// Phase 61 — 깃이 커서 배지 3개가 다 깃 안에 (가운데 · 위아래 · 좌우 끝), 주머니는 수평으로 교표 바로 위 가운데 (움직임을 멈추고 잰다)
 	for (const [neck, w] of [['tie', 0], ['ribbon', 320]]) {
 		if (w) { await page.setViewportSize({ width: w, height: 844 }); await page.waitForTimeout(200); }
