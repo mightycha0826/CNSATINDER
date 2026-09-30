@@ -454,6 +454,16 @@ a {
 :where(button, a[href], [role='button'], summary, label) {
 	touch-action: manipulation;
 }
+/* 꾹 눌러 끄는 배지 · 메달 (Phase 69, lib/ui/badgeDrag) — 길게 누를 때 글자 고르기 · 돋보기 · 공유 메뉴 대신 집는다 */
+[data-drag] {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+/* 집어 든 자리 — 메달이 손가락을 따라 떠난 빈자리처럼 흐리게 */
+[data-drag-src] {
+	opacity: 0.3;
+}
 /* .u-hit — 겉모양은 그대로, 누름 영역만 가운데 44×44 (요소가 더 크면 요소 그대로). 이웃과 8px 미만이면 쓰지 말 것 (G1) */
 :where(.u-hit) {
 	position: relative;

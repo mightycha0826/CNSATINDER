@@ -1,9 +1,12 @@
 <script lang="ts">
-	/** 업적 전체 (Phase 31) — 내 프로필의 "명성" 카드에서 들어온다. 보고 나면 "새 업적" 표시를 지운다. */
+	/**
+	 * 업적 전체 (Phase 31) — 내 프로필의 "명성" 카드에서 들어온다. 보고 나면 "새 업적" 표시를 지운다.
+	 * 대표 업적은 교복 — 메달을 끌어 놓으면 바로 바뀌어 보이고 서버에 저장, 안 되면 되돌린다 (Phase 69).
+	 */
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import AchievementsView from '$lib/ui/AchievementsView.svelte';
-	import { fetchMyAchievements, markAchievementsSeen, setFeaturedBadges, type MyAchievements } from '$lib/achievements';
-	import { errMsg, toast } from '$lib/state.svelte';
+	import { featuredOf, fetchMyAchievements, markAchievementsSeen, setFeaturedBadges, type MyAchievements } from '$lib/achievements';
+	import { S, errMsg, toast } from '$lib/state.svelte';
 
 	let data = $state<MyAchievements | null>(null);
 	let failed = $state(false);
@@ -17,17 +20,22 @@
 			.catch(() => (failed = true));
 	});
 
-	async function feature(codes: string[]) {
+	async function feature(codes: string[], quiet = false) {
+		const prev = data;
+		// 교복은 바로 바꿔 보인다 (남는 칸은 서버가 채워 준다)
+		if (data) data = { ...data, featured: featuredOf(data.items, codes), chosen: codes };
 		try {
 			const r = await setFeaturedBadges(codes);
 			if (r.status !== 'ok') {
+				data = prev;
 				toast(r.status === 'too_many' ? '대표 업적은 3개까지예요' : '아직 딴 업적이 아니에요');
 				return false;
 			}
 			if (data) data = { ...data, featured: r.featured ?? data.featured, chosen: codes };
-			toast('대표 업적을 바꿨어요');
+			if (!quiet) toast('대표 업적을 바꿨어요');
 			return true;
 		} catch (e) {
+			data = prev;
 			toast(errMsg(e));
 			return false;
 		}
@@ -41,7 +49,7 @@
 
 <div class="page ach">
 	{#if data}
-		<AchievementsView {data} onfeature={feature} />
+		<AchievementsView {data} onfeature={feature} neck={S.profile?.gender === 'f' ? 'ribbon' : 'tie'} />
 	{:else if failed}
 		<p class="muted center">업적을 불러오지 못했어요</p>
 	{:else}

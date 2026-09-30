@@ -4,24 +4,26 @@
 	 * 편지함처럼 큰 봉투가 한 장씩 비스듬히 놓여 있다 (Phase 37 — 예전엔 작은 봉투 한 줄씩).
 	 *   받은 편지 = 덮개 쪽(보낸 사람 성별 색 테두리 · 안 연 편지는 봉인) / 보낸 편지 = 주소 쪽(To. · 우표 · 소인 · 읽음/답장 옴 스티커).
 	 * 누르면 그 편지를 연다. 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 — 열기 · 답장 · 버리기 · 차단 · 신고 (LetterMenu).
-	 * 폴더 (Phase 47): 위 "고르기"로 여러 통을 골라 폴더에 넣는다 (FolderPicker). 폴더는 탭 아래 서랍 줄 — 누르면 그 폴더(/letters/f/[id]).
-	 *   폴더에 넣은 편지는 받은/보낸 편지 목록에서 빠진다. 받은 편지는 봉투를 열어 본 것만 고를 수 있다.
+	 * 폴더 (Phase 47): 위 "선택"으로 여러 통을 골라 폴더에 넣는다 (FolderPicker). 폴더는 탭 아래 서랍 줄 — 누르면 그 폴더(/letters/f/[id]).
+	 *   폴더에 넣은 편지는 받은/보낸 편지 목록에서 빠진다. 받은 편지는 봉투를 열어 본 것만 선택할 수 있다.
 	 *   서랍의 폴더 카드는 받은 · 보낸 편지가 섞였으면 "받은 2 · 보낸 3" (Phase 47-3).
-	 *   고르는 중에는 안드로이드 뒤로가기가 고르기를 끝낸다 (backClose).
+	 *   선택 중에는 안드로이드 뒤로가기가 선택을 끝낸다 (backClose).
+	 * 삭제 (Phase 69): 선택한 편지를 확인 시트를 거쳐 지운다 — 내 편지함에서만 (상대의 편지 · 편지 줄기는 그대로, 되돌릴 수 없다).
 	 */
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import MailStack from '$lib/letters/MailStack.svelte';
 	import FolderPicker from '$lib/letters/FolderPicker.svelte';
 	import SelectBar from '$lib/letters/SelectBar.svelte';
+	import Sheet from '$lib/ui/Sheet.svelte';
 	import { BOX, filed, loadMore, refreshMailbox } from '$lib/letters/mailbox.svelte';
 	import { LIST } from '$lib/letters/unread.svelte';
-	import type { MailItem } from '$lib/letters/api';
+	import { deleteLetters, folderError, type MailItem } from '$lib/letters/api';
 	import { backClose, historySettled } from '$lib/overlay.svelte';
-	import { toast } from '$lib/state.svelte';
+	import { errMsg, toast } from '$lib/state.svelte';
 
 	$effect(() => refreshMailbox());
 
-	// ── 고르기 ──
+	// ── 선택 ──
 	let selecting = $state(false);
 	let picked = $state<number[]>([]);
 	let picking = $state(false);
@@ -30,18 +32,42 @@
 		selecting = false;
 		picked = [];
 		picking = false;
+		confirming = false;
 	}
 	function toggle(it: MailItem) {
-		if ((it.box ?? tab) === 'received' && !it.opened) return toast('봉투를 열어 본 편지만 폴더에 넣을 수 있어요');
+		if ((it.box ?? tab) === 'received' && !it.opened) return toast('봉투를 열어 본 편지만 선택할 수 있어요');
 		picked = picked.includes(it.id) ? picked.filter((x) => x !== it.id) : [...picked, it.id];
 	}
 	async function done(name: string) {
 		const ids = picked;
 		picking = false;
-		await historySettled(); // 폴더 시트의 뒤로가기 칸이 걷힌 뒤에 고르기를 끝낸다
+		await historySettled(); // 폴더 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
 		stopSelect();
 		filed(ids);
 		toast(name ? `'${name}' 폴더에 ${ids.length}통을 넣었어요` : '폴더에 넣었어요');
+	}
+
+	// ── 삭제 (Phase 69) — 확인 시트 → 내 편지함에서만 지운다 ──
+	let confirming = $state(false);
+	let deleting = $state(false);
+	async function remove() {
+		if (deleting) return;
+		const ids = picked;
+		deleting = true;
+		try {
+			const r = await deleteLetters(ids);
+			const err = folderError(r);
+			if (err) return toast(err);
+			confirming = false;
+			await historySettled(); // 확인 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
+			stopSelect();
+			filed(ids);
+			toast(`편지 ${r.status === 'ok' ? r.moved : ids.length}통을 삭제했어요`);
+		} catch (e) {
+			toast(errMsg(e));
+		} finally {
+			deleting = false;
+		}
 	}
 
 	const tab = $derived(LIST.tab);
@@ -58,11 +84,11 @@
 
 <div class="topbar">
 	<BackButton href="/letters" history />
-	<span class="title">{selecting ? '편지 고르기' : '편지 보관함'}</span>
+	<span class="title">{selecting ? '편지 선택' : '편지 보관함'}</span>
 	{#if selecting}
 		<button class="btn-text push" onclick={stopSelect}>취소</button>
 	{:else if BOX.received.length || BOX.sent.length}
-		<button class="btn-text push" onclick={() => (selecting = true)}>고르기</button>
+		<button class="btn-text push" onclick={() => (selecting = true)}>선택</button>
 	{/if}
 </div>
 
@@ -106,11 +132,20 @@
 
 {#if selecting}
 	<SelectBar count={picked.length}>
+		<button class="danger" onclick={() => (confirming = true)} disabled={!picked.length}>삭제</button>
 		<button class="go" onclick={() => (picking = true)} disabled={!picked.length}>폴더에 넣기</button>
 	</SelectBar>
 {/if}
 {#if picking}
 	<FolderPicker ids={picked} folders={BOX.folders} onclose={() => (picking = false)} ondone={done} />
+{/if}
+{#if confirming}
+	<Sheet onclose={() => (confirming = false)} label="편지 삭제">
+		<p class="ask">편지 {picked.length}통을 삭제할까요?</p>
+		<p class="warn">내 편지함에서만 지워지고 상대에게는 그대로 남아요. 삭제한 편지는 되돌릴 수 없어요.</p>
+		<button class="item danger" onclick={remove} disabled={deleting} aria-busy={deleting}>삭제</button>
+		<button class="item" onclick={() => (confirming = false)}>취소</button>
+	</Sheet>
 {/if}
 
 <style>
@@ -127,6 +162,12 @@
 	.push {
 		margin-left: auto;
 		margin-right: -6px;
+	}
+	.ask {
+		margin: 4px 0 10px;
+		font-size: 17px;
+		font-weight: 800;
+		text-align: center;
 	}
 
 	/* ── 폴더 서랍 — 마닐라 폴더 모양 카드가 옆으로 늘어선다 ── */

@@ -29,25 +29,32 @@
 	 * 넥타이: 머리는 위가 넓고 아래로 좁아지는 깔때기 앞판(줄무늬 방향이 옆 판과 반대) + 옆 판 · 접힌 선 · 치마 · 날 위 그림자 · 보조개, 날은 아래로 넓어지며 조끼 속으로.
 	 * 리본: 가운데 조인 띠 · 위 면은 빛 · 아래 면은 접혀 그늘인 두 날개(안쪽은 모아 잡은 주름) · 바깥으로 벌어지는 제비꼬리 두 개(끝이 조끼 목둘레 단 바로 위)
 	 * · 꼬리 사이로 셔츠 여밈 단추. 목 둘레 모양은 모두 목 가운데를 0 으로 둔 좌표 (translate(C 0)).
+	 * Phase 69 — 리본 꼬리를 굵게(폭 약 1.35배) · 길게 — 조끼보다 나중에 그려 조끼 목둘레 단을 넘어 조끼 위로 늘어진다 (조끼 밖).
 	 *   neck — 넥타이(남학생 · 상대 프로필) / 리본(여학생)
 	 *   badges — 깃에 위에서부터 (최대 LAPEL_SLOTS)
 	 *   emptyHref — 있으면 빈 칸을 점선 동그라미 "+" 로 (내 프로필 → 업적 화면)
+	 *   onplace — 있으면 배지를 꾹 눌러 다른 칸으로 끌어 옮긴다 (Phase 69, lib/ui/badgeDrag). 빈 칸도 점선 동그라미로 보이고
+	 *             밖에서 끌어 온 메달(업적 목록)도 받는다 — 칸마다 data-drop-slot. 옮긴 결과는 onplace(배지 코드, 칸 번호)
 	 * 교복 색은 라이트 · 다크 모두 같다 (진짜 교복 색). 교표 그림: static/school-crest.png (scripts/generate-crest.mjs)
 	 */
 	import Badge from './Badge.svelte';
+	import { badgeDrag } from './badgeDrag';
 	import type { BadgeLite } from '$lib/achievements';
 
 	let {
 		neck = 'tie',
 		badges = [],
 		onpick,
-		emptyHref
+		emptyHref,
+		onplace
 	}: {
 		neck?: 'tie' | 'ribbon';
 		badges?: BadgeLite[];
 		onpick?: (b: BadgeLite) => void;
 		emptyHref?: string;
+		onplace?: (code: string, slot: number) => void;
 	} = $props();
+	let root: HTMLDivElement | undefined = $state();
 
 	const uid = $props.id();
 	const W = 360;
@@ -125,9 +132,11 @@
 	const wingPleats = 'M7.6 16C11.6 13.8 15.2 11.6 19.6 9M7.6 24.6C11.6 26.8 15.2 29 19.6 31.6';
 	/** 가운데 머리 — 날개 안쪽 끝을 감싼 작은 띠 */
 	const bowKnot = 'M-8.6 10.5C-3 8.8 3 8.8 8.6 10.5C10.2 17.5 10.2 24.5 8.6 31.5C3 33.2-3 33.2-8.6 31.5C-10.2 24.5-10.2 17.5-8.6 10.5Z';
-	/** 꼬리 (오른쪽 — 왼쪽은 거울) — 머리 뒤에서 내려와 살짝 벌어지고 끝은 제비꼬리 */
-	const tail = 'M-1.5 22L15 22C15.6 44 16.6 66 18 88L9.6 80.5L1 90C0.4 68-0.6 44-1.5 22Z';
-	const tailFold = 'M4.2 34C4.8 50 5.6 66 6.6 80';
+	/** 꼬리 (오른쪽 — 왼쪽은 거울) — 머리 뒤에서 내려와 살짝 벌어지고 끝은 제비꼬리.
+	 *  Phase 69 — 굵게(폭 16.5 → 22 · 아래로 조금 넓어진다) · 길게(조끼 목둘레 단을 넘어 조끼 위로 늘어진다) */
+	const tail = 'M-2 22L20 22C21.2 54 22.8 90 25 126L13.8 115.5L2.4 128C1 92-0.6 56-2 22Z';
+	const tailFold = 'M6.6 36C7.4 62 8.6 90 10.2 116';
+	const tailShine = 'M12.6 26C13.4 56 14.8 88 16.8 118';
 
 	// 배지 자리 — 깃 가운데 선을 따라 위에서 아래로. 칸 사이 62 — 폰 폭 280 에서 그림이 0.78배로 줄어도 누름 영역 44 가 겹치지 않게.
 	// 손으로 꽂은 듯 조금씩 기울게 (tilt, 도)
@@ -142,7 +151,7 @@
 	const pivot = (x: number, y: number) => `transform-origin:${x}px ${y}px`;
 </script>
 
-<div class="uniform" data-neck={neck} role="group" aria-label="교복 · 대표 업적 {badges.length}개">
+<div class="uniform" bind:this={root} data-neck={neck} role="group" aria-label="교복 · 대표 업적 {badges.length}개">
 	<div class="body">
 		<svg viewBox="0 0 {W} {H}" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
 			<defs>
@@ -350,7 +359,7 @@
 			<path d={shirt} fill="url(#{uid}-shirt)" />
 			<path d={shirt} fill="url(#{uid}-weave)" />
 
-			<!-- 목 둘레 — 입은 순서대로 겹친다: 셔츠 → 넥타이 · 리본 꼬리 → 셔츠 카라(잎이 매듭 어깨를 덮는다) → 조끼 → 리본 머리 · 날개 → 재킷.
+			<!-- 목 둘레 — 입은 순서대로 겹친다: 셔츠 → 넥타이 → 셔츠 카라(잎이 매듭 어깨를 덮는다) → 조끼 → 리본 꼬리(조끼 위로) · 머리 · 날개 → 재킷.
 			     모양은 모두 목 가운데를 0 으로 (translate(C 0)) — 카라 벌어짐 기준으로 매듭 · 리본 크기를 맞췄다 -->
 			<g transform="translate(0 {NECK_Y})">
 				<!-- 목 안쪽 그늘 (카라 안 · 매듭 위) -->
@@ -404,30 +413,13 @@
 				{/if}
 
 				{#if neck === 'ribbon'}
-					<!-- 꼬리 — 머리 뒤에서 내려와 살짝 벌어지고, 끝은 제비꼬리. 조끼 위(목둘레 단) 조금 앞에서 끝난다 -->
-					<g class="ribbon-tails" transform="translate({C} 0)">
-						<g class="sway tails" style="transform-origin:0px 22px">
-							<!-- 셔츠 앞 가운데(여밈) — 꼬리 사이로 보인다 -->
-							<path d="M0 34V112" stroke="#aeb9c6" stroke-width="0.9" />
-							<path d="M-6.5 34V112M6.5 34V112" stroke="#c4ced9" stroke-width="0.6" stroke-dasharray="1.6 1.9" />
-							<circle cx="0" cy="97" r="3.3" fill="#f3f6f9" stroke="#a7b3c1" stroke-width="0.8" />
-							<circle cx="-0.9" cy="96.2" r="0.5" fill="#8f9cab" /><circle cx="0.9" cy="96.2" r="0.5" fill="#8f9cab" />
-							<circle cx="-0.9" cy="98" r="0.5" fill="#8f9cab" /><circle cx="0.9" cy="98" r="0.5" fill="#8f9cab" />
-							{#each [[1, 8], [-1, 10]] as const as [sg, deg] (sg)}
-								<g transform="scale({sg} 1) rotate({-deg} 0 22)">
-									<path d={tail} fill="#0a1230" opacity="0.32" transform="translate(2.6 3.4)" filter="url(#{uid}-blur2)" />
-									<path class="tail" d={tail} fill="url(#{uid}-tie-a)" />
-									<path d={tail} fill="url(#{uid}-twill)" />
-									<g clip-path="url(#{uid}-cTail)">
-										<path d={tail} fill="none" stroke="#02061a" stroke-opacity="0.5" stroke-width="7" filter="url(#{uid}-blur2)" />
-										<path d={tail} fill="url(#{uid}-tailShade)" />
-										<path d="M9 24C9.6 44 10.4 64 11.6 82" fill="none" stroke="#fff" stroke-opacity="0.13" stroke-width="5" filter="url(#{uid}-blur2)" />
-									</g>
-									<path d={tailFold} fill="none" stroke="#050a20" stroke-opacity="0.3" stroke-width="0.9" />
-									<path d={tail} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.9" stroke-linejoin="round" />
-								</g>
-							{/each}
-						</g>
+					<!-- 셔츠 앞 가운데(여밈) — 리본 꼬리 사이로 보이고, 조끼 속으로 들어간다 -->
+					<g class="placket" transform="translate({C} 0)">
+						<path d="M0 34V112" stroke="#aeb9c6" stroke-width="0.9" />
+						<path d="M-6.5 34V112M6.5 34V112" stroke="#c4ced9" stroke-width="0.6" stroke-dasharray="1.6 1.9" />
+						<circle cx="0" cy="97" r="3.3" fill="#f3f6f9" stroke="#a7b3c1" stroke-width="0.8" />
+						<circle cx="-0.9" cy="96.2" r="0.5" fill="#8f9cab" /><circle cx="0.9" cy="96.2" r="0.5" fill="#8f9cab" />
+						<circle cx="-0.9" cy="98" r="0.5" fill="#8f9cab" /><circle cx="0.9" cy="98" r="0.5" fill="#8f9cab" />
 					</g>
 				{/if}
 
@@ -459,7 +451,7 @@
 				<path d={vLine} fill="none" stroke="#3d4b63" stroke-opacity="0.32" stroke-width="7" transform="translate(0 -6)" filter="url(#{uid}-blur2)" />
 				<path d="M{C + 40} 74C{C + 44} 88 {C + 40} 96 {C + 30} 102" fill="none" stroke="#5b6d86" stroke-opacity="0.16" stroke-width="5" filter="url(#{uid}-blur2)" />
 
-				<!-- 회색 조끼 (사진) — 칼라 끝 아래로 넓고 얕은, 아래가 둥근 V 목둘레 · 뜨개 결 + 남색 목둘레 단(골 무늬). 넥타이 날 · 리본 꼬리는 조끼 속으로 -->
+				<!-- 회색 조끼 (사진) — 칼라 끝 아래로 넓고 얕은, 아래가 둥근 V 목둘레 · 뜨개 결 + 남색 목둘레 단(골 무늬). 넥타이 날은 조끼 속으로 -->
 				<path class="vest" d={vest} fill="url(#{uid}-knit)" />
 				<path d={vest} fill="url(#{uid}-vestShade)" />
 				<path d="M{C + 50} 120C{C + 38} 176 {C + 24} 236 {C + 10} 300" fill="none" stroke="#000" stroke-opacity="0.16" stroke-width="12" filter="url(#{uid}-blur)" />
@@ -469,6 +461,26 @@
 				<path d={vLine} fill="none" stroke="#5a6080" stroke-opacity="0.35" stroke-width="1" transform="translate(0 -4.5)" />
 
 				{#if neck === 'ribbon'}
+					<!-- 꼬리 (Phase 69) — 머리 뒤에서 내려와 살짝 벌어지고, 조끼 목둘레 단을 넘어 조끼 위로 늘어진다. 끝은 제비꼬리 -->
+					<g class="ribbon-tails" transform="translate({C} 0)">
+						<g class="sway tails" style="transform-origin:0px 22px">
+							{#each [[1, 7], [-1, 9]] as const as [sg, deg] (sg)}
+								<g transform="scale({sg} 1) rotate({-deg} 0 22)">
+									<!-- 조끼 · 셔츠 위에 드리운 그림자 -->
+									<path d={tail} fill="#060a1c" opacity="0.4" transform="translate(2.8 3.8)" filter="url(#{uid}-blur2)" />
+									<path class="tail" d={tail} fill="url(#{uid}-tie-a)" />
+									<path d={tail} fill="url(#{uid}-twill)" />
+									<g clip-path="url(#{uid}-cTail)">
+										<path d={tail} fill="none" stroke="#02061a" stroke-opacity="0.5" stroke-width="8" filter="url(#{uid}-blur2)" />
+										<path d={tail} fill="url(#{uid}-tailShade)" />
+										<path d={tailShine} fill="none" stroke="#fff" stroke-opacity="0.13" stroke-width="6" filter="url(#{uid}-blur2)" />
+									</g>
+									<path d={tailFold} fill="none" stroke="#050a20" stroke-opacity="0.3" stroke-width="0.9" />
+									<path d={tail} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.9" stroke-linejoin="round" />
+								</g>
+							{/each}
+						</g>
+					</g>
 					<g class="ribbon" filter="url(#{uid}-drop)" transform="translate({C} 0)">
 						<!-- 날개 — 가운데 주름으로 위 면은 빛을, 아래 면은 그늘을. 머리 쪽은 모아 잡은 주름 -->
 						<g class="sway loops" style="transform-origin:0px 20px">
@@ -549,17 +561,28 @@
 			<rect width={W} height={H} fill="url(#{uid}-vignette)" />
 		</svg>
 
-		<!-- 깃의 배지 (대표 업적) — 조금씩 기울게 -->
+		<!-- 깃의 배지 (대표 업적) — 조금씩 기울게. onplace 면 꾹 눌러 다른 칸으로 끌어 옮긴다 (Phase 69) -->
 		{#each slots as s, i (i)}
 			{#if s.b}
 				{@const b = s.b}
-				<button class="pin u-tap" style:left={pct(s.x, W)} style:top={pct(s.y, H)} onclick={() => onpick?.(b)} aria-label="{b.title} 업적 자세히">
+				<button
+					class="pin u-tap"
+					data-drop-slot={i}
+					style:left={pct(s.x, W)}
+					style:top={pct(s.y, H)}
+					onclick={() => onpick?.(b)}
+					aria-label="{b.title} 업적 자세히"
+					use:badgeDrag={{ enabled: !!onplace, scope: () => root, ondrop: (to) => to !== i && onplace?.(b.code, to) }}
+				>
 					<span class="tilt" style:rotate="{s.tilt}deg"><Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={40} shine delay={i * 260} /></span>
 				</button>
 			{:else if emptyHref}
-				<a class="pin empty" href={emptyHref} style:left={pct(s.x, W)} style:top={pct(s.y, H)} aria-label="대표 업적 비어 있음 · 업적 보기">
+				<a class="pin empty" data-drop-slot={i} href={emptyHref} style:left={pct(s.x, W)} style:top={pct(s.y, H)} aria-label="대표 업적 비어 있음 · 업적 보기">
 					<span aria-hidden="true">+</span>
 				</a>
+			{:else if onplace}
+				<!-- 빈 칸 — 메달을 끌어 와 놓는 자리 -->
+				<span class="pin empty" data-drop-slot={i} style:left={pct(s.x, W)} style:top={pct(s.y, H)} aria-hidden="true"><span>+</span></span>
 			{/if}
 		{/each}
 	</div>
@@ -656,5 +679,29 @@
 	}
 	.pin:active {
 		transform: translate(-50%, -50%) scale(0.92);
+	}
+	/* 끌어 옮기는 중 (Phase 69) — 칸마다 점선 고리가 숨 쉬고, 메달이 올라간 칸은 커지며 밝은 고리. 집은 자리는 흐리게 */
+	.uniform:global([data-dropping]) .pin::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border: 2px dashed rgb(210 220 255 / 0.7);
+		border-radius: 50%;
+		animation: slot-pulse 0.9s ease-in-out infinite alternate;
+		pointer-events: none;
+	}
+	.uniform .pin:global([data-drop-over]) {
+		transform: translate(-50%, -50%) scale(1.22);
+	}
+	.uniform:global([data-dropping]) .pin:global([data-drop-over])::after {
+		border: 2.5px solid #ffe08a;
+		box-shadow: 0 0 14px 2px rgb(255 224 138 / 0.65);
+		animation: none;
+	}
+	@keyframes slot-pulse {
+		to {
+			scale: 1.12;
+			opacity: 0.55;
+		}
 	}
 </style>

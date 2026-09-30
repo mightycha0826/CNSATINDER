@@ -137,6 +137,8 @@ export const takeFromFolder = (ids: number[]) => rpc<FolderResult>('dm_folder_ta
 export const renameFolder = (id: number, name: string) => rpc<FolderResult>('dm_folder_rename', { p_folder: id, p_name: name });
 /** 폴더 지우기 — 안의 편지는 보관함으로 돌아간다 */
 export const deleteFolder = (id: number) => rpc<FolderResult>('dm_folder_delete', { p_folder: id });
+/** 편지 지우기 (Phase 69) — 내 편지함에서만 (상대의 편지 · 편지 줄기는 그대로). 받은 편지는 열어 본 것만. moved = 지운 수 */
+export const deleteLetters = (ids: number[]) => rpc<FolderResult>('dm_letter_delete', { p_msgs: ids });
 export function folderError(r: FolderResult): string | null {
 	switch (r.status) {
 		case 'ok':

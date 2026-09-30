@@ -18,7 +18,8 @@ try {
 	console.log('[업적 화면]');
 	await page.goto(U('/dev/achievements')); await page.locator('.grid').waitFor(); await page.waitForTimeout(400);
 	check('요약: 모은 업적 수 · 금 · 은 · 동 (특별 업적은 금 · 은 · 동에 안 셈)', (await page.locator('.summary').innerText()).replace(/\s+/g, ' ').includes('10 / 13') && (await page.locator('.metals').innerText()).replace(/\s+/g, '') === '금2은3동4', await page.locator('.summary').innerText());
-	check('대표 업적 3칸', (await page.locator('.featured .slot [role="img"]').count()) === 3);
+	check('★ 대표 업적 = 교복 깃의 배지 3개 (Phase 69 — 칸 줄 대신 교복)', (await page.locator('.featured .uniform button.pin [role="img"]').count()) === 3
+		&& (await page.locator('.featured .hint').innerText()) === '메달을 꾹 눌러 교복에 달아요');
 	check('메달 13개 · 잠긴 것은 잠김으로', (await page.locator('.grid .card').count()) === 13 && (await page.locator('.card.locked').count()) === 3);
 	check('★ 베타 테스터 — 특별 업적 ("특별" · 받음)', (await page.locator('.card', { hasText: '베타 테스터' }).locator('[aria-label="베타 테스터 특별"]').count()) === 1
 		&& (await page.locator('.card', { hasText: '베타 테스터' }).innerText()).includes('받음'));
@@ -49,6 +50,68 @@ try {
 	check('★ 특별 업적 자세히 — 등급 기준 대신 "운영진이 주는 특별 업적"', (await beta.innerText()).includes('운영진이 주는 특별 업적') && (await beta.locator('.tiers').count()) === 0);
 	await page.screenshot({ path: `${SP}/ach-6-beta.png` });
 	await page.keyboard.press('Escape');
+
+	console.log('[끌어 놓기 — 메달을 교복으로 · 교복 안에서 (Phase 69)]');
+	{
+		const tctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+		const tp = await tctx.newPage();
+		const terrs = []; tp.on('pageerror', (e) => terrs.push(String(e)));
+		const cdp = await tctx.newCDPSession(tp);
+		const touch = (type, x = 0, y = 0) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+		const glide = async (from, to, steps = 12) => { for (let i = 1; i <= steps; i++) { await touch('touchMove', from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps); await tp.waitForTimeout(16); } };
+		const mid = async (loc) => { const b = await loc.boundingBox(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; };
+		const LIFT = 34; // 메달은 손끝 위로 떠서 따라온다 — 칸 아래 LIFT 에서 떼면 칸 위에 놓인다
+		const feat = () => tp.evaluate(() => JSON.stringify(window.__featured ?? null));
+		const toY = async (loc, y) => { await loc.evaluate((e, y) => scrollBy(0, e.getBoundingClientRect().top - y), y); await tp.waitForTimeout(250); };
+		await tp.goto(U('/dev/achievements')); await tp.locator('.grid .card').first().waitFor(); await tp.waitForTimeout(500);
+		const card = (t) => tp.locator('.card', { hasText: t });
+		const slot = (i) => tp.locator(`.featured .uniform [data-drop-slot="${i}"]`);
+
+		// 짧게 밀면 스크롤 — 집지 않는다
+		await toY(card('대화 여행자'), 560);
+		const s0 = await tp.evaluate(() => scrollY), c0 = await mid(card('대화 여행자').locator('.medal'));
+		await touch('touchStart', c0.x, c0.y); await glide(c0, { x: c0.x, y: c0.y - 200 }, 8); await touch('touchEnd'); await tp.waitForTimeout(500);
+		check('★ 메달 위에서 짧게 밀면 그냥 스크롤 (집지 않는다)', (await tp.evaluate(() => scrollY)) > s0 + 100 && (await feat()) === 'null' && (await tp.locator('.drag-ghost').count()) === 0);
+
+		// 목록 아래의 메달을 꾹 눌러 집으면 교복이 보이게 스크롤 → 두 번째 칸에 놓는다
+		await toY(card('대화 여행자'), 560);
+		const c1 = await mid(card('대화 여행자').locator('.medal'));
+		await touch('touchStart', c1.x, c1.y); await tp.waitForTimeout(450);
+		const held = await tp.evaluate(() => ({ dropping: !!document.querySelector('.featured .uniform[data-dropping]'), src: !!document.querySelector('.card [data-drag-src]'), ghost: document.querySelectorAll('.drag-ghost').length }));
+		await tp.waitForTimeout(700);
+		const shown = await tp.evaluate(() => { const r = document.querySelector('.featured .uniform').getBoundingClientRect(); return r.top >= document.querySelector('.topbar').getBoundingClientRect().bottom - 1 && r.bottom <= innerHeight; });
+		check('★ 꾹 누르면 메달을 집는다 — 떠오른 메달 · 빈자리는 흐리게 · 교복 칸에 점선 고리', held.dropping && held.src && held.ghost === 1, JSON.stringify(held));
+		check('★ 집는 순간 교복이 화면 밖이면 보이게 스크롤', shown);
+		const t1 = await mid(slot(1));
+		await glide(c1, { x: t1.x, y: t1.y + LIFT }, 14); await tp.waitForTimeout(120);
+		check('칸 위에 올라가면 그 칸이 커지며 밝게', (await slot(1).getAttribute('data-drop-over')) === '' && (await tp.locator('.featured [data-drop-over]').count()) === 1);
+		await tp.screenshot({ path: `${SP}/ach-7-drag.png` });
+		await touch('touchEnd'); await tp.waitForTimeout(500);
+		check('★ 놓으면 그 칸의 대표 업적이 된다 (있던 배지는 밀려난다)', (await feat()) === '["fun","chats","warm"]', await feat());
+		check('끌고 놓아도 자세히 창이 같이 열리지 않고 · 떠 있던 메달은 사라진다', (await tp.getByRole('dialog').count()) === 0 && (await tp.locator('.drag-ghost').count()) === 0 && (await tp.locator('[data-drag-src], [data-dropping]').count()) === 0);
+		check('교복 깃에 바로 보인다', (await slot(1).getAttribute('aria-label')) === '대화 여행자 업적 자세히');
+
+		// 교복 안에서 칸 옮기기 — 첫 칸의 배지를 셋째 칸으로 (자리 바꾸기)
+		const a0 = await mid(slot(0)), a2 = await mid(slot(2));
+		await touch('touchStart', a0.x, a0.y); await tp.waitForTimeout(450); await glide(a0, { x: a2.x, y: a2.y + LIFT }); await tp.waitForTimeout(120); await touch('touchEnd'); await tp.waitForTimeout(500);
+		check('★ 교복의 배지를 꾹 눌러 다른 칸에 놓으면 자리를 바꾼다', (await feat()) === '["warm","chats","fun"]' && (await tp.getByRole('dialog').count()) === 0, await feat());
+
+		// 칸 밖에 놓으면 그대로 · 잠긴 메달은 집히지 않는다
+		const b1 = await mid(slot(1));
+		await touch('touchStart', b1.x, b1.y); await tp.waitForTimeout(450); await glide(b1, { x: 360, y: b1.y + 160 }); await touch('touchEnd'); await tp.waitForTimeout(500);
+		check('칸 밖에 놓으면 제자리로 (그대로)', (await feat()) === '["warm","chats","fun"]' && (await tp.locator('.drag-ghost').count()) === 0);
+		await toY(card('친절왕'), 560);
+		const k = await mid(card('친절왕').locator('.medal'));
+		await touch('touchStart', k.x, k.y); await tp.waitForTimeout(450);
+		check('★ 잠긴 메달은 꾹 눌러도 집히지 않는다', (await tp.locator('[data-dropping]').count()) === 0 && (await card('친절왕').getAttribute('data-drag')) === null);
+		await touch('touchEnd'); await tp.waitForTimeout(300);
+		await tp.keyboard.press('Escape'); await tp.waitForTimeout(300);
+		// 짧게 누르면 전처럼 자세히
+		await card('이야기꾼').tap(); await tp.waitForTimeout(350);
+		check('짧게 누르면 전처럼 자세히 (대표 업적 걸기 · 내리기)', (await tp.getByRole('dialog', { name: '이야기꾼' }).count()) === 1);
+		check('페이지 오류 없음 (끌어 놓기)', terrs.length === 0, terrs.join(' / '));
+		await tctx.close();
+	}
 
 	console.log('[교복 — 대표 업적은 깃의 배지 (Phase 60)]');
 	await page.goto(U('/dev/achievements?uniform')); await page.locator('.uniform').first().waitFor(); await page.waitForTimeout(400);
@@ -89,7 +152,7 @@ try {
 		&& (await uni('tie', 3).locator('.ribbon').count()) === 0 && (await uni('ribbon', 3).locator('.tie').count()) === 0);
 	// Phase 65 · 66 — 실제로 입은 것처럼 겹친다: 칼라는 조끼 목둘레에 닿지 않고, 리본 머리와 넥타이 매듭은 재킷에 닿지 않으며
 	// 리본 고리(1.5배 — 앞섶 사이보다 넓다)는 끝이 재킷 밑으로 들어가고(재킷보다 먼저 그린다), 보이는 곳은 조끼 위에 걸치지 않고,
-	// 넥타이 날 끝은 조끼 속에 있고, 리본 꼬리는 벌어져 조끼 목둘레 단 바로 위에서 끝난다 (Phase 68 — 제비꼬리 끝이 보이게)
+	// 넥타이 날 끝은 조끼 속에 있고, 리본 꼬리는 조끼보다 나중에 그려져 조끼 목둘레 단을 넘어 조끼 위로 늘어진다 (Phase 69 — 조끼 밖으로)
 	const layering = async (neck) => uni(neck, 3).evaluate((u) => {
 		const into = (el, target) => { const m = target.getScreenCTM().inverse().multiply(el.getScreenCTM()); return (x, y) => new DOMPoint(x, y).matrixTransform(m); };
 		const outline = (el) => { const L = el.getTotalLength(), out = []; for (let d = 0; d <= L; d += 2) out.push(el.getPointAtLength(d)); return out; };
@@ -111,7 +174,10 @@ try {
 			loopsUnderJacket: under('.ribbon .loop', lap),
 			bowAboveVest: clear('.ribbon .loop, .ribbon .bow-knot', vest, 4, lap),
 			tuckedInVest: tucked('.tie .blade', vest),
-			tailsAboveVest: clear('.ribbon-tails .tail', vest, 5),
+			tailsOverVest: [...u.querySelectorAll('.ribbon-tails .tail')].every((el) => {
+				const b = el.getBBox(), f = into(el, vest);
+				return !!(el.compareDocumentPosition(vest) & Node.DOCUMENT_POSITION_PRECEDING) && vest.isPointInFill(f(b.x + b.width / 2, b.y + b.height - 3));
+			}),
 			bowOverVest: over('.ribbon .loop, .ribbon .bow-knot', vest)
 		};
 	});
@@ -181,6 +247,12 @@ try {
 			});
 			const [r, l] = inner[0].lo > inner[1].lo ? inner : [inner[1], inner[0]];
 			out.tails = inner.length;
+			// 꼬리 폭 (가운데 높이에서 가로로 잰 윤곽 안 길이) ÷ 리본 너비
+			const t0 = u.querySelector('.ribbon-tails .tail'), tb = t0.getBBox(), ty = tb.y + tb.height * 0.45;
+			let tw = 0;
+			for (let x = tb.x - 10; x < tb.x + tb.width + 10; x += 0.25) if (t0.isPointInFill(new DOMPoint(x, ty))) tw += 0.25;
+			const bowW = Math.max(...rs.map((r) => r.right)) - Math.min(...rs.map((r) => r.left));
+			out.tailRatio = +((tw * t0.getScreenCTM().a) / bowW).toFixed(2);
 			out.tailGap = +((r.lo - l.hi) / frame.width).toFixed(3);
 		}
 		return out;
@@ -192,7 +264,24 @@ try {
 		else {
 			check('★ 리본은 카라 벌어짐의 2/3쯤 · 프레임 안 · 카라 위에 얹힌다', f.bowRatio >= 0.55 && f.bowRatio <= 0.8 && f.bowInFrame && f.bowOverCollar, JSON.stringify(f));
 			check('★ 리본 꼬리 둘이 서로 벌어진다 (한 장처럼 겹치지 않게)', f.tails === 2 && f.tailGap >= 0.04, JSON.stringify(f));
+			check('★ 리본 꼬리는 굵다 — 꼬리 폭 ≥ 리본 너비의 30% (Phase 69)', f.tailRatio >= 0.3, JSON.stringify(f));
 		}
+	}
+	// Phase 69 — 마우스는 누른 채 끌면 바로 집는다 (길게 누를 필요 없음) · 끄는 동안 칸 표시
+	{
+		const pinAt = (i) => uni('tie', 3).locator(`[data-drop-slot="${i}"]`);
+		const before = JSON.stringify(await page.evaluate(() => window.__featured));
+		const pickedBefore = await page.locator('.picked').innerText();
+		const m0 = await pinAt(0).boundingBox(), m1 = await pinAt(1).boundingBox();
+		await page.mouse.move(m0.x + m0.width / 2, m0.y + m0.height / 2); await page.mouse.down();
+		await page.mouse.move(m1.x + m1.width / 2, m1.y + m1.height / 2, { steps: 10 }); await page.waitForTimeout(100);
+		const during = await uni('tie', 3).evaluate((u) => ({ dropping: u.hasAttribute('data-dropping'), over: u.querySelector('[data-drop-over]')?.getAttribute('data-drop-slot') }));
+		await page.mouse.up(); await page.waitForTimeout(300);
+		const f0 = JSON.parse(before ?? 'null') ?? ['fun', 'pioneer', 'warm'];
+		check('★ 마우스로 끌어 교복 칸 옮기기 (자리 바꾸기 · 끈 뒤 누르기로 세지 않는다)', during.dropping && during.over === '1' && JSON.stringify(await page.evaluate(() => window.__featured)) === JSON.stringify([f0[1], f0[0], ...f0.slice(2)])
+			&& (await page.locator('.picked').innerText()) === pickedBefore, JSON.stringify({ during, before, after: await page.evaluate(() => window.__featured) }));
+		check('끌기 없이 누르면 전처럼 그 업적 (교복)', await (async () => { await pinAt(2).click(); await page.waitForTimeout(150); return (await page.locator('.picked').innerText()).length > 0; })());
+		check('★ 상대 프로필 교복의 배지는 끌 수 없다', (await page.locator('.sheet-size .uniform [data-drag]').count()) === 0 && (await uni('tie', 3).locator('button.pin[data-drag]').count()) === 3);
 	}
 	// Phase 61 — 깃이 커서 배지 3개가 다 깃 안에 (가운데 · 위아래 · 좌우 끝), 주머니는 수평으로 교표 바로 위 가운데 (움직임을 멈추고 잰다)
 	for (const [neck, w] of [['tie', 0], ['ribbon', 320]]) {

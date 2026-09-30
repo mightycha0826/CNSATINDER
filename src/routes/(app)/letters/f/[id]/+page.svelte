@@ -2,7 +2,8 @@
 	/**
 	 * 편지 폴더 한 개 (Phase 47) — 보관함의 폴더 서랍에서. 받은 · 보낸 편지가 섞여서 최근 것부터 (봉투는 편지마다 제 모양).
 	 * 봉투마다 "받은 편지" · "보낸 편지" 딱지, 둘 다 들어 있으면 위에 전체 · 받은 편지 · 보낸 편지 나눠 보기(편지 수는 서버가 센 것, Phase 47-3).
-	 * 누르면 편지를 연다. 고르기 → "폴더에서 빼기"(보관함으로) · "다른 폴더로". ⋯ → 이름 바꾸기 · 폴더 지우기(편지는 보관함으로).
+	 * 누르면 편지를 연다. 선택 → "삭제"(내 편지함에서만, Phase 69) · "폴더에서 빼기"(보관함으로) · "다른 폴더로".
+	 * ⋯ → 이름 바꾸기 · 폴더 지우기(편지는 보관함으로).
 	 */
 	import { page } from '$app/state';
 	import BackButton from '$lib/ui/BackButton.svelte';
@@ -12,7 +13,7 @@
 	import FolderPicker from '$lib/letters/FolderPicker.svelte';
 	import SelectBar from '$lib/letters/SelectBar.svelte';
 	import { BOX, PAGE, refreshMailbox } from '$lib/letters/mailbox.svelte';
-	import { FOLDER_MAX, deleteFolder, fetchFolder, folderError, renameFolder, takeFromFolder, type Box, type MailItem } from '$lib/letters/api';
+	import { FOLDER_MAX, deleteFolder, deleteLetters, fetchFolder, folderError, renameFolder, takeFromFolder, type Box, type MailItem } from '$lib/letters/api';
 	import { backClose, historySettled, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { errMsg, toast } from '$lib/state.svelte';
 
@@ -77,7 +78,7 @@
 		busy = false;
 	}
 
-	// ── 고르기 ──
+	// ── 선택 ──
 	let selecting = $state(false);
 	let picked = $state<number[]>([]);
 	let moving = $state(false);
@@ -86,6 +87,7 @@
 		selecting = false;
 		picked = [];
 		moving = false;
+		confirming = false;
 	}
 	const toggle = (it: MailItem) => (picked = picked.includes(it.id) ? picked.filter((x) => x !== it.id) : [...picked, it.id]);
 	/** 폴더에서 나간 편지 — 목록에서 빼고, 보관함 목록 · 폴더 수를 새로 */
@@ -110,10 +112,33 @@
 	async function moved(to: string) {
 		const ids = picked;
 		moving = false;
-		await historySettled(); // 폴더 시트의 뒤로가기 칸이 걷힌 뒤에 고르기를 끝낸다
+		await historySettled(); // 폴더 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
 		stopSelect();
 		leave(ids);
 		toast(to ? `'${to}' 폴더로 ${ids.length}통을 옮겼어요` : '옮겼어요');
+	}
+
+	// ── 삭제 (Phase 69) — 확인 시트 → 내 편지함에서만 지운다 (폴더에서도 빠진다) ──
+	let confirming = $state(false);
+	let deleting = $state(false);
+	async function removeLetters() {
+		if (deleting) return;
+		const ids = picked;
+		deleting = true;
+		try {
+			const r = await deleteLetters(ids);
+			const err = folderError(r);
+			if (err) return toast(err);
+			confirming = false;
+			await historySettled(); // 확인 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
+			stopSelect();
+			leave(ids);
+			toast(`편지 ${r.status === 'ok' ? r.moved : ids.length}통을 삭제했어요`);
+		} catch (e) {
+			toast(errMsg(e));
+		} finally {
+			deleting = false;
+		}
 	}
 
 	// ── ⋯ 메뉴: 이름 바꾸기 · 지우기 ──
@@ -162,11 +187,11 @@
 
 <div class="topbar">
 	<BackButton href="/letters/archive" history />
-	<span class="title fname">{selecting ? '편지 고르기' : name || '폴더'}</span>
+	<span class="title fname">{selecting ? '편지 선택' : name || '폴더'}</span>
 	{#if selecting}
 		<button class="btn-text push" onclick={stopSelect}>취소</button>
 	{:else if !gone && loaded}
-		{#if items.length}<button class="btn-text push" onclick={() => (selecting = true)}>고르기</button>{/if}
+		{#if items.length}<button class="btn-text push" onclick={() => (selecting = true)}>선택</button>{/if}
 		<MoreButton onclick={() => (menu = 'menu')} label="폴더 메뉴" push={!items.length} />
 	{/if}
 </div>
@@ -178,7 +203,7 @@
 		<div class="empty">
 			<span class="icon" aria-hidden="true"></span>
 			<p>폴더가 비어 있어요</p>
-			<a class="btn-text" href="/letters/archive">보관함에서 편지 골라 넣기</a>
+			<a class="btn-text" href="/letters/archive">보관함에서 편지 선택해 넣기</a>
 		</div>
 	{:else}
 		{#if mixed}
@@ -213,12 +238,21 @@
 
 {#if selecting}
 	<SelectBar count={picked.length}>
+		<button class="danger" onclick={() => (confirming = true)} disabled={!picked.length}>삭제</button>
 		<button class="plain" onclick={takeOut} disabled={!picked.length}>폴더에서 빼기</button>
 		<button class="go" onclick={() => (moving = true)} disabled={!picked.length}>다른 폴더로</button>
 	</SelectBar>
 {/if}
 {#if moving}
 	<FolderPicker ids={picked} folders={BOX.folders} exclude={id} onclose={() => (moving = false)} ondone={moved} />
+{/if}
+{#if confirming}
+	<Sheet onclose={() => (confirming = false)} label="편지 삭제">
+		<p class="ask">편지 {picked.length}통을 삭제할까요?</p>
+		<p class="warn">내 편지함에서만 지워지고 상대에게는 그대로 남아요. 삭제한 편지는 되돌릴 수 없어요.</p>
+		<button class="item danger" onclick={removeLetters} disabled={deleting} aria-busy={deleting}>삭제</button>
+		<button class="item" onclick={() => (confirming = false)}>취소</button>
+	</Sheet>
 {/if}
 
 {#if menu}

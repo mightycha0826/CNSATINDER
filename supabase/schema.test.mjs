@@ -3599,5 +3599,58 @@ console.log('\n[91] 실시간 전달 = DB 방송 · 비공개 채널 (Phase 55)'
 	check('백그라운드 박동(p_online = false)엔 안 싣는다', (await rpcAs(outsider, 'heartbeat', false)).ach_new === false);
 }
 
+console.log('\n[92] 편지 지우기 — 선택한 편지를 나에게서만 (Phase 69)');
+{
+	let no = 27600;
+	const named = async (name, grade, gender) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name, grade = excluded.grade', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query('update public.profiles set gender=$2, onboarded=true where id=$1', [id, gender]);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const A = await named('지움보냄', 1, 'f');
+	const B = await named('지움받음', 2, 'm');
+	const E = await named('지움남', 3, 'm');
+	const box = async (u, which) => (await rpcAs(u, 'dm_mailbox', which)).letters.map((x) => x.id);
+	const s1 = await rpcAs(A, 'dm_send', B, '지울 편지');
+	const s2 = await rpcAs(A, 'dm_send', B, '폴더에 둔 편지');
+	const s3 = await rpcAs(B, 'dm_send', E, '내가 보낸 편지');
+	const s4 = await rpcAs(A, 'dm_send', B, '안 연 편지');
+	check('편지 넷 준비', [s1, s2, s3, s4].every((x) => x.status === 'ok'), JSON.stringify([s1, s2, s3, s4]));
+	await rpcAs(B, 'dm_open', s1.msg_id);
+	await rpcAs(B, 'dm_open', s2.msg_id);
+	const put = await rpcAs(B, 'dm_folder_put', [s2.msg_id], null, '지울 폴더');
+	const fid = put.folder.id;
+
+	const del = await rpcAs(B, 'dm_letter_delete', [s1.msg_id, s2.msg_id, s3.msg_id, s4.msg_id]);
+	check('★ 선택한 편지를 지운다 — 안 연 받은 편지(s4)는 빠진다', del.status === 'ok' && del.moved === 3, JSON.stringify(del));
+	check('★ 지운 편지는 받은 · 보낸 편지 목록에서 사라진다 (안 연 편지는 그대로)', JSON.stringify(await box(B, 'received')) === JSON.stringify([s4.msg_id]) && (await box(B, 'sent')).length === 0);
+	const f = (await rpcAs(B, 'dm_mailbox', 'received')).folders.find((x) => x.id === fid);
+	check('★ 폴더에 있던 편지도 사라지고 폴더 수에서 빠진다 (폴더는 남는다)', (await rpcAs(B, 'dm_mailbox', 'received', null, fid)).letters.length === 0 && f?.count === 0
+		&& Number((await one('select count(*) n from private.dm_folder_items where owner_id = $1', [B])).n) === 0, JSON.stringify(f));
+	check('★ 지운 편지는 열 수 없다', (await rpcAs(B, 'dm_open', s1.msg_id)).status === 'not_found' && (await rpcAs(B, 'dm_open', s3.msg_id)).status === 'not_found');
+	check('★ 지운 편지는 폴더에 다시 못 넣는다', (await rpcAs(B, 'dm_folder_put', [s1.msg_id], fid, null)).moved === 0);
+	check('★ 상대의 편지는 그대로 — A 의 보낸 편지 · E 의 받은 편지', (await box(A, 'sent')).includes(s1.msg_id) && (await box(E, 'received')).includes(s3.msg_id)
+		&& (await rpcAs(E, 'dm_open', s3.msg_id)).status === 'ok');
+	check('편지는 DB 에서 지워지지 않는다 (신고 · 운영 기록)', Number((await one('select count(*) n from private.dm_msgs where id = any($1)', [[s1.msg_id, s2.msg_id, s3.msg_id]])).n) === 3);
+	const again = await rpcAs(B, 'dm_letter_delete', [s1.msg_id]);
+	check('이미 지운 편지를 또 지우면 0통', again.status === 'ok' && again.moved === 0);
+	check('★ 남의 편지는 못 지운다', (await rpcAs(E, 'dm_letter_delete', [s1.msg_id, s4.msg_id])).moved === 0 && (await box(A, 'sent')).includes(s1.msg_id));
+	check('빈 목록 · 200통 넘게는 안 된다', (await rpcAs(B, 'dm_letter_delete', [])).status === 'bad_request'
+		&& (await rpcAs(B, 'dm_letter_delete', Array.from({ length: 201 }, (_, i) => i + 1))).status === 'bad_request');
+
+	// 줄기는 그대로 — 버리기와 달리 답장이 오가고, 상대가 새로 보낸 편지는 다시 보인다
+	await rpcAs(B, 'dm_open', s4.msg_id);
+	const r1 = await rpcAs(B, 'dm_reply_to', s4.msg_id, '답장');
+	await rpcAs(A, 'dm_open', r1.msg_id);
+	const s5 = await rpcAs(A, 'dm_reply_to', r1.msg_id, '지운 뒤 새 편지');
+	check('★ 지워도 편지 줄기는 그대로 — 답장이 오가고 새 편지는 보인다', r1.status === 'ok' && s5.status === 'ok' && (await box(B, 'received')).includes(s5.msg_id), JSON.stringify([r1, s5]));
+	check('안 읽은 수는 안 연 편지만 (지운 편지와 상관없다)', (await rpcAs(B, 'dm_unread')) === 1);
+	await expectError('★ 지운 편지 표는 직접 못 읽는다', () => rowsAs(B, 'select * from private.dm_hidden_msgs'), 'permission denied');
+	await expectError('로그인 안 하면 못 부른다', () => rowsAs(null, `select public.dm_letter_delete('{1}'::bigint[])`), 'permission denied');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail === 0 ? 0 : 1);

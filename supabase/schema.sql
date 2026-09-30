@@ -5627,6 +5627,8 @@ begin
   else return jsonb_build_object('status', 'not_found'); end if;
   v_hidden := case when t.sender_id = me then t.sender_hidden else t.recipient_hidden end;
   if v_hidden then return jsonb_build_object('status', 'not_found'); end if;
+  -- 내가 지운 편지 (Phase 69)
+  if exists (select 1 from private.dm_hidden_msgs where owner_id = me and msg_id = p_msg) then return jsonb_build_object('status', 'not_found'); end if;
   if v_reader and m.opened_at is null then
     v_first := true;
     update private.dm_msgs set opened_at = now() where id = p_msg returning * into m;
@@ -6198,10 +6200,11 @@ create index if not exists dm_folder_items_folder on private.dm_folder_items (fo
 create index if not exists dm_folder_items_msg on private.dm_folder_items (msg_id);
 alter table private.dm_folder_items enable row level security;
 
--- 이 편지가 나에게 받은 편지인지 보낸 편지인지 (내가 버린 줄기면 null)
+-- 이 편지가 나에게 받은 편지인지 보낸 편지인지 (내가 버린 줄기 · 내가 지운 편지(Phase 69)면 null)
 create or replace function private.dm_box_of(m private.dm_msgs, t private.dm_threads, p_me uuid)
-returns text language sql immutable set search_path = '' as $fn$
-  select case when (m.from_sender and t.recipient_id = p_me and not t.recipient_hidden)
+returns text language sql stable set search_path = '' as $fn$
+  select case when exists (select 1 from private.dm_hidden_msgs h where h.owner_id = p_me and h.msg_id = m.id) then null
+              when (m.from_sender and t.recipient_id = p_me and not t.recipient_hidden)
                 or (not m.from_sender and t.sender_id = p_me and not t.sender_hidden) then 'received'
               when (m.from_sender and t.sender_id = p_me and not t.sender_hidden)
                 or (not m.from_sender and t.recipient_id = p_me and not t.recipient_hidden) then 'sent' end;
@@ -6701,3 +6704,44 @@ begin
   end loop;
 end
 $do$;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 69 — 편지 지우기 (나에게서만)
+-- 보관함 · 폴더에서 편지를 여러 통 선택해 지운다. 내 편지함에서만 사라지고 상대의 편지는 그대로다.
+-- 편지 줄기도 그대로 — 버리기 · 차단과 달리 상대는 계속 답장할 수 있고, 새로 온 편지는 다시 보인다.
+-- 받은 편지는 봉투를 열어 본 것만 (폴더 넣기와 같은 규칙 — 안 연 편지가 새 편지 더미 · 안 읽은 수에서 몰래 사라지지 않게).
+-- 지운 편지는 폴더에서도 빠진다. 편지함 · 폴더 수 · 폴더 넣기는 dm_box_of 가, 열기는 dm_open 이 지운 편지를 없는 것으로 본다
+-- (두 함수는 제자리에서 고침). 되돌리기는 없다.
+-- ════════════════════════════════════════════════════════════════════
+create table if not exists private.dm_hidden_msgs (
+  owner_id  uuid not null references public.profiles(id) on delete cascade,
+  msg_id    bigint not null references private.dm_msgs(id) on delete cascade,
+  hidden_at timestamptz not null default now(),
+  primary key (owner_id, msg_id)
+);
+create index if not exists dm_hidden_msgs_msg on private.dm_hidden_msgs (msg_id);
+alter table private.dm_hidden_msgs enable row level security;
+
+-- 편지 여러 통 지우기 — 내가 볼 수 있는 편지만(받은 편지는 열어 본 것만). moved = 지운 수
+create or replace function public.dm_letter_delete(p_msgs bigint[])
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); n int;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if p_msgs is null or cardinality(p_msgs) = 0 or cardinality(p_msgs) > 200 then return jsonb_build_object('status', 'bad_request'); end if;
+  insert into private.dm_hidden_msgs (owner_id, msg_id)
+  select me, m.id
+    from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
+   where m.id = any(p_msgs) and m.is_letter and t.status <> 'removed'
+     and case private.dm_box_of(m, t, me) when 'sent' then true when 'received' then m.opened_at is not null else false end
+  on conflict (owner_id, msg_id) do nothing;
+  get diagnostics n = row_count;
+  delete from private.dm_folder_items fi
+   where fi.owner_id = me and fi.msg_id = any(p_msgs)
+     and exists (select 1 from private.dm_hidden_msgs h where h.owner_id = me and h.msg_id = fi.msg_id);
+  return jsonb_build_object('status', 'ok', 'moved', n);
+end
+$fn$;
+revoke all on function public.dm_letter_delete(bigint[]) from public, anon;
+grant execute on function public.dm_letter_delete(bigint[]) to authenticated;

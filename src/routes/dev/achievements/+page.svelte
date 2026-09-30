@@ -4,6 +4,8 @@
 	 *   /dev/achievements            업적 전체
 	 *   /dev/achievements?celebrate  새 업적 축하 시트 (&one = 하나만)
 	 *   /dev/achievements?uniform    교복 (Phase 60) — 넥타이 · 리본 × 배지 0~3개, 상대 프로필 시트 크기
+	 *                                (배지 3개짜리는 꾹 눌러 칸을 옮길 수 있다 — Phase 69)
+	 *   /dev/achievements?ribbon     업적 전체를 리본 교복으로
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
 	import { goto } from '$app/navigation';
@@ -11,7 +13,7 @@
 	import AchievementsView from '$lib/ui/AchievementsView.svelte';
 	import AchievementCelebrate from '$lib/ui/AchievementCelebrate.svelte';
 	import Uniform from '$lib/ui/Uniform.svelte';
-	import type { Achievement, BadgeLite, Category, MyAchievements, Tier } from '$lib/achievements';
+	import { placedFeatured, type Achievement, type BadgeLite, type Category, type MyAchievements, type Tier } from '$lib/achievements';
 
 	const A = (
 		code: string,
@@ -82,7 +84,13 @@
 			{#each [3, 2, 0] as n (n)}
 				{#each ['tie', 'ribbon'] as const as neck (neck)}
 					<section class="u" data-neck={neck} data-n={n}>
-						<Uniform {neck} badges={data.featured.slice(0, n)} emptyHref="/dev/achievements" onpick={(b) => (picked = b.title)} />
+						<Uniform
+							{neck}
+							badges={data.featured.slice(0, n)}
+							emptyHref="/dev/achievements"
+							onpick={(b) => (picked = b.title)}
+							onplace={n === 3 ? (code, slot) => void feature(placedFeatured(data, code, slot)) : undefined}
+						/>
 					</section>
 				{/each}
 			{/each}
@@ -91,7 +99,7 @@
 		</div>
 	{:else}
 		<div class="page ach">
-			<AchievementsView {data} onfeature={feature} />
+			<AchievementsView {data} onfeature={feature} neck={page.url.searchParams.has('ribbon') ? 'ribbon' : 'tie'} />
 		</div>
 	{/if}
 	{#if celebrate}<AchievementCelebrate preview={fresh} />{/if}

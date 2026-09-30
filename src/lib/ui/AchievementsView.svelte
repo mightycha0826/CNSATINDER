@@ -3,12 +3,18 @@
 	 * 업적 화면 본문 (Phase 31) — /me/achievements 와 개발용 미리보기(/dev/achievements)가 같이 쓴다.
 	 * 위: 금 · 은 · 동 개수와 대표 업적(대화 상대에게 보이는 3개). 아래: 분류 탭 + 메달 격자.
 	 * 메달을 누르면 어떻게 얻는지 · 등급 기준(BadgeDetail — 대화 상대 · 프로필의 메달을 눌렀을 때와 같은 모양)과 "대표 업적으로 걸기".
+	 * Phase 69 — 대표 업적은 교복(프로필과 같은 그림)으로. 클래시로얄 덱처럼 딴 메달을 꾹 눌러 교복 깃의 칸으로 끌어 놓으면
+	 *   그 칸의 대표 업적이 되고(있던 배지는 밀려난다), 교복의 배지도 꾹 눌러 다른 칸과 자리를 바꾼다 (lib/ui/badgeDrag).
+	 *   집는 순간 교복이 화면 밖이면 보이게 스크롤한다. 잠긴 메달은 집히지 않는다.
 	 */
 	import Badge from './Badge.svelte';
 	import BadgeDetail from './BadgeDetail.svelte';
 	import Sheet from './Sheet.svelte';
+	import Uniform from './Uniform.svelte';
+	import { badgeDrag } from './badgeDrag';
 	import {
 		CATEGORIES,
+		placedFeatured,
 		progress,
 		progressText,
 		toggledFeatured,
@@ -17,7 +23,17 @@
 		type MyAchievements
 	} from '$lib/achievements';
 
-	let { data, onfeature }: { data: MyAchievements; onfeature: (codes: string[]) => Promise<boolean> } = $props();
+	let {
+		data,
+		onfeature,
+		neck = 'tie'
+	}: {
+		data: MyAchievements;
+		/** 대표 업적 바꾸기 — quiet 면 알림 없이 (끌어 놓기는 교복이 바로 바뀌는 게 알림이다) */
+		onfeature: (codes: string[], quiet?: boolean) => Promise<boolean>;
+		neck?: 'tie' | 'ribbon';
+	} = $props();
+	let dress: HTMLDivElement | undefined = $state();
 
 	let cat = $state<Category | 'all'>('all');
 	let open = $state<Achievement | null>(null);
@@ -36,6 +52,11 @@
 		busy = false;
 		if (ok) open = null;
 	}
+	/** 메달을 교복 칸에 놓았다 (목록에서 끌어 왔든, 교복 안에서 옮겼든) */
+	function place(code: string, slot: number) {
+		const codes = placedFeatured(data, code, slot);
+		if (codes.join() !== featuredCodes.join()) void onfeature(codes, true);
+	}
 </script>
 
 <section class="summary" aria-label="업적 요약">
@@ -53,20 +74,11 @@
 <section class="featured" aria-labelledby="feat-h">
 	<div class="feat-head">
 		<h2 id="feat-h">대표 업적</h2>
+		{#if earned.length}<span class="hint">메달을 꾹 눌러 교복에 달아요</span>{/if}
 	</div>
-	<div class="feat-row">
-		{#each [0, 1, 2] as i (i)}
-			{@const b = data.featured[i]}
-			<div class="slot">
-				{#if b}
-					<Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={60} label shine />
-					<span class="slot-name">{b.title}</span>
-				{:else}
-					<span class="empty" aria-hidden="true">+</span>
-					<span class="slot-name muted">비어 있음</span>
-				{/if}
-			</div>
-		{/each}
+	<!-- 교복 — 깃의 칸에 메달을 끌어 놓는다 -->
+	<div class="dress" bind:this={dress}>
+		<Uniform {neck} badges={data.featured} onpick={(b) => (open = data.items.find((a) => a.code === b.code) ?? null)} onplace={place} />
 	</div>
 </section>
 
@@ -79,7 +91,12 @@
 <ul class="grid">
 	{#each shown as a (a.code)}
 		<li>
-			<button class="card" class:locked={a.tier === 0} onclick={() => (open = a)}>
+			<button
+				class="card"
+				class:locked={a.tier === 0}
+				onclick={() => (open = a)}
+				use:badgeDrag={{ enabled: a.tier > 0, scope: () => dress?.querySelector<HTMLElement>('.uniform'), grab: (n) => n.querySelector('.medal'), reveal: true, ondrop: (slot) => place(a.code, slot) }}
+			>
 				{#if a.new}<span class="new" aria-label="새 업적">NEW</span>{/if}
 				<Badge code={a.code} icon={a.icon} tier={a.tier} title={a.title} size={52} label shine={a.new} />
 				<span class="name">{a.title}</span>
@@ -189,31 +206,10 @@
 		margin: 0;
 		font-size: 15px;
 	}
-	.feat-row {
-		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 8px;
-	}
-	.slot {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 8px;
-	}
-	.slot-name {
+	.hint {
 		font-size: 12px;
 		font-weight: 600;
-		text-align: center;
-	}
-	.empty {
-		display: grid;
-		place-items: center;
-		width: 60px;
-		height: 60px;
-		border-radius: 50%;
-		border: 2px dashed var(--line);
 		color: var(--text-2);
-		font-size: 22px;
 	}
 
 	/* 위아래 여백은 칸(36)의 누름 영역 44 가 잘리지 않게 */

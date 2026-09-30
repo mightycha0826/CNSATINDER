@@ -56,7 +56,7 @@ export function dropThread(threadId: number) {
 	refreshMailbox();
 }
 
-/** 폴더에 넣었다 · 폴더를 바꿨다 — 목록에서 바로 빼고(폴더에 간 편지는 보관함 목록에 없다) 새로 읽어 폴더 수를 맞춘다 */
+/** 폴더에 넣었다 · 폴더를 바꿨다 · 지웠다(Phase 69) — 목록에서 바로 빼고(폴더에 간 편지는 보관함 목록에 없다) 새로 읽어 폴더 수를 맞춘다 */
 export function filed(ids: number[]) {
 	const gone = new Set(ids);
 	BOX.received = BOX.received.filter((x) => !gone.has(x.id));

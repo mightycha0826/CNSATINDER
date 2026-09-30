@@ -24,8 +24,8 @@
 		let locked: 'y' | 'x' | null = null;
 
 		const blocked = () => !!document.querySelector('[aria-modal="true"], dialog[open]');
-		// 탭바 · 편지 쓰기 버튼 · 아래 고정 버튼 · 알림 띠에서 시작한 끌기는 새로고침이 아니다 (그 자리의 동작)
-		const OWN = '.tabbar, .fab, .cta, .inapp, .seek-pill';
+		// 탭바 · 편지 쓰기 버튼 · 아래 고정 버튼 · 알림 띠 · 끌어 옮기는 배지(Phase 69)에서 시작한 끌기는 새로고침이 아니다 (그 자리의 동작)
+		const OWN = '.tabbar, .fab, .cta, .inapp, .seek-pill, [data-drag]';
 		const start = (e: TouchEvent) => {
 			if (busy || e.touches.length !== 1 || window.scrollY > 0 || blocked()) return;
 			if ((e.target as Element | null)?.closest?.(OWN)) return;

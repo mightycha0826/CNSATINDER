@@ -81,6 +81,31 @@ export function toggledFeatured(data: Pick<MyAchievements, 'chosen' | 'featured'
 	return base.includes(code) ? base.filter((c) => c !== code) : [code, ...base].slice(0, 3);
 }
 
+/**
+ * 대표 업적 칸 옮기기 (Phase 69 — 교복 깃으로 끌어 놓기). 보이는 칸 순서 그대로 서버에 보내 자리를 고정한다.
+ *  · 이미 대표인 배지를 다른 칸에 놓으면 그 칸의 배지와 자리를 맞바꾼다 (빈 칸이면 맨 뒤로)
+ *  · 대표가 아닌 메달을 놓으면 그 칸의 배지를 밀어내고 앉는다 (빈 칸이면 뒤에 붙는다)
+ */
+export function placedFeatured(data: Pick<MyAchievements, 'featured'>, code: string, slot: number): string[] {
+	const cur = data.featured.map((b) => b.code);
+	const from = cur.indexOf(code);
+	if (from >= 0) {
+		if (slot >= cur.length) return [...cur.filter((c) => c !== code), code];
+		[cur[from], cur[slot]] = [cur[slot], cur[from]];
+		return cur;
+	}
+	if (slot >= cur.length) return [...cur, code].slice(0, 3);
+	cur[slot] = code;
+	return cur;
+}
+
+/** 대표 업적 코드 → 교복에 그릴 배지 (서버 대답을 기다리지 않고 바로 보여 줄 때) */
+export const featuredOf = (items: BadgeLite[], codes: string[]): BadgeLite[] =>
+	codes.flatMap((c) => {
+		const a = items.find((x) => x.code === c);
+		return a ? [{ code: a.code, title: a.title, icon: a.icon, tier: a.tier }] : [];
+	});
+
 /** 다음 등급 기준 (금이면 null) */
 export function nextGoal(a: Achievement): number | null {
 	return a.tier >= 3 ? null : a.tiers[a.tier as 0 | 1 | 2];

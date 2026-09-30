@@ -5,7 +5,9 @@
 	import BadgeDetail from '$lib/ui/BadgeDetail.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import {
+		featuredOf,
 		fetchMyAchievements,
+		placedFeatured,
 		progressText,
 		setFeaturedBadges,
 		toggledFeatured,
@@ -28,7 +30,7 @@
 
 	// ── 명성 (Phase 31) — 대표 업적 3개 · 모은 업적 수. 이름 카드의 "업적 n/m" 을 누르면 업적 전체 ──
 	// 대표 업적은 교복 깃에 단 배지 (Phase 60). 배지를 누르면 어떻게 얻는지 · 등급 기준 · 대표에서 내리기
-	// (Phase 44 — 업적 화면에서 누를 때와 같은 BadgeDetail)
+	// (Phase 44 — 업적 화면에서 누를 때와 같은 BadgeDetail). 배지를 꾹 눌러 다른 칸으로 끌어 옮긴다 (Phase 69)
 	let fame = $state<MyAchievements | null>(null);
 	$effect(() => {
 		fetchMyAchievements()
@@ -52,6 +54,23 @@
 			toast(errMsg(e));
 		} finally {
 			featBusy = false;
+		}
+	}
+
+	/** 배지를 다른 칸에 놓았다 — 바로 옮겨 보이고 서버에 저장, 안 되면 되돌린다 */
+	async function place(code: string, slot: number) {
+		if (!fame) return;
+		const codes = placedFeatured(fame, code, slot);
+		if (codes.join() === fame.featured.map((b) => b.code).join()) return;
+		const prev = fame;
+		fame = { ...fame, featured: featuredOf(fame.items, codes), chosen: codes };
+		try {
+			const r = await setFeaturedBadges(codes);
+			if (r.status !== 'ok') throw new Error(r.status === 'too_many' ? '대표 업적은 3개까지예요' : '아직 딴 업적이 아니에요');
+			if (fame) fame = { ...fame, featured: r.featured ?? fame.featured };
+		} catch (e) {
+			fame = prev;
+			toast(errMsg(e));
 		}
 	}
 
@@ -167,6 +186,7 @@
 				badges={fame.featured}
 				emptyHref="/me/achievements"
 				onpick={(b) => (medal = fame?.items.find((a) => a.code === b.code) ?? null)}
+				onplace={place}
 			/>
 		</section>
 	{/if}
