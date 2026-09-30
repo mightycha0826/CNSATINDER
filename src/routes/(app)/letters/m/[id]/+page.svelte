@@ -1,7 +1,9 @@
 <script lang="ts">
 	/**
 	 * 편지 한 통 (Phase 32) — 봉투를 열어 읽는다.
-	 * 처음 여는 받은 편지는 연출: 주소 면 → 뒤집기 → 밀랍 봉인에 금이 가고 → 봉인이 붙은 채 덮개가 열리고 → 편지지가 나와 → 펼쳐 읽는다.
+	 * 처음 여는 받은 편지는 연출 (Phase 77 — 편지 쓰기의 반대 순서, 같은 장면: 벽의 우체통 · 나무 책상):
+	 *   봉투가 우체통 투입구에서 쏙 빠져나와 → 커지며 책상 한가운데로 내려앉고(주소 면) → 뒤집기 → 밀랍 봉인에 금이 가고 →
+	 *   봉인이 붙은 채 덮개가 열리고 → 편지지가 나와 → 펼쳐 읽는다.
 	 * 이미 열어 본 편지 · 내가 보낸 편지는 연출 없이 편지지만 펼친다. 화면을 누르면 연출을 건너뛴다.
 	 * 아래: 받은 편지면 "답장 쓰기" + 인스타 스토리 공유(Phase 45, story.ts), 보낸 편지면 읽음 · 답장 여부. ⋯ 는 편지 버리기 · 차단 · 신고 (LetterMenu).
 	 */
@@ -12,6 +14,7 @@
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import MoreButton from '$lib/ui/MoreButton.svelte';
 	import Envelope from '$lib/letters/Envelope.svelte';
+	import Postbox from '$lib/letters/Postbox.svelte';
 	import LetterSheet from '$lib/letters/LetterSheet.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
 	import { anonName, borderOf, iAmRecipient, myLabel, openLetter, otherLabel, paperDate, stampDate, toLabel, type Letter } from '$lib/letters/api';
@@ -28,8 +31,8 @@
 	let gone = $state(false);
 	let menu = $state(false);
 
-	type Phase = 'front' | 'back' | 'crack' | 'open' | 'out' | 'unfold' | 'read';
-	let phase = $state<Phase>('front');
+	type Phase = 'init' | 'slot' | 'emerge' | 'land' | 'front' | 'back' | 'crack' | 'open' | 'out' | 'unfold' | 'read';
+	let phase = $state<Phase>('init');
 	let stop = () => {};
 	onDestroy(() => stop());
 	const w = $derived(envWidth());
@@ -55,12 +58,17 @@
 				// 처음 여는 받은 편지만 봉투 연출
 				stop = first
 					? play([
-							[700, () => (phase = 'back')],
-							[1500, () => ((phase = 'crack'), haptic.select())],
-							[2150, () => (phase = 'open')],
-							[2650, () => (phase = 'out')],
-							[3300, () => (phase = 'unfold')],
-							[3750, () => (phase = 'read')]
+							// 우체통 투입구 안에서 시작 → 빠져나와 → 책상 가운데로
+							[0, fromSlot],
+							[60, () => ((phase = 'emerge'), bump++)],
+							[600, () => (phase = 'land')],
+							[1300, () => (phase = 'front')],
+							[1800, () => (phase = 'back')],
+							[2500, () => ((phase = 'crack'), haptic.select())],
+							[3150, () => (phase = 'open')],
+							[3650, () => (phase = 'out')],
+							[4300, () => (phase = 'unfold')],
+							[4750, () => (phase = 'read')]
 						])
 					: play([[0, () => (phase = 'read')]]);
 			} catch (e) {
@@ -68,6 +76,27 @@
 			}
 		})();
 	});
+
+	// ── 우체통에서 나오기 (Phase 77) — 편지 쓰기의 aim() 을 거꾸로: 책상 가운데(봉투 자리)에서 투입구까지의 거리 · 크기를 재서
+	// 봉투를 투입구 안(투입구 선 아래로 숨은 채)에 두었다가 빠져나오게 한다
+	let envEl = $state<HTMLElement>();
+	let slotEl = $state<Element>();
+	let bump = $state(0);
+	let target = $state({ x: 0, y: 0, s: 0.3 });
+	function fromSlot() {
+		if (envEl && slotEl) {
+			const e = envEl.getBoundingClientRect();
+			const s = slotEl.getBoundingClientRect();
+			const scale = Math.min(0.55, (s.width * 0.8) / e.width);
+			target = {
+				x: s.left + s.width / 2 - (e.left + e.width / 2),
+				y: s.top + s.height / 2 - (e.height * scale) / 2 - (e.top + e.height / 2),
+				s: scale
+			};
+		}
+		phase = 'slot';
+	}
+	const arriving = $derived(['init', 'slot', 'emerge', 'land', 'front'].includes(phase));
 
 	function skip() {
 		if (phase === 'read') return;
@@ -140,25 +169,29 @@
 	{#if staging}
 		<!-- 봉투 열기 연출 — 누르면 건너뛴다 -->
 		<button class="stage" data-phase={phase} onclick={skip} aria-label="봉투 열기 건너뛰기">
-			<span class="desk" aria-hidden="true"></span>
-			<span class="env-wrap" style:--w="{w}px">
-				<Envelope
-					to={names.to}
-					from={names.from}
-					date={stampDate(letter.created_at)}
-					side={phase === 'front' ? 'front' : 'back'}
-					border={borderOf(letter, letter.role)}
-					sealed
-					cracked={phase !== 'front' && phase !== 'back'}
-					open={phase === 'open' || phase === 'out' || phase === 'unfold'}
-					paper={phase === 'out' || phase === 'unfold' ? 'out' : 'in'}
-					glow={phase === 'front'}
-					body={letter.removed ? '' : (letter.body ?? '')}
-					{w}
-				/>
+			<!-- 편지 쓰기와 같은 장면 — 벽의 우체통 · 나무 책상 -->
+			<span class="scene" aria-hidden="true"><i class="wall"></i><i class="wood"></i></span>
+			<span class="post" aria-hidden="true"><Postbox bind:slot={slotEl} {bump} /></span>
+			<span class="env-wrap" style:--w="{w}px" style:--tx="{target.x}px" style:--ty="{target.y}px" style:--ts={target.s} bind:this={envEl}>
+				<span class="env-inner">
+					<Envelope
+						to={names.to}
+						from={names.from}
+						date={stampDate(letter.created_at)}
+						side={arriving ? 'front' : 'back'}
+						border={borderOf(letter, letter.role)}
+						sealed
+						cracked={!arriving && phase !== 'back'}
+						open={phase === 'open' || phase === 'out' || phase === 'unfold'}
+						paper={phase === 'out' || phase === 'unfold' ? 'out' : 'in'}
+						glow={phase === 'front' || phase === 'land'}
+						body={letter.removed ? '' : (letter.body ?? '')}
+						{w}
+					/>
+				</span>
 			</span>
 			<span class="caption" aria-live="polite">
-				<span>{#if phase === 'front'}<b>{names.from}</b>에게서 편지가 왔어요{:else}봉투를 여는 중…{/if}</span>
+				<span>{#if arriving}<b>{names.from}</b>에게서 편지가 왔어요{:else}봉투를 여는 중…{/if}</span>
 				<small>눌러서 건너뛰기</small>
 			</span>
 		</button>
@@ -244,6 +277,9 @@
 
 	/* ── 봉투 열기 연출 ── */
 	.stage {
+		/* 편지 쓰기와 같은 크기의 우체통 · 벽 (머리글 아래부터) */
+		--mb-w: min(72vw, 270px);
+		--wall-h: calc(30px + var(--mb-w) * 0.7 + 22px);
 		position: relative;
 		display: block;
 		width: 100%;
@@ -252,15 +288,35 @@
 		overflow: hidden;
 		cursor: pointer;
 	}
-	.desk {
+	.scene {
 		position: absolute;
 		inset: 0;
-		background: var(--desk);
+		display: flex;
+		flex-direction: column;
 	}
+	.scene .wall {
+		flex: none;
+		height: var(--wall-h);
+		background: var(--wall);
+	}
+	.scene .wood {
+		flex: 1;
+		background: var(--wood);
+		border-top: 2px solid rgb(255 255 255 / 0.35);
+		box-shadow: inset 0 14px 16px -12px var(--wood-shade);
+	}
+	.post {
+		position: absolute;
+		left: 50%;
+		top: 30px;
+		width: var(--mb-w);
+		translate: -50% 0;
+	}
+	/* 봉투 자리 — 책상 한가운데 */
 	.env-wrap {
 		position: absolute;
 		left: 50%;
-		top: 42%;
+		top: calc(var(--wall-h) + (100% - var(--wall-h)) / 2);
 		width: var(--w);
 		margin-left: calc(var(--w) / -2);
 		margin-top: calc(var(--w) * -0.31);
@@ -269,15 +325,29 @@
 			transform 0.5s cubic-bezier(0.5, 0, 0.75, 0),
 			opacity 0.45s;
 	}
-	[data-phase='front'] .env-wrap {
-		animation:
-			drop-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.15) both,
-			bob 2.4s 0.6s ease-in-out infinite;
+	/* 우체통에서 나오기 — 투입구 자리(fromSlot 이 잰다)에서 투입구 선 아래로 숨어 있다가 → 쏙 빠져나와 → 커지며 책상 가운데로 */
+	[data-phase='init'] .env-wrap {
+		visibility: hidden;
 	}
-	@keyframes drop-in {
-		from {
-			transform: translateY(-70vh) rotate(10deg);
-		}
+	[data-phase='slot'] .env-wrap,
+	[data-phase='emerge'] .env-wrap {
+		transform: translate(var(--tx), var(--ty)) scale(var(--ts));
+		clip-path: polygon(-100vw -100vh, 200vw -100vh, 200vw 100%, -100vw 100%);
+		transition: none;
+	}
+	.env-inner {
+		display: block;
+		transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.3, 1);
+	}
+	[data-phase='slot'] .env-inner {
+		transform: translateY(104%);
+		transition: none;
+	}
+	[data-phase='land'] .env-wrap {
+		transition: transform 0.65s cubic-bezier(0.3, 0.8, 0.25, 1.05);
+	}
+	[data-phase='front'] .env-wrap {
+		animation: bob 2.4s ease-in-out infinite;
 	}
 	@keyframes bob {
 		50% {
@@ -289,11 +359,12 @@
 		transform: translateY(55vh) rotate(6deg);
 		opacity: 0;
 	}
+	/* 안내 글 — 책상 윗머리 (봉투는 책상 가운데, 우체통은 벽) */
 	.caption {
 		position: absolute;
 		left: 0;
 		right: 0;
-		bottom: 18%;
+		top: calc(var(--wall-h) + 16px);
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -302,9 +373,13 @@
 		font-size: 15px;
 		text-align: center;
 	}
+	/* 책상 위라 판자색 글씨 */
+	.caption {
+		color: var(--wood-ink);
+	}
 	.caption small {
 		font-size: 12px;
-		color: var(--text-2);
+		opacity: 0.8;
 	}
 
 	/* ── 읽기 ── */

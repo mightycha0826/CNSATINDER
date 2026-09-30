@@ -1,9 +1,10 @@
 <script lang="ts">
 	/**
-	 * 편지 쓰기 연출 (Phase 32 · 35) — 새 편지 · 답장이 같이 쓴다.
-	 *   들어올 때: 봉투가 올라와 덮개가 열리고 → 편지지가 솟아올라 → 화면 가득 펼쳐지며 편지 쓰는 칸이 된다 (봉투는 아래로 내려가 숨는다).
-	 *   보낼 때: 편지지가 접혀 봉투로 들어가고 → 덮개가 닫히고 → 밀랍이 떨어지고 놋쇠 도장이 쿵 찍힌다(진동) → 봉투를 뒤집어 주소 면(소인 "보냄")
-	 *            → 봉투가 작아지며 화면 위쪽 빨간 우체통의 투입구 위로 → 투입구로 쏙 들어간다 → 우체통이 출렁 (Phase 71 · 72, 전엔 하늘로 날아갔다).
+	 * 편지 쓰기 연출 (Phase 32 · 35 · 77) — 새 편지 · 답장이 같이 쓴다. 봉투는 늘 책상 한가운데에 놓인다 (화면 가운데가 아니라 — 우체통 · 책상을 가리지 않게).
+	 *   들어올 때: 봉투가 책상 가운데로 올라와 덮개가 열리고 → 편지지가 솟아올라 → 화면 가득 펼쳐지며 편지 쓰는 칸이 된다 (봉투는 아래로 내려가 숨는다).
+	 *   보낼 때: 편지지가 책상 가운데로 미끄러져 내려오며 접혀 봉투로 들어가고 → 덮개가 닫히고 → 밀랍이 떨어지고 도장이 쿵 찍힌다(진동)
+	 *            → 곧장 우체통으로: 뒤집혀 주소 면(소인 "보냄")이 되며 작아져 투입구 위로 → 투입구로 쏙 → 우체통이 출렁 (Phase 71 · 77).
+	 *   키보드가 올라와 편지지 머리(To. · 날짜)가 서식 막대 밑으로 밀려 올라가면 다시 내려 준다 (Phase 77 — 안드로이드 크롬이 커서 쪽으로 스크롤하며 가렸다).
 	 * 편지함과 같은 장면 (Phase 72 · 73) — 위쪽 벽에 우체통이 걸려 있고 그 아래는 나무 책상. 편지지는 책상 위에 펼쳐져 우체통 앞을 덮는다.
 	 * 쓰는 동안에는 봉투를 화면에서 치운다 — 휴대폰 키보드가 올라와 화면이 줄어도 편지지 · 보내기 단추를 가리지 않게 (Phase 35).
 	 * 보내기 단추 줄은 화면 아래(키보드 위)에 붙는다.
@@ -16,6 +17,7 @@
 	import Postbox from './Postbox.svelte';
 	import type { LetterFmt } from './rich';
 	import { envWidth, play } from './stage';
+	import { KB } from '../keyboard.svelte';
 	import * as haptic from '../haptics';
 	import { NICK_MAX, paperDate, stampDate } from './api';
 
@@ -52,7 +54,7 @@
 	const len = $derived(Array.from(body).length);
 	const signed = $derived(nickable && nick.trim() ? nick.trim().replace(/\s+/g, ' ') : from);
 
-	type Phase = 'enter' | 'opened' | 'rising' | 'write' | 'fold' | 'tuck' | 'close' | 'seal' | 'flip' | 'aim' | 'post';
+	type Phase = 'enter' | 'opened' | 'rising' | 'write' | 'fold' | 'tuck' | 'close' | 'seal' | 'aim' | 'post';
 	let phase = $state<Phase>('enter');
 	const w = $derived(envWidth(320));
 	const now = new Date().toISOString();
@@ -71,6 +73,7 @@
 	async function send() {
 		if (!ready) return;
 		(document.activeElement as HTMLElement | null)?.blur(); // 키보드를 내리고 연출을 보여 준다
+		aimFold();
 		phase = 'fold';
 		const ok = await onsend(body, fmt, nickable ? nick.trim() || null : null);
 		if (!ok) {
@@ -78,19 +81,65 @@
 			return;
 		}
 		stop = play([
-			[200, () => (phase = 'tuck')],
-			[900, () => (phase = 'close')],
-			[1500, () => (phase = 'seal')],
+			[450, () => (phase = 'tuck')],
+			[1050, () => (phase = 'close')],
+			[1650, () => (phase = 'seal')],
 			// 도장이 닿는 순간 (Envelope 의 찍기 1.2s 중 45%)
-			[1500 + 540, haptic.confirm],
-			[2800, () => (phase = 'flip')],
-			[3550, aim],
-			[4250, () => (phase = 'post')],
+			[1650 + 540, haptic.confirm],
+			// 곧장 우체통으로 — 가는 동안 뒤집혀 주소 면
+			[2800, aim],
+			[3500, () => (phase = 'post')],
 			// 봉투가 투입구로 다 들어간 순간
-			[4250 + 520, () => (bump++, haptic.success())],
-			[5450, ondone]
+			[3500 + 520, () => (bump++, haptic.success())],
+			[4700, ondone]
 		]);
 	}
+
+	// ── 보낼 때 편지지 — 쓰던 자리에서 책상 가운데(봉투가 놓일 자리)로 미끄러져 내려오며 접힌다 (Phase 77) ──
+	let sheetEl = $state<HTMLElement>();
+	let deskWallEl = $state<HTMLElement>();
+	let fold = $state({ x: 0, y: 0, s: 0.3 });
+	/** 책상 한가운데 — 봉투 자리의 가운데 (벽 아래 ~ 화면 아래의 가운데) */
+	const deskCenter = () => ({ x: innerWidth / 2, y: ((deskWallEl?.getBoundingClientRect().bottom ?? innerHeight * 0.35) + innerHeight) / 2 });
+	function aimFold() {
+		if (!sheetEl) return;
+		const r = sheetEl.getBoundingClientRect();
+		const c = deskCenter();
+		fold = { x: c.x - (r.left + r.width / 2), y: c.y - (r.top + r.height / 2), s: Math.min(1, (w * 0.86) / r.width) };
+	}
+
+	// ── 키보드가 올라와 편지지 머리가 서식 막대 밑으로 숨으면 되돌린다 (Phase 77) ──
+	// 안드로이드 크롬은 키보드만큼 화면을 줄이며 커서 쪽으로 스크롤하는데, 붙어 있는 머리글 · 서식 막대를 모르고 편지지 머리를 그 밑으로 밀어 올렸다.
+	// 커서가 편지지 위쪽에 있을 때만(짧은 글) — 커서가 보이는 만큼만 내린다. 요청 없음 · 키보드가 뜰 때 몇 번만 잰다
+	function caretBox(): DOMRect | null {
+		const sel = getSelection();
+		if (!sel?.rangeCount) return null;
+		const range = sel.getRangeAt(0);
+		const r = range.getBoundingClientRect();
+		if (r.height) return r;
+		const n = range.startContainer;
+		const el = n.nodeType === 1 ? (n as Element) : n.parentElement;
+		return el?.getBoundingClientRect() ?? null;
+	}
+	function keepHead() {
+		if (!sheetEl || phase !== 'write') return;
+		const a = document.activeElement;
+		if (!a || !a.closest('.le-doc')) return;
+		const bar = sheetEl.querySelector('.bar')?.getBoundingClientRect();
+		const paper = sheetEl.querySelector('.letter-paper')?.getBoundingClientRect();
+		if (!bar || !paper) return;
+		const hidden = bar.bottom + 8 - paper.top;
+		if (hidden <= 0) return;
+		const floor = (sheetEl.querySelector('.foot')?.getBoundingClientRect().top ?? innerHeight) - 8;
+		const c = caretBox();
+		const by = Math.min(hidden, c ? Math.max(0, floor - c.bottom) : 0);
+		if (by > 0) scrollBy({ top: -by, behavior: 'instant' });
+	}
+	$effect(() => {
+		if (!KB.open) return;
+		const timers = [0, 280, 650].map((t) => setTimeout(keepHead, t));
+		return () => timers.forEach(clearTimeout);
+	});
 
 	// ── 우체통에 넣기 (Phase 71) — 투입구 자리를 재서 봉투를 그 위로 옮기고(작게), 그다음 봉투만 아래로 밀어 넣는다.
 	// 봉투 자리(env-wrap)의 아래 가장자리가 투입구 가운데 선에 오게 — post 에서 그 선 아래는 잘려 보이지 않는다(들어간 것처럼)
@@ -113,19 +162,19 @@
 	}
 
 	// 봉투 상태 — 단계마다
-	const side = $derived(['flip', 'aim', 'post'].includes(phase) ? 'front' : 'back');
+	const side = $derived(['aim', 'post'].includes(phase) ? 'front' : 'back');
 	const open = $derived(['opened', 'rising', 'write', 'fold', 'tuck'].includes(phase));
 	const paperPos = $derived(phase === 'rising' || phase === 'fold' || phase === 'write' ? 'out' : 'in');
-	const sealed = $derived(['seal', 'flip', 'aim', 'post'].includes(phase));
-	const posting = $derived(['flip', 'aim', 'post'].includes(phase));
+	const sealed = $derived(['seal', 'aim', 'post'].includes(phase));
+	const posting = $derived(['aim', 'post'].includes(phase));
 
 </script>
 
 
 <div class="compose" data-phase={phase}>
-	<div class="desk" aria-hidden="true"><i class="wall"></i><i class="wood"></i></div>
+	<div class="desk" aria-hidden="true"><i class="wall" bind:this={deskWallEl}></i><i class="wood"></i></div>
 
-	<div class="sheet-wrap" class:shown={writing || phase === 'fold'} aria-hidden={!writing}>
+	<div class="sheet-wrap" class:shown={writing || phase === 'fold'} aria-hidden={!writing} bind:this={sheetEl} style:--fx="{fold.x}px" style:--fy="{fold.y}px" style:--fs={fold.s}>
 		<LetterEditor bind:body bind:fmt {placeholder}>
 			{#snippet before()}
 				<div class="lp-head">
@@ -200,6 +249,11 @@
 		/* clip — hidden 이면 이 칸이 스크롤 상자가 되어 서식 막대(sticky)가 어긋난다 */
 		overflow-x: clip;
 	}
+	/* 편지를 쓰는 동안 페이지가 입력칸 · 커서 쪽으로 스크롤할 때(키보드가 뜰 때 등) 머리글 · 서식 막대 · 보내기 줄 밑으로 숨기지 않게 */
+	:global(html:has(.compose[data-phase='write'])) {
+		scroll-padding-top: calc(var(--header-h) + var(--safe-top) + 72px);
+		scroll-padding-bottom: 88px;
+	}
 	/* 벽(우체통이 걸린 곳) + 나무 책상 — 편지함과 같은 장면 */
 	.compose {
 		--mb-w: min(72vw, 270px);
@@ -224,12 +278,13 @@
 		box-shadow: inset 0 14px 16px -12px var(--wood-shade);
 	}
 
-	/* ── 봉투 자리: 들어올 때 가운데 → 쓰는 동안은 화면 아래로 내려가 숨는다 → 보낼 때 다시 가운데 → 날아간다 ── */
+	/* ── 봉투 자리: 책상 한가운데 (Phase 77 — 화면 가운데였을 땐 우체통 · 책상을 가렸다).
+	   들어올 때 올라와 앉고 → 쓰는 동안은 화면 아래로 내려가 숨는다 → 보낼 때 다시 올라와 편지지를 받고 → 곧장 우체통으로 ── */
 	.env-wrap {
 		position: fixed;
 		perspective: 1400px;
 		left: 50%;
-		top: 46%;
+		top: calc((var(--wall-h) + 100dvh) / 2);
 		width: var(--w);
 		margin-left: calc(var(--w) / -2);
 		margin-top: calc(var(--w) * -0.31);
@@ -315,11 +370,21 @@
 		transform: none;
 		pointer-events: auto;
 	}
-	/* 보낼 때 — 접히면서 봉투 쪽으로 작아진다 */
+	/* 보낼 때 — 책상 가운데(봉투 자리)로 미끄러져 내려오며 접힌다 (자리는 aimFold() 가 잰다) */
 	[data-phase='fold'] .sheet-wrap {
 		opacity: 0;
-		transform: translateY(30%) scale(0.35, 0.2);
+		transform: translate(var(--fx), var(--fy)) scale(var(--fs), calc(var(--fs) * 0.45));
+		transform-origin: 50% 50%;
+		transition:
+			transform 0.6s cubic-bezier(0.45, 0, 0.3, 1),
+			opacity 0.35s 0.3s ease;
 		pointer-events: none;
+	}
+	/* 편지지만 접혀 내려간다 — 서식 막대 · 보내기 줄은 먼저 사라진다 */
+	[data-phase='fold'] .foot,
+	[data-phase='fold'] :global(.le .bar) {
+		opacity: 0;
+		transition: opacity 0.15s ease;
 	}
 	/* 보내기 줄 — 화면 아래(키보드 바로 위)에 붙는다 */
 	.foot {
@@ -388,12 +453,12 @@
 		font-size: 11px;
 		opacity: 0.6;
 	}
-	/* 안내 글 — 위는 우체통 자리라 아래쪽에 */
+	/* 안내 글 — 책상 윗머리 (봉투는 책상 가운데, 우체통은 벽) */
 	.status {
 		position: fixed;
 		left: 0;
 		right: 0;
-		bottom: calc(22% - 20px);
+		top: calc(var(--wall-h) + 16px);
 		margin: 0;
 		text-align: center;
 		font-size: 14px;

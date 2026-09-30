@@ -59,6 +59,9 @@
 			// 화면을 반으로 줄였다. 폰에서는 편지지를 눌러야 키보드가 올라온다
 			autofocus: matchMedia('(hover: hover) and (pointer: fine)').matches ? 'end' : false,
 			editorProps: {
+				// 글을 쓰며 커서를 따라 스크롤할 때 — 위의 머리글 · 서식 막대, 아래의 보내기 줄 밑으로 커서가 숨지 않게 그만큼 띄운다 (Phase 77)
+				scrollMargin: { top: 132, bottom: 96, left: 8, right: 8 },
+				scrollThreshold: { top: 132, bottom: 96, left: 8, right: 8 },
 				attributes: { class: 'le-doc', role: 'textbox', 'aria-multiline': 'true', 'aria-label': '편지 내용', spellcheck: 'false' },
 				// 붙여넣기는 글자만 — 줄마다 문단으로
 				handlePaste(view, event) {

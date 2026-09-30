@@ -200,12 +200,17 @@ try {
 	await items.nth(0).click(); await page.waitForURL('**/letters/m/70');
 	await page.locator('.stage').waitFor(); await page.waitForTimeout(250);
 	const p0 = await phase(page), cap = await page.locator('.caption').innerText();
-	check('★ 처음 여는 편지는 연출: 주소 면부터 · "익명의 여학생에게서 편지가 왔어요"', p0 === 'front' && cap.includes('익명의 여학생에게서 편지가 왔어요'), `${p0} | ${cap}`);
+	check('★ 처음 여는 편지는 연출: 우체통에서 나와 주소 면부터 · "익명의 여학생에게서 편지가 왔어요"', ['slot', 'emerge', 'land', 'front'].includes(p0) && cap.includes('익명의 여학생에게서 편지가 왔어요'), `${p0} | ${cap}`);
+	const out0 = await page.evaluate(() => { const e = document.querySelector('.stage .env-wrap').getBoundingClientRect(), s = document.querySelector('.stage .post .slot').getBoundingClientRect(); return { dx: Math.abs((e.left + e.right) / 2 - (s.left + s.right) / 2), dy: Math.abs(e.bottom - (s.top + s.bottom) / 2), small: e.width <= s.width }; });
+	check('★ 받은 편지는 우체통 투입구에서 빠져나온다 (편지 쓰기의 반대 — Phase 77)', out0.dx < 3 && out0.dy < 3 && out0.small, JSON.stringify(out0));
+	await page.waitForFunction(() => document.querySelector('.stage')?.getAttribute('data-phase') === 'front', null, { timeout: 3000 }).catch(() => {});
+	const land = await page.evaluate(() => { const e = document.querySelector('.stage .env-wrap').getBoundingClientRect(), wall = document.querySelector('.stage .scene .wall').getBoundingClientRect(), st = document.querySelector('.stage').getBoundingClientRect(); return { top: e.top - wall.bottom, mid: Math.abs((e.top + e.bottom) / 2 - (wall.bottom + st.bottom) / 2) }; });
+	check('★ 책상 한가운데에 내려앉는다 — 우체통 · 벽을 가리지 않는다', land.top > 0 && land.mid < 12, JSON.stringify(land));
 	await page.screenshot({ path: `${SP}/letters-3a-front.png` });
-	await page.waitForTimeout(1300);
+	await page.waitForFunction(() => ['back', 'crack'].includes(document.querySelector('.stage')?.getAttribute('data-phase')), null, { timeout: 3000 }).catch(() => {});
 	check('뒤집어 덮개 쪽 · 봉인에 금이 간다 (두 쪽으로 날아가지 않는다)', ['back', 'crack'].includes(await phase(page)) && (await page.locator('.stage .seal').count()) === 1 && (await page.locator('.stage .half').count()) === 0);
 	await page.screenshot({ path: `${SP}/letters-3b-crack.png` });
-	await page.waitForTimeout(900);
+	await page.waitForFunction(() => ['open', 'out'].includes(document.querySelector('.stage')?.getAttribute('data-phase')), null, { timeout: 3000 }).catch(() => {});
 	check('덮개가 열리고 편지지가 나온다 — 봉인은 덮개에 붙어 함께 들린다', ['open', 'out'].includes(await phase(page)) && (await page.locator('.stage .flap .seal.cracked').count()) === 1);
 	await page.screenshot({ path: `${SP}/letters-3c-out.png` });
 	await page.locator('.letter-paper').waitFor({ timeout: 4000 }); await page.waitForTimeout(700);
@@ -243,6 +248,8 @@ try {
 	await page.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'seal', null, { timeout: 2000 }).catch(() => {});
 	check('★ 봉인은 도장으로 쿵 — 놋쇠 도장 · 충격 파문 · 봉투가 눌린다', (await page.locator('.compose .seal.stamping .stamper').count()) === 1
 		&& (await page.locator('.compose .seal .shock').count()) === 1 && (await page.locator('.compose .env.thud').count()) === 1);
+	const onDesk = await page.evaluate(() => { const e = document.querySelector('.compose .env-wrap').getBoundingClientRect(), wall = document.querySelector('.compose .desk .wall').getBoundingClientRect(); return { top: e.top - wall.bottom, mid: Math.abs((e.top + e.bottom) / 2 - (wall.bottom + innerHeight) / 2) }; });
+	check('★ 봉투는 책상 한가운데에서 접고 봉인한다 — 우체통 · 벽을 가리지 않는다 (Phase 77)', onDesk.top > 0 && onDesk.mid < 12, JSON.stringify(onDesk));
 	await page.screenshot({ path: `${SP}/letters-4b-seal.png` });
 	await page.waitForFunction(() => ['flip', 'aim', 'post'].includes(document.querySelector('.compose')?.getAttribute('data-phase')), null, { timeout: 3000 }).catch(() => {});
 	check('봉투를 뒤집어 소인 "보냄"', ['flip', 'aim', 'post'].includes(await phase(page)) && (await page.locator('.compose .ring b').innerText()) === '보냄');
@@ -253,7 +260,7 @@ try {
 		const e = document.querySelector('.compose .env-wrap').getBoundingClientRect(), s = document.querySelector('.compose .post .slot').getBoundingClientRect();
 		return { up: !!document.querySelector('.compose .post .postbox'), dx: Math.abs((e.left + e.right) / 2 - (s.left + s.right) / 2), dy: Math.abs(e.bottom - (s.top + s.bottom) / 2), fits: e.width <= s.width };
 	});
-	check('★ 화면 위쪽 빨간 우체통 — 봉투가 작아져 투입구에 맞춰 들어간다 (Phase 71 · 72)', posted.up && posted.dx < 3 && posted.dy < 3 && posted.fits, JSON.stringify(posted));
+	check('★ 화면 위쪽 우체통 — 봉투가 작아져 투입구에 맞춰 들어간다 (Phase 71 · 72)', posted.up && posted.dx < 3 && posted.dy < 3 && posted.fits, JSON.stringify(posted));
 	await page.screenshot({ path: `${SP}/letters-4d-post.png` });
 	await page.waitForURL(/\/letters$/, { timeout: 8000 }); await page.waitForTimeout(500);
 	const back = await page.evaluate(() => ({ plus: document.querySelector('.post .plus')?.getAnimations().length ?? 0, land: !!document.querySelector('.desk .top-env.land') }));
@@ -686,6 +693,25 @@ try {
 	check('★ 입력 중 다른 화면으로 가면 키보드를 내린다', await p6.evaluate(() => !document.activeElement || document.activeElement === document.body));
 	check('페이지 오류 없음 (폰 키보드)', r6.errors.length === 0, r6.errors.join(' / '));
 	await r6.ctx.close();
+
+	console.log('[폰 키보드 — 편지지 머리가 서식 막대 밑으로 숨지 않는다 (Phase 77)]');
+	{
+		const rk = await openApp(browser, world(), { viewport: { width: 412, height: 915 }, isMobile: true, hasTouch: true });
+		const pk = rk.page;
+		await pk.goto(`${BASE}/letters/m/70/reply`);
+		await pk.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'write', null, { timeout: 8000 });
+		await pk.waitForTimeout(700);
+		await pk.getByRole('textbox', { name: '편지 내용' }).tap(); await pk.keyboard.type('테스트');
+		await pk.setViewportSize({ width: 412, height: 380 }); // 안드로이드 키보드 — 화면이 줄어든다
+		// 안드로이드 크롬처럼 커서 쪽으로 스크롤하며 편지지 머리를 서식 막대 밑으로 밀어 올린다
+		await pk.evaluate(() => { const b = document.querySelector('.le .bar').getBoundingClientRect(), p = document.querySelector('.letter-paper').getBoundingClientRect(); scrollBy(0, p.top - b.bottom + 70); });
+		const before = await pk.evaluate(() => document.querySelector('.le .bar').getBoundingClientRect().bottom - document.querySelector('.letter-paper').getBoundingClientRect().top);
+		await pk.waitForTimeout(900);
+		const after = await pk.evaluate(() => ({ gap: document.querySelector('.letter-paper').getBoundingClientRect().top - document.querySelector('.le .bar').getBoundingClientRect().bottom, kb: document.documentElement.classList.contains('kb-open') }));
+		check('★ 키보드가 올라와 편지지 머리(To.)가 가려지면 다시 서식 막대 아래로', before > 20 && after.kb && after.gap >= 0, JSON.stringify({ before, after }));
+		check('페이지 오류 없음 (키보드)', rk.errors.length === 0, rk.errors.join(' / '));
+		await rk.ctx.close();
+	}
 
 	console.log('[인스타 스토리]');
 	const w5 = world();
