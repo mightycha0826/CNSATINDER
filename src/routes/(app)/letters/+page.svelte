@@ -1,18 +1,26 @@
 <script lang="ts">
 	/**
-	 * 익명편지 탭 = 편지함 (Phase 32 · 35).
-	 *   위: 아직 안 연 받은 편지만 — 봉인된 봉투가 비스듬히 쌓여 있다 (누르면 봉투를 연다).
-	 *   아래: 갈색 책상 위 서류 더미 = 편지 보관함. 읽은 편지 · 보낸 편지가 겹겹이 쌓여 있고, 누르면 지금까지 받은 · 쓴 편지 전부 (/letters/archive).
-	 *   책상은 화면 아래쪽에 놓이고(남는 자리는 위에), 책상 · 더미 · 봉투는 화면 크기에 맞춰 같은 비율로 커지고 작아진다 (Phase 46).
-	 * 오른쪽 아래 버튼으로 새 편지. 봉투를 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 — 열기 · 답장 · 버리기 · 차단 · 신고 (LetterMenu).
+	 * 익명편지 탭 = 편지함 (Phase 32 · 35 · 71).
+	 *   위: 큰 빨간 우체통 (Phase 71) — 안 읽은 편지 수가 붙고 투입구에 봉투 끝이 삐죽 나온다. 새 편지가 오면
+	 *       봉투가 위에서 떨어져 투입구로 들어가고 → 통이 출렁 → 아래 문이 열려 그 편지가 우체통 밑으로 나와 놓인다 (한 통에 한 번).
+	 *       누르면 가장 최근에 온 안 읽은 편지를 연다.
+	 *   그 아래: 아직 안 연 받은 편지 — 봉인된 봉투가 비스듬히 쌓여 있다 (누르면 봉투를 연다).
+	 *   맨 아래: 갈색 책상 위 서류 더미 = 편지 보관함. 읽은 편지 · 보낸 편지가 겹겹이 쌓여 있고, 누르면 지금까지 받은 · 쓴 편지 전부 (/letters/archive).
+	 *   책상은 화면 아래쪽에 놓이고(남는 자리는 위에), 책상 · 더미 · 봉투 · 우체통은 화면 크기에 맞춰 같은 비율로 커지고 작아진다 (Phase 46).
+	 *   책상 앞 한 줄 = [편지 보관함 이름표 | 편지 쓰기] (Phase 71 — 전엔 편지 쓰기가 화면 위에 떠 있었다).
+	 * 봉투를 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 — 열기 · 답장 · 버리기 · 차단 · 신고 (LetterMenu).
 	 * 목록은 앱 안에서 기억해 두고(mailbox.svelte.ts) 다시 들어오면 바로 그린 뒤 뒤에서 새로 읽는다.
 	 */
+	import { onDestroy, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import Envelope from '$lib/letters/Envelope.svelte';
 	import MailStack from '$lib/letters/MailStack.svelte';
+	import Postbox from '$lib/letters/Postbox.svelte';
 	import { borderOf, myLabel, otherLabel, stampDate } from '$lib/letters/api';
-	import { BOX, PAGE, pollMailbox, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import { ANNOUNCED, BOX, PAGE, pollMailbox, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import { reducedMotion } from '$lib/motion';
+	import * as haptic from '$lib/haptics';
 	import { whileVisible } from '$lib/visible';
 	import { S } from '$lib/state.svelte';
 
@@ -22,6 +30,37 @@
 	});
 
 	const unread = $derived(BOX.received.filter((i) => !i.opened && !i.removed));
+
+	// ── 우체통으로 편지가 온다 (Phase 71) ──
+	// 처음 보는 안 읽은 편지가 생기면: 봉투가 투입구로 떨어지고(0) → 출렁(0.8s, Postbox) → 문이 열리고(0.95s) → 편지가 한 통씩 나온 뒤 → 문이 닫힌다
+	const DOOR = 950;
+	let emerge = $state<Record<number, number>>({}); // 편지 id → 나오기 시작하는 때(ms). 한 번 정하면 그대로 (바꾸면 장면이 다시 돈다)
+	let drop = $state(0);
+	let bump = $state(0);
+	let doorOpen = $state(false);
+	const timers: ReturnType<typeof setTimeout>[] = [];
+	onDestroy(() => timers.forEach(clearTimeout));
+	$effect(() => {
+		if (!BOX.loaded.received) return;
+		const news = unread.filter((i) => !ANNOUNCED.has(i.id)).map((i) => i.id);
+		if (!news.length) return;
+		news.forEach((id) => ANNOUNCED.add(id));
+		if (reducedMotion()) return;
+		untrack(() => {
+			emerge = { ...emerge, ...Object.fromEntries(news.map((id, i) => [id, DOOR + 150 + i * 110])) };
+			drop++;
+		});
+		haptic.select();
+		timers.push(
+			setTimeout(() => (doorOpen = true), DOOR),
+			setTimeout(() => (doorOpen = false), DOOR + 150 + news.length * 110 + 700)
+		);
+	});
+	function tapPostbox() {
+		const first = unread[0];
+		if (first) void goto(`/letters/m/${first.id}`);
+		else bump++;
+	}
 	const readCount = $derived(BOX.received.length - unread.length);
 	const sentCount = $derived(BOX.sent.length);
 	const count = (n: number, more: boolean) => (more ? `${PAGE}+` : String(n));
@@ -46,37 +85,8 @@
 	let vh = $state(844);
 	const k = $derived(Math.min(1.5, Math.max(0.75, Math.min(deskW / 390, vh / 844))));
 
-	// 편지 쓰기 단추가 보관함 이름표와 겹치면 동그란 연필 단추로 줄인다 (Phase 54) — 낮은 화면(아이폰 SE · 큰 글꼴)에서
-	// 이름표 글("받은 편지 3 · 보낸 편지 2")이 단추 밑에 가려지지 않게. 스크롤 · 화면 크기가 바뀔 때만 잰다(요청 없음)
-	let plateEl = $state<HTMLElement>();
-	let fabEl = $state<HTMLElement>();
-	let compact = $state(false);
-	$effect(() => {
-		if (!plateEl || !fabEl) return;
-		let raf = 0;
-		let last = false; // $state 를 읽지 않는다 — 읽으면 이 effect 가 바뀔 때마다 다시 돈다
-		const measure = () => {
-			raf = 0;
-			const p = plateEl!.getBoundingClientRect();
-			const f = fabEl!.getBoundingClientRect();
-			// 세로로만 본다 — 단추 폭이 줄었다 폈다 해도 판단이 흔들리지 않게
-			const over = p.bottom > f.top + 4 && p.top < f.bottom - 4;
-			if (over !== last) compact = last = over;
-		};
-		const kick = () => (raf ||= requestAnimationFrame(measure));
-		measure();
-		addEventListener('scroll', kick, { passive: true });
-		addEventListener('resize', kick);
-		// 편지를 불러와 더미 · 봉투가 생기면 이름표 자리가 바뀐다(스크롤 · 창 크기와 상관없이)
-		const ro = new ResizeObserver(kick);
-		ro.observe(document.body);
-		return () => {
-			ro.disconnect();
-			cancelAnimationFrame(raf);
-			removeEventListener('scroll', kick);
-			removeEventListener('resize', kick);
-		};
-	});
+	// 편지 쓰기 단추는 보관함 이름표와 한 줄 (Phase 71) — 이름표 높이에 맞춘다 (글이 두 줄로 접혀도 같이)
+	let plateH = $state(64);
 
 	const LAYERS = [
 		{ r: -7, x: -14, y: 10, kind: 'paper' },
@@ -95,26 +105,24 @@
 	<TopbarMe />
 </div>
 
-<div class="page mailbox">
-	<div class="head">
-		<h2>새 편지</h2>
-		{#if unread.length}<span class="count num" aria-label="안 읽은 편지 {unread.length}통">{unread.length}</span>{/if}
-	</div>
+<div class="page mailbox" style:--k={k}>
+	<h2 class="sr-only">새 편지</h2>
+	<!-- 우체통 — 새 편지가 여기로 온다 -->
+	<button
+		class="post"
+		onclick={tapPostbox}
+		aria-label={unread.length ? `우체통 — 새 편지 ${unread.length}통, 눌러서 가장 최근 편지 열기` : BOX.loaded.received ? '우체통 — 새 편지 없음' : '우체통'}
+	>
+		<Postbox count={unread.length} open={doorOpen} {drop} {bump} />
+	</button>
 
-	{#if BOX.loaded.received && unread.length === 0}
-		<div class="none">
-			<svg viewBox="0 0 48 36" aria-hidden="true">
-				<rect x="3" y="5" width="42" height="27" rx="3" fill="var(--env-paper)" stroke="var(--line)" stroke-width="1.5" />
-				<path d="M3.5 7l20.5 14L44.5 7" fill="none" stroke="var(--line)" stroke-width="1.5" />
-			</svg>
-			<p>새로 온 편지가 없어요</p>
-		</div>
-	{:else}
-		<MailStack items={unread} box="received" loading={!BOX.loaded.received} />
+	{#if !BOX.loaded.received || unread.length}
+		<MailStack items={unread} box="received" loading={!BOX.loaded.received} {emerge} />
 	{/if}
 
-	<!-- 편지 보관함 — 갈색 책상 위 서류 더미 -->
-	<button class="desk" bind:clientWidth={deskW} style:--k={k} onclick={() => goto('/letters/archive')} aria-label="편지 보관함 — 받은 편지 {count(readCount, BOX.more.received)}통, 보낸 편지 {count(sentCount, BOX.more.sent)}통{BOX.folders.length ? `, 폴더 ${BOX.folders.length}개` : ''}">
+	<!-- 편지 보관함 — 갈색 책상 위 서류 더미. 앞 한 줄은 [이름표 | 편지 쓰기] -->
+	<div class="desk-area" style:--plate-h="{plateH}px">
+	<button class="desk" bind:clientWidth={deskW} onclick={() => goto('/letters/archive')} aria-label="편지 보관함 — 받은 편지 {count(readCount, BOX.more.received)}통, 보낸 편지 {count(sentCount, BOX.more.sent)}통{BOX.folders.length ? `, 폴더 ${BOX.folders.length}개` : ''}">
 		<span class="wood" aria-hidden="true">
 			<!-- 책상 위 물건들 (Phase 58) — 서류 더미를 피해 가장자리에. 위에서 내려다본 모습, 책상 비율(--k)대로 커지고 작아진다 -->
 			<span class="props">
@@ -217,7 +225,7 @@
 				{/if}
 			</span>
 		</span>
-		<span class="plate" bind:this={plateEl}>
+		<span class="plate" bind:clientHeight={plateH}>
 			<span class="plate-text">
 				<strong>편지 보관함</strong>
 				<span class="muted num">받은 편지 {count(readCount, BOX.more.received)} · 보낸 편지 {count(sentCount, BOX.more.sent)}{#if BOX.folders.length}&nbsp;· 폴더 {BOX.folders.length}{/if}</span>
@@ -225,83 +233,51 @@
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
 		</span>
 	</button>
+	<a class="fab" href="/letters/new" aria-label="편지 쓰기">
+		<svg viewBox="0 0 24 24" aria-hidden="true">
+			<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
+			<path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="2" />
+		</svg>
+		<span>편지 쓰기</span>
+	</a>
+	</div>
 </div>
-
-<a class="fab" class:compact href="/letters/new" aria-label="편지 쓰기" bind:this={fabEl}>
-	<svg viewBox="0 0 24 24" aria-hidden="true">
-		<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
-		<path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="2" />
-	</svg>
-	<span>편지 쓰기</span>
-</a>
 
 
 <style>
 	.mailbox {
+		/* 책상이 화면 양옆보다 이만큼 더 넓다 (Phase 71) — 눌러서 살짝 줄어도 모서리에 바깥 바탕이 비치지 않게 */
+		--bleed: 14px;
 		gap: 16px;
 		padding-top: 14px;
-		padding-bottom: 88px; /* 편지 쓰기 버튼(탭바 위 16 + 52) 바로 위에 보관함 이름표가 오게 */
+		padding-bottom: 18px;
 		background: var(--desk);
+		overflow-x: clip;
 	}
-	.head {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		margin: 0 2px;
+
+	/* ── 우체통 (Phase 71) ── */
+	.post {
+		align-self: center;
+		width: calc(150px * var(--k, 1));
+		margin-top: 4px;
+		-webkit-tap-highlight-color: transparent;
 	}
-	.head h2 {
-		margin: 0;
-		font-family: var(--display);
-		font-size: 18px;
-		font-weight: 400;
-		letter-spacing: 0;
-	}
-	.count {
-		min-width: 20px;
-		height: 20px;
-		padding: 0 6px;
-		border-radius: 10px;
-		background: var(--accent-fill-deep);
-		color: var(--on-accent);
-		font-size: 12px;
-		font-weight: 800;
-		line-height: 20px;
-		text-align: center;
-	}
-	.none {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 4px;
-		padding: 22px 16px;
-		border-radius: var(--r-card);
-		background: color-mix(in srgb, var(--surface) 70%, transparent);
-		box-shadow: var(--shadow-1);
-		text-align: center;
-		animation: fade-up 0.4s ease-out both;
-	}
-	.none svg {
-		width: 52px;
-		margin-bottom: 4px;
-	}
-	.none p {
-		margin: 0;
-		font-size: 15px;
-		font-weight: 700;
-	}
-	@keyframes fade-up {
-		from {
-			opacity: 0;
-			transform: translateY(8px);
-		}
+	.post:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 6px;
+		border-radius: 12px;
 	}
 
 	/* ── 책상 · 서류 더미 ── */
 	/* 책상은 화면 아래쪽 — 남는 자리는 새 편지와 책상 사이로 (margin-top: auto). 편지가 많아 화면을 넘으면 그냥 이어서 */
+	.desk-area {
+		position: relative;
+		margin: auto calc(var(--pad) * -1 - var(--bleed)) 0;
+	}
 	.desk {
 		display: flex;
 		flex-direction: column;
-		margin: auto calc(var(--pad) * -1) 0;
+		width: 100%;
 		text-align: left;
 		transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.3, 1);
 	}
@@ -336,7 +312,7 @@
 	/* ── 책상 위 물건들 (Phase 58) — 가운데 서류 더미(190 × 130)와 아래 이름표(아래 26px)를 피해 가장자리에 ── */
 	.props {
 		position: absolute;
-		inset: 0;
+		inset: 0 var(--bleed); /* 화면 밖으로 넓힌 만큼은 빼고 — 물건은 보이는 자리에 */
 		pointer-events: none;
 	}
 	.prop {
@@ -460,11 +436,16 @@
 		font-size: 13px;
 		font-weight: 700;
 	}
+	/* 이름표 — 오른쪽은 편지 쓰기 단추 자리(--fab-w)만큼 비운다 */
+	.desk-area {
+		--fab-w: 128px;
+		--side: calc(var(--pad) + var(--bleed));
+	}
 	.plate {
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		margin: -26px var(--pad) 0;
+		margin: -26px calc(var(--side) + var(--fab-w) + 10px) 0 var(--side);
 		padding: 14px 16px;
 		border-radius: var(--r-card);
 		background: var(--surface);
@@ -490,18 +471,18 @@
 		color: var(--text-2);
 	}
 
-	/* 편지 쓰기 — 테마 색 (설정 > 테마 색상과 같이 바뀐다) */
+	/* 편지 쓰기 — 이름표와 한 줄 · 같은 높이 (Phase 71). 테마 색 (설정 > 테마 색상과 같이 바뀐다) */
 	.fab {
-		position: fixed;
-		right: max(16px, calc(50% - 260px + 16px));
-		bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px);
-		z-index: 20;
+		position: absolute;
+		right: var(--side);
+		bottom: 0;
 		display: inline-flex;
 		align-items: center;
+		justify-content: center;
 		gap: 8px;
-		height: 52px;
-		padding: 0 20px 0 16px;
-		border-radius: 999px;
+		width: var(--fab-w);
+		height: var(--plate-h, 64px);
+		border-radius: var(--r-card);
 		background: var(--accent-fill-deep);
 		color: var(--on-accent);
 		font-size: 15px;
@@ -511,27 +492,27 @@
 		transition: transform 0.2s cubic-bezier(0.3, 0.7, 0.3, 1.4);
 	}
 	.fab:active {
-		transform: scale(0.94);
+		transform: scale(0.95);
 	}
-	/* 이름표와 겹칠 때 — 연필만 있는 동그란 단추 (글자는 접힌다) */
 	.fab span {
-		overflow: hidden;
-		max-width: 6em;
 		white-space: nowrap;
-		transition:
-			max-width 0.25s ease,
-			opacity 0.2s ease;
-	}
-	.fab.compact {
-		gap: 0;
-		padding: 0 15px;
-	}
-	.fab.compact span {
-		max-width: 0;
-		opacity: 0;
 	}
 	.fab svg {
+		flex: none;
 		width: 22px;
 		height: 22px;
+	}
+	/* 좁은 화면(큰 글꼴 안드로이드 ≈ 280) — 연필만 있는 네모 단추, 이름표에 자리를 더 준다 */
+	@media (max-width: 359px) {
+		.desk-area {
+			--fab-w: 60px;
+		}
+		.fab span {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+		}
 	}
 </style>

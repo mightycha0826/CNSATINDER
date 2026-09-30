@@ -321,6 +321,11 @@ export const ACTION_LABEL: Record<string, string> = {
 /** 한 학생의 특별 업적 (admin_user_badges, Phase 44) — 운영진이 주고 거두는 것만 */
 export type UserBadgeRow = { code: string; title: string; description: string; has: boolean; earned_at: string | null };
 
+/** 운영자 뱃지 화면 (Phase 71) — 줄 수 있는 뱃지 · 가진 사람 수 (admin_badges) */
+export type BadgeAdminRow = { code: string; title: string; description: string; icon: string; category: string; holders: number };
+/** 한 뱃지를 가진 학생 (admin_badge_holders) */
+export type BadgeHolderRow = { id: string; nickname: string | null; status: 'active' | 'suspended' | 'banned'; earned_at: string };
+
 /** 학생 문의 (admin_inquiries, Phase 37) — 답변하면 그 학생에게 개인 공지로 간다 */
 export type InquiryRow = {
 	id: number;

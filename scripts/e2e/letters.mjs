@@ -155,7 +155,20 @@ try {
 	check('봉투 뒷면에 손글씨 From.', (await items.nth(0).locator('.back .back-from').innerText()).includes('익명의 여학생'));
 	check('★ 받은 편지 테두리 = 보낸 사람 성별 색 (여학생 붉은색)', (await items.nth(0).locator('.env.b-f').count()) === 1 && (await items.nth(1).locator('.env.b-brand').count()) === 1);
 	check('채팅 말풍선은 없다 (편지만)', (await page.locator('.bubble').count()) === 0 && (await page.getByRole('textbox', { name: '메시지' }).count()) === 0);
-	check('새 편지 수', (await page.locator('.head .count').innerText()) === '2');
+	check('★ 우체통 — 새 편지 수 (Phase 71)', (await page.locator('.post .count').innerText()) === '2' && (await page.locator('button.post').getAttribute('aria-label')).includes('새 편지 2통'));
+	check('"새로 온 편지가 없어요" 문구는 없다', (await page.getByText('새로 온 편지가 없어요').count()) === 0);
+	check('★ 처음 보는 안 읽은 편지는 우체통에서 나온다', (await page.locator('.stack li.emerge').count()) === 2);
+	const rowOf = (pg) => pg.evaluate(() => {
+		const p = document.querySelector('.desk .plate').getBoundingClientRect(), f = document.querySelector('.desk-area .fab').getBoundingClientRect();
+		return { dy: Math.abs(p.top - f.top) + Math.abs(p.bottom - f.bottom), gap: f.left - p.right, plateW: p.width, fabW: f.width };
+	});
+	const row1 = await rowOf(page);
+	check('★ 편지 보관함 이름표 · 편지 쓰기 단추가 한 줄 · 같은 높이', row1.dy < 1.5 && row1.gap > 0 && row1.gap < 20 && row1.fabW > 100, JSON.stringify(row1));
+	const bleed = await page.evaluate(() => {
+		const r = document.querySelector('.desk .wood').getBoundingClientRect();
+		return { l: r.left, r: r.right - innerWidth, pressed: r.width * 0.985 - innerWidth, sx: document.documentElement.scrollWidth - innerWidth };
+	});
+	check('★ 책상은 화면보다 양옆으로 넓다 — 눌러 줄어도(0.985) 모서리에 바깥 바탕이 비치지 않는다 · 가로 스크롤 없음', bleed.l <= -8 && bleed.r >= 8 && bleed.pressed > 0 && bleed.sx <= 0, JSON.stringify(bleed));
 	const desk = page.locator('button.desk');
 	check('★ 아래 책상 위 서류 더미 = 편지 보관함 (읽은 편지 · 보낸 편지)', (await desk.getAttribute('aria-label')) === '편지 보관함 — 받은 편지 1통, 보낸 편지 1통' && (await desk.locator('.layer').count()) >= 3 && (await desk.locator('.top-env .env').count()) === 1,
 		await desk.getAttribute('aria-label'));
@@ -224,10 +237,18 @@ try {
 	check('★ 봉인은 도장으로 쿵 — 놋쇠 도장 · 충격 파문 · 봉투가 눌린다', (await page.locator('.compose .seal.stamping .stamper').count()) === 1
 		&& (await page.locator('.compose .seal .shock').count()) === 1 && (await page.locator('.compose .env.thud').count()) === 1);
 	await page.screenshot({ path: `${SP}/letters-4b-seal.png` });
-	await page.waitForFunction(() => ['flip', 'fly'].includes(document.querySelector('.compose')?.getAttribute('data-phase')), null, { timeout: 3000 }).catch(() => {});
-	check('봉투를 뒤집어 소인 "보냄"', ['flip', 'fly'].includes(await phase(page)) && (await page.locator('.compose .ring b').innerText()) === '보냄');
+	await page.waitForFunction(() => ['flip', 'aim', 'post'].includes(document.querySelector('.compose')?.getAttribute('data-phase')), null, { timeout: 3000 }).catch(() => {});
+	check('봉투를 뒤집어 소인 "보냄"', ['flip', 'aim', 'post'].includes(await phase(page)) && (await page.locator('.compose .ring b').innerText()) === '보냄');
 	await page.screenshot({ path: `${SP}/letters-4c-flip.png` });
-	await page.waitForURL(/\/letters$/, { timeout: 4000 }); await page.waitForTimeout(500);
+	await page.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'post', null, { timeout: 3000 }).catch(() => {});
+	await page.waitForTimeout(150);
+	const posted = await page.evaluate(() => {
+		const e = document.querySelector('.compose .env-wrap').getBoundingClientRect(), s = document.querySelector('.compose .post .slot').getBoundingClientRect();
+		return { up: !!document.querySelector('.compose .post.up'), dx: Math.abs((e.left + e.right) / 2 - (s.left + s.right) / 2), dy: Math.abs(e.bottom - (s.top + s.bottom) / 2), fits: e.width <= s.width };
+	});
+	check('★ 빨간 우체통이 올라오고 봉투가 작아져 투입구에 맞춰 들어간다 (Phase 71)', posted.up && posted.dx < 3 && posted.dy < 3 && posted.fits, JSON.stringify(posted));
+	await page.screenshot({ path: `${SP}/letters-4d-post.png` });
+	await page.waitForURL(/\/letters$/, { timeout: 8000 }); await page.waitForTimeout(500);
 	check('★ 답장 → dm_reply_to (받은 편지 한 통에 · 이름으로 받은 쪽은 서명 없음)', JSON.stringify(called(w, 'dm_reply_to').at(-1)?.[1]) === JSON.stringify({ p_msg: 70, p_body: '고마워! 너도 잘 지내', p_fmt: null, p_nick: null }));
 	await page.locator('button.desk').click(); await page.waitForURL('**/letters/archive'); await page.locator('.archive .stack .item').first().waitFor(); await page.waitForTimeout(300);
 	check('★ 날아간 뒤 보관함은 보낸 편지 칸 — 맨 위에 방금 답장 (To. 익명의 여학생)', (await page.getByRole('tab', { name: '보낸 편지' }).getAttribute('aria-selected')) === 'true'
@@ -266,7 +287,7 @@ try {
 	await page.waitForTimeout(100);
 	await page.screenshot({ path: `${SP}/letters-5a-compose.png` });
 	await page.getByRole('button', { name: '봉투에 넣어 보내기' }).click();
-	await page.waitForURL(/\/letters$/, { timeout: 5000 });
+	await page.waitForURL(/\/letters$/, { timeout: 8000 });
 	const sent = called(w, 'dm_send').at(-1)?.[1];
 	check('★ 고른 사람(계정 id)에게 · 서명(앞뒤 공백 정리) · 서식은 본문과 따로', sent?.p_to === 'u-b' && sent?.p_body === '안녕 박받음! 오늘 발표 멋있었어' && sent?.p_nick === '노란   우산'
 		&& JSON.stringify(sent?.p_fmt?.m?.slice().sort()) === JSON.stringify([[11, 13, 'b'], [11, 13, 'h:yellow']]), JSON.stringify(sent));
@@ -293,7 +314,7 @@ try {
 	check('신고 시트: 사유 7개', (await page.locator('.reason').count()) === 7);
 	await page.locator('.reason', { hasText: '욕설' }).click();
 	await page.locator('.sheet .item.danger', { hasText: '신고하기' }).click();
-	await page.waitForURL(/\/letters$/, { timeout: 4000 }); await page.waitForTimeout(500);
+	await page.waitForURL(/\/letters$/, { timeout: 8000 }); await page.waitForTimeout(500);
 	check('★ 신고 → 편지 줄기로 신고 · 편지함에서 사라진다', JSON.stringify(called(w, 'dm_report').at(-1)?.[1]) === JSON.stringify({ p_thread: 8, p_reason: 'harassment', p_note: '' })
 		&& !(await page.locator('.stack .item').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).some((l) => l.includes('익명의 남학생')));
 
@@ -527,10 +548,11 @@ try {
 		await p9.addStyleTag({ content: ':where(button) { align-items: flex-start; }' }); await p9.waitForTimeout(300);
 		const fill = await p9.evaluate(() => {
 			const w = (s) => document.querySelector(s).getBoundingClientRect().width;
-			return { desk: w('button.desk'), wood: w('.desk .wood'), plate: w('.desk .plate') };
+			return { desk: w('button.desk'), wood: w('.desk .wood'), plate: w('.desk .plate'), fab: w('.desk-area .fab') };
 		});
 		await p9.screenshot({ path: `${SP}/letters-ipad-safari.png` });
-		check('★ 사파리 기본 스타일에서도 책상 판자 · 이름표가 폭을 채운다', Math.abs(fill.wood - fill.desk) < 1 && fill.plate > fill.desk - 60, JSON.stringify(fill));
+		// 이름표 + 틈 10 + 편지 쓰기 = 책상 폭 - 양옆(화면 여백 16 + 넓힌 14)
+		check('★ 사파리 기본 스타일에서도 책상 판자 · [이름표 | 편지 쓰기] 줄이 폭을 채운다', Math.abs(fill.wood - fill.desk) < 1 && Math.abs(fill.plate + 10 + fill.fab - (fill.desk - 60)) < 2, JSON.stringify(fill));
 		await r9.ctx.close();
 	}
 
@@ -606,15 +628,11 @@ try {
 		const r8 = await openApp(browser, w8, { viewport: { width: 280, height: 574 } });
 		const p8 = r8.page;
 		await p8.goto(`${BASE}/letters`); await p8.locator('button.desk').waitFor(); await p8.waitForTimeout(700);
-		// 큰 글꼴 안드로이드(≈280×574): 새 편지 + 책상이 화면보다 길어서 처음엔 편지 쓰기 단추가 보관함 이름표 위에 온다
-		const cover = await p8.evaluate(() => {
-			const p = document.querySelector('.plate')?.getBoundingClientRect();
-			const f = document.querySelector('.fab')?.getBoundingClientRect();
-			return p && f ? p.bottom > f.top + 4 && p.top < f.bottom - 4 : null;
-		});
-		check('★ 이름표와 겹치면 편지 쓰기 단추가 동그란 연필로 줄어든다', cover === false || (await p8.locator('.fab.compact').count()) === 1, String(cover));
-		await p8.evaluate(() => scrollTo(0, document.documentElement.scrollHeight)); await p8.waitForTimeout(400);
-		check('맨 아래로 내리면(겹치지 않으면) 다시 "편지 쓰기" 글자', (await p8.locator('.fab.compact').count()) === 0);
+		// 큰 글꼴 안드로이드(≈280×574): 편지 쓰기는 연필만 있는 네모 단추 — 이름표 옆 한 줄, 이름표 글을 가리지 않는다 (Phase 71)
+		await p8.evaluate(() => scrollTo(0, document.documentElement.scrollHeight)); await p8.waitForTimeout(300);
+		const row8 = await rowOf(p8);
+		check('★ 좁은 화면 — 편지 쓰기는 연필 네모 단추로 이름표 옆 한 줄 (겹치지 않음)', row8.dy < 1.5 && row8.gap > 0 && row8.fabW <= 64 && row8.plateW >= 150, JSON.stringify(row8));
+		check('단추 이름은 그대로 "편지 쓰기"', (await p8.getByRole('link', { name: '편지 쓰기' }).count()) === 1);
 		await p8.screenshot({ path: `${SP}/letters-fab-280.png` });
 		await r8.ctx.setOffline(true); await p8.waitForTimeout(300);
 		check('★ 인터넷이 끊기면 위쪽 띠', (await p8.locator('.offline').innerText()).includes('인터넷 연결이 끊겼어요'));

@@ -6762,3 +6762,138 @@ on conflict (code) do update
   set title = excluded.title, description = excluded.description, icon = excluded.icon, category = excluded.category,
       stat = excluded.stat, unit = excluded.unit, bronze = excluded.bronze, silver = excluded.silver, gold = excluded.gold,
       lower_better = excluded.lower_better, sort = excluded.sort, granted = excluded.granted;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 71 — CNSA 뱃지 셋 더 · 운영자 뱃지 화면 (뱃지마다 여러 학생에게 한 번에 주고 거두기)
+--   · CNSA 뱃지(충남삼성고 학생) · MSMSP 우수 금뱃지 · 동아리 Beatus — 실제 핀 그림은 src/lib/ui/pins
+--   · 지금까지는 학생 한 명씩 상세 화면에 들어가 주고 거뒀다. 운영자 화면 "뱃지"에서 뱃지를 고르고
+--     찾은 학생 여럿 · 학번 목록(관리자) · 학교 인증한 학생 모두에게 한 번에 주고, 가진 사람 여럿을 한 번에 거둔다.
+--     바뀐 학생마다 grant_badge / revoke_badge 기록 (detail.bulk)
+-- ════════════════════════════════════════════════════════════════════
+insert into private.achievement_defs (code, title, description, icon, category, stat, unit, bronze, silver, gold, lower_better, sort, granted) values
+  ('cnsa_student', 'CNSA 뱃지',          '충남삼성고 학생임을 증명하는 뱃지', '🏫', 'cnsa', 'cnsa_student', '', 1, 1, 1, false, 55, true),
+  ('msmsp_gold',   'MSMSP 우수 금뱃지',  'MSMP 우수자에게 수여하는 뱃지',     '🥇', 'cnsa', 'msmsp_gold',   '', 1, 1, 1, false, 56, true),
+  ('club_beatus',  '동아리 Beatus 뱃지', 'IT 동아리 Beatus의 뱃지',           '💻', 'cnsa', 'club_beatus',  '', 1, 1, 1, false, 58, true)
+on conflict (code) do update
+  set title = excluded.title, description = excluded.description, icon = excluded.icon, category = excluded.category,
+      stat = excluded.stat, unit = excluded.unit, bronze = excluded.bronze, silver = excluded.silver, gold = excluded.gold,
+      lower_better = excluded.lower_better, sort = excluded.sort, granted = excluded.granted;
+
+-- 여러 명에게 주기(p_on) · 거두기 — 권한은 부르는 쪽이 본다. 이미 가진 사람에게 주거나 없는 사람에게서 거두면 건너뛴다.
+-- 거두면 대표 업적에서도 뺀다. 바뀐 사람마다 기록하고 바뀐 수를 돌려준다
+create or replace function private.badge_apply(p_staff uuid, p_code text, p_users uuid[], p_on boolean)
+returns int language plpgsql security definer set search_path = public, private as $fn$
+declare n int;
+begin
+  if not exists (select 1 from private.achievement_defs where code = p_code and granted) then raise exception 'not_grantable'; end if;
+  if p_on then
+    with ins as (
+      insert into private.user_achievements (user_id, code, tier)
+      select p.id, p_code, 3 from public.profiles p where p.id = any(p_users)
+      on conflict (user_id, code) do nothing
+      returning user_id)
+    insert into private.audit_log (staff_id, action, target_user, detail)
+    select p_staff, 'grant_badge', user_id, jsonb_build_object('code', p_code, 'bulk', true) from ins;
+  else
+    with del as (
+      delete from private.user_achievements where code = p_code and user_id = any(p_users)
+      returning user_id),
+    unfeature as (
+      update public.profiles set featured_badges = array_remove(featured_badges, p_code)
+       where id in (select user_id from del) and p_code = any(featured_badges))
+    insert into private.audit_log (staff_id, action, target_user, detail)
+    select p_staff, 'revoke_badge', user_id, jsonb_build_object('code', p_code, 'bulk', true) from del;
+  end if;
+  get diagnostics n = row_count;
+  return n;
+end
+$fn$;
+revoke all on function private.badge_apply(uuid, text, uuid[], boolean) from public, anon, authenticated;
+
+-- 운영자: 줄 수 있는 뱃지 (분류 · 가진 사람 수)
+create or replace function public.admin_badges(p_staff uuid)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  perform private.require_staff(p_staff);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('code', d.code, 'title', d.title, 'description', d.description, 'icon', d.icon,
+                                        'category', d.category,
+                                        'holders', (select count(*) from private.user_achievements a where a.code = d.code))
+                     order by d.sort)
+      from private.achievement_defs d
+     where d.granted), '[]'::jsonb);
+end
+$fn$;
+
+-- 운영자: 한 뱃지를 가진 학생 (최근에 받은 순, 1000명까지)
+create or replace function public.admin_badge_holders(p_staff uuid, p_code text)
+returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+begin
+  perform private.require_staff(p_staff);
+  if not exists (select 1 from private.achievement_defs where code = p_code and granted) then raise exception 'not_grantable'; end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', p.id, 'nickname', p.nickname, 'status', p.status, 'earned_at', a.earned_at)
+                     order by a.earned_at desc, p.id)
+      from (select user_id, earned_at from private.user_achievements where code = p_code
+             order by earned_at desc limit 1000) a
+      join public.profiles p on p.id = a.user_id), '[]'::jsonb);
+end
+$fn$;
+
+-- 운영자: 고른 학생 여럿에게 한 번에 주기 · 거두기 (한 번에 500명까지)
+create or replace function public.admin_set_badge_many(p_staff uuid, p_code text, p_users uuid[], p_on boolean)
+returns int language plpgsql security definer set search_path = public, private as $fn$
+begin
+  perform private.require_staff(p_staff);
+  if coalesce(cardinality(p_users), 0) > 500 then raise exception 'too_many'; end if;
+  return private.badge_apply(p_staff, p_code, coalesce(p_users, '{}'), p_on);
+end
+$fn$;
+
+-- 운영자: 학번 목록으로 주기 — 학번은 학생 신원이라 관리자(identity)만, 열람 기록을 남긴다.
+-- 학교 이메일 앞자리가 학번. 가입한 학생에게만 주고, 못 찾은 학번(아직 가입 안 함 · 잘못 적음)을 돌려준다
+create or replace function public.admin_grant_badge_by_no(p_staff uuid, p_code text, p_nos int[])
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  v_users uuid[];
+  v_found int[];
+  n int;
+begin
+  perform private.require_staff(p_staff, true);
+  if coalesce(cardinality(p_nos), 0) = 0 then raise exception 'bad_nos'; end if;
+  if cardinality(p_nos) > 500 then raise exception 'too_many'; end if;
+  if not exists (select 1 from private.achievement_defs where code = p_code and granted) then raise exception 'not_grantable'; end if;
+  select coalesce(array_agg(x.id), '{}'), coalesce(array_agg(x.no), '{}') into v_users, v_found
+    from (select p.id, private.email_student_no(u.email)::int as no
+            from auth.users u join public.profiles p on p.id = u.id
+           where private.email_student_no(u.email)::int = any(p_nos)) x;
+  insert into private.audit_log (staff_id, action, detail)
+  values (p_staff, 'view_identity', jsonb_build_object('nos', p_nos, 'via', 'badge', 'code', p_code));
+  n := private.badge_apply(p_staff, p_code, v_users, true);
+  return jsonb_build_object('given', n, 'found', cardinality(v_users),
+    'missing', (select coalesce(jsonb_agg(distinct x order by x), '[]'::jsonb) from unnest(p_nos) x where not x = any(v_found)));
+end
+$fn$;
+
+-- 운영자: 학교 인증 · 시작하기를 마친 학생 모두에게 (CNSA 뱃지처럼 누구나 받는 것)
+create or replace function public.admin_grant_badge_all(p_staff uuid, p_code text)
+returns int language plpgsql security definer set search_path = public, private as $fn$
+begin
+  perform private.require_staff(p_staff);
+  return private.badge_apply(p_staff, p_code,
+    (select coalesce(array_agg(id), '{}') from public.profiles where verified and onboarded), true);
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['admin_badges(uuid)', 'admin_badge_holders(uuid, text)', 'admin_set_badge_many(uuid, text, uuid[], boolean)',
+                           'admin_grant_badge_by_no(uuid, text, int[])', 'admin_grant_badge_all(uuid, text)']
+  loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+    execute format('grant execute on function public.%s to service_role', f);
+  end loop;
+end
+$do$;

@@ -2,7 +2,8 @@
 	/**
 	 * 편지 쓰기 연출 (Phase 32 · 35) — 새 편지 · 답장이 같이 쓴다.
 	 *   들어올 때: 봉투가 올라와 덮개가 열리고 → 편지지가 솟아올라 → 화면 가득 펼쳐지며 편지 쓰는 칸이 된다 (봉투는 아래로 내려가 숨는다).
-	 *   보낼 때: 편지지가 접혀 봉투로 들어가고 → 덮개가 닫히고 → 밀랍이 떨어지고 놋쇠 도장이 쿵 찍힌다(진동) → 봉투를 뒤집어 주소 면(소인 "보냄") → 날아간다.
+	 *   보낼 때: 편지지가 접혀 봉투로 들어가고 → 덮개가 닫히고 → 밀랍이 떨어지고 놋쇠 도장이 쿵 찍힌다(진동) → 봉투를 뒤집어 주소 면(소인 "보냄")
+	 *            → 아래에서 빨간 우체통이 올라오고 → 봉투가 작아지며 투입구 위로 → 투입구로 쏙 들어간다 → 우체통이 출렁 (Phase 71, 전엔 하늘로 날아갔다).
 	 * 쓰는 동안에는 봉투를 화면에서 치운다 — 휴대폰 키보드가 올라와 화면이 줄어도 편지지 · 보내기 단추를 가리지 않게 (Phase 35).
 	 * 보내기 단추 줄은 화면 아래(키보드 위)에 붙는다.
 	 * nickable 이면 From. 칸에 서명(닉네임)을 직접 적는다 — 비우면 anon("익명의 ○학생") 그대로.
@@ -11,6 +12,7 @@
 	import { onDestroy } from 'svelte';
 	import Envelope from './Envelope.svelte';
 	import LetterEditor from './LetterEditor.svelte';
+	import Postbox from './Postbox.svelte';
 	import type { LetterFmt } from './rich';
 	import { envWidth, play } from './stage';
 	import * as haptic from '../haptics';
@@ -49,7 +51,7 @@
 	const len = $derived(Array.from(body).length);
 	const signed = $derived(nickable && nick.trim() ? nick.trim().replace(/\s+/g, ' ') : from);
 
-	type Phase = 'enter' | 'opened' | 'rising' | 'write' | 'fold' | 'tuck' | 'close' | 'seal' | 'flip' | 'fly';
+	type Phase = 'enter' | 'opened' | 'rising' | 'write' | 'fold' | 'tuck' | 'close' | 'seal' | 'flip' | 'aim' | 'post';
 	let phase = $state<Phase>('enter');
 	const w = $derived(envWidth(320));
 	const now = new Date().toISOString();
@@ -80,17 +82,42 @@
 			[1500, () => (phase = 'seal')],
 			// 도장이 닿는 순간 (Envelope 의 찍기 1.2s 중 45%)
 			[1500 + 540, haptic.confirm],
+			// 뒤집는 동안 우체통이 아래에서 올라온다
 			[2800, () => (phase = 'flip')],
-			[3700, () => (phase = 'fly')],
-			[4400, ondone]
+			[3550, aim],
+			[4250, () => (phase = 'post')],
+			// 봉투가 투입구로 다 들어간 순간
+			[4250 + 520, () => (bump++, haptic.success())],
+			[5450, ondone]
 		]);
 	}
 
+	// ── 우체통에 넣기 (Phase 71) — 투입구 자리를 재서 봉투를 그 위로 옮기고(작게), 그다음 봉투만 아래로 밀어 넣는다.
+	// 봉투 자리(env-wrap)의 아래 가장자리가 투입구 가운데 선에 오게 — post 에서 그 선 아래는 잘려 보이지 않는다(들어간 것처럼)
+	let envEl = $state<HTMLElement>();
+	let slotEl = $state<SVGElement>();
+	let bump = $state(0);
+	let target = $state({ x: 0, y: 0, s: 0.3 });
+	function aim() {
+		if (envEl && slotEl) {
+			const e = envEl.getBoundingClientRect();
+			const s = slotEl.getBoundingClientRect();
+			const scale = Math.min(1, (s.width * 0.9) / e.width);
+			target = {
+				x: s.left + s.width / 2 - (e.left + e.width / 2),
+				y: s.top + s.height / 2 - (e.height * scale) / 2 - (e.top + e.height / 2),
+				s: scale
+			};
+		}
+		phase = 'aim';
+	}
+
 	// 봉투 상태 — 단계마다
-	const side = $derived(phase === 'flip' || phase === 'fly' ? 'front' : 'back');
+	const side = $derived(['flip', 'aim', 'post'].includes(phase) ? 'front' : 'back');
 	const open = $derived(['opened', 'rising', 'write', 'fold', 'tuck'].includes(phase));
 	const paperPos = $derived(phase === 'rising' || phase === 'fold' || phase === 'write' ? 'out' : 'in');
-	const sealed = $derived(['seal', 'flip', 'fly'].includes(phase));
+	const sealed = $derived(['seal', 'flip', 'aim', 'post'].includes(phase));
+	const posting = $derived(['flip', 'aim', 'post'].includes(phase));
 
 </script>
 
@@ -136,24 +163,31 @@
 		</div>
 	</div>
 
-	<div class="env-wrap" style:--w="{w}px">
-		<Envelope
-			{to}
-			{toSub}
-			from={signed}
-			date={stampDate(now)}
-			{side}
-			{open}
-			paper={paperPos}
-			{sealed}
-			stamping={phase === 'seal'}
-			postmark="보냄"
-			{body}
-			{w}
-		/>
+	<!-- 빨간 우체통 — 봉투를 뒤집을 때 아래에서 올라온다 -->
+	<div class="post" class:up={posting} aria-hidden="true">
+		<Postbox bind:slot={slotEl} {bump} />
 	</div>
 
-	{#if sending}<p class="status" aria-live="polite">{phase === 'fly' ? '편지가 출발했어요' : '봉투에 담는 중…'}</p>{/if}
+	<div class="env-wrap" style:--w="{w}px" style:--tx="{target.x}px" style:--ty="{target.y}px" style:--ts={target.s} bind:this={envEl}>
+		<div class="env-inner">
+			<Envelope
+				{to}
+				{toSub}
+				from={signed}
+				date={stampDate(now)}
+				{side}
+				{open}
+				paper={paperPos}
+				{sealed}
+				stamping={phase === 'seal'}
+				postmark="보냄"
+				{body}
+				{w}
+			/>
+		</div>
+	</div>
+
+	{#if sending}<p class="status" aria-live="polite">{phase === 'post' ? '우체통에 쏙! 편지가 출발했어요' : posting ? '우체통에 넣는 중…' : '봉투에 담는 중…'}</p>{/if}
 </div>
 
 <style>
@@ -206,10 +240,42 @@
 	[data-phase='fold'] .env-wrap {
 		transition-delay: 0.05s;
 	}
-	[data-phase='fly'] .env-wrap {
-		transform: translate(22vw, -115vh) rotate(-16deg) scale(0.65);
-		transition-duration: 0.75s;
-		transition-timing-function: cubic-bezier(0.55, -0.15, 0.75, 0.3);
+	/* 우체통 투입구 위로 — 작아지며 옮겨 간다 (자리는 aim() 이 잰다) */
+	[data-phase='aim'] .env-wrap,
+	[data-phase='post'] .env-wrap {
+		transform: translate(var(--tx), var(--ty)) scale(var(--ts));
+		transition-duration: 0.62s;
+		transition-timing-function: cubic-bezier(0.35, 0.8, 0.3, 1);
+	}
+	/* 투입구로 쏙 — 봉투 자리의 아래 가장자리(= 투입구 가운데 선) 밑은 잘라 보이지 않게 하고, 봉투만 아래로 민다 */
+	[data-phase='post'] .env-wrap {
+		clip-path: polygon(-100vw -100vh, 200vw -100vh, 200vw 100%, -100vw 100%);
+	}
+	.env-inner {
+		transition: transform 0.5s cubic-bezier(0.55, 0, 0.8, 0.35);
+	}
+	[data-phase='post'] .env-inner {
+		transform: translateY(104%);
+	}
+
+	/* ── 빨간 우체통 — 봉투를 뒤집을 때 화면 아래에서 올라온다 ── */
+	.post {
+		position: fixed;
+		left: 50%;
+		bottom: calc(env(safe-area-inset-bottom) + 3vh);
+		z-index: 1;
+		width: min(40vw, 170px, 25vh);
+		translate: -50% 0;
+		transform: translateY(calc(100% + 6vh));
+		opacity: 0;
+		transition:
+			transform 0.6s cubic-bezier(0.25, 0.9, 0.3, 1.1),
+			opacity 0.3s ease;
+		pointer-events: none;
+	}
+	.post.up {
+		transform: none;
+		opacity: 1;
 	}
 
 	/* ── 편지지(쓰는 칸) — 봉투에서 솟아올라 펼쳐진다 ── */
@@ -306,11 +372,12 @@
 		font-size: 11px;
 		opacity: 0.6;
 	}
+	/* 안내 글 — 아래는 우체통 자리라 위쪽에 */
 	.status {
 		position: fixed;
 		left: 0;
 		right: 0;
-		bottom: calc(22% - 20px);
+		top: calc(var(--header-h) + var(--safe-top) + 18px);
 		margin: 0;
 		text-align: center;
 		font-size: 14px;

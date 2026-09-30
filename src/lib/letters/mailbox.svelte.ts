@@ -17,6 +17,12 @@ export const BOX = $state({
 	folders: [] as Folder[]
 });
 
+/**
+ * 우체통에서 나오는 장면을 이미 보여 준 안 읽은 편지 (Phase 71) — 앱을 켠 동안 한 번만.
+ * 편지함에 다시 들어올 때마다 같은 편지가 또 떨어지지 않게 (화면을 그리는 데 쓰지 않아 반응형이 아니다)
+ */
+export const ANNOUNCED = new Set<number>();
+
 export async function loadBox(box: Box) {
 	try {
 		const r = await fetchMailbox(box);

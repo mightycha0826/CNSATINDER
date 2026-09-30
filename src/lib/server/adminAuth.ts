@@ -81,7 +81,9 @@ const DB_ERR: Record<string, string> = {
 	already_answered: '이미 답변한 문의',
 	inquiry_not_found: '지워진 문의',
 	bad_answer: '답변을 적어 주세요 (2000자까지)',
-	not_grantable: '운영진이 줄 수 있는 업적이 아님'
+	not_grantable: '운영진이 줄 수 있는 업적이 아님',
+	too_many: '한 번에 500명까지',
+	bad_nos: '학번을 적어 주세요'
 };
 
 /** adminRpc 에러를 화면용 문구로. 모르는 에러는 그대로 던진다. */

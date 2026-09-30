@@ -2895,7 +2895,7 @@ console.log('\n[78] 업적 — 카운터 · 동/은/금 · 대표 업적 (Phase 
 	const openRoom = async (x, y) => (await one(`select private.dev_open_room($1, $2, 10) as id`, [x.email, y.email])).id;
 	const say = async (room, seat) => (await one(`insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, $2, '안녕', gen_random_uuid()) returning id`, [room, seat])).id;
 
-	check('카탈로그 26종 (Phase 44 베타 테스터 · Phase 70 극작소 포함)', Number((await one('select count(*) n from private.achievement_defs')).n) === 26);
+	check('카탈로그 29종 (Phase 44 베타 테스터 · Phase 70 극작소 · Phase 71 CNSA 뱃지 셋 포함)', Number((await one('select count(*) n from private.achievement_defs')).n) === 29);
 
 	console.log('  [대화]');
 	let room = await openRoom(A, B);
@@ -2980,7 +2980,7 @@ console.log('\n[78] 업적 — 카운터 · 동/은/금 · 대표 업적 (Phase 
 	console.log('  [보이는 곳]');
 	const mine = await rpcAs(A.id, 'my_achievements');
 	const ext = mine.items.find((x) => x.code === 'extend');
-	check('★ 내 업적: 26종 · 진행도 · 등급 · 새로 딴 것', mine.items.length === 26 && ext.tier === 2 && ext.value === 0 && JSON.stringify(ext.tiers) === '[5,20,50]' && ext.new === true, JSON.stringify(ext));
+	check('★ 내 업적: 29종 · 진행도 · 등급 · 새로 딴 것', mine.items.length === 29 && ext.tier === 2 && ext.value === 0 && JSON.stringify(ext.tiers) === '[5,20,50]' && ext.new === true, JSON.stringify(ext));
 	check('개척자는 가입 순서 (작을수록 좋음)', mine.items.find((x) => x.code === 'pioneer').lower_better === true);
 	check('대표 업적은 자동으로 높은 등급부터 3개', mine.featured.length === 3 && mine.featured.every((x, i, a) => i === 0 || a[i - 1].tier >= x.tier), JSON.stringify(mine.featured));
 	check('새 업적 목록', (await rpcAs(A.id, 'new_achievements')).length > 0);
@@ -3276,7 +3276,7 @@ console.log('\n[84] 특별 업적(베타 테스터) · 업적 카탈로그 · �
 	// 카탈로그 — 누구나(로그인한 학생) 설명 · 기준을 본다
 	const cat = await rpcAs(X, 'achievement_catalog');
 	const beta = cat.find((d) => d.code === 'beta');
-	check('★ 카탈로그: 26종 · 설명 · 등급 기준 · 베타 테스터는 운영진이 주는 업적', cat.length === 26 && beta?.granted === true && beta.title === '베타 테스터'
+	check('★ 카탈로그: 29종 · 설명 · 등급 기준 · 베타 테스터는 운영진이 주는 업적', cat.length === 29 && beta?.granted === true && beta.title === '베타 테스터'
 		&& JSON.stringify(cat.find((d) => d.code === 'extend').tiers) === '[5,20,50]' && cat.find((d) => d.code === 'extend').granted === false, JSON.stringify(beta));
 	await expectError('비로그인은 카탈로그를 못 본다', () => rowsAs(null, 'select public.achievement_catalog()'), 'permission denied');
 	check('내 업적에도 granted 가 온다 (아직 없음)', (await rpcAs(X, 'my_achievements')).items.find((a) => a.code === 'beta')?.granted === true
@@ -3665,6 +3665,60 @@ console.log('\n[93] CNSA 뱃지 — 극작소 (Phase 70)');
 	check('★ 주면 가진 것으로 · 새 업적 축하 · 대표 업적으로 걸 수 있다', mine?.tier === 3 && (await rpcAs(X, 'new_achievements')).some((b) => b.code === 'club_geukjakso')
 		&& (await rpcAs(X, 'set_featured_badges', ['club_geukjakso'])).featured[0].code === 'club_geukjakso', JSON.stringify(mine));
 	await expectError('★ 없는 분류는 못 넣는다', () => one(`insert into private.achievement_defs (code, title, description, icon, category, stat, bronze, silver, gold, sort) values ('x', 'x', 'x', 'x', 'club', 'x', 1, 1, 1, 99)`), 'achievement_defs_category_check');
+}
+
+console.log('\n[94] CNSA 뱃지 셋 · 운영자 뱃지 화면 — 여러 명에게 한 번에 (Phase 71)');
+{
+	const X = await person('m', 'f');
+	const Y = await person('f', 'm');
+	const N = await signUp('29071@cnsa.hs.kr', true); // 학번이 앞자리인 학교 이메일
+	await db.query('update public.profiles set onboarded = true where id = $1', [N]);
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	const cat = await rpcAs(X, 'achievement_catalog');
+	const pick = (c) => cat.find((d) => d.code === c);
+	check('★ 카탈로그에 CNSA 뱃지 · MSMSP 우수 금뱃지 · 동아리 Beatus 뱃지 — CNSA 분류 · 운영진이 준다',
+		['cnsa_student', 'msmsp_gold', 'club_beatus'].every((c) => pick(c)?.category === 'cnsa' && pick(c).granted === true)
+		&& pick('cnsa_student').title === 'CNSA 뱃지' && pick('msmsp_gold').title === 'MSMSP 우수 금뱃지' && pick('club_beatus').description === 'IT 동아리 Beatus의 뱃지');
+	check('CNSA 탭 순서: CNSA · MSMSP · Beatus · 극작소', cat.filter((d) => d.category === 'cnsa').map((d) => d.code).join() === 'cnsa_student,msmsp_gold,club_beatus,club_geukjakso');
+
+	const list = await svc('admin_badges', mod);
+	check('★ 뱃지 목록: 줄 수 있는 것만 (베타 테스터 + CNSA 넷) · 가진 사람 수', list.map((b) => b.code).join() === 'beta,cnsa_student,msmsp_gold,club_beatus,club_geukjakso'
+		&& list.every((b) => typeof b.holders === 'number' && b.category), JSON.stringify(list.map((b) => [b.code, b.holders])));
+	const before = list.find((b) => b.code === 'club_beatus').holders;
+	check('★ 여러 명에게 한 번에 주기 — 바뀐 수', (await svc('admin_set_badge_many', mod, 'club_beatus', [X, Y, X], true)) === 2);
+	check('이미 가진 사람에게 다시 주면 건너뛴다', (await svc('admin_set_badge_many', mod, 'club_beatus', [X, Y], true)) === 0);
+	check('가진 사람 수가 는다', (await svc('admin_badges', mod)).find((b) => b.code === 'club_beatus').holders === before + 2);
+	const holders = await svc('admin_badge_holders', mod, 'club_beatus');
+	check('★ 가진 학생 목록 — 익명 이름 · 받은 때', [X, Y].every((u) => holders.some((h) => h.id === u && h.earned_at && 'nickname' in h)));
+	check('받은 학생에게 새 업적 축하', (await rpcAs(Y, 'new_achievements')).some((b) => b.code === 'club_beatus'));
+	check('한 명씩 주고 거둔 것처럼 사람마다 기록 (bulk)', Number((await one(`select count(*) n from private.audit_log where action = 'grant_badge' and detail->>'code' = 'club_beatus' and (detail->>'bulk')::boolean and target_user = any($1)`, [[X, Y]])).n) === 2);
+	await rpcAs(X, 'set_featured_badges', ['club_beatus']);
+	check('★ 여러 명에게서 한 번에 거두기 — 대표 업적에서도 빠진다', (await svc('admin_set_badge_many', mod, 'club_beatus', [X, Y], false)) === 2
+		&& !(await one('select featured_badges from public.profiles where id = $1', [X])).featured_badges.includes('club_beatus')
+		&& (await rpcAs(X, 'my_achievements')).items.find((a) => a.code === 'club_beatus').tier === 0);
+	check('거둔 것도 사람마다 기록', Number((await one(`select count(*) n from private.audit_log where action = 'revoke_badge' and detail->>'code' = 'club_beatus' and target_user = any($1)`, [[X, Y]])).n) === 2);
+	await expectError('★ 기준으로 따는 업적은 여러 명에게도 못 준다', () => svc('admin_set_badge_many', mod, 'talk', [X], true), 'not_grantable');
+	await expectError('가진 사람 목록도 줄 수 있는 뱃지만', () => svc('admin_badge_holders', mod, 'talk'), 'not_grantable');
+	await expectError('한 번에 500명까지', () => svc('admin_set_badge_many', mod, 'club_beatus', Array.from({ length: 501 }, () => X), true), 'too_many');
+	await expectError('운영진 명단에 없으면 거절', () => svc('admin_set_badge_many', X, 'club_beatus', [Y], true), 'not_staff');
+	await expectError('★ 학생은 부를 수 없다', () => rowsAs(X, `select public.admin_set_badge_many($1, 'club_beatus', array[$1]::uuid[], true)`, [X]), 'permission denied');
+	await expectError('학생은 뱃지 목록도 못 본다', () => rowsAs(X, `select public.admin_badges($1)`, [X]), 'permission denied');
+
+	console.log('  [학번으로 · 모두에게]');
+	await expectError('★ 학번으로 주기는 관리자만 (학생 신원)', () => svc('admin_grant_badge_by_no', mod, 'msmsp_gold', [29071]), 'admin_only');
+	const byNo = await svc('admin_grant_badge_by_no', adm, 'msmsp_gold', [29071, 29999, 29999]);
+	check('★ 학번으로 주기 — 가입한 학생에게만 · 못 찾은 학번을 알려 준다', byNo.given === 1 && byNo.found === 1 && JSON.stringify(byNo.missing) === '[29999]', JSON.stringify(byNo));
+	check('학번으로 준 학생이 뱃지를 가졌다', Number((await one(`select tier from private.user_achievements where user_id = $1 and code = 'msmsp_gold'`, [N])).tier) === 3);
+	check('학번 조회는 열람 기록에 남는다', Number((await one(`select count(*) n from private.audit_log where staff_id = $1 and action = 'view_identity' and detail->>'via' = 'badge'`, [adm])).n) >= 1);
+	await expectError('빈 학번 목록은 거절', () => svc('admin_grant_badge_by_no', adm, 'msmsp_gold', []), 'bad_nos');
+	const late = await person('m', 'f', { onboarded: false });
+	const everyone = Number((await one('select count(*) n from public.profiles where verified and onboarded')).n);
+	const had = Number((await one(`select count(*) n from private.user_achievements a join public.profiles p on p.id = a.user_id where a.code = 'cnsa_student' and p.verified and p.onboarded`)).n);
+	check('★ 모두에게 — 학교 인증 · 시작하기를 마친 학생 전부', (await svc('admin_grant_badge_all', mod, 'cnsa_student')) === everyone - had
+		&& (await rpcAs(X, 'my_achievements')).items.find((a) => a.code === 'cnsa_student').tier === 3);
+	check('다시 눌러도 더 주지 않는다', (await svc('admin_grant_badge_all', mod, 'cnsa_student')) === 0);
+	check('시작하기 전인 계정은 빠진다', !(await one(`select 1 x from private.user_achievements where user_id = $1 and code = 'cnsa_student'`, [late])));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

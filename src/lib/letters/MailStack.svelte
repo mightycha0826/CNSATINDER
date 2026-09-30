@@ -6,6 +6,7 @@
 	 * loading 이면 봉투 모양 빈 자리(ghosts 장)가 은은히 숨 쉰다 (G4).
 	 * 고르는 중(selecting, Phase 47)이면 누르면 고르기 — picked(고른 편지 id) · ontoggle. 폴더 안에서는 편지마다 받은/보낸이 달라서 it.box 를 먼저 본다.
 	 * showBox(폴더 안, Phase 47-3) — 봉투마다 "받은 편지" · "보낸 편지" 딱지.
+	 * emerge(편지함, Phase 71) — { 편지 id: 늦출 ms } 인 편지는 위에서 떨어지는 대신 우체통 문에서 작게 튀어나와 커진다 (받은 편지가 우체통에서 나온다).
 	 */
 	import { goto } from '$app/navigation';
 	import { S } from '$lib/state.svelte';
@@ -23,6 +24,7 @@
 		selecting = false,
 		picked = [],
 		showBox = false,
+		emerge = {},
 		ontoggle,
 		ondrop
 	}: {
@@ -33,6 +35,7 @@
 		selecting?: boolean;
 		picked?: number[];
 		showBox?: boolean;
+		emerge?: Record<number, number>;
 		ontoggle?: (it: MailItem) => void;
 		/** 봉투 메뉴로 그 사람과의 편지를 지웠다 — BOX 밖의 목록(폴더 화면)도 고치게 */
 		ondrop?: (threadId: number) => void;
@@ -52,7 +55,7 @@
 {:else}
 	<ul class="stack">
 		{#each items as it, i (it.id)}
-			<li class="arrive" style:--i={Math.min(i, 8)}>
+			<li class="arrive" class:emerge={it.id in emerge} style:--i={Math.min(i, 8)} style:--em="{emerge[it.id] ?? 0}ms">
 				<MailboxItem
 					item={it}
 					box={boxOf(it)}
@@ -106,6 +109,20 @@
 		from {
 			opacity: 0;
 			transform: translateY(-18px) rotate(-2deg);
+		}
+	}
+	/* 우체통에서 나온다 — 위(우체통 문)에서 작게 나와 흔들리며 제자리로 */
+	.arrive.emerge {
+		transform-origin: 50% 0;
+		animation: emerge 0.7s var(--em) cubic-bezier(0.2, 0.9, 0.3, 1.12) both;
+	}
+	@keyframes emerge {
+		from {
+			opacity: 0;
+			transform: translateY(-90px) scale(0.3) rotate(-6deg);
+		}
+		40% {
+			opacity: 1;
 		}
 	}
 	/* 불러오는 동안 — 봉투 모양 빈 자리가 은은히 숨 쉰다 */

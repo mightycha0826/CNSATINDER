@@ -726,4 +726,18 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       새 뱃지는 `achievement_defs` 한 줄(category `cnsa`, granted) + `lib/ui/pins` 에 그림 컴포넌트 하나.
       스키마 테스트 [93], 화면 테스트 `achievements`(움직임 없음 · 전체 업적 보기 · 배지 크기 · CNSA 탭 · 핀 그림).
       실DB 반영 (phase70_cnsa_badge — 2026-09-30, 카탈로그 26종 · 주기 · 내 업적 · 대표 걸기를 되돌리는 트랜잭션으로 확인).
+- [x] **Phase 71 — 우체통 · 운영자 뱃지 화면 · CNSA 뱃지 셋 · 넓은 책상**
+      익명편지: "새로 온 편지가 없어요" 대신 맨 위에 큰 빨간 우체통(`lib/letters/Postbox`) — 안 읽은 편지 수 · 투입구에 봉투 끝.
+      받을 때: 처음 보는 안 읽은 편지마다(앱을 켠 동안 한 번, `ANNOUNCED`) 봉투가 위에서 떨어져 투입구로 → 통이 출렁 → 아래 문이 열려 편지가 우체통 밑으로 나온다(`MailStack` 의 `emerge`).
+      우체통을 누르면 가장 최근 안 읽은 편지. 보낼 때(`EnvelopeCompose`): 봉투를 뒤집는 동안 우체통이 아래에서 올라오고 → 봉투가 작아지며 투입구에 맞춰(`aim` 이 투입구 자리를 잰다)
+      → 투입구로 쏙(봉투 자리 아래 가장자리 = 투입구 선, 그 밑은 잘림) → 출렁 · 진동 (전엔 하늘로 날아갔다). 동작 줄이기면 장면 없이.
+      편지 보관함 이름표와 편지 쓰기 단추를 한 줄에(같은 높이, 떠 있던 단추 · 겹침 재기 삭제). 좁은 화면(360 미만)은 연필만 있는 네모 단추.
+      책상을 화면 양옆보다 14 씩 넓혀(`--bleed`, 책상 위 물건은 제자리) 눌러서 살짝 줄어도 모서리에 바깥 바탕이 비치지 않게.
+      운영자 화면 "뱃지"(`/admin/badges`, moderate): 분류(특별 · CNSA)별 뱃지 · 가진 사람 수 → 고른 뱃지를 찾은 학생 여럿에게 · 학번 목록으로(관리자만, 열람 기록) ·
+      학교 인증한 학생 모두에게 주고, 가진 학생을 골라 한 번에 거둔다. 서버 `admin_badges` · `admin_badge_holders` · `admin_set_badge_many`(500명까지) ·
+      `admin_grant_badge_by_no`(못 찾은 학번을 돌려준다) · `admin_grant_badge_all` — 바뀐 학생마다 grant_badge / revoke_badge 기록(bulk).
+      CNSA 뱃지 셋: CNSA 뱃지(`cnsa_student`, 파란 두 상자 · 옅은 금 테) · MSMSP 우수 금뱃지(`msmsp_gold`, 금 육각 정육면체 · MSMP 새김) ·
+      동아리 Beatus 뱃지(`club_beatus`, 공식 로고 — 은 테 · 검은 에나멜 · 세리프 B + 마우스 화살표). 동아리가 아닌 뱃지 자세히는 "운영진이 주는 CNSA 뱃지".
+      스키마 테스트 [94], 화면 테스트 `letters`(우체통 · 우체통에서 나옴 · 한 줄 · 넓은 책상 · 투입구에 맞춰 넣기 · 좁은 화면) · `audit`(뱃지 화면) · `achievements`(CNSA 넷).
+      실DB 반영 (phase71_badges_bulk — 2026-09-30, 카탈로그 29종 · 여럿 주기 · 다시 주면 0 · 가진 학생 · 거두기를 되돌리는 트랜잭션으로 확인).
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

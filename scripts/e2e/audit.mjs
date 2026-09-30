@@ -23,6 +23,12 @@ let STAFF_LIST = [
 	{ id: 'o1', no: '20529', nickname: '단단복숭아', display_name: null, role: 'admin', owner: true, created_at: new Date().toISOString(), last_seen: new Date().toISOString() },
 	{ id: 'a2', no: '20107', nickname: '얌전한참새', display_name: null, role: 'admin', owner: false, created_at: new Date().toISOString(), last_seen: null }
 ];
+const BADGES = [
+	{ code: 'beta', title: '베타 테스터', description: '출시 전 베타 테스트에 함께한 사람', icon: '🧪', category: 'special' },
+	{ code: 'cnsa_student', title: 'CNSA 뱃지', description: '충남삼성고 학생임을 증명하는 뱃지', icon: '🏫', category: 'cnsa' },
+	{ code: 'club_beatus', title: '동아리 Beatus 뱃지', description: 'IT 동아리 Beatus의 뱃지', icon: '💻', category: 'cnsa' }
+];
+const HOLDERS = { club_beatus: [A] }; // Phase 71 — 뱃지마다 가진 학생
 const calls = [];
 
 const user = (i, nick) => ({ id: i, nickname: nick, status: 'active', suspended_until: null, strikes: 0, verified: true, onboarded: true, created_at: t, online: false, last_seen: t, staff_role: null, reports_received: 1 });
@@ -62,6 +68,18 @@ const RPC = {
 	// Phase 44 — 특별 업적
 	admin_user_badges: () => [{ code: 'beta', title: '베타 테스터', description: '출시 전 베타 테스트에 함께한 사람', has: BETA, earned_at: BETA ? t : null }],
 	admin_set_badge: (a) => ((BETA = a.p_on), RPC.admin_user_badges()),
+	// Phase 71 — 뱃지 화면 (뱃지마다 여러 명에게)
+	admin_badges: () => BADGES.map((b) => ({ ...b, holders: (HOLDERS[b.code] ?? []).length })),
+	admin_badge_holders: (a) => (HOLDERS[a.p_code] ?? []).map((u) => ({ id: u, nickname: u === A ? '푸른고래' : '작은별', status: 'active', earned_at: t })),
+	admin_set_badge_many: (a) => {
+		const cur = new Set(HOLDERS[a.p_code] ?? []);
+		const before = cur.size;
+		a.p_users.forEach((u) => (a.p_on ? cur.add(u) : cur.delete(u)));
+		HOLDERS[a.p_code] = [...cur];
+		return Math.abs(cur.size - before);
+	},
+	admin_grant_badge_by_no: (a) => ({ given: 1, found: 1, missing: a.p_nos.filter((n) => n !== 29999) }),
+	admin_grant_badge_all: () => 3,
 	admin_user_rooms: () => [],
 	admin_user_letters: () => [{ letter_id: 7, alias: '맑은 하늘', is_author: true, status: 'open', created_at: t, preview: '광고 편지', my_comments: 0 }],
 	admin_get_settings: () => ({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5, letters_gate: true, letters_gate_min: 100, maintenance: MAINT_ON, maintenance_msg: '', maintenance_until: null, maintenance_at: MAINT_AT }),
@@ -447,6 +465,59 @@ try {
 	await ow.page.getByRole('button', { name: '예약 취소' }).click();
 	await ow.page.getByRole('button', { name: '점검 시작' }).waitFor({ timeout: 5000 }).catch(() => {});
 	check('★ 예약 취소 → 점검 · 예약 둘 다 지움', MAINT_AT === null && !MAINT_ON && (await ow.page.locator('.maint-bar').count()) === 0);
+
+	console.log('\n[뱃지] 뱃지마다 여러 학생에게 한 번에 주고 거두기 (Phase 71)');
+	{
+		ROLE = 'admin';
+		const { page: bp, ctx: bctx } = await session();
+		await dialogs(bp, () => true);
+		const done = (txt) => bp.locator(`[data-ack-msg*="${txt}"], .toast:has-text("${txt}")`).first();
+		const r = await bp.go('/admin/badges');
+		check('/admin/badges → 200 · 사이드바 "뱃지"', r.status() === 200 && (await bp.locator('.side nav a', { hasText: '뱃지' }).getAttribute('aria-current')) === 'page');
+		const list = (await bp.locator('nav.list').innerText()).replace(/\s+/g, ' ');
+		check('★ 분류(특별 · CNSA)별 뱃지 · 가진 사람 수', list.includes('특별') && list.includes('CNSA') && list.includes('동아리 Beatus 뱃지 1명') && list.includes('베타 테스터 0명'), list);
+		await bp.locator('nav.list a', { hasText: 'Beatus' }).click(); await bp.waitForURL('**/admin/badges?code=club_beatus'); await bp.waitForTimeout(300);
+		check('고른 뱃지 — 핀 그림 · 설명 · 가진 학생 (학번 이름은 관리자에게만)', (await bp.locator('section.head .pin-art').count()) === 1 && (await bp.locator('section.head').innerText()).includes('IT 동아리 Beatus의 뱃지')
+			&& (await bp.locator('tbody', { hasText: '푸른고래' }).innerText()).includes('29999 홍길동'));
+		await bp.getByRole('button', { name: '찾기', exact: true }).click(); await bp.waitForURL(/q=/); await bp.locator('form[action="?/give"]').waitFor();
+		check('★ 찾은 학생 중 이미 가진 사람은 "가짐" · 못 고른다', (await bp.getByRole('checkbox', { name: '푸른고래 고르기' }).first().isDisabled()) && (await bp.locator('form[action="?/give"] tr.has').count()) === 1);
+		await bp.getByRole('checkbox', { name: '찾은 학생 모두 고르기' }).check();
+		await bp.getByRole('button', { name: '고른 1명에게 주기' }).click();
+		await done('1명에게 줬어요').waitFor({ timeout: 5000 }).catch(() => {});
+		const give = calls.filter((c) => c[0] === 'admin_set_badge_many').at(-1)?.[1];
+		check('★ 고른 학생 여럿 → admin_set_badge_many(on) — 이미 가진 사람은 빼고', give?.p_code === 'club_beatus' && give.p_on === true && JSON.stringify(give.p_users) === JSON.stringify([B]), JSON.stringify(give));
+		await bp.waitForTimeout(400);
+		check('준 뒤 가진 학생 2명', (await bp.locator('form[action="?/take"] tbody tr').count()) === 2);
+		await bp.getByRole('checkbox', { name: '보이는 학생 모두 고르기' }).check();
+		await bp.getByRole('button', { name: '고른 2명에게서 거두기' }).click();
+		await done('2명에게서 거뒀어요').waitFor({ timeout: 5000 }).catch(() => {});
+		const take = calls.filter((c) => c[0] === 'admin_set_badge_many').at(-1)?.[1];
+		check('★ 가진 학생 골라 한 번에 거두기 → admin_set_badge_many(off)', take?.p_on === false && take.p_users.length === 2, JSON.stringify(take));
+		await bp.waitForTimeout(400);
+		check('다 거두면 "아직 아무도 없어요"', (await bp.getByText('아직 아무도 없어요').count()) === 1);
+		await bp.getByRole('tab', { name: '학번으로' }).click();
+		await bp.getByRole('textbox', { name: '학번 목록' }).fill('29999, 20101\n20102 20101');
+		await bp.getByRole('button', { name: '학번으로 주기' }).click();
+		await done('1명에게 줬어요').waitFor({ timeout: 5000 }).catch(() => {});
+		const nos = calls.filter((c) => c[0] === 'admin_grant_badge_by_no').at(-1)?.[1];
+		check('★ 학번 목록(쉼표 · 줄바꿈 · 띄어쓰기, 겹친 것 한 번) → admin_grant_badge_by_no', JSON.stringify(nos?.p_nos) === '[29999,20101,20102]' && nos.p_code === 'club_beatus', JSON.stringify(nos));
+		await bp.waitForTimeout(300);
+		check('못 찾은 학번을 알려 준다', (await bp.locator('.a-warn').innerText()).includes('20101, 20102'));
+		await bp.getByRole('tab', { name: '모두에게' }).click();
+		await bp.getByRole('button', { name: '모두에게 주기' }).click();
+		await done('3명에게 줬어요').waitFor({ timeout: 5000 }).catch(() => {});
+		check('★ 모두에게 → admin_grant_badge_all', calls.filter((c) => c[0] === 'admin_grant_badge_all').at(-1)?.[1]?.p_code === 'club_beatus');
+		await bp.screenshot({ path: `${SP}/audit-badges.png`, fullPage: true });
+		check('페이지 오류 없음 (뱃지)', bp.errs.length === 0, bp.errs.join(' / '));
+		await bctx.close();
+
+		ROLE = 'moderator';
+		const { page: mp, ctx: mctx } = await session();
+		await mp.go('/admin/badges?code=club_beatus');
+		check('★ 운영자도 뱃지 화면 — 학번으로 주기는 없다 (학생 신원)', (await mp.getByRole('tab', { name: '학번으로' }).count()) === 0 && (await mp.getByRole('tab', { name: '모두에게' }).count()) === 1);
+		await mctx.close();
+		ROLE = 'admin';
+	}
 } finally {
 	await browser.close();
 	vite.kill();

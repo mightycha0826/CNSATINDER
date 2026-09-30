@@ -17,10 +17,10 @@ try {
 
 	console.log('[업적 화면]');
 	await page.goto(U('/dev/achievements')); await page.locator('.grid').waitFor(); await page.waitForTimeout(400);
-	check('요약: 모은 업적 수 · 금 · 은 · 동 (특별 업적은 금 · 은 · 동에 안 셈)', (await page.locator('.summary').innerText()).replace(/\s+/g, ' ').includes('11 / 14') && (await page.locator('.metals').innerText()).replace(/\s+/g, '') === '금2은3동4', await page.locator('.summary').innerText());
+	check('요약: 모은 업적 수 · 금 · 은 · 동 (특별 업적은 금 · 은 · 동에 안 셈)', (await page.locator('.summary').innerText()).replace(/\s+/g, ' ').includes('13 / 17') && (await page.locator('.metals').innerText()).replace(/\s+/g, '') === '금2은3동4', await page.locator('.summary').innerText());
 	check('★ 대표 업적 = 교복 깃의 배지 3개 (Phase 69 — 칸 줄 대신 교복)', (await page.locator('.featured .uniform button.pin [role="img"]').count()) === 3
 		&& (await page.locator('.featured .hint').innerText()) === '메달을 꾹 눌러 교복에 달아요');
-	check('메달 14개 · 잠긴 것은 잠김으로', (await page.locator('.grid .card').count()) === 14 && (await page.locator('.card.locked').count()) === 3);
+	check('메달 17개 · 잠긴 것은 잠김으로', (await page.locator('.grid .card').count()) === 17 && (await page.locator('.card.locked').count()) === 4);
 	check('★ 베타 테스터 — 특별 업적 ("특별" · 받음)', (await page.locator('.card', { hasText: '베타 테스터' }).locator('[aria-label="베타 테스터 특별"]').count()) === 1
 		&& (await page.locator('.card', { hasText: '베타 테스터' }).innerText()).includes('받음'));
 	check('새로 딴 업적에 NEW', (await page.locator('.card .new').count()) === 2);
@@ -31,10 +31,17 @@ try {
 	check('★ 분류 탭에 CNSA', (await page.locator('.cats button').allInnerTexts()).at(-1) === 'CNSA');
 	check('분류 탭: 편지만', (await page.locator('.grid .card').count()) === 2);
 	await page.getByRole('button', { name: 'CNSA', exact: true }).click();
-	check('★ CNSA 탭: 극작소 뱃지 하나 — 동그란 메달 대신 핀 그림', (await page.locator('.grid .card').count()) === 1
-		&& (await page.locator('.card [aria-label="극작소 CNSA"] .pin-art').count()) === 1 && (await page.locator('.card .medal.pin .rim').count()) === 0);
-	await page.locator('.grid .card').first().click(); await page.waitForTimeout(300);
+	check('★ CNSA 탭: 뱃지 넷 (CNSA · MSMSP · Beatus · 극작소) — 동그란 메달 대신 핀 그림', (await page.locator('.grid .card').count()) === 4
+		&& (await page.locator('.card .pin-art').count()) === 4 && (await page.locator('.card .medal.pin .rim').count()) === 0
+		&& (await page.locator('.card [aria-label="CNSA 뱃지 CNSA"]').count()) === 1 && (await page.locator('.card [aria-label="MSMSP 우수 금뱃지 CNSA"]').count()) === 1
+		&& (await page.locator('.card.locked [aria-label="동아리 Beatus 뱃지 잠김"]').count()) === 1);
+	check('Beatus 핀 — 위 · 아래 글자 · B', (await page.locator('.card', { hasText: 'Beatus' }).locator('textPath').allTextContents()).join('|') === 'CNSA IT CLUB|BEATUS');
+	await page.screenshot({ path: `${SP}/ach-1b-cnsa.png`, fullPage: true });
+	await page.locator('.card', { hasText: '극작소' }).click(); await page.waitForTimeout(300);
 	check('★ 극작소 자세히 — "동아리 부원에게 주는 CNSA 뱃지"', (await page.locator('.detail').innerText()).includes('동아리 부원에게 주는 CNSA 뱃지'));
+	await page.keyboard.press('Escape'); await page.waitForTimeout(400);
+	await page.locator('.card', { hasText: 'MSMSP' }).click(); await page.waitForTimeout(300);
+	check('MSMSP 자세히 — 동아리가 아니면 "운영진이 주는 CNSA 뱃지"', (await page.locator('.detail').innerText()).includes('운영진이 주는 CNSA 뱃지'));
 	await page.keyboard.press('Escape'); await page.waitForTimeout(400);
 	await page.getByRole('button', { name: '전체', exact: true }).click();
 

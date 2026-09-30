@@ -33,7 +33,7 @@ const PAGES: [RegExp, (Perm | 'any')[]][] = [
 	[/^\/admin\/(login|session)/, ['any']],
 	[/^\/admin\/live/, ['live']],
 	[/^\/admin\/(rooms|posts)/, ['identity']],
-	[/^\/admin\/(reports|letters|users)/, ['moderate']],
+	[/^\/admin\/(reports|letters|users|badges)/, ['moderate']],
 	[/^\/admin\/settings/, ['service', 'settings']],
 	[/^\/admin\/notices/, ['any']],
 	[/^\/admin\/inquiries/, ['inquiry']],
@@ -57,6 +57,7 @@ export function activityOf(path: string | null): string {
 	if (p.startsWith('/admin/letters') || p.startsWith('/admin/posts')) return '편지 신고 보는 중';
 	if (p.startsWith('/admin/users/')) return '사용자 살펴보는 중';
 	if (p.startsWith('/admin/users')) return '사용자 찾는 중';
+	if (p.startsWith('/admin/badges')) return '뱃지 주는 중';
 	if (p.startsWith('/admin/rooms')) return '대화 기록 보는 중';
 	if (p.startsWith('/admin/live')) return '실시간 현황 보는 중';
 	if (p.startsWith('/admin/notices')) return '공지사항 보는 중';
