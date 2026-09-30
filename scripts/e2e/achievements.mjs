@@ -53,6 +53,17 @@ try {
 	console.log('[교복 — 대표 업적은 깃의 배지 (Phase 60)]');
 	await page.goto(U('/dev/achievements?uniform')); await page.locator('.uniform').first().waitFor(); await page.waitForTimeout(400);
 	const uni = (neck, n) => page.locator(`.u[data-neck="${neck}"][data-n="${n}"] .uniform`);
+	// Phase 62 — 숨 쉬듯 움직이고 넥타이 날 · 리본 꼬리가 흔들린다. 동작 줄이기면 멈춘다
+	const motion = async () => uni('tie', 3).evaluate((u) => {
+		const a = getComputedStyle(u.querySelector('.body')), t = getComputedStyle(u.querySelector('.tie .sway'));
+		return { body: a.animationName !== 'none' && a.animationIterationCount === 'infinite', sway: t.animationName !== 'none' && t.animationIterationCount === 'infinite' };
+	});
+	const moving = await motion();
+	check('★ 교복이 숨 쉬듯 움직이고 넥타이가 흔들린다', moving.body && moving.sway, JSON.stringify(moving));
+	await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(150);
+	const still = await motion();
+	check('동작 줄이기면 멈춘다', !still.body && !still.sway, JSON.stringify(still));
+	// 아래 누르기 · 재기는 움직임을 멈춘 채로 (배지가 숨 쉬듯 움직여 playwright 가 "멈춘 요소"를 기다린다)
 	check('★ 넥타이 · 리본 교복', (await uni('tie', 3).getAttribute('data-neck')) === 'tie' && (await uni('ribbon', 3).getAttribute('data-neck')) === 'ribbon');
 	check('★ 대표 업적 수만큼 깃에 배지 · 남은 칸은 점선 "+" (업적 화면으로)', (await uni('tie', 3).locator('button.pin').count()) === 3 && (await uni('tie', 3).locator('.empty').count()) === 0
 		&& (await uni('tie', 2).locator('button.pin').count()) === 2 && (await uni('tie', 2).locator('a.empty').getAttribute('href')) === '/dev/achievements'
@@ -62,7 +73,15 @@ try {
 	check('배지를 누르면 그 업적', (await page.locator('.picked').innerText()) === '개척자');
 	const pins = await uni('tie', 3).locator('button.pin').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => [r.width, r.height, r.top]));
 	check('배지 누름 영역 44 · 서로 겹치지 않는다', pins.every(([w, h]) => w >= 44 && h >= 44) && pins.every((p, i) => !i || p[2] - pins[i - 1][2] >= 44), JSON.stringify(pins));
-	// Phase 61 — 깃이 커서 배지 3개가 다 깃 안에 (가운데 · 위아래 · 좌우 끝), 주머니는 수평으로 교표 바로 위 가운데
+	// Phase 62 — 넥타이는 매듭(머리)이 날 위를 덮고 날보다 넓다, 리본은 고리 둘 · 꼬리 둘 · 매듭
+	const tie = await uni('tie', 3).evaluate((u) => {
+		const k = u.querySelector('.tie .knot').getBBox(), b = u.querySelector('.tie .blade').getBBox();
+		return { knotW: k.width, covers: k.y < b.y && k.y + k.height > b.y + 2, wider: k.width > 2 * 7.5 + 10 };
+	});
+	check('★ 넥타이 매듭(머리) — 날 위를 덮고 날 윗부분보다 넓다', tie.covers && tie.wider, JSON.stringify(tie));
+	check('★ 리본 — 고리 둘 · 꼬리 둘', (await uni('ribbon', 3).locator('.ribbon .loop').count()) === 2 && (await uni('ribbon', 3).locator('.ribbon .tail').count()) === 2
+		&& (await uni('tie', 3).locator('.ribbon').count()) === 0 && (await uni('ribbon', 3).locator('.tie').count()) === 0);
+	// Phase 61 — 깃이 커서 배지 3개가 다 깃 안에 (가운데 · 위아래 · 좌우 끝), 주머니는 수평으로 교표 바로 위 가운데 (움직임을 멈추고 잰다)
 	for (const [neck, w] of [['tie', 0], ['ribbon', 320]]) {
 		if (w) { await page.setViewportSize({ width: w, height: 844 }); await page.waitForTimeout(200); }
 		const inside = await uni(neck, 3).evaluate((u) => {
@@ -88,6 +107,7 @@ try {
 	check('★ 가슴의 교표 그림이 불러와진다', crest === '244x256', crest);
 	await uni('tie', 3).screenshot({ path: `${SP}/ach-7-uniform-tie.png` });
 	await uni('ribbon', 2).screenshot({ path: `${SP}/ach-8-uniform-ribbon.png` });
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
 
 	console.log('[새 업적 축하]');
 	await page.goto(U('/dev/achievements?celebrate')); await page.waitForTimeout(700);
@@ -124,7 +144,9 @@ try {
 		&& (await page.locator('.profile .badges [aria-label="이야기꾼 금"]').count()) === 1 && (await page.locator('.profile .uniform[data-neck="tie"]').count()) === 1
 		&& (await page.locator('.profile .uniform .empty').count()) === 0);
 	await page.screenshot({ path: `${SP}/ach-4-partner.png` });
+	await page.emulateMedia({ reducedMotion: 'reduce' }); // 교복 배지는 숨 쉬듯 움직인다 — 멈추고 누른다
 	await page.locator('.profile .badges').getByRole('button', { name: '고정 친구 업적 자세히' }).click(); await page.waitForTimeout(400);
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
 	const pin = page.getByRole('dialog', { name: '고정 친구' });
 	check('★ 프로필 시트 위에 메달 자세히 (동 1명 · 동만 달성)', (await pin.innerText()).includes('둘 다 고정한 채팅') && (await pin.locator('.tiers li.done').count()) === 1);
 	check('카탈로그는 한 번만 받는다', catalogCalls === 1, String(catalogCalls));

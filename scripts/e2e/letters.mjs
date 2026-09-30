@@ -495,6 +495,7 @@ try {
 				&& (await p10.locator('.uniform button.pin').count()) === 1 && (await p10.locator('.uniform a.empty').count()) === 2);
 			check('"명성" 카드는 없다', (await p10.locator('.fame').count()) === 0);
 			await p10.screenshot({ path: `${SP}/me-uniform-m.png` });
+			await p10.emulateMedia({ reducedMotion: 'reduce' }); // 교복 배지는 숨 쉬듯 움직인다 — 멈추고 누른다 (Phase 62)
 			await p10.getByRole('button', { name: '이야기꾼 업적 자세히' }).click(); await p10.waitForTimeout(300);
 			check('★ 배지를 누르면 업적 자세히 · 대표에서 내리기', (await p10.getByRole('dialog', { name: '이야기꾼' }).getByRole('button', { name: '대표 업적에서 내리기' }).count()) === 1);
 		} else {
