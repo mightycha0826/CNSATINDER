@@ -87,20 +87,29 @@ try {
 	check('★ 조끼 V넥은 칼라 끝 바로 아래 · 넥타이는 왼쪽 끝', lay.vBottom < 0.5 && lay.vBottom > lay.knotBottom && lay.knotX < 0.15, JSON.stringify(lay));
 	check('★ 리본 — 고리 둘 · 꼬리 둘', (await uni('ribbon', 3).locator('.ribbon .loop').count()) === 2 && (await uni('ribbon', 3).locator('.ribbon-tails .tail').count()) === 2
 		&& (await uni('tie', 3).locator('.ribbon').count()) === 0 && (await uni('ribbon', 3).locator('.tie').count()) === 0);
-	// Phase 65 — 실제로 입은 것처럼 겹친다: 칼라는 조끼 목둘레에 닿지 않고, 리본 고리 · 머리와 넥타이 매듭은 재킷에 닿지 않으며
-	// 리본 고리는 조끼 위에 걸치지 않고, 넥타이 날 · 리본 꼬리 끝은 조끼 속에 있다
+	// Phase 65 · 66 — 실제로 입은 것처럼 겹친다: 칼라는 조끼 목둘레에 닿지 않고, 리본 머리와 넥타이 매듭은 재킷에 닿지 않으며
+	// 리본 고리(1.5배 — 앞섶 사이보다 넓다)는 끝이 재킷 밑으로 들어가고(재킷보다 먼저 그린다), 보이는 곳은 조끼 위에 걸치지 않고,
+	// 넥타이 날 · 리본 꼬리 끝은 조끼 속에 있다
 	const layering = async (neck) => uni(neck, 3).evaluate((u) => {
 		const into = (el, target) => { const m = target.getScreenCTM().inverse().multiply(el.getScreenCTM()); return (x, y) => new DOMPoint(x, y).matrixTransform(m); };
 		const outline = (el) => { const L = el.getTotalLength(), out = []; for (let d = 0; d <= L; d += 2) out.push(el.getPointAtLength(d)); return out; };
-		const clear = (sel, target, dy = 0) => [...u.querySelectorAll(sel)].every((el) => { const f = into(el, target); return outline(el).every((p) => !target.isPointInFill(f(p.x, p.y + dy))); });
+		// 그림 밖 점과, hidden 이 있으면 그것(재킷)에 가려지는 점은 빼고 본다
+		const frame = u.getBoundingClientRect();
+		const seen = (el, p) => { const q = new DOMPoint(p.x, p.y).matrixTransform(el.getScreenCTM()); return q.x >= frame.left && q.x <= frame.right && q.y >= frame.top && q.y <= frame.bottom; };
+		const clear = (sel, target, dy = 0, hidden = null) => [...u.querySelectorAll(sel)].every((el) => {
+			const f = into(el, target), h = hidden && into(el, hidden);
+			return outline(el).every((p) => !seen(el, p) || (h && hidden.isPointInFill(h(p.x, p.y))) || !target.isPointInFill(f(p.x, p.y + dy)));
+		});
+		const under = (sel, target) => [...u.querySelectorAll(sel)].every((el) => !!(el.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING));
 		// 끝이 조끼 자리에 있고, 조끼보다 먼저 그려져(아래 겹) 가려진다
 		const tucked = (sel, target) => [...u.querySelectorAll(sel)].every((el) => { const b = el.getBBox(), f = into(el, target); return target.isPointInFill(f(b.x + b.width / 2, b.y + b.height - 1)) && !!(el.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING); });
 		const over = (sel, target) => [...u.querySelectorAll(sel)].every((el) => !!(el.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_PRECEDING));
 		const vest = u.querySelector('.vest'), lap = u.querySelector('.lapel-r');
 		return {
 			collarAboveVest: clear('.leaf', vest, 5),
-			neckClearOfJacket: clear('.tie .knot, .ribbon .loop, .ribbon .bow-knot', lap),
-			bowAboveVest: clear('.ribbon .loop, .ribbon .bow-knot', vest, 4),
+			neckClearOfJacket: clear('.tie .knot, .ribbon .bow-knot', lap),
+			loopsUnderJacket: under('.ribbon .loop', lap),
+			bowAboveVest: clear('.ribbon .loop, .ribbon .bow-knot', vest, 4, lap),
 			tuckedInVest: tucked('.tie .blade, .ribbon-tails .tail', vest),
 			bowOverVest: over('.ribbon .loop, .ribbon .bow-knot', vest)
 		};
