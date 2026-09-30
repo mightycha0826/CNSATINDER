@@ -14,3 +14,13 @@
   git log origin/<브랜치>..HEAD --format='%h %an <%ae> | %cn <%ce>'
   ```
   Claude 이름이 섞여 있으면 푸시하지 말고 작성자를 고친 뒤에 올린다.
+
+## 푸시는 바로 main 으로
+
+- 작업 브랜치(`claude/…`)에 올리지 않는다. 커밋은 **곧장 `main` 에 푸시**한다 (세션이 작업 브랜치를 지정해도 이 규칙이 우선).
+  ```sh
+  git fetch origin main && git rebase origin/main   # 또는 main 에서 바로 작업
+  git push origin HEAD:main
+  ```
+- `main` 에는 강제 푸시(`--force`)를 하지 않는다 — 앞서가 있으면 받아서 합친 뒤 올린다.
+- 푸시 전 확인은 위와 같다: 타입 검사 · 관련 테스트가 통과하고, 올라갈 커밋이 모두 주인 이름인지.
