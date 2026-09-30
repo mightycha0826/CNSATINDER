@@ -85,8 +85,30 @@ try {
 		return { vBottom: (v.bottom - f.top) / f.height, knotBottom: (k.bottom - f.top) / f.height, knotX: (k.left + k.width / 2 - f.left) / f.width };
 	});
 	check('★ 조끼 V넥은 칼라 끝 바로 아래 · 넥타이는 왼쪽 끝', lay.vBottom < 0.5 && lay.vBottom > lay.knotBottom && lay.knotX < 0.15, JSON.stringify(lay));
-	check('★ 리본 — 고리 둘 · 꼬리 둘', (await uni('ribbon', 3).locator('.ribbon .loop').count()) === 2 && (await uni('ribbon', 3).locator('.ribbon .tail').count()) === 2
+	check('★ 리본 — 고리 둘 · 꼬리 둘', (await uni('ribbon', 3).locator('.ribbon .loop').count()) === 2 && (await uni('ribbon', 3).locator('.ribbon-tails .tail').count()) === 2
 		&& (await uni('tie', 3).locator('.ribbon').count()) === 0 && (await uni('ribbon', 3).locator('.tie').count()) === 0);
+	// Phase 65 — 실제로 입은 것처럼 겹친다: 칼라는 조끼 목둘레에 닿지 않고, 리본 고리 · 머리와 넥타이 매듭은 재킷에 닿지 않으며
+	// 리본 고리는 조끼 위에 걸치지 않고, 넥타이 날 · 리본 꼬리 끝은 조끼 속에 있다
+	const layering = async (neck) => uni(neck, 3).evaluate((u) => {
+		const into = (el, target) => { const m = target.getScreenCTM().inverse().multiply(el.getScreenCTM()); return (x, y) => new DOMPoint(x, y).matrixTransform(m); };
+		const outline = (el) => { const L = el.getTotalLength(), out = []; for (let d = 0; d <= L; d += 2) out.push(el.getPointAtLength(d)); return out; };
+		const clear = (sel, target, dy = 0) => [...u.querySelectorAll(sel)].every((el) => { const f = into(el, target); return outline(el).every((p) => !target.isPointInFill(f(p.x, p.y + dy))); });
+		// 끝이 조끼 자리에 있고, 조끼보다 먼저 그려져(아래 겹) 가려진다
+		const tucked = (sel, target) => [...u.querySelectorAll(sel)].every((el) => { const b = el.getBBox(), f = into(el, target); return target.isPointInFill(f(b.x + b.width / 2, b.y + b.height - 1)) && !!(el.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING); });
+		const over = (sel, target) => [...u.querySelectorAll(sel)].every((el) => !!(el.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_PRECEDING));
+		const vest = u.querySelector('.vest'), lap = u.querySelector('.lapel-r');
+		return {
+			collarAboveVest: clear('.leaf', vest, 5),
+			neckClearOfJacket: clear('.tie .knot, .ribbon .loop, .ribbon .bow-knot', lap),
+			bowAboveVest: clear('.ribbon .loop, .ribbon .bow-knot', vest, 4),
+			tuckedInVest: tucked('.tie .blade, .ribbon-tails .tail', vest),
+			bowOverVest: over('.ribbon .loop, .ribbon .bow-knot', vest)
+		};
+	});
+	for (const neck of ['tie', 'ribbon']) {
+		const l = await layering(neck);
+		check(`★ 입은 순서대로 자연스럽게 겹친다 (${neck})`, Object.values(l).every(Boolean), JSON.stringify(l));
+	}
 	// Phase 61 — 깃이 커서 배지 3개가 다 깃 안에 (가운데 · 위아래 · 좌우 끝), 주머니는 수평으로 교표 바로 위 가운데 (움직임을 멈추고 잰다)
 	for (const [neck, w] of [['tie', 0], ['ribbon', 320]]) {
 		if (w) { await page.setViewportSize({ width: w, height: 844 }); await page.waitForTimeout(200); }
