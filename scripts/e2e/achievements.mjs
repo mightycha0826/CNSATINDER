@@ -62,6 +62,24 @@ try {
 	check('배지를 누르면 그 업적', (await page.locator('.picked').innerText()) === '개척자');
 	const pins = await uni('tie', 3).locator('button.pin').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => [r.width, r.height, r.top]));
 	check('배지 누름 영역 44 · 서로 겹치지 않는다', pins.every(([w, h]) => w >= 44 && h >= 44) && pins.every((p, i) => !i || p[2] - pins[i - 1][2] >= 44), JSON.stringify(pins));
+	// Phase 61 — 깃이 커서 배지 3개가 다 깃 안에 (가운데 · 위아래 · 좌우 끝), 주머니는 수평으로 교표 바로 위 가운데
+	for (const [neck, w] of [['tie', 0], ['ribbon', 320]]) {
+		if (w) { await page.setViewportSize({ width: w, height: 844 }); await page.waitForTimeout(200); }
+		const inside = await uni(neck, 3).evaluate((u) => {
+			const svg = u.querySelector('svg'), lap = u.querySelector('.lapel-r'), m = svg.getScreenCTM().inverse();
+			return [...u.querySelectorAll('button.pin .coin')].every((c) => {
+				const r = c.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+				return [[cx, cy], [cx, r.top], [cx, r.bottom], [r.left, cy], [r.right, cy]].every(([x, y]) => lap.isPointInFill(new DOMPoint(x, y).matrixTransform(m)));
+			});
+		});
+		check(`★ 배지 3개가 다 깃 안에 (${neck}${w ? ` · 폭 ${w}` : ''})`, inside);
+	}
+	await page.setViewportSize({ width: 390, height: 844 });
+	const pocket = await uni('tie', 3).evaluate((u) => {
+		const p = u.querySelector('.pocket').getBBox(), c = u.querySelector('image').getBBox();
+		return { level: /^M[\d.]+ ([\d.]+)H[\d.]+V[\d.]+H/.test(u.querySelector('.pocket').getAttribute('d')), above: p.y + p.height < c.y, dx: Math.abs(p.x + p.width / 2 - (c.x + c.width / 2)) };
+	});
+	check('★ 가슴 주머니는 수평 · 교표 바로 위 가운데', pocket.level && pocket.above && pocket.dx < 1, JSON.stringify(pocket));
 	const crest = await page.evaluate(async () => {
 		const img = new Image();
 		img.src = document.querySelector('.uniform image')?.getAttribute('href') ?? '';
