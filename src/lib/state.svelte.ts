@@ -91,7 +91,9 @@ export const UI = $state({
 	/** 처음 사용법 안내(튜토리얼, Phase 44)가 떠 있다 — 다른 저절로 뜨는 창은 그 뒤에 */
 	touring: false,
 	/** 대화방에서 "새 대화 찾기"로 홈에 돌아왔다 — 홈이 바로 찾기를 시작한다 (lib/nav.ts backToSeek) */
-	seekOnHome: false
+	seekOnHome: false,
+	/** 새로 딴 업적이 있다 (Phase 55) — 박동 대답(ach_new)으로 안다. 축하 창이 받아 가면 false */
+	achNew: false
 });
 
 // ── 토스트 ────────────────────────────────────────────────────────────
@@ -268,6 +270,8 @@ export async function saveMyName(name: string) {
 // 요청 하나하나가 Supabase 로그 사용량이 되므로 주기는 필요한 만큼만 (Phase 36).
 const BEAT_MS = 60_000;
 let beatTimer: ReturnType<typeof setInterval> | null = null;
+/** ach_new 를 모르는 예전 DB — 앱을 켤 때 한 번만 묻게 */
+let achAsked = false;
 
 async function beat(online: boolean) {
 	if (!S.session) return;
@@ -275,12 +279,19 @@ async function beat(online: boolean) {
 		const { data, error } = await supabase.rpc('heartbeat', { p_online: online });
 		// 서버 점검(Phase 52) — 박동 대답에 실려 온다. 오류(오프라인 등)면 그대로 둔다
 		if (!error && online) {
-			const d = data as { maintenance?: { msg?: string; until?: string | null } | null; maintenance_at?: string | null } | null;
+			const d = data as {
+				maintenance?: { msg?: string; until?: string | null } | null;
+				maintenance_at?: string | null;
+				ach_new?: boolean;
+			} | null;
 			const m = d?.maintenance;
 			setMaint(m ? { msg: m.msg ?? '', until: m.until ?? null } : null);
 			// 점검 예약 예고 (Phase 53) — 24시간 안의 예약만 온다
 			const at = d?.maintenance_at ?? null;
 			if (at !== S.maintAt) S.maintAt = at;
+			// 새 업적 (Phase 55) — 예전엔 축하 창이 10분마다 따로 물었다. 이제 박동이 "있다"고 할 때만 받아 간다
+			if (d?.ach_new || (d && d.ach_new === undefined && !achAsked)) UI.achNew = true;
+			achAsked = true;
 		}
 	} catch {
 		/* 다음 박동에 다시 */

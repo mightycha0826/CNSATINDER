@@ -41,11 +41,12 @@ async function withMsgCols<T extends { error: { message?: string } | null }>(run
 const REACTION_COLS = 'message_id, room_id, seat, emoji';
 
 /**
- * Supabase Realtime(postgres_changes) 기반 전송.
+ * Supabase Realtime 기반 전송 — DB 방송(Broadcast) · 비공개 채널 (Phase 55).
  *
- * postgres_changes 를 쓰는 이유: 행마다 RLS 가 재평가되므로 잘못된 상대에게 전달되는 것이
- * 구조적으로 불가능하다. 방당 구독자가 2명이라 비용도 작다.
- * 타이핑은 DB 에 쓰면 쿼터를 태우므로 broadcast, 접속 여부는 presence.
+ * 메시지 · 방 상태 · 연장 투표 · 공감은 DB 트리거가 이 방 채널(room:<id>)에 직접 방송한다(schema.sql Phase 55).
+ * 채널은 비공개라 참여할 때 한 번 "이 방 사람인가"를 DB 정책(rt_allowed)으로 확인한다 — 다른 사람은 참여 자체가 안 된다.
+ * (예전 postgres_changes 는 변경마다 구독자마다 RLS 를 다시 돌리고 DB 가 변경 기록을 계속 훑었다 — 실DB 에서 가장 비싼 일이었다)
+ * 타이핑은 DB 에 쓰면 쿼터를 태우므로 앱끼리 broadcast, 접속 여부는 presence (둘 다 같은 비공개 채널).
  */
 export class SupabaseTransport implements ChatTransport {
 	#ch: RealtimeChannel | null = null;
@@ -65,41 +66,30 @@ export class SupabaseTransport implements ChatTransport {
 
 		const ch = supabase.channel(`room:${roomId}`, {
 			config: {
+				private: true,
 				// ★ presence 키는 seat. user id 를 넣으면 익명성이 한 줄로 무너진다.
 				presence: { key: String(seat) },
 				broadcast: { self: false }
 			}
 		});
 
-		ch.on(
-			'postgres_changes',
-			// INSERT = 새 메시지, UPDATE = 보낸 사람이 지움 (Phase 28)
-			{ event: '*', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` },
-			(p) => {
-				if (p.new && 'client_msg_id' in p.new) h.onMessage(p.new as MsgRow);
-			}
-		)
-			.on(
-				'postgres_changes',
-				{ event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` },
-				(p) => h.onRoom(p.new as RoomRow)
-			)
-			.on(
-				'postgres_changes',
-				// 마음 바꾸기는 upsert(UPDATE) 로 오므로 전체 이벤트를 받는다
-				{ event: '*', schema: 'public', table: 'extension_votes', filter: `room_id=eq.${roomId}` },
-				(p) => {
-					if (p.new && 'seat' in p.new) h.onVote(p.new as VoteRow);
-				}
-			)
-			.on(
-				'postgres_changes',
-				// 공감은 지우지 않고 emoji = null 로 바꾸므로 INSERT·UPDATE 만 온다 (DELETE 는 필터·RLS 가 안 걸린다)
-				{ event: '*', schema: 'public', table: 'message_reactions', filter: `room_id=eq.${roomId}` },
-				(p) => {
-					if (p.new && 'seat' in p.new) h.onReaction(p.new as ReactionRow);
-				}
-			)
+		// 이 방 행이 맞을 때만 — 방송 페이로드는 DB 트리거가 만든 행 그대로다
+		const mine = (p: unknown): p is { room_id: string } => !!p && (p as { room_id?: string }).room_id === roomId;
+		ch.on('broadcast', { event: 'msg' }, ({ payload }) => {
+			// 새 메시지 · 보낸 사람이 지움 (Phase 28)
+			if (mine(payload) && 'client_msg_id' in payload) h.onMessage(payload as unknown as MsgRow);
+		})
+			.on('broadcast', { event: 'room' }, ({ payload }) => {
+				if (payload && (payload as { id?: string }).id === roomId) h.onRoom(payload as RoomRow);
+			})
+			.on('broadcast', { event: 'vote' }, ({ payload }) => {
+				// 마음 바꾸기도 같은 이벤트로 온다
+				if (mine(payload) && 'seat' in payload) h.onVote(payload as unknown as VoteRow);
+			})
+			.on('broadcast', { event: 'reaction' }, ({ payload }) => {
+				// 공감은 지우지 않고 emoji = null 로 바꾼다 — 취소도 같은 이벤트
+				if (mine(payload) && 'seat' in payload) h.onReaction(payload as unknown as ReactionRow);
+			})
 			.on('broadcast', { event: 'typing' }, ({ payload }) => {
 				const s = Number(payload?.seat);
 				if (s === 1 || s === 2) h.onTyping(s);

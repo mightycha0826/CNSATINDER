@@ -2,7 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
 
 /**
- * 진단: SUBSCRIBED 신호 이후 postgres_changes 가 실제로 전달되기 시작하기까지 몇 초 걸리는가.
+ * 진단: SUBSCRIBED 신호 이후 메시지가 실제로 전달되기 시작하기까지 몇 초 걸리는가.
+ * (처음엔 postgres_changes 의 늦은 시작을 재려고 만들었다 — Phase 55 부터 앱과 같은 DB 방송 · 비공개 채널로 잰다)
  * 구독 직후 0.25초 간격으로 메시지를 넣고 어느 시점부터 도착하는지 본다. 3회 반복.
  *
  *   node scripts/realtime-warmup.mjs
@@ -76,21 +77,22 @@ try {
 		const got = new Set();
 		// 실제 앱과 같은 채널 이름 · 설정
 		const topic = `room:${room.id}`;
-		const ch = B.c.channel(topic, { config: { presence: { key: '2' } } });
-		ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${room.id}` }, (p) => {
-			got.add(p.new.body);
-			log('B', 'recv ' + p.new.body);
+		const cfg = (seat) => ({ config: { private: true, presence: { key: seat } } });
+		const ch = B.c.channel(topic, cfg('2'));
+		ch.on('broadcast', { event: 'msg' }, ({ payload }) => {
+			got.add(payload.body);
+			log('B', 'recv ' + payload.body);
 		});
-		// 실제 앱처럼 한 채널에 postgres_changes 구독을 여러 개 건다
+		// 실제 앱처럼 한 채널에 이벤트를 여러 개 건다
 		if (process.argv.includes('--multi')) {
-			ch.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${room.id}` }, () => {});
-			ch.on('postgres_changes', { event: '*', schema: 'public', table: 'extension_votes', filter: `room_id=eq.${room.id}` }, () => {});
+			ch.on('broadcast', { event: 'room' }, () => {});
+			ch.on('broadcast', { event: 'vote' }, () => {});
 		}
 		ch.on('system', {}, (p) => log('B', 'system ' + JSON.stringify(p).slice(0, 160)));
 		// --concurrent: E2E 처럼 B 와 제3자 C 가 같은 채널에 '동시에' 구독을 시작한다
 		if (process.argv.includes('--concurrent')) {
-			const cc = C.c.channel(topic, { config: { presence: { key: '1' } } });
-			cc.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${room.id}` }, () => {});
+			const cc = C.c.channel(topic, cfg('1'));
+			cc.on('broadcast', { event: 'msg' }, () => {});
 			await Promise.all([subscribeLogged(ch, 'B'), subscribeLogged(cc, 'C')]);
 			await sleep(800);
 			concurrentC = cc;
@@ -101,16 +103,16 @@ try {
 		// ★ 실제 앱처럼 상대(A)도 같은 채널을 구독한다 — B 가 구독한 직후
 		let chA = null;
 		if (process.argv.includes('--partner')) {
-			chA = A.c.channel(topic, { config: { presence: { key: '1' } } });
-			chA.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${room.id}` }, () => {});
+			chA = A.c.channel(topic, cfg('1'));
+			chA.on('broadcast', { event: 'msg' }, () => {});
 			chA.on('system', {}, (p) => log('A', 'system ' + JSON.stringify(p).slice(0, 160)));
 			await subscribeLogged(chA, 'A');
 		}
 		// 방 멤버가 아닌 제3자가 같은 채널 이름으로 구독 (E2E 의 RLS 검증 조건)
 		let chC = null;
 		if (process.argv.includes('--intruder')) {
-			chC = C.c.channel(topic, { config: { presence: { key: '1' } } });
-			chC.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${room.id}` }, () => {});
+			chC = C.c.channel(topic, cfg('1'));
+			chC.on('broadcast', { event: 'msg' }, () => {});
 			await subscribeLogged(chC, 'C');
 		}
 		if (process.argv.includes('--track')) {

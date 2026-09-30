@@ -1,7 +1,7 @@
 <script lang="ts">
 	/**
 	 * 새 업적 축하 (Phase 31 · 35 다시 만듦) — 탭 첫 화면(홈 · 편지 · 프로필)에서만 띄운다 (대화 중에는 방해하지 않는다).
-	 * 앱을 열 때 · 앱으로 돌아올 때와, 화면이 보이는 동안 10분마다 새로 딴 업적이 있는지 묻는다. 닫으면 "봤음"으로 서버에 남긴다.
+	 * 새로 딴 업적이 있는지는 1분마다 보내는 박동(heartbeat)의 대답이 알려 준다(Phase 55) — 있을 때만 목록을 받아 온다. 닫으면 "봤음"으로 서버에 남긴다.
 	 * 움직임 (Phase 35 — 기계적이지 않게): 뒤에서 빛이 퍼지고 → 메달이 동전처럼 돌며 용수철처럼 튀어나오고(한 개씩 조금 늦게) →
 	 * 색종이가 메달에서 위로 터졌다가 제각각 흔들리며 떨어진다 (조각마다 방향 · 속도 · 회전이 다르다).
 	 * 동작 줄이기면 app.css 가 애니메이션을 끄고 그대로 멈춰 보인다.
@@ -13,7 +13,6 @@
 	import Badge from './Badge.svelte';
 	import { SPECIAL_BADGES } from './badgeIcons';
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
-	import { whileVisible } from '$lib/visible';
 	import { UI } from '$lib/state.svelte';
 
 	let { preview = null }: { preview?: BadgeLite[] | null } = $props();
@@ -27,14 +26,16 @@
 			fresh = preview;
 			return;
 		}
+		// 박동이 "새 업적 있음"(UI.achNew)이라고 할 때만 받아 온다 (Phase 55 — 예전엔 10분마다 따로 물었다).
 		// fresh 를 읽고 쓰는 일은 추적하지 않는다 — 추적하면 빈 목록을 넣을 때마다 이 effect 가 다시 돌아 요청이 끝없이 나간다
-		const check = async () => {
-			if (untrack(() => fresh.length)) return;
-			const got = await fetchNewAchievements();
-			if (got.length) fresh = got;
-		};
-		void check();
-		return whileVisible(() => void check(), 600_000);
+		if (!UI.achNew) return;
+		untrack(() => {
+			UI.achNew = false;
+			if (fresh.length) return; // 이미 떠 있으면 그대로
+			void fetchNewAchievements().then((got) => {
+				if (got.length) fresh = got;
+			});
+		});
 	});
 
 	async function close(view = false) {

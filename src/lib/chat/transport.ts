@@ -30,7 +30,7 @@ export type TransportHandlers = {
 /**
  * 실시간 전송 계층.
  *
- * 지금은 SupabaseTransport(postgres_changes) 하나지만, 동시 수백 명을 넘기면
+ * 지금은 SupabaseTransport(DB 방송 · 비공개 채널, Phase 55) 하나지만, 동시 수백 명을 넘기면
  * Phase 7 에서 DurableObjectTransport 로 교체한다. ChatRoom 과 화면은 이 인터페이스만 알므로
  * 교체해도 한 줄도 바뀌지 않는다.
  */

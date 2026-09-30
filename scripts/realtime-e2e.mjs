@@ -67,27 +67,31 @@ async function user(email) {
 	return { id: data.user.id, c };
 }
 
-/** 채널을 붙이고 SUBSCRIBED 까지 기다린다. 받은 페이로드를 전부 기록. */
-function listen(c, roomId, seat) {
-	const got = { msgs: [], rooms: [], raw: [] };
-	const ch = c.channel(`room:${roomId}`, { config: { presence: { key: String(seat) } } });
-	ch.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${roomId}` }, (p) => {
-		got.msgs.push({ ...p.new, _at: Date.now() });
-		got.raw.push(JSON.stringify(p));
-	}).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, (p) => {
-		got.rooms.push(p.new);
-		got.raw.push(JSON.stringify(p));
-	});
-	const ready = new Promise((res, rej) => {
-		const t = setTimeout(() => rej(new Error('subscribe timeout')), 15000);
+/** 채널이 붙거나(SUBSCRIBED) 거절될 때까지 기다린다 — 결과 상태를 돌려준다 */
+function joined(ch) {
+	return new Promise((res) => {
+		const t = setTimeout(() => res('TIMEOUT'), 15000);
 		ch.subscribe((s) => {
-			if (s === 'SUBSCRIBED') {
+			if (s === 'SUBSCRIBED' || s === 'CHANNEL_ERROR') {
 				clearTimeout(t);
-				res();
+				res(s);
 			}
 		});
 	});
-	return { ch, got, ready };
+}
+
+/** 앱과 같은 방 채널 (비공개 · DB 방송, Phase 55). 받은 페이로드를 전부 기록 */
+function listen(c, roomId, seat) {
+	const got = { msgs: [], rooms: [], raw: [] };
+	const ch = c.channel(`room:${roomId}`, { config: { private: true, presence: { key: String(seat) } } });
+	ch.on('broadcast', { event: 'msg' }, ({ payload }) => {
+		got.msgs.push({ ...payload, _at: Date.now() });
+		got.raw.push(JSON.stringify(payload));
+	}).on('broadcast', { event: 'room' }, ({ payload }) => {
+		got.rooms.push(payload);
+		got.raw.push(JSON.stringify(payload));
+	});
+	return { ch, got, ready: joined(ch) };
 }
 
 try {
@@ -126,11 +130,19 @@ try {
 		.insert({ room_id: room.id, sender_seat: 1, body: '끼어들기', client_msg_id: crypto.randomUUID() });
 	check('제3자 C 는 보낼 수 없다', !!cSend);
 
-	console.log('\n[2] ★ 실시간 전달');
+	console.log('\n[2] ★ 실시간 전달 (DB 방송 · 비공개 채널)');
 	const LB = listen(B.c, room.id, 2);
 	const LC = listen(C.c, room.id, 1); // 제3자가 같은 채널명으로 구독을 시도
-	await Promise.all([LB.ready, LC.ready]);
-	await sleep(800);
+	// B 의 대화 목록 채널 — 새 메시지가 오면 "다시 읽어"
+	const inboxB = [];
+	const IB = B.c.channel(`inbox:${B.id}`, { config: { private: true } }).on('broadcast', { event: 'changed' }, ({ payload }) => inboxB.push(payload));
+	// ★ C 가 B 의 목록 채널을 엿들으려 한다
+	const IC = C.c.channel(`inbox:${B.id}`, { config: { private: true } });
+	const [sB, sC, sIB, sIC] = await Promise.all([LB.ready, LC.ready, joined(IB), joined(IC)]);
+	check('B 는 방 채널 · 자기 목록 채널에 붙는다', sB === 'SUBSCRIBED' && sIB === 'SUBSCRIBED', `${sB} / ${sIB}`);
+	check('★ 제3자 C 는 그 방 채널에 참여조차 못 한다', sC !== 'SUBSCRIBED', sC);
+	check('★ C 는 남의 목록 채널에도 못 붙는다', sIC !== 'SUBSCRIBED', sIC);
+	await sleep(300);
 
 	const N = 20;
 	const sent = [];
@@ -143,6 +155,8 @@ try {
 		if (error) throw error;
 		sent.push({ i, cid, t0 });
 		for (let w = 0; w < 100 && !LB.got.msgs.some((m) => m.client_msg_id === cid); w++) await sleep(20);
+		// 보내기 도배 막이(1초에 1.5개, 연달아 12개)에 걸리지 않게 — 방송은 빨라서 기다림만으로는 간격이 안 생긴다
+		await sleep(Math.max(0, 700 - (Date.now() - t0)));
 	}
 	await sleep(5000); // 늦게라도 오는지 충분히 기다린다
 	const arrivals = sent.map((s) => {
@@ -167,9 +181,12 @@ try {
 	check('★ Realtime 이 놓친 것까지 DB 조회(갭 메우기)로는 전부 복구된다', sent.every((s) => have.has(s.cid)));
 
 	await sleep(1000);
-	check('★ 제3자 C 는 같은 채널을 구독해도 한 건도 못 받는다 (RLS)', LC.got.msgs.length === 0, `${LC.got.msgs.length}건`);
+	check('★ 제3자 C 는 한 건도 못 받는다', LC.got.msgs.length === 0, `${LC.got.msgs.length}건`);
 	const leaked = LB.got.raw.some((r) => r.includes(A.id) || r.includes(B.id));
 	check('★ Realtime 페이로드 어디에도 사용자 uuid 가 없다', !leaked);
+	check('B 의 대화 목록 채널에 "다시 읽어" 신호', inboxB.some((p) => p.room_id === room.id), `${inboxB.length}건`);
+	await B.c.removeChannel(IB);
+	await C.c.removeChannel(IC);
 
 	console.log('\n[3] ★ 오프라인 동안의 갭 메우기');
 	await B.c.removeChannel(LB.ch);

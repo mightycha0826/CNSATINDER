@@ -79,6 +79,30 @@ await db.exec(`
 	alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 	alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
 	alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+
+	-- Supabase Realtime 흉내 (Phase 55) — realtime.send 는 realtime.messages 에 한 줄 넣는다(실제도 그렇다).
+	-- 비공개 채널 권한은 Realtime 이 채널 이름을 realtime.topic 설정에 넣고 학생 권한으로 이 표를 읽고 · 써 보는 것으로 확인한다
+	create schema realtime;
+	create table realtime.messages (
+		id          bigint generated always as identity primary key,
+		topic       text not null,
+		extension   text not null default 'broadcast',
+		event       text,
+		payload     jsonb,
+		private     boolean default false,
+		inserted_at timestamptz not null default now()
+	);
+	alter table realtime.messages enable row level security;
+	create function realtime.topic() returns text language sql stable as $x$
+		select nullif(current_setting('realtime.topic', true), '')
+	$x$;
+	create function realtime.send(payload jsonb, event text, topic text, private boolean default true) returns void
+		language sql as $x$
+		insert into realtime.messages (topic, event, payload, private) values (topic, event, payload, private)
+	$x$;
+	grant usage on schema realtime to anon, authenticated;
+	grant select, insert on realtime.messages to anon, authenticated;
+	grant execute on function realtime.topic() to anon, authenticated;
 `);
 
 /** uid 사용자로 로그인한 것처럼 RLS 를 적용해 실행한다. */
@@ -3482,6 +3506,95 @@ console.log('\n[90] 점검 예약 (Phase 53)');
 	await svc('admin_update_settings', JSON.stringify({ maintenance_at: far }), own);
 	check('24시간보다 먼 예약은 학생에게 아직 안 알린다', (await rpcAs(kid, 'heartbeat', true)).maintenance_at == null);
 	await svc('admin_update_settings', JSON.stringify({ maintenance_at: '' }), own);
+}
+
+console.log('\n[91] 실시간 전달 = DB 방송 · 비공개 채널 (Phase 55)');
+{
+	const r = await fresh();
+	const seatA = Number(await rpcAs(A, 'my_seat', r));
+	const seatB = Number(await rpcAs(B, 'my_seat', r));
+	const sent = async () => (await db.query(`select topic, event, payload, private from realtime.messages order by id`)).rows;
+	const clear = () => db.query(`delete from realtime.messages`);
+	const on = (rows, topic, event) => rows.filter((x) => x.topic === topic && x.event === event);
+
+	await clear();
+	const m = (await rowsAs(A, `insert into public.messages (room_id, sender_seat, body, client_msg_id)
+	                             values ($1, $2, '안녕 방송', gen_random_uuid()) returning id`, [r, seatA]))[0].id;
+	let got = await sent();
+	const msg = on(got, `room:${r}`, 'msg')[0];
+	check('★ 새 메시지 → 그 방 채널에 msg (비공개)', msg?.payload.body === '안녕 방송' && Number(msg.payload.id) === Number(m) && msg.private === true, JSON.stringify(got));
+	check('★ 두 사람의 대화 목록 채널에 changed', on(got, `inbox:${A}`, 'changed').length === 1 && on(got, `inbox:${B}`, 'changed').length === 1);
+	check('★ 방 채널 페이로드에 사용자 id 없음', !got.filter((x) => x.topic.startsWith('room:')).some((x) => JSON.stringify(x.payload).includes(A) || JSON.stringify(x.payload).includes(B)));
+
+	await clear();
+	await rpcAs(B, 'mark_read', r, m);
+	got = await sent();
+	check('★ 읽음 → 방 채널에 room(read) · 대화 목록은 안 건드린다', on(got, `room:${r}`, 'room').length === 1
+		&& Number(on(got, `room:${r}`, 'room')[0].payload[`read${seatB}`]) === Number(m) && !got.some((x) => x.topic.startsWith('inbox:')), JSON.stringify(got));
+
+	await clear();
+	await rpcAs(B, 'mark_read', r, m); // 같은 값 — 행이 안 바뀐다
+	check('바뀐 게 없으면 방송도 없다', (await sent()).length === 0);
+
+	await clear();
+	await rpcAs(B, 'react_message', m, 'heart');
+	got = await sent();
+	check('공감 → reaction (자리만)', on(got, `room:${r}`, 'reaction')[0]?.payload.emoji === 'heart' && Number(on(got, `room:${r}`, 'reaction')[0].payload.seat) === seatB, JSON.stringify(got));
+
+	await clear();
+	await db.query(`insert into public.extension_votes (room_id, round, seat, agree) values ($1, 1, $2, true)`, [r, seatA]);
+	check('연장 투표 → vote', on(await sent(), `room:${r}`, 'vote')[0]?.payload.agree === true);
+
+	await clear();
+	await db.query(`select public.close_room($1, 'left')`, [r]);
+	got = await sent();
+	check('★ 방 닫힘 → room(closed) + 두 사람 목록 changed', on(got, `room:${r}`, 'room')[0]?.payload.status === 'closed'
+		&& on(got, `inbox:${A}`, 'changed').length === 1 && on(got, `inbox:${B}`, 'changed').length === 1, JSON.stringify(got));
+
+	await clear();
+	const n0 = (await one(`select students from public.signup_stats`)).students;
+	await person('f', 'm');
+	got = await sent();
+	check('가입 인원이 바뀌면 signups 채널에 students', on(got, 'signups', 'students')[0]?.payload.students === n0 + 1, JSON.stringify(got));
+
+	// ── 채널 권한 (Realtime 이 참여할 때 이 정책으로 묻는다) ──
+	const rtAs = async (uid, topic, sql) => {
+		await db.query(`select set_config('realtime.topic', $1, false)`, [topic]);
+		try {
+			return await rowsAs(uid, sql);
+		} finally {
+			await db.query(`select set_config('realtime.topic', '', false)`);
+		}
+	};
+	const canRead = async (uid, topic) => (await rtAs(uid, topic, `select count(*)::int n from realtime.messages`))[0].n > 0;
+	const canSend = async (uid, topic) => {
+		try {
+			await rtAs(uid, topic, `insert into realtime.messages (topic, extension, event, payload) values ('${topic}', 'broadcast', 'typing', '{}')`);
+			return true;
+		} catch (e) {
+			if (!/row-level security/.test(e.message)) throw e;
+			return false;
+		}
+	};
+	const outsider = await person('m', 'f');
+	check('★ 방 사람은 방 채널을 듣고 · 입력 중 표시를 보낸다', (await canRead(A, `room:${r}`)) && (await canSend(B, `room:${r}`)));
+	check('★ 다른 사람은 그 방 채널을 못 듣고 못 보낸다', !(await canRead(outsider, `room:${r}`)) && !(await canSend(outsider, `room:${r}`)));
+	check('★ 대화 목록 채널은 나만 (남의 것 못 들음)', (await canRead(A, `inbox:${A}`)) && !(await canRead(A, `inbox:${B}`)));
+	check('★ 목록 · 가입 인원 채널엔 아무도 못 보낸다', !(await canSend(A, `inbox:${A}`)) && !(await canSend(A, 'signups')));
+	check('가입 인원 채널은 누구나 듣는다', await canRead(outsider, 'signups'));
+	check('이상한 채널 이름은 거절 (오류 없이)', !(await canRead(A, 'room:not-a-uuid')) && !(await canRead(A, 'admin')) && !(await canRead(A, `room:${r}x`)));
+	check('★ 로그인 안 하면 아무 채널도', !(await canRead(null, 'signups')) && !(await canRead(null, `room:${r}`)));
+	check('★ 표 변경 발행이 없다 (WAL 을 훑지 않는다)', (await db.query(`select 1 from pg_publication_tables where pubname = 'supabase_realtime'`)).rows.length === 0);
+
+	// 새 업적은 박동 대답에 실린다 (앱이 10분마다 따로 묻지 않는다)
+	check('첫 박동 — 개척자 업적을 막 땄다', (await rpcAs(outsider, 'heartbeat', true)).ach_new === true);
+	await rpcAs(outsider, 'mark_achievements_seen');
+	check('새 업적 없으면 ach_new = false', (await rpcAs(outsider, 'heartbeat', true)).ach_new === false);
+	await db.query(`insert into private.user_achievements (user_id, code, tier) values ($1, 'talk', 1)`, [outsider]);
+	check('★ 새 업적을 따면 박동 대답에 ach_new = true', (await rpcAs(outsider, 'heartbeat', true)).ach_new === true);
+	await rpcAs(outsider, 'mark_achievements_seen');
+	check('봤음으로 남기면 다시 false', (await rpcAs(outsider, 'heartbeat', true)).ach_new === false);
+	check('백그라운드 박동(p_online = false)엔 안 싣는다', (await rpcAs(outsider, 'heartbeat', false)).ach_new === false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { S } from './state.svelte';
 import { whileVisible } from './visible';
 
 /** my_rooms() 의 한 줄. ★ uuid 는 room_id 뿐. */
@@ -29,8 +30,9 @@ const DEBOUNCE_MS = 300;
 /**
  * 대화 목록 (인스타 DM 받은편지함).
  *
- * 실시간: 열린 방들의 새 메시지·방 상태 변화를 채널 하나로 받는다 (filter room_id=in.(…)).
- *   행 내용은 쓰지 않고 "바뀌었다"는 신호로만 쓴다 — 목록은 언제나 my_rooms() 한 번으로 다시 그린다.
+ * 실시간: 내 목록 채널(inbox:<내 id>, 비공개) 하나 — DB 가 내 방의 새 메시지 · 방 상태 변화 · 새로 잡힌 대화를 알린다 (Phase 55).
+ *   "바뀌었다"는 신호로만 쓴다 — 목록은 언제나 my_rooms() 한 번으로 다시 그린다.
+ *   열린 대화가 있을 때만 듣는다 — 대화가 없는 학생까지 Realtime 연결을 잡지 않게 (동시 연결 한도).
  *   (미리보기·안 읽은 수·온라인 표시를 한 곳에서 계산하기 위해)
  * 안전망: 60초마다 다시 읽는다. Realtime 은 전달을 보장하지 않고, 상대 온라인 표시는 이벤트가 없다.
  *
@@ -46,7 +48,7 @@ export class Inbox {
 	serverAt = $state(0);
 
 	#ch: RealtimeChannel | null = null;
-	#ids = '';
+	#topic = '';
 	#stopPoll: (() => void) | null = null;
 	#debounce: ReturnType<typeof setTimeout> | null = null;
 	#stopped = false;
@@ -71,7 +73,6 @@ export class Inbox {
 		this.#stopPoll = null;
 		if (this.#debounce) clearTimeout(this.#debounce);
 		this.#unsubscribe();
-		this.#ids = '';
 	}
 
 	async load() {
@@ -83,7 +84,7 @@ export class Inbox {
 		this.#announce(res.rooms);
 		this.rooms = res.rooms;
 		this.loaded = true;
-		this.#resubscribe(res.rooms.map((r) => r.room_id));
+		this.#listen(res.rooms.length > 0);
 	}
 
 	#announce(rooms: InboxRoom[]) {
@@ -102,32 +103,24 @@ export class Inbox {
 		this.#debounce = setTimeout(() => void this.load(), DEBOUNCE_MS);
 	}
 
-	#resubscribe(ids: string[]) {
-		const key = [...ids].sort().join(',');
-		if (key === this.#ids) return;
-		this.#ids = key;
+	/** 방이 늘고 줄어도 채널은 하나 그대로 — 예전처럼 방 목록이 바뀔 때마다 다시 붙이지 않는다 */
+	#listen(on: boolean) {
+		const uid = S.session?.user.id;
+		const topic = on && uid ? `inbox:${uid}` : '';
+		if (topic === this.#topic) return;
 		this.#unsubscribe();
-		if (!ids.length) return;
-
-		const list = `(${ids.join(',')})`;
-		const ch = supabase.channel(`inbox:${crypto.randomUUID()}`);
-		ch.on(
-			'postgres_changes',
-			{ event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=in.${list}` },
-			() => this.#soon()
-		)
-			.on(
-				'postgres_changes',
-				{ event: 'UPDATE', schema: 'public', table: 'rooms', filter: `id=in.${list}` },
-				() => this.#soon()
-			)
+		if (!topic) return;
+		this.#topic = topic;
+		this.#ch = supabase
+			.channel(topic, { config: { private: true } })
+			.on('broadcast', { event: 'changed' }, () => this.#soon())
 			.subscribe();
-		this.#ch = ch;
 	}
 
 	#unsubscribe() {
 		if (this.#ch) void supabase.removeChannel(this.#ch);
 		this.#ch = null;
+		this.#topic = '';
 	}
 }
 

@@ -495,21 +495,8 @@ $fn$;
 revoke all on function private.dev_open_room(text, text, int) from public, anon, authenticated;
 
 
--- ── 11. Realtime 발행 ───────────────────────────────────────────────
--- room_members 를 넣는 이유: 매칭 대기 중인 사람이 '내 행' INSERT 로 방 배정을 즉시 안다.
--- (RLS 가 self read only 이므로 상대 행은 절대 오지 않는다)
-do $do$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    begin alter publication supabase_realtime add table public.messages;
-    exception when duplicate_object then null; end;
-    begin alter publication supabase_realtime add table public.rooms;
-    exception when duplicate_object then null; end;
-    begin alter publication supabase_realtime add table public.room_members;
-    exception when duplicate_object then null; end;
-  end if;
-end
-$do$;
+-- ── 11. Realtime ────────────────────────────────────────────────────
+-- 처음엔 표 변경(postgres_changes)을 발행했지만, Phase 55 에서 DB 가 직접 방송(Broadcast)하는 방식으로 바꿨다 — 맨 아래 Phase 55.
 
 
 -- ════════════════════════════════════════════════════════════════════
@@ -731,15 +718,8 @@ $fn$;
 revoke all on function public.sweep_rooms() from public, anon, authenticated;
 
 
--- ── 19. Realtime 발행 + 예약 작업 ───────────────────────────────────
-do $do$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    begin alter publication supabase_realtime add table public.extension_votes;
-    exception when duplicate_object then null; end;
-  end if;
-end
-$do$;
+-- ── 19. 예약 작업 ───────────────────────────────────────────────────
+-- (연장 투표의 실시간 전달은 Phase 55 방송)
 
 -- pg_cron: 1분마다 스위퍼, 매일 새벽 24시간 지난 대화 삭제.
 -- (PGlite 등 pg_cron 이 없는 환경에서는 조용히 건너뛴다)
@@ -1515,7 +1495,10 @@ begin
   return jsonb_build_object('server_now', now(),
     'maintenance', case when private.in_maintenance() then jsonb_build_object('msg', cfg.maintenance_msg, 'until', cfg.maintenance_until) end,
     'maintenance_at', case when not private.in_maintenance() and cfg.maintenance_at > now() and cfg.maintenance_at < now() + interval '24 hours'
-                           then cfg.maintenance_at end);
+                           then cfg.maintenance_at end,
+    -- 새로 딴 업적이 있나 (Phase 55) — 앱이 10분마다 따로 묻던 것을 박동에 싣는다. 있을 때만 앱이 new_achievements() 를 부른다
+    'ach_new', p_online and exists (select 1 from private.user_achievements a join public.profiles p on p.id = a.user_id
+                                     where a.user_id = auth.uid() and a.earned_at > coalesce(p.ach_seen_at, '-infinity')));
 end
 $fn$;
 
@@ -3279,16 +3262,7 @@ create policy "reactions: read while room alive" on public.message_reactions
   using (public.is_room_member(room_id) and public.room_is_visible(room_id));
 revoke all on public.message_reactions from anon, authenticated;
 grant select on public.message_reactions to authenticated;
--- 쓰기는 react_message() 로만
-
-do $do$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    begin alter publication supabase_realtime add table public.message_reactions;
-    exception when duplicate_object then null; end;
-  end if;
-end
-$do$;
+-- 쓰기는 react_message() 로만. 실시간 전달은 Phase 55 방송.
 
 create or replace function public.react_message(p_message bigint, p_emoji text)
 returns jsonb language plpgsql security definer set search_path = public as $fn$
@@ -6185,15 +6159,7 @@ drop trigger if exists profiles_signup_stats on public.profiles;
 create trigger profiles_signup_stats after insert or delete or update of verified, onboarded on public.profiles
   for each statement execute function private.refresh_signup_stats();
 update public.signup_stats set students = (select count(*) from public.profiles where verified and onboarded), updated_at = now() where id;
-
-do $do$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    begin alter publication supabase_realtime add table public.signup_stats;
-    exception when duplicate_object then null; end;
-  end if;
-end
-$do$;
+-- (바뀐 숫자는 Phase 55 방송으로 잠금 화면에 간다)
 
 -- 지금 잠겨 있나 — 잠금을 켰고 가입한 학생이 기준보다 적으면
 create or replace function private.letters_locked()
@@ -6590,3 +6556,148 @@ create index if not exists letter_comments_parent on public.letter_comments (par
 create index if not exists letter_reply_assignments_comment on public.letter_reply_assignments (comment_id) where comment_id is not null;
 create index if not exists letter_reply_cooldown_hi on public.letter_reply_cooldown (user_hi);
 create index if not exists letters_designated_reply on public.letters (designated_reply_comment_id) where designated_reply_comment_id is not null;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 55 — 실시간 전달을 "표 변경 구독(postgres_changes)"에서 "DB 방송(Broadcast)"으로
+--
+-- 왜: 실DB 통계(pg_stat_statements, 9/20~9/29)에서 DB 가 가장 오래 쓴 일은 앱의 어떤 요청도 아니라
+--     Realtime 이 표 변경 기록(WAL)을 끊임없이 훑는 일이었다 (16만 번 · 약 930초 — 앱 요청 전부를 합친 것보다 많다).
+--     postgres_changes 는 변경 한 건마다 구독자마다 RLS 를 다시 돌리고, 채널을 붙일 때마다 발행 목록을 조회한다.
+--     전달 보장도 없어(유실 · 구독 직후 몇 초 늦음) 앱은 이미 재연결 · 안전망으로 메우고 있었다.
+-- 어떻게: 바뀐 행을 트리거가 필요한 채널에 직접 방송한다(realtime.send). 채널은 비공개(private)라
+--     참여할 때 한 번만 아래 정책(rt_allowed)으로 권한을 본다 — 방송마다 RLS 를 돌리지 않는다. WAL 을 훑지 않는다.
+--   · room:<방 id>   — 그 방 사람만. 메시지(msg) · 방 상태(room) · 연장 투표(vote) · 공감(reaction) · 입력 중(typing, 앱이 보냄) · 접속(presence)
+--   · inbox:<내 id>  — 나만. 대화 목록이 다시 읽을 때(changed): 내 방의 새 메시지 · 방 상태 · 새로 잡힌 대화.
+--                      (채널 이름에 내 id 가 있지만 이름은 나와 서버만 안다 — 페이로드엔 방 id 뿐)
+--   · signups        — 로그인한 학생 누구나(읽기만). 익명편지 잠금의 가입 인원(students).
+-- ★ 익명성: 페이로드는 예전 postgres_changes 가 보내던 열에서 앱이 쓰는 것만. 사용자 id 는 어디에도 없다.
+-- ★ 방송이 실패해도 원래 쓰기(메시지 저장 등)는 그대로 된다 — 앱은 전처럼 재연결 · 안전망으로 메운다.
+-- ════════════════════════════════════════════════════════════════════
+
+-- 방송 한 건 — realtime 이 없는 곳(PGlite 등)에선 건너뛴다
+create or replace function private.rt_send(p_topic text, p_event text, p_payload jsonb)
+returns void language plpgsql security definer set search_path = '' as $fn$
+begin
+  if to_regprocedure('realtime.send(jsonb,text,text,boolean)') is null then return; end if;
+  perform realtime.send(p_payload, p_event, p_topic, true);
+exception when others then
+  raise warning 'rt_send % %: %', p_topic, p_event, sqlerrm;
+end
+$fn$;
+
+-- 이 방 사람들의 대화 목록에 "다시 읽어"
+create or replace function private.rt_inbox(p_room uuid)
+returns void language plpgsql security definer set search_path = public, private as $fn$
+declare u uuid;
+begin
+  for u in select user_id from public.room_members where room_id = p_room loop
+    perform private.rt_send('inbox:' || u, 'changed', jsonb_build_object('room_id', p_room));
+  end loop;
+end
+$fn$;
+
+-- 표마다 바뀐 행 → 방송 (트리거 하나로)
+create or replace function private.rt_broadcast()
+returns trigger language plpgsql security definer set search_path = public, private as $fn$
+begin
+  case tg_table_name
+  when 'messages' then
+    perform private.rt_send('room:' || new.room_id, 'msg', jsonb_build_object(
+      'id', new.id, 'room_id', new.room_id, 'sender_seat', new.sender_seat, 'body', new.body,
+      'client_msg_id', new.client_msg_id, 'created_at', new.created_at, 'reply_to', new.reply_to, 'deleted_at', new.deleted_at));
+    if tg_op = 'INSERT' then perform private.rt_inbox(new.room_id); end if;
+  when 'rooms' then
+    perform private.rt_send('room:' || new.id, 'room', jsonb_build_object(
+      'id', new.id, 'status', new.status, 'round', new.round, 'expires_at', new.expires_at, 'close_reason', new.close_reason,
+      'alias1', new.alias1, 'alias2', new.alias2, 'read1', new.read1, 'read2', new.read2,
+      'paused_left', new.paused_left, 'pinned', new.pinned));
+    -- 목록에 보이는 것이 바뀔 때만 (읽음 표시는 대화 화면의 "읽음"만 바꾼다)
+    if (new.status, new.round, new.expires_at, new.paused_left, new.pinned)
+       is distinct from (old.status, old.round, old.expires_at, old.paused_left, old.pinned) then
+      perform private.rt_inbox(new.id);
+    end if;
+  when 'room_members' then
+    perform private.rt_send('inbox:' || new.user_id, 'changed', jsonb_build_object('room_id', new.room_id));
+  when 'extension_votes' then
+    perform private.rt_send('room:' || new.room_id, 'vote', jsonb_build_object(
+      'room_id', new.room_id, 'round', new.round, 'seat', new.seat, 'agree', new.agree));
+  when 'message_reactions' then
+    perform private.rt_send('room:' || new.room_id, 'reaction', jsonb_build_object(
+      'message_id', new.message_id, 'room_id', new.room_id, 'seat', new.seat, 'emoji', new.emoji));
+  when 'signup_stats' then
+    perform private.rt_send('signups', 'students', jsonb_build_object('students', new.students));
+  end case;
+  return null;
+end
+$fn$;
+
+drop trigger if exists messages_rt on public.messages;
+create trigger messages_rt after insert or update of body, deleted_at on public.messages
+  for each row execute function private.rt_broadcast();
+drop trigger if exists rooms_rt on public.rooms;
+create trigger rooms_rt after update on public.rooms
+  for each row
+  when ((old.status, old.round, old.expires_at, old.close_reason, old.read1, old.read2, old.paused_left, old.pinned)
+        is distinct from (new.status, new.round, new.expires_at, new.close_reason, new.read1, new.read2, new.paused_left, new.pinned))
+  execute function private.rt_broadcast();
+drop trigger if exists room_members_rt on public.room_members;
+create trigger room_members_rt after insert on public.room_members
+  for each row execute function private.rt_broadcast();
+drop trigger if exists extension_votes_rt on public.extension_votes;
+create trigger extension_votes_rt after insert or update on public.extension_votes
+  for each row execute function private.rt_broadcast();
+drop trigger if exists message_reactions_rt on public.message_reactions;
+create trigger message_reactions_rt after insert or update on public.message_reactions
+  for each row execute function private.rt_broadcast();
+drop trigger if exists signup_stats_rt on public.signup_stats;
+create trigger signup_stats_rt after update on public.signup_stats
+  for each row when (old.students is distinct from new.students)
+  execute function private.rt_broadcast();
+
+revoke all on function private.rt_send(text, text, jsonb), private.rt_inbox(uuid), private.rt_broadcast()
+  from public, anon, authenticated;
+
+-- 이 채널을 들을(p_write = false) · 이 채널에 보낼(true — 입력 중 표시 · 접속 표시) 수 있나.
+-- 비공개 채널에 참여할 때 Realtime 이 아래 정책으로 한 번 묻는다. (정책 식은 학생 권한으로 돌므로 public 에 둔다 —
+-- 불러 봐야 "내가 이 방 사람인가"만 알 수 있다)
+create or replace function public.rt_allowed(p_topic text, p_write boolean)
+returns boolean language plpgsql stable security definer set search_path = public as $fn$
+declare me uuid := auth.uid();
+begin
+  if me is null or p_topic is null then return false; end if;
+  if p_topic ~ '^room:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    return exists (select 1 from public.room_members where room_id = substr(p_topic, 6)::uuid and user_id = me);
+  end if;
+  if p_write then return false; end if;
+  return p_topic = 'inbox:' || me::text or p_topic = 'signups';
+end
+$fn$;
+revoke all on function public.rt_allowed(text, boolean) from public, anon;
+grant execute on function public.rt_allowed(text, boolean) to authenticated;
+
+do $do$
+begin
+  if to_regclass('realtime.messages') is null then return; end if;
+  drop policy if exists "cnsa: listen" on realtime.messages;
+  create policy "cnsa: listen" on realtime.messages for select to authenticated
+    using (public.rt_allowed((select realtime.topic()), false));
+  drop policy if exists "cnsa: send" on realtime.messages;
+  create policy "cnsa: send" on realtime.messages for insert to authenticated
+    with check (public.rt_allowed((select realtime.topic()), true));
+end
+$do$;
+
+-- 표 변경 발행을 거둔다 — 구독할 앱이 없으면 Realtime 이 WAL 을 훑을 일도 없다.
+-- (실DB 에서는 새 앱이 배포된 뒤에 — 옛 앱이 떠 있는 동안에는 재연결 · 안전망으로만 받게 된다)
+do $do$
+declare t text;
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then return; end if;
+  foreach t in array array['messages', 'rooms', 'room_members', 'extension_votes', 'message_reactions', 'signup_stats'] loop
+    if exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+      execute format('alter publication supabase_realtime drop table public.%I', t);
+    end if;
+  end loop;
+end
+$do$;

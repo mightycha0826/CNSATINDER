@@ -7,7 +7,8 @@ import { S } from '../state.svelte';
  * 운영 설정에서 잠금(app_settings.letters_gate)을 켜 두면, 가입한 학생(학교 인증 + 시작하기)이 letters_gate_min 명이 될 때까지
  * 익명편지 탭이 "모이면 열려요" 화면이 된다. 서버도 같은 규칙으로 쓰기 · 찾기를 막는다 (private.letters_locked).
  *
- * 가입 인원은 한 줄 표(signup_stats)를 한 번 읽고 Realtime 으로 지켜본다 — 누가 가입하면 숫자가 바로 오른다 (주기 요청 없음).
+ * 가입 인원은 한 줄 표(signup_stats)를 한 번 읽고, 숫자가 바뀌면 DB 가 signups 채널(비공개)에 방송한다(Phase 55) —
+ * 누가 가입하면 숫자가 바로 오른다 (주기 요청 없음).
  * 앱으로 돌아올 때만 한 번 더 읽는다 (내려 둔 사이 Realtime 이 끊겼을 수 있다). 한 번 열린 걸 보면 이번에 켠 동안은 다시 묻지 않는다.
  */
 export const GATE = $state({ students: null as number | null, opened: false });
@@ -41,9 +42,9 @@ export function watchSignups(): () => void {
 	if (!gateOn() || GATE.opened) return () => {};
 	void load();
 	const ch: RealtimeChannel = supabase
-		.channel(`signups:${crypto.randomUUID()}`)
-		.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'signup_stats' }, (p) => {
-			const n = (p.new as { students?: number }).students;
+		.channel('signups', { config: { private: true } })
+		.on('broadcast', { event: 'students' }, ({ payload }) => {
+			const n = (payload as { students?: number } | undefined)?.students;
 			if (typeof n !== 'number') return;
 			GATE.students = n;
 			if (n >= gateMin()) GATE.opened = true;
