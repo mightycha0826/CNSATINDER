@@ -1,8 +1,8 @@
 <script lang="ts">
 	/**
-	 * 빨간 우체통 (Phase 71 · 72 · 73 · 74) — 벽에 걸린 우편함을 정면에서 본 2D 네모. 아래 책상 · 봉투와 한 장면이 되게
-	 * 군더더기 없이 둥근 빨간 네모 하나: 위에 크림색 봉투 배지(책상 위 봉투와 같은 종이색) · 아래 놋쇠 투입구(책상 위 놋쇠 도장과 같은 재료) ·
-	 * 짙은 테두리 · 위쪽 은은한 빛 · 아래 어두운 두께. 벽에 그림자가 진다.
+	 * 우체통 (Phase 71 · 72 · 73 · 74 · 75) — 벽에 걸린 우편함을 정면에서 본 2D 네모. 앱의 얼굴 그대로 (docs · app.css 토큰):
+	 * 앱 아이콘과 같은 브랜드 그라디언트(주황 → 코랄 → 핑크, 대각선) · 큰 둥근 모서리 · 흰 봉투 문양(로고처럼 흰 모양) ·
+	 * 반투명 흰 테 안의 투입구 · 브랜드색 빛 그림자(--glow 처럼). 알림 숫자 · "+✉" 는 앱의 흰 알약.
 	 *   count — 안 읽은 편지 수: 오른쪽 위 숫자 + 투입구에 봉투 끝이 삐죽 나온다(3장까지).
 	 *   drop — 바뀔 때마다 봉투 한 통이 위에서 떨어져 투입구로 쏙 → 통이 출렁 → 위에 "+✉" (편지가 왔다). dropN 은 몇 통인지.
 	 *   added — 바뀔 때마다 출렁 + 위에 "+✉" 만 (편지를 보내고 편지함으로 돌아왔을 때). bump — 출렁만.
@@ -106,54 +106,42 @@
 <span class="postbox" bind:this={box}>
 	<svg viewBox="0 0 300 210" aria-hidden="true">
 		<defs>
-			<linearGradient id="{uid}-paint" x1="0" y1="0" x2="0" y2="1">
-				<stop offset="0" stop-color="#e5503d" />
-				<stop offset="0.55" stop-color="#d13f2e" />
-				<stop offset="1" stop-color="#bb3324" />
+			<!-- 앱 아이콘과 같은 브랜드 그라디언트 (왼쪽 위 주황 → 오른쪽 아래 핑크) -->
+			<linearGradient id="{uid}-brand" x1="0" y1="0" x2="1" y2="1">
+				<stop offset="0" stop-color="#ff7a50" />
+				<stop offset="0.5" stop-color="#fb5c68" />
+				<stop offset="1" stop-color="#f0396e" />
 			</linearGradient>
-			<radialGradient id="{uid}-badge" cx="0.4" cy="0.35" r="0.8">
-				<stop offset="0" stop-color="#fffaf0" />
-				<stop offset="1" stop-color="#efe0c6" />
-			</radialGradient>
-			<linearGradient id="{uid}-brass" x1="0" y1="0" x2="0" y2="1">
-				<stop offset="0" stop-color="#fbe6a6" />
-				<stop offset="0.5" stop-color="#dcae55" />
-				<stop offset="1" stop-color="#a97a2c" />
+			<linearGradient id="{uid}-sheen" x1="0" y1="0" x2="0" y2="1">
+				<stop offset="0" stop-color="#fff" stop-opacity="0.28" />
+				<stop offset="0.45" stop-color="#fff" stop-opacity="0" />
 			</linearGradient>
-			<clipPath id="{uid}-body"><rect x="16" y="14" width="268" height="186" rx="28" /></clipPath>
-			<clipPath id="{uid}-above-slot"><rect x="0" y="-240" width="300" height="382" /></clipPath>
+			<clipPath id="{uid}-above-slot"><rect x="0" y="-240" width="300" height="381" /></clipPath>
 		</defs>
 
-		<!-- 몸통 — 둥근 네모, 아래는 조금 어둡게(두께) · 위에 은은한 빛 -->
-		<rect x="16" y="14" width="268" height="186" rx="28" fill="url(#{uid}-paint)" />
-		<g clip-path="url(#{uid}-body)">
-			<rect x="16" y="178" width="268" height="30" fill="#a32a1c" opacity="0.55" />
-			<ellipse cx="80" cy="28" rx="90" ry="26" fill="#fff" opacity="0.08" />
-		</g>
-		<rect x="16" y="14" width="268" height="186" rx="28" fill="none" stroke="#9c2517" stroke-width="3" />
-		<path d="M48 30H252" stroke="#fff" stroke-opacity="0.35" stroke-width="4" stroke-linecap="round" />
+		<!-- 몸통 — 둥근 네모, 위쪽에 은은한 빛 · 가는 흰 테 -->
+		<rect x="14" y="10" width="272" height="190" rx="34" fill="url(#{uid}-brand)" />
+		<rect x="14" y="10" width="272" height="190" rx="34" fill="url(#{uid}-sheen)" />
+		<rect x="15.5" y="11.5" width="269" height="187" rx="32.5" fill="none" stroke="#fff" stroke-opacity="0.22" stroke-width="1.5" />
 
-		<!-- 크림색 봉투 배지 -->
-		<circle cx="150" cy="80" r="32" fill="#a82a1b" opacity="0.5" />
-		<circle cx="150" cy="78" r="32" fill="url(#{uid}-badge)" />
-		<g fill="none" stroke="#cf3d2c" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
-			<rect x="132" y="66" width="36" height="25" rx="3" />
-			<path d="M134 69l16 11 16-11" />
+		<!-- 흰 봉투 문양 -->
+		<g fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round" stroke-linecap="round">
+			<rect x="120" y="46" width="60" height="42" rx="7" />
+			<path d="M123 50l27 20 27-20" />
 		</g>
 
-		<!-- 놋쇠 투입구 (책상 위 놋쇠 도장과 같은 재료) -->
-		<rect x="60" y="130" width="180" height="28" rx="14" fill="#8a5a14" opacity="0.45" />
-		<rect x="60" y="128" width="180" height="28" rx="14" fill="url(#{uid}-brass)" />
-		<rect class="slot" x="72" y="137" width="156" height="11" rx="5.5" fill="#2a0f07" bind:this={slot} />
-		<rect x="72" y="137" width="156" height="4" rx="2" fill="#000" opacity="0.35" />
+		<!-- 투입구 — 반투명 흰 테 · 짙은 구멍 -->
+		<rect x="58" y="126" width="184" height="30" rx="15" fill="#fff" fill-opacity="0.28" />
+		<rect class="slot" x="70" y="135" width="160" height="12" rx="6" fill="#7a1330" fill-opacity="0.78" bind:this={slot} />
+		<rect x="70" y="135" width="160" height="4" rx="2" fill="#4a0a1e" fill-opacity="0.45" />
 
 		<!-- 안 읽은 편지 — 투입구에 봉투 끝이 삐죽 -->
 		{#if peek}
 			<g clip-path="url(#{uid}-above-slot)">
 				{#each [[-28, -7], [2, 4], [30, -3]].slice(0, peek) as [dx, r] (dx)}
-					<g transform="translate({150 + dx} 147) rotate({r})">
-						<rect x="-18" y="-27" width="36" height="30" rx="2" fill="#fffaf0" stroke="#d9c7a8" stroke-width="1" />
-						<path d="M-17 -26L0 -14L17 -26" fill="none" stroke="#d9c7a8" stroke-width="1.1" />
+					<g transform="translate({150 + dx} 145) rotate({r})">
+						<rect x="-18" y="-27" width="36" height="30" rx="2.5" fill="#fffaf0" stroke="#ecdcc2" stroke-width="1" />
+						<path d="M-17 -26L0 -14L17 -26" fill="none" stroke="#e3cfae" stroke-width="1.1" />
 					</g>
 				{/each}
 			</g>
@@ -161,9 +149,9 @@
 
 		<!-- 편지가 떨어져 들어간다 (drop) — 평소엔 안 보인다 -->
 		<g class="falling" bind:this={falling}>
-			<rect x="130" y="114" width="40" height="28" rx="2" fill="#fffaf0" stroke="#d9c7a8" stroke-width="1" />
-			<path d="M131 115L150 128L169 115" fill="none" stroke="#d9c7a8" stroke-width="1.1" />
-			<circle cx="150" cy="128" r="3.4" fill="#b3263a" />
+			<rect x="130" y="113" width="40" height="28" rx="2.5" fill="#fffaf0" stroke="#ecdcc2" stroke-width="1" />
+			<path d="M131 114L150 127L169 114" fill="none" stroke="#e3cfae" stroke-width="1.1" />
+			<circle cx="150" cy="127" r="3.4" fill="#e0405f" />
 		</g>
 	</svg>
 	<!-- "+✉" — 편지가 들어왔다 (종이 꼬리표처럼) -->
@@ -186,8 +174,8 @@
 		width: 100%;
 		height: auto;
 		overflow: visible;
-		/* 벽에 지는 그림자 */
-		filter: drop-shadow(0 10px 10px rgb(70 30 10 / 0.3)) drop-shadow(0 2px 2px rgb(70 30 10 / 0.25));
+		/* 브랜드색 빛 그림자 — 버튼의 --glow 와 같은 결 */
+		filter: drop-shadow(0 14px 18px rgb(240 57 110 / 0.28)) drop-shadow(0 3px 5px rgb(150 30 60 / 0.18));
 	}
 	.falling {
 		opacity: 0;
@@ -202,13 +190,11 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-		padding: 5px 12px 5px 11px;
-		border-radius: 6px;
-		background: #fffaf0;
-		color: #b3263a;
-		box-shadow:
-			0 0 0 1px #d9c7a8,
-			0 5px 12px rgb(70 30 10 / 0.3);
+		padding: 6px 13px 6px 12px;
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--accent);
+		box-shadow: var(--shadow-2);
 		opacity: 0;
 		transform: translate(-50%, -74%);
 		pointer-events: none;
@@ -225,20 +211,21 @@
 	}
 	.count {
 		position: absolute;
-		top: 0;
-		right: -4px;
+		top: -2px;
+		right: -6px;
 		min-width: 28px;
 		height: 28px;
 		padding: 0 8px;
 		border-radius: 14px;
-		background: #fffaf0;
-		color: #b3263a;
+		/* 앱의 숫자 배지 그대로 — 짙은 브랜드 면 · 흰 숫자, 바탕색 고리로 우체통과 떼어 놓는다 */
+		background: var(--accent-fill-deep);
+		color: var(--on-accent);
 		font-size: 14px;
 		font-weight: 900;
 		line-height: 28px;
 		text-align: center;
 		box-shadow:
-			0 0 0 2px #b3263a,
-			0 3px 8px rgb(70 30 10 / 0.3);
+			0 0 0 3px var(--bg),
+			var(--shadow-1);
 	}
 </style>
