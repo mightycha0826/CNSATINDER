@@ -418,6 +418,7 @@ try {
 	const r7 = await openApp(browser, w7);
 	const p7 = r7.page;
 	await p7.goto(`${BASE}/letters`); await p7.locator('button.desk').waitFor(); await p7.waitForTimeout(400);
+	const counts7 = { plate: (await p7.locator('.plate .muted').innerText()).replace(/\s+/g, ' '), label: await p7.locator('button.desk').getAttribute('aria-label') };
 	await p7.locator('button.desk').click(); await p7.waitForURL('**/letters/archive'); await p7.locator('.archive .stack .item').first().waitFor(); await p7.waitForTimeout(500);
 	check('보관함에 "선택" · 폴더가 없으면 서랍 줄도 없다 (Phase 69 — "고르기"에서 이름 바꿈)', (await p7.getByRole('button', { name: '선택', exact: true }).count()) === 1 && (await p7.getByRole('button', { name: '고르기' }).count()) === 0 && (await p7.locator('.folders').count()) === 0);
 	await p7.getByRole('button', { name: '선택', exact: true }).click(); await p7.waitForTimeout(250);
@@ -448,6 +449,8 @@ try {
 	await p7.goBack(); await p7.waitForTimeout(600);
 	check('★ 뒤로가기 한 번이면 편지함 — 시트 · 선택 기록이 남지 않는다', new URL(p7.url()).pathname === '/letters', p7.url());
 	check('편지함 책상 이름표에 폴더 수', (await p7.locator('.plate .muted').innerText()).includes('폴더 1'));
+	const after7 = { plate: (await p7.locator('.plate .muted').innerText()).replace(/\s+/g, ' '), label: await p7.locator('button.desk').getAttribute('aria-label') };
+	check('★ 폴더에 넣어도 받은 · 보낸 편지 수는 그대로 (폴더에 든 편지도 센다)', after7.plate === `${counts7.plate} · 폴더 1` && after7.label === `${counts7.label}, 폴더 1개`, JSON.stringify({ counts7, after7 }));
 	await p7.locator('button.desk').click(); await p7.waitForURL('**/letters/archive'); await p7.waitForTimeout(500);
 
 	await p7.locator('.folders .folder').click(); await p7.waitForURL('**/letters/f/1'); await p7.locator('.stack .item').first().waitFor(); await p7.waitForTimeout(500);

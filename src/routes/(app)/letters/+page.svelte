@@ -70,9 +70,12 @@
 		if (first) void goto(`/letters/m/${first.id}`);
 		else bump++;
 	}
-	const readCount = $derived(BOX.received.length - unread.length);
-	const sentCount = $derived(BOX.sent.length);
-	const count = (n: number, more: boolean) => (more ? `${PAGE}+` : String(n));
+	// 폴더에 넣은 편지는 보관함 목록(BOX.received · sent)에서 빠진다 — 폴더마다 받은 · 보낸 수를 더해야 편지 수가 줄지 않는다
+	// (안 연 편지는 폴더에 못 넣으니 폴더의 받은 편지는 모두 읽은 편지)
+	const filed = $derived(BOX.folders.reduce((n, f) => ({ received: n.received + (f.received ?? 0), sent: n.sent + (f.sent ?? 0) }), { received: 0, sent: 0 }));
+	const readCount = $derived(BOX.received.length - unread.length + filed.received);
+	const sentCount = $derived(BOX.sent.length + filed.sent);
+	const count = (n: number, more: boolean) => (more ? `${Math.max(n, PAGE)}+` : String(n));
 	// 더미 맨 위 한 장 = 가장 최근에 읽은 받은 편지 (없으면 가장 최근에 보낸 편지)
 	const top = $derived.by(() => {
 		const r = BOX.received.find((i) => i.opened);
@@ -81,8 +84,7 @@
 		return s ? { it: s, box: 'sent' as const } : null;
 	});
 	// 한 통이라도 있으면 겹겹이 쌓인 느낌이 나게 최소 네 장
-	const filedCount = $derived(BOX.folders.reduce((n, f) => n + f.count, 0));
-	const pileSize = $derived(readCount + sentCount + filedCount ? Math.min(7, Math.max(4, readCount + sentCount + filedCount + 1)) : 0);
+	const pileSize = $derived(readCount + sentCount ? Math.min(7, Math.max(4, readCount + sentCount + 1)) : 0);
 	const loaded = $derived(BOX.loaded.received && BOX.loaded.sent);
 	// 봉투에 적힌 나 (받은 편지의 To. · 보낸 편지의 From.)
 	const me = (it: (typeof BOX.received)[number], box: 'received' | 'sent') => myLabel(it, box, { name: S.me?.name, gender: S.profile?.gender });
