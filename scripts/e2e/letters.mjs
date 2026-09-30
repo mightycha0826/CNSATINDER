@@ -474,6 +474,37 @@ try {
 		await r9.ctx.close();
 	}
 
+	console.log('[내 프로필 — 낮은 이름 카드 · 교복 (Phase 60)]');
+	for (const gender of ['m', 'f']) {
+		const w10 = world();
+		w10.prof.gender = gender;
+		const r10 = await openApp(browser, w10);
+		const p10 = r10.page;
+		const fun = { code: 'fun', title: '이야기꾼', icon: '', tier: 3 };
+		await p10.route('https://fake-proj.supabase.co/rest/v1/rpc/my_achievements', (rt) => rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+			items: [
+				{ ...fun, category: 'manner', tiers: [10, 50, 200], value: 210, description: '"대화가 재밌어요" 받기', unit: '번', lower_better: false, earned_at: null, new: false, granted: false },
+				{ code: 'kind', title: '친절왕', icon: '', tier: 0, category: 'manner', tiers: [10, 50, 200], value: 4, description: '"친절해요" 받기', unit: '번', lower_better: false, earned_at: null, new: false, granted: false }
+			], featured: [fun], chosen: [] }) }));
+		await p10.goto(`${BASE}/me`); await p10.locator('.uniform').waitFor(); await p10.waitForTimeout(400);
+		if (gender === 'm') {
+			const card = await p10.locator('.who').boundingBox();
+			check('★ 이름 카드: 표지 위에 이름 · "업적 1/2 ›" (누르면 업적 화면) · 낮게', (await p10.locator('.who .nick').innerText()) === '푸른고래' && (await p10.locator('.who .ach-link').innerText()).includes('업적 1/2')
+				&& (await p10.locator('.who .ach-link').getAttribute('href')) === '/me/achievements' && card.height < 200, JSON.stringify(card));
+			check('★ 남학생 교복 = 넥타이 · 대표 업적 1개는 깃의 배지, 남은 2칸은 "+"', (await p10.locator('.uniform').getAttribute('data-neck')) === 'tie'
+				&& (await p10.locator('.uniform button.pin').count()) === 1 && (await p10.locator('.uniform a.empty').count()) === 2);
+			check('"명성" 카드는 없다', (await p10.locator('.fame').count()) === 0);
+			await p10.screenshot({ path: `${SP}/me-uniform-m.png` });
+			await p10.getByRole('button', { name: '이야기꾼 업적 자세히' }).click(); await p10.waitForTimeout(300);
+			check('★ 배지를 누르면 업적 자세히 · 대표에서 내리기', (await p10.getByRole('dialog', { name: '이야기꾼' }).getByRole('button', { name: '대표 업적에서 내리기' }).count()) === 1);
+		} else {
+			check('★ 여학생 교복 = 리본', (await p10.locator('.uniform').getAttribute('data-neck')) === 'ribbon');
+			await p10.screenshot({ path: `${SP}/me-uniform-f.png` });
+		}
+		check(`페이지 오류 없음 (프로필 ${gender})`, r10.errors.length === 0, r10.errors.join(' / '));
+		await r10.ctx.close();
+	}
+
 	console.log('[낮은 화면 편지 쓰기 단추 · 인터넷 끊김 띠 (Phase 54)]');
 	{
 		const w8 = world();

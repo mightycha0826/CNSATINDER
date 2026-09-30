@@ -1,11 +1,12 @@
 <script lang="ts">
 	/**
 	 * 상대 프로필 시트 — 아바타 · 이름 · 접속 여부 · 소개 · MBTI · 관심사. 같은 방 멤버에게만 서버가 준다.
-	 * 대표 업적 메달을 누르면 어떻게 얻는지 (Phase 44, BadgeSheet — 이 시트 위에 뜬다).
+	 * 대표 업적은 교복 깃의 배지 (Phase 60). 상대 성별은 받지 않으므로 늘 넥타이.
+	 * 배지를 누르면 어떻게 얻는지 (Phase 44, BadgeSheet — 이 시트 위에 뜬다).
 	 */
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import MannerTemp from '$lib/ui/MannerTemp.svelte';
-	import Badge from '$lib/ui/Badge.svelte';
+	import Uniform from '$lib/ui/Uniform.svelte';
 	import { openBadge } from '$lib/badgeSheet.svelte';
 	import type { PartnerProfile } from './types';
 
@@ -22,15 +23,9 @@
 	{/if}
 	{#if profile}
 		<div class="temp"><MannerTemp temp={profile.manner_temp} /></div>
-		{#if profile.badges?.length}
-			<div class="badges" aria-label="대표 업적 (모은 업적 {profile.badge_count ?? profile.badges.length}개)">
-				{#each profile.badges as b (b.code)}
-					<button class="b u-tap" onclick={() => openBadge(b)} aria-label="{b.title} 업적 자세히">
-						<Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={46} label /><span>{b.title}</span>
-					</button>
-				{/each}
-			</div>
-		{/if}
+		<div class="badges">
+			<Uniform badges={profile.badges ?? []} onpick={openBadge} />
+		</div>
 		{#if profile.bio}<p class="bio selectable">{profile.bio}</p>{/if}
 		{#if profile.mbti || profile.interests.length}
 			<div class="tags">
@@ -62,22 +57,11 @@
 		width: 100%;
 		margin: 6px 0 4px;
 	}
+	/* 교복 (Phase 60) — 시트에선 조금 작게 */
 	.badges {
-		display: flex;
-		justify-content: center;
-		gap: 14px;
+		width: 100%;
+		max-width: 300px;
 		margin: 6px 0 4px;
-	}
-	.b {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 6px;
-		width: 72px;
-		padding: 4px 0;
-		border-radius: 14px;
-		font-size: 11px;
-		font-weight: 600;
 	}
 	.profile {
 		display: flex;

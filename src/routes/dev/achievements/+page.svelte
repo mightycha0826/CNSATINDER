@@ -3,12 +3,14 @@
 	 * 개발 전용 — 업적 화면 미리보기 (Phase 31). Supabase 없이 가짜 데이터로.
 	 *   /dev/achievements            업적 전체
 	 *   /dev/achievements?celebrate  새 업적 축하 시트 (&one = 하나만)
+	 *   /dev/achievements?uniform    교복 (Phase 60) — 넥타이 · 리본 × 배지 0~3개, 상대 프로필 시트 크기
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import AchievementsView from '$lib/ui/AchievementsView.svelte';
 	import AchievementCelebrate from '$lib/ui/AchievementCelebrate.svelte';
+	import Uniform from '$lib/ui/Uniform.svelte';
 	import type { Achievement, BadgeLite, Category, MyAchievements, Tier } from '$lib/achievements';
 
 	const A = (
@@ -57,6 +59,8 @@
 	};
 	let data = $state<MyAchievements>({ items, featured: [feat('fun'), feat('pioneer'), feat('warm')], chosen: [] });
 	const celebrate = page.url.searchParams.has('celebrate');
+	const uniform = page.url.searchParams.has('uniform');
+	let picked = $state('');
 	const fresh = page.url.searchParams.has('one') ? [feat('pin')] : [feat('warm'), feat('pin'), feat('fun')];
 
 	async function feature(codes: string[]) {
@@ -72,9 +76,24 @@
 
 {#if import.meta.env.DEV}
 	<div class="topbar"><span class="title">업적 (미리보기)</span></div>
-	<div class="page ach">
-		<AchievementsView {data} onfeature={feature} />
-	</div>
+	{#if uniform}
+		<div class="page ach">
+			<p class="picked" aria-live="polite">{picked}</p>
+			{#each [3, 2, 0] as n (n)}
+				{#each ['tie', 'ribbon'] as const as neck (neck)}
+					<section class="u" data-neck={neck} data-n={n}>
+						<Uniform {neck} badges={data.featured.slice(0, n)} emptyHref="/dev/achievements" onpick={(b) => (picked = b.title)} />
+					</section>
+				{/each}
+			{/each}
+			<!-- 상대 프로필 시트 크기 — 빈 칸 없이 -->
+			<section class="u sheet-size" data-neck="partner"><Uniform badges={data.featured.slice(0, 2)} onpick={(b) => (picked = b.title)} /></section>
+		</div>
+	{:else}
+		<div class="page ach">
+			<AchievementsView {data} onfeature={feature} />
+		</div>
+	{/if}
 	{#if celebrate}<AchievementCelebrate preview={fresh} />{/if}
 {/if}
 
@@ -82,5 +101,14 @@
 	.ach {
 		gap: 14px;
 		padding-top: 12px;
+	}
+	.picked {
+		min-height: 1.4em;
+		margin: 0;
+	}
+	.sheet-size {
+		width: 100%;
+		max-width: 300px;
+		align-self: center;
 	}
 </style>

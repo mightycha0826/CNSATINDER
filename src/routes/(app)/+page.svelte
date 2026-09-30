@@ -381,10 +381,11 @@
 	.logo {
 		position: relative;
 	}
+	/* 누름 높이 44 — 로고 글자(27px · line-height 1, Phase 58)는 29 라서 위아래로 넓힌다 */
 	.logo::after {
 		content: '';
 		position: absolute;
-		inset: -6px 0;
+		inset: -9px 0;
 	}
 	.stop:active {
 		transform: scale(0.94);

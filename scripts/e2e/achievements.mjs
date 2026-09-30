@@ -50,6 +50,27 @@ try {
 	await page.screenshot({ path: `${SP}/ach-6-beta.png` });
 	await page.keyboard.press('Escape');
 
+	console.log('[교복 — 대표 업적은 깃의 배지 (Phase 60)]');
+	await page.goto(U('/dev/achievements?uniform')); await page.locator('.uniform').first().waitFor(); await page.waitForTimeout(400);
+	const uni = (neck, n) => page.locator(`.u[data-neck="${neck}"][data-n="${n}"] .uniform`);
+	check('★ 넥타이 · 리본 교복', (await uni('tie', 3).getAttribute('data-neck')) === 'tie' && (await uni('ribbon', 3).getAttribute('data-neck')) === 'ribbon');
+	check('★ 대표 업적 수만큼 깃에 배지 · 남은 칸은 점선 "+" (업적 화면으로)', (await uni('tie', 3).locator('button.pin').count()) === 3 && (await uni('tie', 3).locator('.empty').count()) === 0
+		&& (await uni('tie', 2).locator('button.pin').count()) === 2 && (await uni('tie', 2).locator('a.empty').getAttribute('href')) === '/dev/achievements'
+		&& (await uni('ribbon', 0).locator('a.empty').count()) === 3);
+	check('빈 칸 링크가 없으면(상대 프로필) 빈 칸도 없다', (await page.locator('.sheet-size .uniform .empty').count()) === 0 && (await page.locator('.sheet-size .uniform button.pin').count()) === 2);
+	await uni('tie', 3).getByRole('button', { name: '개척자 업적 자세히' }).click(); await page.waitForTimeout(150);
+	check('배지를 누르면 그 업적', (await page.locator('.picked').innerText()) === '개척자');
+	const pins = await uni('tie', 3).locator('button.pin').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => [r.width, r.height, r.top]));
+	check('배지 누름 영역 44 · 서로 겹치지 않는다', pins.every(([w, h]) => w >= 44 && h >= 44) && pins.every((p, i) => !i || p[2] - pins[i - 1][2] >= 44), JSON.stringify(pins));
+	const crest = await page.evaluate(async () => {
+		const img = new Image();
+		img.src = document.querySelector('.uniform image')?.getAttribute('href') ?? '';
+		try { await img.decode(); return `${img.naturalWidth}x${img.naturalHeight}`; } catch { return 'fail'; }
+	});
+	check('★ 가슴의 교표 그림이 불러와진다', crest === '244x256', crest);
+	await uni('tie', 3).screenshot({ path: `${SP}/ach-7-uniform-tie.png` });
+	await uni('ribbon', 2).screenshot({ path: `${SP}/ach-8-uniform-ribbon.png` });
+
 	console.log('[새 업적 축하]');
 	await page.goto(U('/dev/achievements?celebrate')); await page.waitForTimeout(700);
 	const party = page.getByRole('dialog', { name: '새 업적' });
@@ -81,7 +102,9 @@ try {
 	await page.screenshot({ path: `${SP}/ach-5-partner-badge.png` });
 	await page.keyboard.press('Escape'); await page.waitForTimeout(300);
 	await page.getByRole('button', { name: '프로필 보기' }).first().click(); await page.waitForTimeout(300);
-	check('★ 상대 프로필 시트: 대표 업적 이름 · 등급', (await page.locator('.profile .badges').innerText()).includes('따뜻한 사람') && (await page.locator('.profile .badges [aria-label="이야기꾼 금"]').count()) === 1);
+	check('★ 상대 프로필 시트: 교복 깃에 대표 업적 배지 (이름 · 등급) · 늘 넥타이 (Phase 60)', (await page.locator('.profile .badges').getByRole('button', { name: '따뜻한 사람 업적 자세히' }).count()) === 1
+		&& (await page.locator('.profile .badges [aria-label="이야기꾼 금"]').count()) === 1 && (await page.locator('.profile .uniform[data-neck="tie"]').count()) === 1
+		&& (await page.locator('.profile .uniform .empty').count()) === 0);
 	await page.screenshot({ path: `${SP}/ach-4-partner.png` });
 	await page.locator('.profile .badges').getByRole('button', { name: '고정 친구 업적 자세히' }).click(); await page.waitForTimeout(400);
 	const pin = page.getByRole('dialog', { name: '고정 친구' });

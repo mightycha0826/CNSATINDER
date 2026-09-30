@@ -229,6 +229,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
 | `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 23묶음 — `scripts/e2e/`. `hit`(누름 영역 44px) · `ux`(흐름이 말없이 끊기지 않는지)는 UX 가이드라인 검사. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `landy-e2e/` |
 | `node scripts/generate-badge.mjs` | 알림 배지(`static/badge-96.png`) 재생성 — 앱 아이콘의 흰 로고만 남기고 바탕은 투명 (안드로이드는 배지의 투명도만 써서 컬러 아이콘이면 흰 네모가 된다) |
+| `node scripts/generate-crest.mjs` | 교표(`static/school-crest.png`) 재생성 — 원본 `branding/school-crest-source.jpg` 의 가장자리에서 이어진 흰 바탕만 투명하게 (교복 프로필, Phase 60) |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.*`(png/webp/jpg 아무거나) (헤드리스 Chrome 사용) |
 
 > **자동 검사 (GitHub Actions, `.github/workflows/ci.yml`)** — main 에 푸시할 때마다 타입 검사 · 단위 테스트 전부 ·
@@ -628,4 +629,14 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       사파리 18 까지는 기본 스타일이 모든 `button` 에 `align-items: flex-start` 를 줘서, `display: flex` 로 쓴 단추(편지함 책상)의 안쪽 판자 · 이름표가
       폭을 채우지 못하고 왼쪽에 좁게 붙었다(크롬은 기본값이 없어 멀쩡). 전역 `button` 초기화에 `align-items: normal` — 크롬과 같게.
       화면 테스트 `letters` 에 사파리 기본 스타일을 흉내 낸 아이패드(1180×820) 검사.
+- [x] **Phase 60 — 교복 프로필 (대표 업적 = 교복 깃의 배지)**
+      우리 학교는 교복 깃에 실제 배지를 달아 준다 — 프로필의 "명성" 카드(메달 한 줄)를 교복 그림(`src/lib/ui/Uniform.svelte`)으로 바꿨다.
+      가슴을 가까이 본 남색 재킷 · 노치 깃(새틴 광) · 흰 셔츠 칼라 · 회색 V넥 조끼, 남색 바탕에 하늘색 사선 줄 · 물방울 무늬 넥타이(남) / 리본(여),
+      가슴 주머니 위에 교표(원본 그림 그대로, 바탕만 투명 — `scripts/generate-crest.mjs`). 대표 업적 3개는 깃을 따라 위에서부터 배지로(누름 44),
+      빈 칸은 점선 "+" → 업적 화면. 배지를 누르면 전과 같은 업적 자세히 · 대표에서 내리기.
+      이름 카드는 낮게: 표지 56px 에 걸친 아바타(60) · 표지 위 이름 · "업적 n/m ›", 그 아래 매너 온도.
+      상대 프로필 시트도 교복 — 상대 성별은 서버 밖으로 내보내지 않으므로 늘 넥타이 (DB 변경 없음).
+      나중에 학교 실제 배지를 운영진이 주는 특별 업적으로 더하면 같은 깃에 달린다 (칸 수 `LAPEL_SLOTS`).
+      미리보기 `/dev/achievements?uniform`. 화면 테스트 `achievements` · `letters` 에 교복 검사.
+      홈 머리글 로고(Phase 58 에서 27px)의 누름 높이가 29 라 `hit` 검사에 걸리던 것도 44 로.
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험
