@@ -5,9 +5,19 @@
      · 카드는 흰 면 + 부드러운 그림자, 모서리는 크게 (24px) · 버튼은 알약 + 브랜드 빛(--glow)
      · 머리글 · 탭바는 반투명 유리(--glass) — 탭바는 화면 맨 아래에 붙는다 (Phase 35: 떠 있는 알약이 아이폰에서 어중간하게 떠 보여서)
      · 서체 (Phase 38) — 본문은 원티드 산스(Wanted Sans, 기하학적 · 촘촘 · 굵기 400~1000),
-       로고 · 탭 제목 · 큰 숫자 · 축하 순간은 베이글 팻 원(Bagel Fat One, 둥글고 통통한 디스플레이),
-       편지 글씨는 나눔펜. 셋 다 자체 호스팅 · 글자 범위별 분할 파일
+       로고 · 탭 제목 · 큰 숫자 · 축하 순간은 파셜산스(Partial Sans KR, 박준영 — Phase 56, 베이글 팻 원에서 바꿈),
+       편지 글씨는 나눔펜. 셋 다 자체 호스팅
    ──────────────────────────────────────────────────────────── */
+
+/* 파셜산스 — 파일 한 벌(한 굵기). 라이선스(눈누): 웹 · 앱 서버 탑재 · 로고(BI/CI) 사용 가능, 파일 수정 · 재배포 · 판매 금지 —
+   그래서 원본 파일 그대로 둔다(글자 범위로 나누지 않는다). 빌드가 해시 붙은 파일로 내보내 서비스워커 · 브라우저가 한 번 받고 계속 쓴다 */
+@font-face {
+	font-family: 'Partial Sans KR';
+	src: url('./lib/fonts/PartialSansKR-Regular.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
 
 :root {
 	--bg: #fbf9f7;
@@ -88,8 +98,8 @@
 
 	--sans: 'Wanted Sans Variable', 'Wanted Sans', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR',
 		'Malgun Gothic', 'Segoe UI', Roboto, sans-serif;
-	/* 브랜드 글씨 — 한 가지 굵기(통통한 400)뿐이라 font-weight 는 400 으로 둔다 */
-	--display: 'Bagel Fat One', var(--sans);
+	/* 브랜드 글씨 — 한 가지 굵기뿐이라 font-weight 는 400 으로 둔다 (가짜 굵게가 입혀지지 않게) */
+	--display: 'Partial Sans KR', var(--sans);
 }
 
 /* 이 앱은 라이트 · 다크를 스스로 그린다고 브라우저에 알린다 (Phase 43) — 안드로이드 Chrome "사이트에 어두운 테마 적용" ·

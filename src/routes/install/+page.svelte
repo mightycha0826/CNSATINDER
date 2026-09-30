@@ -156,9 +156,10 @@
 		margin-bottom: 2px;
 	}
 	.mark {
-		font-size: 28px;
-		font-weight: 800;
-		letter-spacing: -0.04em;
+		/* 파셜산스(Phase 56)는 넓은 글씨라 좁은 폰에선 폭에 맞춰 줄인다. 한 굵기뿐이라 400 (가짜 굵게 없이) */
+		font-size: min(28px, calc((100vw - 96px) / 8.3));
+		font-weight: 400;
+		letter-spacing: -0.02em;
 		margin-bottom: 8px;
 	}
 	h1 {

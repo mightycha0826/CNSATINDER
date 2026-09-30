@@ -603,4 +603,10 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       스키마 테스트 [91](가짜 realtime 스키마로 방송 · 채널 권한), 실서버 검사 `scripts/realtime-e2e.mjs` 를 비공개 채널로.
       실DB 반영은 두 단계: ① 트리거 · 정책 · heartbeat(옛 앱에도 무해, phase55_realtime_broadcast) → 새 앱 배포 → ② 표 변경 발행 거두기(phase55_unpublish).
       실서버 검사 17/17 — 20건 모두 도착(유실 0), 전달 지연 p50 110ms · p95 301ms, 제3자는 방 · 목록 채널 참여 자체가 거절(CHANNEL_ERROR).
+- [x] **Phase 56 — 브랜드 글씨를 파셜산스로**
+      로고 · 탭 첫 화면 제목 · 큰 숫자 · 축하 · 매칭 · 점검 화면의 브랜드 글씨(`--display`)를 베이글 팻 원 → 파셜산스(Partial Sans KR, 박준영).
+      라이선스(눈누): 웹 · 앱 서버 탑재 · 로고(BI/CI) 사용 가능, 파일 수정 · 재배포 · 판매 금지 — 원본 woff2(308KB) 그대로 `src/lib/fonts/` 에 두고
+      빌드가 해시 붙은 파일로 내보낸다(서비스워커 캐시 · CSP font-src 'self' 그대로). 앱에 쓰인 한글 818자 모두 들어 있다(글꼴 2,780자).
+      한 굵기뿐이라 로그인 · 설치 화면 로고의 굵기 800/900(가짜 굵게)을 400 으로, 넓은 글씨라 로그인 · 설치 로고와 "연결됐어요!"는 좁은 폰에서 폭에 맞춰 줄인다.
+      `@fontsource/bagel-fat-one` 제거. 화면 테스트 `wrap`(폭 280~520 전부) 통과.
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

@@ -1,8 +1,7 @@
 <script lang="ts">
-	// 서체 (Phase 38) — 본문 · 화면 글자는 원티드 산스(가변 굵기), 로고 · 큰 제목은 베이글 팻 원.
-	//   둘 다 자체 호스팅 · 글자 범위별로 나눈 파일이라 화면에 쓰인 글자 묶음만 받는다 (CSP font-src 'self' 그대로)
+	// 서체 (Phase 38) — 본문 · 화면 글자는 원티드 산스(가변 굵기, 글자 범위별로 나눈 파일이라 화면에 쓰인 글자 묶음만 받는다),
+	//   로고 · 큰 제목은 파셜산스(Phase 56, app.css 의 @font-face). 모두 자체 호스팅 (CSP font-src 'self' 그대로)
 	import 'wanted-sans/fonts/webfonts/variable/split/WantedSansVariable.css';
-	import '@fontsource/bagel-fat-one/index.css';
 	import '../app.css';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
