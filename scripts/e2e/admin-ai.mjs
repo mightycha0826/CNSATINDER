@@ -181,7 +181,7 @@ try {
 	const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'CSV 내려받기' }).click()]);
 	const file = await (await import('node:fs/promises')).readFile(await dl.path(), 'utf8');
 	const lines = file.replace(/^\ufeff/, '').trimEnd().split('\n');
-	check('파일 이름에 기간', dl.suggestedFilename() === 'cnsatinder-chats-2026-09-24_2026-09-24.csv', dl.suggestedFilename());
+	check('파일 이름에 기간', dl.suggestedFilename() === 'landy-chats-2026-09-24_2026-09-24.csv', dl.suggestedFilename());
 	check('엑셀용 BOM + 머리줄', file.startsWith('\ufeff메시지번호,대화방'));
 	check('조각을 이어 붙여 전부 (5,001줄)', lines.length === 5002 && lines.at(-1).startsWith('5001,'), String(lines.length));
 	const ex = calls.filter((c) => c[0] === 'export').map((c) => c[1]);

@@ -34,7 +34,7 @@
 		</svg>
 	</div>
 	<h1>서버 점검 중이에요</h1>
-	<p class="msg">{msg || '더 좋은 CNSATINDER 를 위해 잠시 손보고 있어요. 조금만 기다려 주세요!'}</p>
+	<p class="msg">{msg || '더 좋은 랜디를 위해 잠시 손보고 있어요. 조금만 기다려 주세요!'}</p>
 	{#if end}
 		<p class="until">
 			<b class="num">{endText}</b>쯤 끝나요{#if left !== null && left > 0}<span class="num">&nbsp;· {left >= 60 ? `${Math.floor(left / 60)}시간 ${left % 60}분` : `${left}분`} 남음</span>{/if}

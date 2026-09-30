@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════════════════════════
---  CNSATINDER — 교내 익명 대화 앱 스키마
+--  Landy — 교내 익명 대화 앱 스키마
 --  Supabase SQL Editor 에 통째로 붙여넣어 실행. 여러 번 실행해도 안전(idempotent).
 --
 --  제1원칙: 익명성을 규율이 아니라 구조로 보장한다.
@@ -5768,7 +5768,7 @@ begin
   if p_nick is null then return false; end if;
   return char_length(p_nick) > 12
       or private.rule_violation(p_nick) is not null
-      or lower(replace(p_nick, ' ', '')) ~ '(운영|관리자|admin|cnsatinder|선생님)';
+      or lower(replace(p_nick, ' ', '')) ~ '(운영|관리자|admin|landy|랜디|선생님)';
 end
 $fn$;
 revoke all on function private.dm_nick(text), private.dm_nick_bad(text) from public, anon, authenticated;

@@ -39,7 +39,7 @@
 			const blob = new Blob(['\ufeff' + [HEADER, ...parts].join('\n') + '\n'], { type: 'text/csv;charset=utf-8' });
 			const a = document.createElement('a');
 			a.href = URL.createObjectURL(blob);
-			a.download = `cnsatinder-chats-${from}_${to}.csv`; // 한글 파일 이름은 일부 브라우저가 "download" 로 바꿔 버린다
+			a.download = `landy-chats-${from}_${to}.csv`; // 한글 파일 이름은 일부 브라우저가 "download" 로 바꿔 버린다
 			document.body.append(a); // 문서에 붙어 있어야 브라우저가 파일 이름(download)을 따른다
 			a.click();
 			a.remove();

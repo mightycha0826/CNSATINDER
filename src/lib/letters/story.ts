@@ -183,7 +183,7 @@ export async function storyImage(l: StoryLetter): Promise<File> {
 		[dateFont, l.date],
 		[`400 ${startPx}px ${hand}`, l.body],
 		[`700 ${startPx}px ${hand}`, l.body],
-		[brandFont, 'CNSATINDER'],
+		[brandFont, 'Landy'],
 		[subFont, '익명편지']
 	]);
 
@@ -380,7 +380,7 @@ export async function storyImage(l: StoryLetter): Promise<File> {
 	ctx.shadowColor = 'rgba(120, 20, 50, 0.25)';
 	ctx.shadowBlur = 16;
 	ctx.font = brandFont;
-	ctx.fillText('CNSATINDER', STORY_W / 2, brandY);
+	ctx.fillText('Landy', STORY_W / 2, brandY);
 	ctx.font = subFont;
 	ctx.globalAlpha = 0.9;
 	ctx.fillText('익명편지', STORY_W / 2, brandY + 46);
@@ -389,7 +389,7 @@ export async function storyImage(l: StoryLetter): Promise<File> {
 
 	const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/png'));
 	if (!blob) throw new Error('toBlob');
-	return new File([blob], 'cnsatinder-letter.png', { type: 'image/png' });
+	return new File([blob], 'landy-letter.png', { type: 'image/png' });
 }
 
 export type ShareResult = 'shared' | 'saved' | 'cancelled' | 'again';

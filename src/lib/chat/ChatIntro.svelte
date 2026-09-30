@@ -18,7 +18,7 @@
 	}: { alias: string; online: boolean; profile: PartnerProfile | null; onprofile: () => void } = $props();
 
 	const line = $derived(
-		[profile?.mbti, ...(profile?.interests ?? []).slice(0, 2)].filter(Boolean).join(' · ') || 'CNSATINDER 익명 대화'
+		[profile?.mbti, ...(profile?.interests ?? []).slice(0, 2)].filter(Boolean).join(' · ') || '랜디 익명 대화'
 	);
 </script>
 

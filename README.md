@@ -1,4 +1,4 @@
-# CNSATINDER
+# Landy
 
 충남삼성고 교내 익명 대화 앱. 모르는 사람과 10분, 둘 다 원할 때만 연장.
 
@@ -227,7 +227,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `node scripts/vapid-keys.mjs` | 푸시 알림용 VAPID 키를 만들어 `.env` 에 추가 (이미 있으면 그대로) |
 | `node scripts/import-roster.mjs <csv> [--dry-run]` | 학번-이름 명렬표를 DB 에 반영 (관리자 화면의 이메일 확인 옆 이름 표시용) |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
-| `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 23묶음 — `scripts/e2e/`. `hit`(누름 영역 44px) · `ux`(흐름이 말없이 끊기지 않는지)는 UX 가이드라인 검사. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `cnsatinder-e2e/` |
+| `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 23묶음 — `scripts/e2e/`. `hit`(누름 영역 44px) · `ux`(흐름이 말없이 끊기지 않는지)는 UX 가이드라인 검사. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `landy-e2e/` |
 | `node scripts/generate-badge.mjs` | 알림 배지(`static/badge-96.png`) 재생성 — 앱 아이콘의 흰 로고만 남기고 바탕은 투명 (안드로이드는 배지의 투명도만 써서 컬러 아이콘이면 흰 네모가 된다) |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.*`(png/webp/jpg 아무거나) (헤드리스 Chrome 사용) |
 
@@ -372,7 +372,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       내용을 보고 뒤로 와도 "새" 표시는 그대로 (SvelteKit snapshot)
 - [x] **편지 화면 키보드** — 키보드가 올라오면 최근 말이 가려지던 것 → 채팅 화면처럼 보이는 영역(visualViewport)에 맞추고 맨 아래를 지킨다
 - [x] **알림 고침** — 안드로이드에서 흰 네모로 보이던 알림 아이콘 → 흰 로고 + 투명 배지(`badge-96.png`).
-      알림을 누르면 브라우저 탭 대신 설치한 앱으로: 앱 창이 뜰 때 서비스워커에 알려 두고(`cnsatinder-meta` 캐시),
+      알림을 누르면 브라우저 탭 대신 설치한 앱으로: 앱 창이 뜰 때 서비스워커에 알려 두고(`landy-meta` 캐시),
       앱 창이 있으면 그 창을, 앱을 써 온 기기면 새로 열어 안드로이드가 앱으로 열게 한다
 - [x] **테마 색상** — 설정의 "채팅 색상"을 "테마 색상"으로. 고른 색이 말풍선만이 아니라 앱 전체 포인트 색
       (`--g-*`→로고 `--brand`, 채운 버튼 `--accent-fill`, 글자·아이콘 `--accent`, 내 말풍선 `--bubble-fill`)을 바꾼다. 미리보기 대화는 그대로.
@@ -536,7 +536,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       설정 줄은 이름표를 쪼개지 않고 값 · 단추가 아래 줄로(› 는 오른쪽 끝에 붙박이), 대화 머리글 상태는 말줄임, 로그인 아래 두 단추는 좁으면 가운데 두 줄. `scripts/e2e/wrap.mjs` — 폭 280~520 · 30여 화면에서
       넘침 · 잘림 · 낱말 끊김 · 짧은 이름표 두 줄 · 외톨이를 찾는다. 스키마 테스트 [85], 화면 테스트 `letters` · `wrap`, 실DB 반영 (phase47_letter_folders)
 - [x] **Phase 47-2 — 로고 글자가 잘리거나 두 줄로**
-      아이패드 사파리에서 머리글 로고가 "CNSATINDE / R"로 줄이 바뀌거나 끝 글자가 잘렸다. 글자 폭에 맞춘 칸(`fit-content`)을 사파리가 글자보다
+      아이패드 사파리에서 머리글 로고의 끝 글자가 다음 줄로 넘어가거나 잘렸다. 글자 폭에 맞춘 칸(`fit-content`)을 사파리가 글자보다
       소수점만큼 좁게 재면 낱말 넘김(`overflow-wrap`)이 끝 글자를 다음 줄로 보내고, 그라디언트 글자(`background-clip: text`)는 칸 밖으로 나온 획을
       칠하지 않는다(로그인 · 설치 화면은 자간을 좁혀서 R 의 끝이 늘 칸 밖이었다). `.wordmark` 는 늘 한 줄, 칸을 양옆으로 0.12em 넓히고 같은 만큼
       바깥 여백을 당겨 글자 자리는 그대로
@@ -609,4 +609,9 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       빌드가 해시 붙은 파일로 내보낸다(서비스워커 캐시 · CSP font-src 'self' 그대로). 앱에 쓰인 한글 818자 모두 들어 있다(글꼴 2,780자).
       한 굵기뿐이라 로그인 · 설치 화면 로고의 굵기 800/900(가짜 굵게)을 400 으로, 넓은 글씨라 로그인 · 설치 로고와 "연결됐어요!"는 좁은 폰에서 폭에 맞춰 줄인다.
       `@fontsource/bagel-fat-one` 제거. 화면 테스트 `wrap`(폭 280~520 전부) 통과.
+- [x] **Phase 57 — 앱 이름을 랜디(Landy)로**
+      로고 · 탭 제목 · 홈 화면 앱 이름(매니페스트) · 알림 · 편지 스토리 그림 · 운영자 화면 · AI 대화 봇 소개 · 안내 문장의 앱 이름을 바꿨다.
+      문장 안에서는 "랜디", 로고 · 제목은 "Landy". 서비스워커 캐시 이름도 바꿔(v10) 옛 캐시는 새 워커가 켜질 때 지워진다.
+      서명 사칭 필터(`dm_nick_bad`)는 새 이름(landy · 랜디)을 막는다 — 실DB 는 `schema.sql` 을 다시 실행해야 반영.
+      Cloudflare Worker 이름(`wrangler.jsonc`)과 배포 주소는 그대로 — 바꾸면 새 Worker 로 배포돼 환경변수 · 설치한 앱 · 푸시 구독을 새로 잡아야 한다.
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

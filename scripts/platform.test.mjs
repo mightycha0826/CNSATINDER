@@ -42,7 +42,7 @@ const UA = {
 try {
 	const { detectEnv, openExternalUrl, needsChrome } = await import(pathToFileURL(out).href);
 	const e = (ua, platform = '', touch = 0) => detectEnv(ua, platform, touch);
-	const URL_ = 'https://cnsatinder.mightycha0826.workers.dev/';
+	const URL_ = 'https://landy.example.com/';
 
 	let v = e(UA.iosSafari, 'iPhone', 5);
 	check('iOS Safari → 설치 안내 (인앱 아님)', v.os === 'ios' && v.browser === 'safari' && v.inApp === null, JSON.stringify(v));
@@ -68,7 +68,7 @@ try {
 	check('★ 삼성 인터넷 → Chrome 으로 설치 (Play 프로텍트 차단 회피)', needsChrome(v), JSON.stringify(v));
 	check(
 		'★ 삼성 인터넷 → Chrome intent',
-		openExternalUrl(v, URL_) === 'intent://cnsatinder.mightycha0826.workers.dev/#Intent;scheme=https;package=com.android.chrome;end',
+		openExternalUrl(v, URL_) === 'intent://landy.example.com/#Intent;scheme=https;package=com.android.chrome;end',
 		openExternalUrl(v, URL_)
 	);
 	check('안드로이드 Chrome → 그대로 설치', !needsChrome(e(UA.androidChrome)) && openExternalUrl(e(UA.androidChrome), URL_) === null);
@@ -76,7 +76,7 @@ try {
 	v = e(UA.androidFirefox);
 	check('안드로이드 Firefox → Chrome 으로', v.browser === 'firefox' && needsChrome(v), JSON.stringify(v));
 	const intent = openExternalUrl({ os: 'android', browser: 'chrome', inApp: 'webview' }, URL_);
-	check('안드로이드 인앱 → Chrome intent', intent === 'intent://cnsatinder.mightycha0826.workers.dev/#Intent;scheme=https;package=com.android.chrome;end', intent);
+	check('안드로이드 인앱 → Chrome intent', intent === 'intent://landy.example.com/#Intent;scheme=https;package=com.android.chrome;end', intent);
 } catch (err) {
 	fail++;
 	console.error(err);

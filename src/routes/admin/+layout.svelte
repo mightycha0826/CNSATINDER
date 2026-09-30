@@ -14,7 +14,7 @@
 		return () => document.body.classList.remove('admin');
 	});
 
-	// 예전 서비스워커(cnsatinder-v6 까지)는 운영자 데이터까지 캐시해서 옛 화면을 계속 돌려줬다.
+	// 예전 서비스워커(v6 까지)는 운영자 데이터까지 캐시해서 옛 화면을 계속 돌려줬다.
 	// 새 워커를 바로 받아오게 하고, 그 사이에 쓰일 수 있는 캐시된 운영자 응답은 지금 지운다.
 	$effect(() => {
 		void (async () => {
@@ -108,14 +108,14 @@
 </script>
 
 <svelte:head>
-	<title>CNSATINDER 운영</title>
+	<title>Landy 운영</title>
 	<meta name="robots" content="noindex, nofollow" />
 </svelte:head>
 
 <div class="shell" class:solo={!data.staff}>
 	{#if data.staff}
 		<aside class="side">
-			<a class="brand" href="/admin">CNSATINDER <span>운영</span></a>
+			<a class="brand" href="/admin">Landy <span>운영</span></a>
 			<nav aria-label="운영 메뉴">
 				{#each NAV as g (g.title)}
 					<p class="group">{g.title}</p>

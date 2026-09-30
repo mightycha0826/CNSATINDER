@@ -118,7 +118,7 @@
 		<!-- 선생님 계정(영어 아이디) — 학생 전용 앱이라고 알린다 (Phase 44) -->
 		<div class="teacher" role="alert">
 			<strong>선생님이신가요?</strong>
-			<span>CNSATINDER는 <b>학생들을 위한</b> 익명 대화 앱이에요. 학번으로 된 학생 계정으로만 가입 · 로그인할 수 있어요.</span>
+			<span>랜디는 <b>학생들을 위한</b> 익명 대화 앱이에요. 학번으로 된 학생 계정으로만 가입 · 로그인할 수 있어요.</span>
 		</div>
 	{:else if localHint}
 		<p class="local-hint" role="status">{localHint}</p>
@@ -127,7 +127,7 @@
 
 <div class="page login">
 	<img class="appicon" src="/icon-192.png" alt="" width="56" height="56" />
-	<div class="mark wordmark">CNSATINDER</div>
+	<div class="mark wordmark">Landy</div>
 
 	{#if mode === 'login'}
 		<section>

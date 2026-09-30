@@ -133,7 +133,7 @@
 			if (page.url.pathname !== '/') return;
 			e.preventDefault();
 			window.scrollTo({ top: 0, behavior: scrollBehavior() });
-		}}>CNSATINDER</a
+		}}>Landy</a
 	>
 	<TopbarMe />
 </div>

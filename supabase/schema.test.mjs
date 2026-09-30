@@ -3130,6 +3130,8 @@ console.log('\n[81] 편지 서명 · 학번 검색 · 개인 공지 · 실시간
 	check('12자 넘는 서명은 안 된다', (await rpcAs(W.id, 'dm_send', R.id, '안녕', null, '가'.repeat(13))).status === 'bad_nick');
 	check('★ 신상정보가 들어간 서명은 안 된다 (규칙 필터)', (await rpcAs(W.id, 'dm_send', R.id, '안녕', null, '010-1234-5678')).status === 'bad_nick');
 	check('운영자 사칭 서명은 안 된다', (await rpcAs(W.id, 'dm_send', R.id, '안녕', null, 'CNSA 운영자')).status === 'bad_nick');
+	check('앱 이름 사칭 서명은 안 된다', (await rpcAs(W.id, 'dm_send', R.id, '안녕', null, 'Landy')).status === 'bad_nick'
+		&& (await rpcAs(W.id, 'dm_send', R.id, '안녕', null, '랜 디')).status === 'bad_nick');
 	check('서명이 막히면 편지도 가지 않는다', Number((await one('select count(*) n from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id where t.sender_id = $1', [W.id])).n) === 0);
 
 	await db.query(`update public.app_settings set ai_moderation = true`);

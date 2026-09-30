@@ -23,7 +23,7 @@
 	const STEPS = $derived<Step[]>([
 		{
 			art: 'hello',
-			title: 'CNSATINDER에 온 걸 환영해요',
+			title: '랜디에 온 걸 환영해요',
 			body: '이름도 학번도 묻지 않는 우리 학교 익명 대화 앱이에요. 어떻게 쓰는지 하나씩 알려 드릴게요.'
 		},
 		{

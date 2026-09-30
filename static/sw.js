@@ -1,5 +1,5 @@
 /*
- * CNSATINDER — 수동 서비스워커 (gyeol-app 패턴)
+ * Landy — 수동 서비스워커 (gyeol-app 패턴)
  *
  * 목적은 오프라인 캐시가 아니라 "설치 가능한 PWA 요건 충족"이다.
  * 실시간 대화 앱이므로 응답을 캐시해서 오래된 데이터를 보여주면 안 된다.
@@ -11,10 +11,11 @@
 //     실시간 현황(/admin/live/status)이 처음 받은 사본에 멈춰 있었다. 올리면 그 캐시가 통째로 지워진다.
 // v8: 알림 배지(badge-96.png) 추가
 // v9: 앱 안 알림 · 대화별로 모이는 알림 · 알림을 누르면 새로고침 없이 그 화면으로 (Phase 35)
-const VERSION = 'cnsatinder-v9';
+// v10: 앱 이름을 랜디(Landy)로 — 캐시 이름도 바꾼다 (옛 캐시는 activate 에서 지워진다)
+const VERSION = 'landy-v10';
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/badge-96.png', '/manifest.webmanifest'];
 // 버전이 바뀌어도 지우지 않는 작은 저장소 — "설치한 앱으로 쓰는 기기인지", 앱 창 id
-const META = 'cnsatinder-meta';
+const META = 'landy-meta';
 
 /**
  * 캐시해도 되는 것 = 내용이 바뀌면 주소도 바뀌는 파일뿐.
@@ -56,8 +57,8 @@ async function onPush(d) {
 	// 채팅: { room } → /chat/{room} / 편지 · 공지: { url, tag }
 	const room = typeof d.room === 'string' ? d.room : '';
 	const url = room ? `/chat/${room}` : safeUrl(d.url);
-	const tag = room || (typeof d.tag === 'string' ? d.tag : 'cnsatinder');
-	const note = { kind: d.kind || (room ? 'chat' : 'other'), title: d.title || 'CNSATINDER', body: d.body || '새 메시지', url, tag };
+	const tag = room || (typeof d.tag === 'string' ? d.tag : 'landy');
+	const note = { kind: d.kind || (room ? 'chat' : 'other'), title: d.title || 'Landy', body: d.body || '새 메시지', url, tag };
 
 	const wins = (await self.clients.matchAll({ type: 'window', includeUncontrolled: true })).filter(
 		(c) => new URL(c.url).origin === self.location.origin && c.visibilityState === 'visible'

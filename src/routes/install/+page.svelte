@@ -68,7 +68,7 @@
 
 <div class="page gate">
 	<img class="appicon" src="/icon-192.png" alt="" width="56" height="56" />
-	<div class="mark wordmark">CNSATINDER</div>
+	<div class="mark wordmark">Landy</div>
 
 	{#if env.inApp}
 		<!-- 카카오톡·인스타 등 앱 안 브라우저 — 여기엔 '홈 화면에 추가'가 없다 -->
@@ -113,7 +113,7 @@
 					<span class="sub">없으면 <strong>더 보기</strong> 안에 있어요</span>
 				</li>
 				<li>오른쪽 위 <strong>추가</strong>를 누르세요</li>
-				<li>홈 화면에 생긴 <strong>CNSATINDER</strong> 아이콘으로 들어오세요</li>
+				<li>홈 화면에 생긴 <strong>Landy</strong> 아이콘으로 들어오세요</li>
 			</ol>
 		{:else}
 			<!-- iOS 16.4 부터 Chrome·Edge·Firefox 도 공유 메뉴에서 홈 화면 추가를 지원한다 -->
@@ -123,7 +123,7 @@
 					<strong>홈 화면에 추가</strong>를 누르세요
 					<span class="sub">없으면 <strong>더 보기</strong> 안에 있어요</span>
 				</li>
-				<li>홈 화면에 생긴 <strong>CNSATINDER</strong> 아이콘으로 들어오세요</li>
+				<li>홈 화면에 생긴 <strong>Landy</strong> 아이콘으로 들어오세요</li>
 			</ol>
 			<p class="muted note"><strong>홈 화면에 추가</strong>가 없으면 <strong>Safari</strong>에서 열어 주세요.</p>
 			<button class="btn-ghost" onclick={copyLink}>링크 복사하기</button>
@@ -140,7 +140,7 @@
 			<ol class="steps">
 				<li>브라우저 메뉴 <strong>⋮</strong> 또는 <strong>≡</strong> 를 누르세요</li>
 				<li><strong>앱 설치</strong> 또는 <strong>홈 화면에 추가</strong>를 선택하세요</li>
-				<li>홈 화면에 생긴 <strong>CNSATINDER</strong> 아이콘으로 들어오세요</li>
+				<li>홈 화면에 생긴 <strong>Landy</strong> 아이콘으로 들어오세요</li>
 			</ol>
 		{/if}
 	{/if}

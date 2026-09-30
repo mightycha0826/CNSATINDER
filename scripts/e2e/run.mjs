@@ -5,7 +5,7 @@
  *   npm run test:ui -- react sheet  골라서
  *
  * 스위트마다 자기 포트에 vite dev 를 띄운다. back · login · notices · letters 는 여기서 5199 에 띄워 준다.
- * 스크린샷은 저장소 밖(E2E_OUT, 기본 OS 임시 폴더/cnsatinder-e2e)에.
+ * 스크린샷은 저장소 밖(E2E_OUT, 기본 OS 임시 폴더/landy-e2e)에.
  */
 import { spawn } from 'node:child_process';
 import { readdirSync } from 'node:fs';

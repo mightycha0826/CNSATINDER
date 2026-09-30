@@ -174,7 +174,7 @@ try {
 		const r = await navigator.serviceWorker.ready;
 		r.active.postMessage({ type: 'standalone' });
 		for (let i = 0; i < 30; i++) {
-			const hit = await (await caches.open('cnsatinder-meta')).match('/__app');
+			const hit = await (await caches.open('landy-meta')).match('/__app');
 			if (hit) return hit.json();
 			await new Promise((ok) => setTimeout(ok, 100));
 		}

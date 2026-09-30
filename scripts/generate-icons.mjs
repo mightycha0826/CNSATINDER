@@ -52,7 +52,7 @@ const html = (size) => `<!doctype html><meta charset="utf-8"><style>
     img{display:block;width:100%;height:100%;object-fit:cover}
   </style><div class="i"><img src="${dataUrl}"></div>`;
 
-const tmp = mkdtempSync(join(tmpdir(), 'cnsatinder-icons-'));
+const tmp = mkdtempSync(join(tmpdir(), 'landy-icons-'));
 
 /** @param {string} name @param {number} size */
 function render(name, size) {

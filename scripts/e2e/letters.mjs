@@ -557,9 +557,9 @@ try {
 	await p5.screenshot({ path: `${SP}/letters-story-0-row.png` });
 	await ig.click();
 	const s1 = await shared();
-	check('★ 누르면 공유 창에 스토리 그림 한 장 — PNG 1080×1920', s1.type === 'image/png' && s1.name === 'cnsatinder-letter.png' && s1.w === 1080 && s1.h === 1920, JSON.stringify({ ...s1, url: '', texts: '' }));
-	check('그림에 편지 그대로 — To. 내 이름 · 본문 · From. 익명의 남학생 · CNSATINDER', s1.texts.includes('To. 김보냄') && s1.texts.some((t) => t.includes('시험'))
-		&& s1.texts.includes('From. 익명의 남학생') && s1.texts.includes('CNSATINDER'), JSON.stringify(s1.texts));
+	check('★ 누르면 공유 창에 스토리 그림 한 장 — PNG 1080×1920', s1.type === 'image/png' && s1.name === 'landy-letter.png' && s1.w === 1080 && s1.h === 1920, JSON.stringify({ ...s1, url: '', texts: '' }));
+	check('그림에 편지 그대로 — To. 내 이름 · 본문 · From. 익명의 남학생 · Landy', s1.texts.includes('To. 김보냄') && s1.texts.some((t) => t.includes('시험'))
+		&& s1.texts.includes('From. 익명의 남학생') && s1.texts.includes('Landy'), JSON.stringify(s1.texts));
 	saveImg(s1.url, 'letters-story-1-short.png');
 
 	await openAt(55);
@@ -596,7 +596,7 @@ try {
 	await ig.click();
 	const file = await dl.catch(() => null);
 	await p5.getByText('스토리 그림을 저장했어요').waitFor({ timeout: 3000 }).catch(() => {});
-	check('★ 파일 공유가 안 되는 곳(데스크톱 등)은 그림을 저장 + 안내', file?.suggestedFilename() === 'cnsatinder-letter.png' && (await p5.getByText('스토리 그림을 저장했어요').count()) === 1);
+	check('★ 파일 공유가 안 되는 곳(데스크톱 등)은 그림을 저장 + 안내', file?.suggestedFilename() === 'landy-letter.png' && (await p5.getByText('스토리 그림을 저장했어요').count()) === 1);
 
 	w5.wait = true;
 	await openAt(60);

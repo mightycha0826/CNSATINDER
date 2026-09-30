@@ -15,10 +15,10 @@
 
 	async function share() {
 		const url = location.origin + '/';
-		const text = '우리 학교 익명 대화 앱 CNSATINDER — 가입자가 모이면 익명편지가 열려요!';
+		const text = '우리 학교 익명 대화 앱 랜디 — 가입자가 모이면 익명편지가 열려요!';
 		try {
 			if (navigator.share) {
-				await navigator.share({ title: 'CNSATINDER', text, url });
+				await navigator.share({ title: 'Landy', text, url });
 				return;
 			}
 			await navigator.clipboard.writeText(url);

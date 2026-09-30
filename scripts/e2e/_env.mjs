@@ -23,7 +23,7 @@ function findChrome() {
 }
 export const CHROME = findChrome();
 /** 스크린샷 저장 위치 (저장소 밖) */
-export const OUT = process.env.E2E_OUT || join(tmpdir(), 'cnsatinder-e2e');
+export const OUT = process.env.E2E_OUT || join(tmpdir(), 'landy-e2e');
 mkdirSync(OUT, { recursive: true });
 
 /**
