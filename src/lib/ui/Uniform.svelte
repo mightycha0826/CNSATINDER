@@ -21,6 +21,8 @@
 	 * Phase 66 — 넥타이 · 리본을 1.5배 더(칼라도 넓게 펼쳐 매듭이 다 보이게), 넥타이 머리는 모서리가 둥근 다이아몬드꼴,
 	 * 조끼 목둘레를 더 위로. 리본은 앞섶 사이보다 넓어 고리 끝이 재킷 깃 밑으로 들어간다 (입었을 때처럼 — 재킷 위로 올라오지 않는다).
 	 * 목 둘레(칼라 · 넥타이 · 조끼 목둘레)는 그림 좌표 그대로 그린다 (배율 없음). 리본만 원래 모양을 RIBBON 으로 키운다.
+	 * Phase 67 — 리본은 1.5배로 키우자 고리가 잘리고 매듭 · 꼬리만 남아 넥타이처럼 보여서 Phase 65 크기(1.4배)로 되돌림.
+	 * 넥타이 날을 큰 머리에 맞게 넓게, 조끼 목둘레는 끝만 살짝 둥근 V 로 더 뾰족하게, 재킷 깃(앞섶 · 솔기)은 곡선을 줄여 곧고 조금 각지게.
 	 *   neck — 넥타이(남학생 · 상대 프로필) / 리본(여학생)
 	 *   badges — 깃에 위에서부터 (최대 LAPEL_SLOTS)
 	 *   emptyHref — 있으면 빈 칸을 점선 동그라미 "+" 로 (내 프로필 → 업적 화면)
@@ -48,8 +50,8 @@
 	const C = 46;
 	/** 목 둘레를 조금 아래로 — 그림 위 가장자리에 매듭 윗변이 잘리지 않게 */
 	const NECK_Y = 6;
-	/** 리본 — 원래 모양(가운데 매듭 중심 C, 25)을 가로 2.1 · 세로 1.85배로(고리가 조끼 목둘레에 닿지 않게 살짝 납작히), 매듭 중심을 (C, 38) 에 */
-	const RIBBON = `translate(${C} 38) scale(2.1 1.85) translate(${-C} -25)`;
+	/** 리본 — 원래 모양을 1.4배로 (Phase 65 크기 — 1.5배 더 키우면 고리가 잘려 넥타이처럼 보인다) */
+	const RIBBON = `translate(${C} 10) scale(1.4) translate(${-C} 0)`;
 	/** 오른쪽 깃의 기준 — 깃 · 배지 · 주머니 · 교표 자리는 그대로 두고 몸 가운데만 왼쪽으로 (앞섶 사이가 넓어져 조끼가 넓게 보인다) */
 	const LC = 72;
 	/** 가슴 주머니 · 교표의 가운데 x — 깃 바깥 선과 소매 솔기 사이 */
@@ -59,14 +61,14 @@
 	/** 오른쪽 깃 기준에서 dx */
 	const R = (dx: number) => LC + dx;
 
-	// 앞섶(깃 안쪽 가장자리) — 목 옆에서 내려와 가슴께에서 안으로 살짝 부풀었다가 아래로 (곧은 선이 아니라 S 곡선, Phase 63)
+	// 앞섶(깃 안쪽 가장자리) — 목 옆에서 단추 쪽으로 거의 곧게 (Phase 63 의 S 곡선을 Phase 67 에서 곧게)
 	const FRONT = [
 		[48, 0],
-		[47, 30],
-		[33, 72],
-		[25, 110],
-		[17, 150],
-		[11, 220],
+		[44, 30],
+		[36.5, 72],
+		[31, 110],
+		[25, 150],
+		[14.5, 220],
 		[3, 300]
 	];
 	/** 앞섶 선 — dx 만큼 깃 쪽(+) · 가운데 쪽(-)으로 옮겨서 (두께 · 그림자 · 손바느질) */
@@ -81,14 +83,14 @@
 	const lapelEdge = (inset = 0) =>
 		`M${R(58 - inset)} 300C${R(100 - inset)} 230 ${R(150 - inset)} 150 ${R(176 - inset)} ${100 + inset * 0.4}`;
 	/** 깃과 칼라가 만나는 솔기 (노치에서 목 쪽으로) */
-	const gorge = `M${R(152)} 84C${R(128)} 64 ${R(98)} 42 ${R(64)} 24`;
+	const gorge = `M${R(152)} 84C${R(130)} 69 ${R(100)} 47.5 ${R(64)} 24`;
 	/** 셔츠가 보이는 곳 — 그림 왼쪽 끝에서 깃 앞섶까지 */
 	const shirt = `M-20 -20H${R(FRONT[0][0])}V0${front().slice(front().indexOf('C'))}L-20 300Z`;
-	// 조끼 목둘레 (사진) — 셔츠 칼라 끝 조금 아래를 지나 넓고 얕게, 아래는 뾰족하지 않고 둥글게 (라운드에 가까운 V).
+	// 조끼 목둘레 (사진) — 셔츠 칼라 끝 조금 아래를 지나 넓게, 팔은 곧고 끝만 살짝 둥근 V.
 	// 칼라 끝 · 바깥 선보다 늘 아래라 칼라를 가리지 않는다. 왼쪽 팔은 그림 밖에서, 오른쪽 팔은 깃 밑으로
 	const vLine =
-		`M${X(-1, 104)} -10L${X(-1, 100)} 6C${X(-1, 86)} 44 ${X(-1, 70)} 72 ${X(-1, 56)} 84C${X(-1, 42)} 95 ${X(-1, 20)} 100 ${C} 100` +
-		`C${X(1, 20)} 100 ${X(1, 42)} 95 ${X(1, 56)} 84C${X(1, 70)} 72 ${X(1, 86)} 44 ${X(1, 100)} 6L${X(1, 104)} -10`;
+		`M${X(-1, 104)} -10L${X(-1, 100)} 6C${X(-1, 86)} 44 ${X(-1, 70)} 72 ${X(-1, 56)} 80.5L${X(-1, 14)} 104.6C${X(-1, 9)} 107.5 ${X(-1, 4)} 109.5 ${C} 110` +
+		`C${X(1, 4)} 109.5 ${X(1, 9)} 107.5 ${X(1, 14)} 104.6L${X(1, 56)} 80.5C${X(1, 70)} 72 ${X(1, 86)} 44 ${X(1, 100)} 6L${X(1, 104)} -10`;
 	/** 조끼 몸판 — 오른쪽 팔 끝에서 곧장 깃 밑(앞섶과 깃 바깥 선 사이)으로 내려가 닫는다 (접히는 곳 없이) */
 	const vest = `${vLine}L${R(30)} 300H-40V-10Z`;
 	// 셔츠 칼라 한 쪽 — 목 가운데(그림 위 밖)에서 만나 매듭 어깨를 비켜 넓게 펼쳐지고, 바깥은 목을 감아 재킷 깃 밑으로
@@ -100,7 +102,7 @@
 
 	// 넥타이 — 머리(매듭)는 모서리가 둥근 다이아몬드꼴: 윗변은 칼라 밑, 어깨가 가장 넓고 아래로 둥글게 모인다. 날은 아래로 넓어지며 조끼 속으로
 	const knot = `M${C - 16} -3C${C - 6} -6 ${C + 6} -6 ${C + 16} -3C${C + 24} 4 ${C + 34} 14 ${C + 37} 22C${C + 39} 30 ${C + 30} 46 ${C + 14} 64C${C + 8} 72 ${C - 8} 72 ${C - 14} 64C${C - 30} 46 ${C - 39} 30 ${C - 37} 22C${C - 34} 14 ${C - 24} 4 ${C - 16} -3Z`;
-	const blade = `M${C - 10} 64C${C - 16} 105 ${C - 24} 160 ${C - 28} 240L${C + 28} 242C${C + 24} 160 ${C + 16} 105 ${C + 10} 64Z`;
+	const blade = `M${C - 16} 60C${C - 22} 100 ${C - 30} 150 ${C - 34} 240L${C + 34} 242C${C + 30} 150 ${C + 22} 100 ${C + 16} 60Z`;
 
 	// 리본 — 고리 · 고리 안쪽 · 주름 · 꼬리(제비꼬리)
 	const loop = (s: 1 | -1) => {
@@ -320,8 +322,8 @@
 									<path class="tail" d={tail(s, len)} fill="url(#{uid}-tie-{k})" />
 									<path d={tail(s, len)} fill="url(#{uid}-round)" />
 									<path d={tail(s, len)} fill="url(#{uid}-tailShade)" />
-									<path d={tailFold(s, len)} fill="none" stroke="#050a20" stroke-opacity="0.3" stroke-width="0.6" />
-									<path d={tail(s, len)} fill="none" stroke="#0b1433" stroke-opacity="0.45" stroke-width="0.5" />
+									<path d={tailFold(s, len)} fill="none" stroke="#050a20" stroke-opacity="0.3" stroke-width="1" />
+									<path d={tail(s, len)} fill="none" stroke="#0b1433" stroke-opacity="0.45" stroke-width="0.8" />
 								</g>
 							{/each}
 						</g>
@@ -346,18 +348,18 @@
 								<path class="loop" d={loop(s)} fill="url(#{uid}-tie-{k})" />
 								<path d={loop(s)} fill="url(#{uid}-knot)" opacity="0.8" />
 								<path d={loopInner(s)} fill="#050a20" opacity="0.4" />
-								<path d={loopFolds(s)} fill="none" stroke="#050a20" stroke-opacity="0.3" stroke-width="0.6" stroke-linecap="round" />
-								<path d={loopShine(s)} fill="none" stroke="#fff" stroke-opacity="0.2" stroke-width="0.6" stroke-linecap="round" />
+								<path d={loopFolds(s)} fill="none" stroke="#050a20" stroke-opacity="0.3" stroke-width="1" stroke-linecap="round" />
+								<path d={loopShine(s)} fill="none" stroke="#fff" stroke-opacity="0.2" stroke-width="1" stroke-linecap="round" />
 								<path d={loopTurn(s)} fill="#fff" opacity="0.13" />
-								<path d={loop(s)} fill="none" stroke="#0b1433" stroke-opacity="0.5" stroke-width="0.5" />
+								<path d={loop(s)} fill="none" stroke="#0b1433" stroke-opacity="0.5" stroke-width="0.8" />
 								</g>
 							{/each}
 						</g>
 						<!-- 머리(가운데 매듭) — 크게, 조여서 가로 주름 -->
 						<path class="bow-knot" d={bowKnot} fill="url(#{uid}-tie-b)" />
 						<path d={bowKnot} fill="url(#{uid}-knot)" />
-						<path d="M{C - 8.5} 18C{C - 3} 20.5 {C + 3} 20.5 {C + 8.5} 18M{C - 9} 32.5C{C - 3} 30 {C + 3} 30 {C + 9} 32.5M{C - 3} 23C{C - 1} 25 {C + 1} 25 {C + 3} 23" fill="none" stroke="#050a20" stroke-opacity="0.35" stroke-width="0.55" />
-						<path d={bowKnot} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.5" />
+						<path d="M{C - 8.5} 18C{C - 3} 20.5 {C + 3} 20.5 {C + 8.5} 18M{C - 9} 32.5C{C - 3} 30 {C + 3} 30 {C + 9} 32.5M{C - 3} 23C{C - 1} 25 {C + 1} 25 {C + 3} 23" fill="none" stroke="#050a20" stroke-opacity="0.35" stroke-width="0.9" />
+						<path d={bowKnot} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.8" />
 					</g>
 				{/if}
 			</g>
@@ -379,7 +381,7 @@
 			</g>
 			<!-- 앞섶 두께 — 둥근 가장자리 빛 + 윤곽 + 손바느질 -->
 			<path d={front(1.3)} fill="none" stroke="url(#{uid}-rim)" stroke-width="1.5" />
-			<path d={front(-0.2)} fill="none" stroke="#02041a" stroke-opacity="0.85" stroke-width="1" />
+			<path class="front-edge" d={front(-0.2)} fill="none" stroke="#02041a" stroke-opacity="0.85" stroke-width="1" />
 			<path d={front(5.5)} fill="none" stroke="#8f99cf" stroke-opacity="0.24" stroke-width="0.7" stroke-dasharray="1.2 2.2" />
 			<path d={gorge} fill="none" stroke="#05071a" stroke-opacity="0.7" stroke-width="1.3" />
 			<path d={gorge} fill="none" stroke="#6f79b3" stroke-opacity="0.18" stroke-width="0.8" transform="translate(0 1.4)" />

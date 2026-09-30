@@ -118,6 +118,35 @@ try {
 		const l = await layering(neck);
 		check(`★ 입은 순서대로 자연스럽게 겹친다 (${neck})`, Object.values(l).every(Boolean), JSON.stringify(l));
 	}
+	// Phase 67 — 리본 고리가 거의 다 보이고(1.5배로 키웠을 때 잘려서 넥타이처럼 보였다), 넥타이 날은 머리에 맞게 넓고,
+	// 조끼 목둘레는 끝만 살짝 둥근 V(라운드넥이 아니다), 재킷 앞섶은 거의 곧다
+	const shape = await page.evaluate(() => {
+		const tie = document.querySelector('.u[data-neck="tie"][data-n="3"] .uniform'), rib = document.querySelector('.u[data-neck="ribbon"][data-n="3"] .uniform');
+		const pts = (el, step = 1) => { const L = el.getTotalLength(), out = []; for (let d = 0; d <= L; d += step) out.push(el.getPointAtLength(d)); return out; };
+		// 리본 고리 — 그림 안이고 재킷에 가려지지 않은 윤곽 점의 비율
+		const frame = rib.getBoundingClientRect(), lap = rib.querySelector('.lapel-r'), lm = lap.getScreenCTM().inverse();
+		const loops = [...rib.querySelectorAll('.ribbon .loop')].map((el) => {
+			const m = el.getScreenCTM(), all = pts(el, 2);
+			const seen = all.filter((p) => { const q = new DOMPoint(p.x, p.y).matrixTransform(m); return q.x >= frame.left && q.x <= frame.right && q.y >= frame.top && q.y <= frame.bottom && !lap.isPointInFill(q.matrixTransform(lm)); });
+			return seen.length / all.length;
+		});
+		// 넥타이 날 너비 (머리 아래 끝에서 8 아래) ÷ 머리 너비
+		const knot = tie.querySelector('.tie .knot'), blade = tie.querySelector('.tie .blade'), kb = knot.getBBox();
+		const y = kb.y + kb.height + 8; let w = 0;
+		for (let x = kb.x - 20; x < kb.x + kb.width + 20; x += 0.5) if (blade.isPointInFill(new DOMPoint(x, y))) w += 0.5;
+		// 조끼 목둘레 — 가장 아래 점과, 거기서 옆으로 10 떨어진 곳의 높이 차 (둥글면 거의 0)
+		const vp = pts(tie.querySelector('.vneck'), 0.5), bottom = vp.reduce((a, p) => (p.y > a.y ? p : a));
+		const side = vp.reduce((a, p) => (Math.abs(p.x - (bottom.x + 10)) < Math.abs(a.x - (bottom.x + 10)) ? p : a));
+		// 재킷 앞섶 — 양 끝을 잇는 곧은 선에서 가장 멀리 벗어난 거리
+		const fp = pts(tie.querySelector('.front-edge'), 2), [a0, a1] = [fp[0], fp[fp.length - 1]];
+		const dev = Math.max(...fp.map((p) => Math.abs((a1.y - a0.y) * p.x - (a1.x - a0.x) * p.y + a1.x * a0.y - a1.y * a0.x) / Math.hypot(a1.y - a0.y, a1.x - a0.x)));
+		return { loops: loops.map((v) => +v.toFixed(2)), bladeRatio: +(w / kb.width).toFixed(2), vTip: +(bottom.y - side.y).toFixed(1), frontDev: +dev.toFixed(1) };
+	});
+	// 왼쪽 고리는 넥타이 자리(왼쪽 끝)라 그림 가장자리에서 조금 잘린다 — 고리마다 절반 넘게, 둘 합쳐 3/4 넘게 보이면 리본으로 읽힌다
+	check('★ 리본 고리가 거의 다 보인다 (넥타이처럼 보이지 않게)', shape.loops.length === 2 && shape.loops.every((v) => v >= 0.5) && shape.loops[0] + shape.loops[1] >= 1.5, JSON.stringify(shape));
+	check('★ 넥타이 날은 머리에 맞게 넓다', shape.bladeRatio >= 0.45, JSON.stringify(shape));
+	check('★ 조끼 목둘레는 끝만 살짝 둥근 V (라운드넥 아님)', shape.vTip >= 2, JSON.stringify(shape));
+	check('★ 재킷 앞섶은 거의 곧다', shape.frontDev <= 2.5, JSON.stringify(shape));
 	// Phase 61 — 깃이 커서 배지 3개가 다 깃 안에 (가운데 · 위아래 · 좌우 끝), 주머니는 수평으로 교표 바로 위 가운데 (움직임을 멈추고 잰다)
 	for (const [neck, w] of [['tie', 0], ['ribbon', 320]]) {
 		if (w) { await page.setViewportSize({ width: w, height: 844 }); await page.waitForTimeout(200); }
