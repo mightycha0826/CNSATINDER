@@ -62,9 +62,10 @@
 
 	// 봉투마다 다른 id — 편지함에 봉투가 여러 장이어도 SVG id 가 겹치지 않게
 	const uid = $props.id();
-	// 밀랍 — 가장자리가 울퉁불퉁하고 아래로 한 방울 흘러내린 모양
+	// 밀랍 — 가장자리가 울퉁불퉁하고 아래로 한 방울 흘러내린 모양. 도장 자국(가운데 20, 20.5)을 중심으로 사방이 고르게 (Phase 58 —
+	// 예전 모양은 오른쪽으로 2.7 치우쳐 왼쪽 가장자리가 도장 테두리에 닿아 찝혀 잘린 것처럼 보였다)
 	const WAX =
-		'M20 2.2c2.6-.2 3.9 1.9 6.3 2.4 2.5.5 4.9-.9 6.6 1.1 1.6 1.9.4 4.4 1.3 6.6.9 2.3 3.5 3.3 3.6 5.9.1 2.7-2.6 3.7-3.3 6.1-.7 2.4.8 4.9-.8 6.9-1.5 1.9-4.2 1.4-6.3 2.4-1.2.6-1.6 2-1.8 3.5-.2 1.4-.9 2.6-2.1 2.6s-1.8-1.2-2-2.6c-.1-1-.5-1.9-1.4-2.2-2.4-.8-5.2.2-7.1-1.6-1.9-1.9-.9-4.6-1.8-7-.8-2.3-3.5-3.4-3.6-6-.1-2.7 2.7-3.6 3.5-6 .8-2.4-.6-4.9 1.1-6.9 1.7-1.9 4.3-1.1 6.6-1.8C16.5 4 17.6 2.4 20 2.2z';
+		'M37.56 20.5C37.8 21.36 37.5 22.4 37.02 23.2C36.53 23.99 35.26 24.58 34.64 25.26C34.01 25.93 33.6 26.52 33.28 27.26C32.95 28.01 32.92 28.86 32.69 29.72C32.46 30.57 32.34 31.63 31.9 32.4C31.46 33.17 30.82 33.95 30.04 34.32C29.25 34.69 28.06 34.42 27.19 34.62C26.33 34.81 25.62 34.98 24.87 35.48C24.12 35.98 23.52 36.98 22.71 37.61C21.9 38.24 20.95 38.96 20 39.26C19.05 39.56 17.8 40.11 17 39.41C16.21 38.72 15.99 35.83 15.26 35.1C14.52 34.37 13.49 35.15 12.59 35.04C11.69 34.93 10.65 34.85 9.87 34.44C9.1 34.03 8.38 33.34 7.93 32.57C7.48 31.8 7.47 30.65 7.18 29.82C6.88 28.98 6.69 28.24 6.16 27.55C5.62 26.87 4.4 26.45 3.97 25.71C3.54 24.97 3.37 23.97 3.57 23.1C3.77 22.23 4.92 21.33 5.16 20.5C5.4 19.67 5.24 19 5.02 18.13C4.79 17.25 3.93 16.17 3.82 15.24C3.72 14.32 3.97 13.32 4.41 12.55C4.85 11.79 5.71 11.18 6.48 10.67C7.24 10.16 8.24 9.92 8.99 9.49C9.74 9.06 10.41 8.73 11 8.11C11.58 7.48 11.84 6.32 12.48 5.75C13.13 5.18 14 4.7 14.86 4.67C15.71 4.64 16.78 5.52 17.63 5.57C18.49 5.62 19.15 5.36 20 4.97C20.85 4.58 21.83 3.42 22.73 3.24C23.63 3.05 24.65 3.37 25.41 3.86C26.17 4.35 26.71 5.45 27.3 6.17C27.89 6.9 28.33 7.64 28.92 8.23C29.51 8.81 30.09 9.24 30.84 9.66C31.58 10.09 32.69 10.24 33.39 10.77C34.09 11.3 34.79 12.02 35.02 12.84C35.26 13.67 34.69 14.83 34.78 15.7C34.87 16.56 35.11 17.23 35.57 18.03C36.03 18.83 37.32 19.64 37.56 20.5z';
 </script>
 
 <div class="env b-{border}" class:show-back={side === 'back'} class:glow class:thud={stamping} style:--w="{w}px" aria-hidden="true">
@@ -150,7 +151,8 @@
 			<span class="back-from"><span class="en">From.</span> <span class="hand">{from}</span></span>
 		</div>
 		<div class="flap">
-			<div class="flap-face"></div>
+			<!-- 덮개 그림자는 덮개 면에만 — 덮개(.flap)에 걸면 사파리가 덮개 끝 아래로 내려온 봉인 · 도장 · 파문을 잘랐다 (Phase 58) -->
+			<div class="flap-shade"><div class="flap-face"></div></div>
 			<!-- 밀랍 봉인 — 덮개 끝에 붙어 있다. 열면 금이 간 채로 덮개와 함께 들린다 (Phase 40) -->
 			{#if sealed}
 				<div class="seal" class:cracked class:stamping>
@@ -166,6 +168,8 @@
 									<stop offset=".7" stop-color="#000" stop-opacity="0" />
 									<stop offset="1" stop-color="#000" stop-opacity=".28" />
 								</radialGradient>
+								<!-- 금은 밀랍 안에만 (밀랍 밖 봉투 위로 삐져나오지 않게) -->
+								<clipPath id="waxclip-{uid}"><path d={WAX} /></clipPath>
 							</defs>
 							<path d={WAX} fill="url(#wax-{uid})" />
 							<!-- 눌러 찍은 자리 — 가운데가 살짝 꺼지고 테두리가 솟는다 (찍히는 순간 나타난다) -->
@@ -180,9 +184,9 @@
 								</g>
 							</g>
 							<!-- 빛 반사 -->
-							<ellipse cx="14" cy="10" rx="5" ry="2.4" fill="#fff" opacity=".28" transform="rotate(-24 14 10)" />
+							<ellipse cx="15" cy="12" rx="4.2" ry="2" fill="#fff" opacity=".28" transform="rotate(-24 15 12)" />
 							<!-- 덮개 선을 따라 가는 금 — 봉투를 열 때 그어진다 -->
-							<g class="crack" fill="none" stroke-linecap="round" stroke-linejoin="round">
+							<g class="crack" fill="none" stroke-linecap="round" stroke-linejoin="round" clip-path="url(#waxclip-{uid})">
 								<path d="M3.5 21.6l4.6-1.4 3.1 2.2 4.4-2.6 3.6 1.9 3.9-1.7 3.4 2.3 4.2-2 3.6 1.3 3.2-.8" pathLength="1" stroke="rgb(255 185 195 / .45)" stroke-width="1.1" transform="translate(0 .7)" />
 								<path d="M3.5 21.6l4.6-1.4 3.1 2.2 4.4-2.6 3.6 1.9 3.9-1.7 3.4 2.3 4.2-2 3.6 1.3 3.2-.8" pathLength="1" stroke="#3a0310" stroke-width=".9" />
 							</g>
@@ -766,12 +770,19 @@
 		height: 62%;
 		transform-origin: 50% 0;
 		transform: perspective(40em) rotateX(0deg);
-		filter: drop-shadow(0 0.12em 0.12em rgb(60 30 10 / 0.22));
 		transition:
 			transform 0.7s cubic-bezier(0.45, 0.05, 0.25, 1),
-			z-index 0s 0.33s,
-			filter 0s 0.33s;
+			z-index 0s 0.33s;
 		z-index: 4;
+	}
+	.flap-shade {
+		position: absolute;
+		inset: 0;
+		filter: drop-shadow(0 0.12em 0.12em rgb(60 30 10 / 0.22));
+		transition: filter 0s 0.33s;
+	}
+	.back.open .flap-shade {
+		filter: none;
 	}
 	.flap-face {
 		position: absolute;
@@ -785,7 +796,6 @@
 	}
 	.back.open .flap {
 		transform: perspective(40em) rotateX(180deg);
-		filter: none;
 		z-index: 1;
 	}
 	.back.open .flap-face {
@@ -827,7 +837,6 @@
 		width: 3.2em;
 		height: 3.52em;
 		margin: -2em 0 0 -1.6em;
-		filter: drop-shadow(0 0.1em 0.12em rgb(70 0 15 / 0.4));
 		transition:
 			transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
 			opacity 0s;
@@ -841,6 +850,8 @@
 		inset: 0;
 		/* 밀랍 동그라미의 가운데 (viewBox 40×44 에서 20, 20.5) */
 		transform-origin: 50% 46.6%;
+		/* 그림자는 밀랍에만 (Phase 58) — 봉인 칸(.seal) 전체에 걸면 사파리가 칸 밖으로 나오는 놋쇠 도장 · 충격 파문을 칸 경계에서 잘랐다 */
+		filter: drop-shadow(0 0.1em 0.12em rgb(70 0 15 / 0.4));
 	}
 	.wax svg {
 		display: block;

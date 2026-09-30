@@ -175,7 +175,7 @@ export async function storyImage(l: StoryLetter): Promise<File> {
 	const nameFont = plain ? `700 ${Math.round(19 * S)}px ${sans}` : `400 ${Math.round(26 * S)}px ${hand}`;
 	const namePx = Math.round((plain ? 19 : 26) * S);
 	const dateFont = `600 ${Math.round(12 * S)}px ${sans}`;
-	const brandFont = `400 60px ${display}`;
+	const brandFont = `400 84px ${display}`; // 짧은 이름(Landy)이라 크게 (Phase 58)
 	const subFont = `700 30px ${sans}`;
 	const startPx = Math.round(fs * S * 1.25); // 짧은 편지는 화면보다 크게 — 스토리에서 한눈에
 	await loadFonts([
@@ -383,7 +383,7 @@ export async function storyImage(l: StoryLetter): Promise<File> {
 	ctx.fillText('Landy', STORY_W / 2, brandY);
 	ctx.font = subFont;
 	ctx.globalAlpha = 0.9;
-	ctx.fillText('익명편지', STORY_W / 2, brandY + 46);
+	ctx.fillText('익명편지', STORY_W / 2, brandY + 56);
 	ctx.globalAlpha = 1;
 	ctx.shadowColor = 'transparent';
 

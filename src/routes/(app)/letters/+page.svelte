@@ -116,6 +116,87 @@
 	<!-- 편지 보관함 — 갈색 책상 위 서류 더미 -->
 	<button class="desk" bind:clientWidth={deskW} style:--k={k} onclick={() => goto('/letters/archive')} aria-label="편지 보관함 — 받은 편지 {count(readCount, BOX.more.received)}통, 보낸 편지 {count(sentCount, BOX.more.sent)}통{BOX.folders.length ? `, 폴더 ${BOX.folders.length}개` : ''}">
 		<span class="wood" aria-hidden="true">
+			<!-- 책상 위 물건들 (Phase 58) — 서류 더미를 피해 가장자리에. 위에서 내려다본 모습, 책상 비율(--k)대로 커지고 작아진다 -->
+			<span class="props">
+				<!-- 포스트잇 — 하트 낙서 -->
+				<svg class="prop note" viewBox="0 0 64 64">
+					<path d="M2 2h60v46L48 62H2z" fill="#ffe68a" />
+					<path d="M62 48H51a3 3 0 0 0-3 3v11z" fill="#e6c455" />
+					<path d="M11 17h36M11 27h29M11 37h17" stroke="#c9a53a" stroke-width="2.4" stroke-linecap="round" opacity=".55" />
+					<path d="M42 44c-3-2.3-6-4.6-6-7.4a3 3 0 0 1 6-1.2 3 3 0 0 1 6 1.2c0 2.8-3 5.1-6 7.4z" fill="none" stroke="#e0456a" stroke-width="1.9" stroke-linejoin="round" />
+				</svg>
+				<!-- 커피 — 컵 자국 · 라테 아트 하트 -->
+				<svg class="prop ring" viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgb(40 15 0 / .2)" stroke-width="3" stroke-dasharray="120 14 30 8" /></svg>
+				<svg class="prop mug" viewBox="0 0 86 72">
+					<defs>
+						<radialGradient id="desk-coffee" cx="45%" cy="40%" r="60%">
+							<stop offset="0" stop-color="#9a6436" />
+							<stop offset=".65" stop-color="#5e3218" />
+							<stop offset="1" stop-color="#3f1e0c" />
+						</radialGradient>
+					</defs>
+					<path d="M64 25a12 12 0 0 1 0 22" fill="none" stroke="#efe8df" stroke-width="7.5" stroke-linecap="round" />
+					<circle cx="36" cy="36" r="32" fill="#f6f1ea" />
+					<circle cx="36" cy="36" r="32" fill="none" stroke="rgb(90 60 30 / .18)" stroke-width="1.2" />
+					<circle cx="36" cy="36" r="25.5" fill="url(#desk-coffee)" />
+					<path d="M36 47c-6.5-4.2-11-7.6-11-11.6a5.3 5.3 0 0 1 11-1.5 5.3 5.3 0 0 1 11 1.5c0 4-4.5 7.4-11 11.6z" fill="#ecd3b2" opacity=".9" />
+					<ellipse cx="25" cy="18" rx="9" ry="3.2" fill="#fff" opacity=".55" transform="rotate(-32 25 18)" />
+				</svg>
+				<!-- 만년필 (펜촉이 왼쪽 아래로) -->
+				<svg class="prop pen" viewBox="0 0 170 20">
+					<defs>
+						<linearGradient id="desk-pen" x1="0" y1="0" x2="0" y2="1">
+							<stop offset="0" stop-color="#b3304f" />
+							<stop offset=".55" stop-color="#7d1731" />
+							<stop offset="1" stop-color="#4c0a1c" />
+						</linearGradient>
+					</defs>
+					<path d="M1 10l21-4.5h4v9h-4z" fill="#e8c46c" />
+					<path d="M5 10h17" stroke="#8a6a20" stroke-width=".9" />
+					<circle cx="18" cy="10" r="1.3" fill="#8a6a20" />
+					<rect x="26" y="5" width="16" height="10" rx="2" fill="#2b2a31" />
+					<rect x="42" y="3" width="120" height="14" rx="7" fill="url(#desk-pen)" />
+					<rect x="98" y="3" width="4.5" height="14" fill="#e8c46c" />
+					<rect x="106" y="1.3" width="48" height="3.4" rx="1.7" fill="#e8c46c" />
+					<rect x="47" y="5.2" width="108" height="2.2" rx="1.1" fill="#fff" opacity=".22" />
+				</svg>
+				<!-- 연필 (지우개 달린) -->
+				<svg class="prop pencil" viewBox="0 0 150 14">
+					<path d="M0 7l20-6v12z" fill="#f0d2a6" />
+					<path d="M0 7l7-2.1v4.2z" fill="#3b3b3b" />
+					<rect x="20" y="1" width="106" height="12" fill="#f6c343" />
+					<rect x="20" y="5" width="106" height="4" fill="#e7ad2a" />
+					<rect x="126" y="1" width="10" height="12" fill="#c8cbd1" />
+					<path d="M129 1v12M132.5 1v12" stroke="#9ea3ab" stroke-width=".9" />
+					<rect x="136" y="1" width="13" height="12" rx="3" fill="#f28ca0" />
+				</svg>
+				<!-- 봉인 밀랍 막대 · 놋쇠 도장 -->
+				<svg class="prop sealkit" viewBox="0 0 96 52">
+					<defs>
+						<radialGradient id="desk-brass" cx="34%" cy="28%" r="78%">
+							<stop offset="0" stop-color="#fff3c4" />
+							<stop offset=".3" stop-color="#e6bb5c" />
+							<stop offset=".72" stop-color="#a8752a" />
+							<stop offset="1" stop-color="#5f3f10" />
+						</radialGradient>
+						<radialGradient id="desk-knob" cx="38%" cy="32%" r="72%">
+							<stop offset="0" stop-color="#b98356" />
+							<stop offset=".55" stop-color="#6e3f22" />
+							<stop offset="1" stop-color="#3a1f0d" />
+						</radialGradient>
+					</defs>
+					<rect x="2" y="34" width="56" height="11" rx="3" fill="#b8142f" transform="rotate(-8 30 40)" />
+					<rect x="6" y="35.5" width="46" height="2.4" rx="1.2" fill="#fff" opacity=".25" transform="rotate(-8 30 40)" />
+					<path d="M55 33.5c3 .4 5 2.6 4.4 5.6-.5 2.4-2.6 3.6-5.2 3.2z" fill="#8a0c20" />
+					<circle cx="72" cy="24" r="21" fill="url(#desk-brass)" />
+					<circle cx="72" cy="24" r="17.5" fill="none" stroke="rgb(80 50 8 / .5)" stroke-width=".9" />
+					<circle cx="72" cy="24" r="13.5" fill="url(#desk-knob)" />
+					<ellipse cx="67.2" cy="17.2" rx="5" ry="2.7" fill="#fff" opacity=".3" transform="rotate(-32 67.2 17.2)" />
+				</svg>
+				<!-- 종이 클립 -->
+				<svg class="prop clip c1" viewBox="0 0 14 40"><path d="M4 30V8a3.5 3.5 0 0 1 7 0v24a5.5 5.5 0 0 1-11 0V10" fill="none" stroke="#d3d7de" stroke-width="1.7" stroke-linecap="round" /></svg>
+				<svg class="prop clip c2" viewBox="0 0 14 40"><path d="M4 30V8a3.5 3.5 0 0 1 7 0v24a5.5 5.5 0 0 1-11 0V10" fill="none" stroke="#e7a3b4" stroke-width="1.7" stroke-linecap="round" /></svg>
+			</span>
 			<span class="pile">
 				{#each LAYERS.slice(0, Math.max(0, pileSize - 1)) as l, i (i)}
 					<i class="layer {l.kind}" style:--r="{l.r}deg" style:--x="{l.x}px" style:--y="{l.y}px"></i>
@@ -231,7 +312,7 @@
 		position: relative;
 		display: grid;
 		place-items: center;
-		height: calc(300px * var(--k, 1)); /* Phase 48 — 판자를 더 길게 (230 → 300) */
+		height: calc(380px * var(--k, 1)); /* Phase 48 — 판자를 더 길게 (230 → 300), Phase 58 — 물건을 올려 둘 자리까지 (300 → 380) */
 		/* 나뭇결 — 가는 결 · 굵은 결 · 위에서 비치는 빛 */
 		background:
 			repeating-linear-gradient(91deg, rgb(255 255 255 / 0.035) 0 2px, transparent 2px 11px),
@@ -251,6 +332,93 @@
 		height: 12px;
 		background: linear-gradient(180deg, #5a3016, #3f200d);
 		box-shadow: 0 -1px 0 rgb(255 220 180 / 0.18);
+	}
+	/* ── 책상 위 물건들 (Phase 58) — 가운데 서류 더미(190 × 130)와 아래 이름표(아래 26px)를 피해 가장자리에 ── */
+	.props {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+	.prop {
+		position: absolute;
+		height: auto;
+		filter: drop-shadow(0 calc(3px * var(--k, 1)) calc(3px * var(--k, 1)) rgb(30 10 0 / 0.42));
+	}
+	.note {
+		left: calc(16px * var(--k, 1));
+		top: calc(20px * var(--k, 1));
+		width: calc(62px * var(--k, 1));
+		rotate: -9deg;
+	}
+	.ring {
+		right: calc(76px * var(--k, 1));
+		top: calc(62px * var(--k, 1));
+		width: calc(56px * var(--k, 1));
+		filter: none;
+	}
+	.mug {
+		right: calc(16px * var(--k, 1));
+		top: calc(16px * var(--k, 1));
+		width: calc(84px * var(--k, 1));
+	}
+	.pen {
+		left: calc(10px * var(--k, 1));
+		bottom: calc(60px * var(--k, 1));
+		width: calc(168px * var(--k, 1));
+		rotate: -24deg;
+	}
+	/* 연필은 책상 오른쪽 끝에 걸쳐 있다 (끝이 책상 밖으로 조금 나가 잘린다) */
+	.pencil {
+		right: calc(-40px * var(--k, 1));
+		top: calc(175px * var(--k, 1));
+		width: calc(140px * var(--k, 1));
+		rotate: 72deg;
+	}
+	.sealkit {
+		right: calc(18px * var(--k, 1));
+		bottom: calc(58px * var(--k, 1));
+		width: calc(96px * var(--k, 1));
+	}
+	.clip {
+		width: calc(12px * var(--k, 1));
+	}
+	.clip.c1 {
+		left: calc(34px * var(--k, 1));
+		top: calc(150px * var(--k, 1));
+		rotate: 24deg;
+	}
+	.clip.c2 {
+		left: calc(50% + 30px * var(--k, 1));
+		bottom: calc(66px * var(--k, 1));
+		rotate: -68deg;
+	}
+	/* 낮은 화면(아이폰 SE · 큰 글꼴 안드로이드) — 판자는 예전 길이(300)로 두어 보관함 이름표가 편지 쓰기 단추 위에 보이게 (Phase 47).
+	   물건은 서류 더미와 겹치지 않게 줄이고 옮긴다 */
+	@media (max-height: 759px) {
+		.wood {
+			height: calc(300px * var(--k, 1));
+		}
+		.ring,
+		.pencil,
+		.clip.c2 {
+			display: none;
+		}
+		.mug {
+			top: calc(12px * var(--k, 1));
+			right: calc(12px * var(--k, 1));
+			width: calc(70px * var(--k, 1));
+		}
+		.pen {
+			left: calc(12px * var(--k, 1));
+			bottom: calc(50px * var(--k, 1));
+			width: calc(140px * var(--k, 1));
+			rotate: -12deg;
+		}
+		.sealkit {
+			right: calc(12px * var(--k, 1));
+			bottom: calc(46px * var(--k, 1));
+			width: calc(70px * var(--k, 1));
+		}
 	}
 	.pile {
 		position: relative;

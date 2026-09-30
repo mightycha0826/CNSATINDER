@@ -231,16 +231,23 @@
 			transform: translate(40px, 50px) scale(1.15);
 		}
 	}
+	/* 앱 이름 "Landy"(Phase 57)는 짧아서 — 아이콘 · 이름을 가운데 한 덩어리로 크게 (Phase 58).
+	   예전 긴 이름(10자)에 맞춘 왼쪽 정렬 · 36px 는 오른쪽이 휑하고 첫 화면이 가벼워 보였다 */
 	.appicon {
+		align-self: center;
+		width: 64px;
+		height: 64px;
 		margin-bottom: 2px;
 		box-shadow: var(--glow);
 	}
 	.mark {
-		/* 파셜산스(Phase 56)는 넓은 글씨라 좁은 폰(폭 280 — 큰 글꼴)에선 폭에 맞춰 줄인다. 한 굵기뿐이라 400 (가짜 굵게 없이) */
-		font-size: min(36px, calc((100vw - 72px) / 8.3));
+		align-self: center;
+		/* 한 굵기뿐이라 400 (가짜 굵게 없이). 폭 280 폰에서도 한 줄 */
+		font-size: min(64px, 19vw);
 		font-weight: 400;
-		letter-spacing: -0.02em;
-		margin-bottom: 4px;
+		line-height: 1.05;
+		letter-spacing: -0.01em;
+		margin-bottom: 18px;
 	}
 	section {
 		display: flex;

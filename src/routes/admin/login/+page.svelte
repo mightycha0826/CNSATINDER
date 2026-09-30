@@ -60,7 +60,7 @@
 </script>
 
 <div class="box">
-	<h1>Landy <span>운영</span></h1>
+	<h1><b class="wordmark">Landy</b> <span>운영</span></h1>
 	<p class="muted">운영진으로 등록된 학교 계정만 들어올 수 있어요.<br />모든 신원 열람과 조치는 기록됩니다.</p>
 
 	{#if msg}<p class="err">{msg}</p>{/if}
@@ -93,10 +93,18 @@
 		gap: 12px;
 	}
 	h1 {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
 		margin: 0;
-		font-size: 26px;
+		font-size: 22px;
 		font-weight: 800;
 		letter-spacing: -0.04em;
+	}
+	/* 학생 앱과 같은 로고 (Phase 58) */
+	h1 .wordmark {
+		font-size: 36px;
+		line-height: 1;
 	}
 	h1 span {
 		color: var(--text-2);

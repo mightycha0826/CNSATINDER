@@ -115,7 +115,7 @@
 <div class="shell" class:solo={!data.staff}>
 	{#if data.staff}
 		<aside class="side">
-			<a class="brand" href="/admin">Landy <span>운영</span></a>
+			<a class="brand" href="/admin"><b class="wordmark">Landy</b> <span>운영</span></a>
 			<nav aria-label="운영 메뉴">
 				{#each NAV as g (g.title)}
 					<p class="group">{g.title}</p>
@@ -186,13 +186,22 @@
 		border-right: 1px solid var(--line);
 		background: color-mix(in srgb, var(--field) 45%, var(--bg));
 	}
+	/* 로고(브랜드 글씨) + "운영" — 학생 앱과 같은 로고 (Phase 58) */
 	.brand {
+		display: flex;
+		align-items: baseline;
+		gap: 6px;
 		padding: 0 10px 14px;
 		white-space: nowrap;
 		color: var(--text);
 		font-weight: 800;
 		font-size: 17px;
 		letter-spacing: -0.03em;
+		text-decoration: none;
+	}
+	.brand .wordmark {
+		font-size: 24px;
+		line-height: 1;
 	}
 	.brand span {
 		color: var(--accent);

@@ -152,15 +152,21 @@
 		gap: 14px;
 		padding-bottom: 48px;
 	}
+	/* 앱 이름 "Landy"(Phase 57)는 짧아서 — 로그인 화면처럼 아이콘 · 이름을 가운데 한 덩어리로 크게 (Phase 58) */
 	.appicon {
+		align-self: center;
+		width: 64px;
+		height: 64px;
 		margin-bottom: 2px;
 	}
 	.mark {
-		/* 파셜산스(Phase 56)는 넓은 글씨라 좁은 폰에선 폭에 맞춰 줄인다. 한 굵기뿐이라 400 (가짜 굵게 없이) */
-		font-size: min(28px, calc((100vw - 96px) / 8.3));
+		align-self: center;
+		/* 한 굵기뿐이라 400 (가짜 굵게 없이) */
+		font-size: min(52px, 16vw);
 		font-weight: 400;
-		letter-spacing: -0.02em;
-		margin-bottom: 8px;
+		line-height: 1.05;
+		letter-spacing: -0.01em;
+		margin-bottom: 14px;
 	}
 	h1 {
 		font-size: 19px;

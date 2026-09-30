@@ -551,9 +551,10 @@ a {
 	background-clip: text;
 	color: transparent;
 }
-/* 홈 머리글의 로고 — 다른 탭 제목(22px)과 같은 무게로 보이게 */
+/* 홈 머리글의 로고 — 짧은 이름(Landy, 5자)이라 조금 크게 해야 머리글이 비어 보이지 않고 다른 탭 제목과 무게가 맞는다 (Phase 58) */
 .title.wordmark {
-	font-size: 21px;
+	font-size: 27px;
+	line-height: 1;
 }
 
 /* 앱 아이콘 (로그인·설치·스플래시) */
@@ -969,8 +970,10 @@ html.kb-open .toasts {
 	flex-direction: column;
 	align-items: center;
 	justify-content: center;
-	gap: 14px;
-	font-size: 18px;
+	gap: 16px;
+	/* 로고 글자 — 아이콘(72)과 어울리게 (Phase 58 — 예전 긴 이름 기준 18px 는 짧은 이름에서 너무 작았다) */
+	font-size: 38px;
+	line-height: 1;
 }
 
 /* 화면에는 안 보이고 화면 낭독기만 읽는 글 */
