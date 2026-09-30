@@ -157,6 +157,8 @@ try {
 	check('채팅 말풍선은 없다 (편지만)', (await page.locator('.bubble').count()) === 0 && (await page.getByRole('textbox', { name: '메시지' }).count()) === 0);
 	check('★ 우체통 — 새 편지 수 (Phase 71)', (await page.locator('.post .count').innerText()) === '2' && (await page.locator('button.post').getAttribute('aria-label')).includes('새 편지 2통'));
 	check('"새로 온 편지가 없어요" 문구는 없다', (await page.getByText('새로 온 편지가 없어요').count()) === 0);
+	const pb = await page.evaluate(() => { const r = document.querySelector('.post .postbox').getBoundingClientRect(), p = document.querySelector('.page.mailbox').getBoundingClientRect(); return { w: r.width, page: p.width, h: r.height }; });
+	check('★ 우체통은 화면 폭 가득한 납작한 네모 (Phase 72 — 2D)', pb.w >= pb.page - 33 && pb.w > pb.h * 1.4, JSON.stringify(pb));
 	check('★ 처음 보는 안 읽은 편지는 우체통에서 나온다', (await page.locator('.stack li.emerge').count()) === 2);
 	const rowOf = (pg) => pg.evaluate(() => {
 		const p = document.querySelector('.desk .plate').getBoundingClientRect(), f = document.querySelector('.desk-area .fab').getBoundingClientRect();
@@ -244,11 +246,13 @@ try {
 	await page.waitForTimeout(150);
 	const posted = await page.evaluate(() => {
 		const e = document.querySelector('.compose .env-wrap').getBoundingClientRect(), s = document.querySelector('.compose .post .slot').getBoundingClientRect();
-		return { up: !!document.querySelector('.compose .post.up'), dx: Math.abs((e.left + e.right) / 2 - (s.left + s.right) / 2), dy: Math.abs(e.bottom - (s.top + s.bottom) / 2), fits: e.width <= s.width };
+		return { up: !!document.querySelector('.compose .post .postbox'), dx: Math.abs((e.left + e.right) / 2 - (s.left + s.right) / 2), dy: Math.abs(e.bottom - (s.top + s.bottom) / 2), fits: e.width <= s.width };
 	});
-	check('★ 빨간 우체통이 올라오고 봉투가 작아져 투입구에 맞춰 들어간다 (Phase 71)', posted.up && posted.dx < 3 && posted.dy < 3 && posted.fits, JSON.stringify(posted));
+	check('★ 화면 위쪽 빨간 우체통 — 봉투가 작아져 투입구에 맞춰 들어간다 (Phase 71 · 72)', posted.up && posted.dx < 3 && posted.dy < 3 && posted.fits, JSON.stringify(posted));
 	await page.screenshot({ path: `${SP}/letters-4d-post.png` });
 	await page.waitForURL(/\/letters$/, { timeout: 8000 }); await page.waitForTimeout(500);
+	const back = await page.evaluate(() => ({ plus: document.querySelector('.post .plus')?.getAnimations().length ?? 0, land: !!document.querySelector('.desk .top-env.land') }));
+	check('★ 보내고 돌아오면 우체통 위 "+✉" · 보낸 편지가 책상 더미에 내려앉는다 (Phase 72)', back.plus > 0 && back.land, JSON.stringify(back));
 	check('★ 답장 → dm_reply_to (받은 편지 한 통에 · 이름으로 받은 쪽은 서명 없음)', JSON.stringify(called(w, 'dm_reply_to').at(-1)?.[1]) === JSON.stringify({ p_msg: 70, p_body: '고마워! 너도 잘 지내', p_fmt: null, p_nick: null }));
 	await page.locator('button.desk').click(); await page.waitForURL('**/letters/archive'); await page.locator('.archive .stack .item').first().waitFor(); await page.waitForTimeout(300);
 	check('★ 날아간 뒤 보관함은 보낸 편지 칸 — 맨 위에 방금 답장 (To. 익명의 여학생)', (await page.getByRole('tab', { name: '보낸 편지' }).getAttribute('aria-selected')) === 'true'

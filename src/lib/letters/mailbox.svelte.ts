@@ -23,6 +23,9 @@ export const BOX = $state({
  */
 export const ANNOUNCED = new Set<number>();
 
+/** 방금 편지를 보냈다 (Phase 72) — 편지함으로 돌아오면 우체통 위에 "+✉" · 책상 더미에 그 편지가 내려앉는다 (한 번 쓰고 끈다) */
+export const POSTED = { pending: false };
+
 export async function loadBox(box: Box) {
 	try {
 		const r = await fetchMailbox(box);
@@ -37,9 +40,11 @@ export async function loadBox(box: Box) {
 }
 
 export function refreshMailbox() {
-	void loadBox('received');
-	void loadBox('sent');
-	void refreshUnread();
+	void reloadMailbox();
+}
+/** refreshMailbox 와 같다 — 다 읽으면 풀리는 약속을 돌려준다 (편지함이 방금 보낸 편지를 더미에 내려앉힐 때) */
+export async function reloadMailbox() {
+	await Promise.all([loadBox('received'), loadBox('sent'), refreshUnread()]);
 }
 
 /** 화면을 보고 있는 동안의 주기 확인 — 새로 올 수 있는 건 받은 편지뿐 (안 읽은 수는 받은 편지와 함께 앱 틀이 따로 센다) */

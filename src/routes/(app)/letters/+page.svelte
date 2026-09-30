@@ -1,9 +1,9 @@
 <script lang="ts">
 	/**
-	 * 익명편지 탭 = 편지함 (Phase 32 · 35 · 71).
-	 *   위: 큰 빨간 우체통 (Phase 71) — 안 읽은 편지 수가 붙고 투입구에 봉투 끝이 삐죽 나온다. 새 편지가 오면
-	 *       봉투가 위에서 떨어져 투입구로 들어가고 → 통이 출렁 → 아래 문이 열려 그 편지가 우체통 밑으로 나와 놓인다 (한 통에 한 번).
-	 *       누르면 가장 최근에 온 안 읽은 편지를 연다.
+	 * 익명편지 탭 = 편지함 (Phase 32 · 35 · 71 · 72).
+	 *   위: 화면 폭 가득한 납작한 빨간 우체통 (Phase 72 — 2D 네모: 봉투 문양 · 긴 투입구). 안 읽은 편지 수가 붙고 투입구에 봉투 끝이 삐죽 나온다.
+	 *       새 편지가 오면 봉투가 위에서 떨어져 투입구로 들어가고 → 통이 출렁 · 위에 "+✉" → 그 편지가 우체통 밑으로 나와 놓인다 (한 통에 한 번).
+	 *       편지를 보내고 돌아오면 우체통 위에 "+✉" · 보낸 편지가 책상 더미에 내려앉는다. 누르면 가장 최근에 온 안 읽은 편지를 연다.
 	 *   그 아래: 아직 안 연 받은 편지 — 봉인된 봉투가 비스듬히 쌓여 있다 (누르면 봉투를 연다).
 	 *   맨 아래: 갈색 책상 위 서류 더미 = 편지 보관함. 읽은 편지 · 보낸 편지가 겹겹이 쌓여 있고, 누르면 지금까지 받은 · 쓴 편지 전부 (/letters/archive).
 	 *   책상은 화면 아래쪽에 놓이고(남는 자리는 위에), 책상 · 더미 · 봉투 · 우체통은 화면 크기에 맞춰 같은 비율로 커지고 작아진다 (Phase 46).
@@ -18,28 +18,40 @@
 	import MailStack from '$lib/letters/MailStack.svelte';
 	import Postbox from '$lib/letters/Postbox.svelte';
 	import { borderOf, myLabel, otherLabel, stampDate } from '$lib/letters/api';
-	import { ANNOUNCED, BOX, PAGE, pollMailbox, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import { ANNOUNCED, BOX, PAGE, POSTED, pollMailbox, reloadMailbox } from '$lib/letters/mailbox.svelte';
 	import { reducedMotion } from '$lib/motion';
 	import * as haptic from '$lib/haptics';
 	import { whileVisible } from '$lib/visible';
 	import { S } from '$lib/state.svelte';
 
+	const timers: ReturnType<typeof setTimeout>[] = [];
+	onDestroy(() => timers.forEach(clearTimeout));
+	let added = $state(0);
+	let landing = $state(false);
 	$effect(() => {
-		refreshMailbox();
+		const loaded = reloadMailbox();
+		// 방금 편지를 보냈다 (Phase 72) — 목록을 새로 읽은 뒤(더미 맨 위가 그 편지) 우체통 위에 "+✉" · 책상 더미에 내려앉는다
+		if (POSTED.pending) {
+			POSTED.pending = false;
+			if (!reducedMotion())
+				void loaded.then(() => {
+					landing = true;
+					added++;
+					timers.push(setTimeout(() => (landing = false), 1400));
+				});
+		}
 		return whileVisible(pollMailbox, 120_000);
 	});
 
 	const unread = $derived(BOX.received.filter((i) => !i.opened && !i.removed));
 
-	// ── 우체통으로 편지가 온다 (Phase 71) ──
-	// 처음 보는 안 읽은 편지가 생기면: 봉투가 투입구로 떨어지고(0) → 출렁(0.8s, Postbox) → 문이 열리고(0.95s) → 편지가 한 통씩 나온 뒤 → 문이 닫힌다
-	const DOOR = 950;
+	// ── 우체통으로 편지가 온다 (Phase 71 · 72) ──
+	// 처음 보는 안 읽은 편지가 생기면: 봉투가 투입구로 떨어지고(0) → 출렁 · "+✉"(0.8s, Postbox) → 편지가 한 통씩 우체통 밑으로 나온다
+	const OUT = 850;
 	let emerge = $state<Record<number, number>>({}); // 편지 id → 나오기 시작하는 때(ms). 한 번 정하면 그대로 (바꾸면 장면이 다시 돈다)
 	let drop = $state(0);
+	let dropN = $state(1);
 	let bump = $state(0);
-	let doorOpen = $state(false);
-	const timers: ReturnType<typeof setTimeout>[] = [];
-	onDestroy(() => timers.forEach(clearTimeout));
 	$effect(() => {
 		if (!BOX.loaded.received) return;
 		const news = unread.filter((i) => !ANNOUNCED.has(i.id)).map((i) => i.id);
@@ -47,14 +59,11 @@
 		news.forEach((id) => ANNOUNCED.add(id));
 		if (reducedMotion()) return;
 		untrack(() => {
-			emerge = { ...emerge, ...Object.fromEntries(news.map((id, i) => [id, DOOR + 150 + i * 110])) };
+			emerge = { ...emerge, ...Object.fromEntries(news.map((id, i) => [id, OUT + i * 110])) };
+			dropN = news.length;
 			drop++;
 		});
 		haptic.select();
-		timers.push(
-			setTimeout(() => (doorOpen = true), DOOR),
-			setTimeout(() => (doorOpen = false), DOOR + 150 + news.length * 110 + 700)
-		);
 	});
 	function tapPostbox() {
 		const first = unread[0];
@@ -113,7 +122,7 @@
 		onclick={tapPostbox}
 		aria-label={unread.length ? `우체통 — 새 편지 ${unread.length}통, 눌러서 가장 최근 편지 열기` : BOX.loaded.received ? '우체통 — 새 편지 없음' : '우체통'}
 	>
-		<Postbox count={unread.length} open={doorOpen} {drop} {bump} />
+		<Postbox count={unread.length} {drop} {dropN} {added} {bump} />
 	</button>
 
 	{#if !BOX.loaded.received || unread.length}
@@ -210,7 +219,7 @@
 					<i class="layer {l.kind}" style:--r="{l.r}deg" style:--x="{l.x}px" style:--y="{l.y}px"></i>
 				{/each}
 				{#if top}
-					<span class="top-env">
+					<span class="top-env" class:land={landing}>
 						<Envelope
 							to={top.box === 'received' ? me(top.it, top.box) : otherLabel(top.it, top.box)}
 							from={top.box === 'received' ? otherLabel(top.it, top.box) : me(top.it, top.box)}
@@ -255,11 +264,12 @@
 		overflow-x: clip;
 	}
 
-	/* ── 우체통 (Phase 71) ── */
+	/* ── 우체통 (Phase 71 · 72) — 화면 폭 가득한 납작한 네모. 위 여백은 "+✉" 가 튀어나올 자리 ── */
 	.post {
-		align-self: center;
-		width: calc(150px * var(--k, 1));
-		margin-top: 4px;
+		--h: calc(196px * var(--k, 1));
+		display: block;
+		width: 100%;
+		margin-top: 14px;
 		-webkit-tap-highlight-color: transparent;
 	}
 	.post:focus-visible {
@@ -430,6 +440,16 @@
 		position: relative;
 		transform: rotate(-2deg);
 		filter: drop-shadow(0 4px 6px rgb(30 10 0 / 0.4));
+	}
+	/* 방금 보낸 편지가 더미 위로 내려앉는다 (Phase 72) */
+	.top-env.land {
+		animation: land 0.7s 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+	}
+	@keyframes land {
+		from {
+			opacity: 0;
+			transform: translateY(calc(-70px * var(--k, 1))) rotate(-10deg) scale(1.12);
+		}
 	}
 	.empty-desk {
 		color: rgb(255 235 215 / 0.8);

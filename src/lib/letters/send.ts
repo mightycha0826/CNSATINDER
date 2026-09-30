@@ -2,6 +2,7 @@ import { goto } from '$app/navigation';
 import { errMsg, toast } from '../state.svelte';
 import { sendError, type SendResult } from './api';
 import { LIST } from './unread.svelte';
+import { POSTED } from './mailbox.svelte';
 
 /**
  * 편지 보내기 — 새 편지 · 답장이 같이 쓴다 (EnvelopeCompose 의 onsend · ondone).
@@ -21,6 +22,7 @@ export async function deliver(send: () => Promise<SendResult>): Promise<boolean>
 /** 봉투가 날아간 뒤 — 편지함으로 (보관함을 열면 보낸 편지 칸) */
 export function afterSent(message: string) {
 	LIST.tab = 'sent';
+	POSTED.pending = true;
 	toast(message);
 	void goto('/letters', { replaceState: true });
 }
