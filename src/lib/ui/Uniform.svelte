@@ -11,6 +11,8 @@
 	 * 숨 쉬듯 아주 살짝 움직이고 넥타이 · 리본 꼬리가 흔들린다 (동작 줄이기면 멈춤). 배지는 손으로 꽂은 듯 조금씩 기울게.
 	 * 넥타이는 매듭(머리) · 매듭 아래 보조개 · 날의 둥근 그늘, 매듭은 천이 감겨 줄무늬 방향이 날과 반대.
 	 * 리본은 고리 두 개(안쪽 그늘 · 접힌 주름) · 가운데 매듭 · 제비꼬리로 자른 꼬리 두 개.
+	 * Phase 63 — 앞섶(깃 안쪽 가장자리)을 곧은 선 대신 S 곡선으로, 천 두께(둥근 가장자리 빛 · 윤곽 · 손바느질),
+	 * 깃이 조끼 · 셔츠 위로 떠서 드리운 그림자, 깃이 말려 넘어가는 빛 띠, 왼쪽은 몸이 돌아 들어가며 어둡고 부드러운 주름.
 	 *   neck — 넥타이(남학생 · 상대 프로필) / 리본(여학생)
 	 *   badges — 깃에 위에서부터 (최대 LAPEL_SLOTS)
 	 *   emptyHref — 있으면 빈 칸을 점선 동그라미 "+" 로 (내 프로필 → 업적 화면)
@@ -41,11 +43,33 @@
 	/** 몸 가운데에서 s 쪽(1 = 보는 사람 기준 오른쪽, -1 = 왼쪽)으로 dx */
 	const X = (s: number, dx: number) => C + s * dx;
 
-	// 깃 — 안쪽 선(앞섶) 위 → 그림 아래 밖 → 바깥 선(살짝 배가 부른 곡선) → 깃 끝 → 노치 → 칼라 → 목 뒤
-	const lapel = (s: 1 | -1) => {
-		const x = (d: number) => X(s, d);
-		return `M${x(44)} 0C${x(34)} 90 ${x(14)} 200 ${x(2)} 300L${x(58)} 300C${x(100)} 230 ${x(150)} 150 ${x(176)} 100L${x(152)} 84L${x(164)} 66C${x(140)} 40 ${x(118)} 16 ${x(100)} 0Z`;
+	// 앞섶(깃 안쪽 가장자리) — 목 옆에서 내려와 가슴께에서 안으로 살짝 부풀었다가 아래로 (곧은 선이 아니라 S 곡선, Phase 63)
+	const FRONT = [
+		[44, 0],
+		[43, 32],
+		[32, 72],
+		[25, 110],
+		[19, 150],
+		[11, 220],
+		[3, 300]
+	];
+	/** 앞섶 선 — dx 만큼 깃 쪽(+) · 가운데 쪽(-)으로 옮겨서 (두께 · 그림자 · 손바느질) */
+	const front = (s: 1 | -1, dx = 0, dy = 0) => {
+		const p = FRONT.map(([x, y]) => `${X(s, x + dx)} ${y + dy}`);
+		return `M${p[0]}C${p[1]} ${p[2]} ${p[3]}C${p[4]} ${p[5]} ${p[6]}`;
 	};
+	/** 앞섶 선을 아래에서 위로 (앞섶 사이 모양을 닫을 때) */
+	const frontUp = (s: 1 | -1) => {
+		const p = FRONT.map(([x, y]) => `${X(s, x)} ${y}`);
+		return `L${p[6]}C${p[5]} ${p[4]} ${p[3]}C${p[2]} ${p[1]} ${p[0]}`;
+	};
+	// 깃 — 앞섶 위 → 그림 아래 밖 → 바깥 선(살짝 배가 부른 곡선) → 깃 끝 → 노치 → 칼라 → 목 뒤
+	/** 깃 바깥쪽 윤곽 (앞섶을 뺀 나머지) — 아래 → 바깥 선 → 깃 끝 → 노치 → 칼라 → 목 뒤 */
+	const lapelOuter = (s: 1 | -1) => {
+		const x = (d: number) => X(s, d);
+		return `M${x(58)} 300C${x(100)} 230 ${x(150)} 150 ${x(176)} 100L${x(152)} 84L${x(164)} 66C${x(140)} 40 ${x(118)} 16 ${x(100)} 0`;
+	};
+	const lapel = (s: 1 | -1) => `${front(s)}L${lapelOuter(s).slice(1)}Z`;
 	const lapelEdge = (s: 1 | -1, inset = 0) => {
 		const x = (d: number) => X(s, d - inset);
 		return `M${x(58)} 300C${x(100)} 230 ${x(150)} 150 ${x(176)} ${100 + inset * 0.4}`;
@@ -53,7 +77,7 @@
 	/** 깃과 칼라가 만나는 솔기 (노치에서 목 쪽으로) */
 	const gorge = (s: 1 | -1) => `M${X(s, 152)} 84C${X(s, 128)} 64 ${X(s, 98)} 42 ${X(s, 64)} 24`;
 	/** 앞섶 사이 (셔츠가 보이는 곳) */
-	const opening = `M${X(-1, 44)} 0C${X(-1, 34)} 90 ${X(-1, 14)} 200 ${X(-1, 2)} 300L${X(1, 2)} 300C${X(1, 14)} 200 ${X(1, 34)} 90 ${X(1, 44)} 0Z`;
+	const opening = `${front(-1)}${frontUp(1)}Z`;
 	// 조끼 V넥 — 곡선으로 넥타이를 감싸며 내려간다
 	const vLine = `M${X(-1, 38)} 26C${X(-1, 28)} 82 ${X(-1, 12)} 142 ${C} 182C${X(1, 12)} 142 ${X(1, 28)} 82 ${X(1, 38)} 26`;
 	// 셔츠 칼라 한 쪽 — 목 가운데에서 만나 아래 바깥으로 뾰족하게
@@ -150,6 +174,25 @@
 						<stop offset="1" stop-color="#29315f" />
 					</linearGradient>
 				{/each}
+				{#each [-1, 1] as const as s (s)}
+					<clipPath id="{uid}-clip{s}"><path d={lapel(s)} /></clipPath>
+				{/each}
+				<!-- 앞섶 가장자리 빛 · 깃이 말리는 빛 — 위(목 옆, 빛을 많이 받는 곳)에서 아래로 옅어진다 -->
+				<linearGradient id="{uid}-rim" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="300">
+					<stop offset="0" stop-color="#8e98d6" stop-opacity="0.8" />
+					<stop offset="0.4" stop-color="#6f79b8" stop-opacity="0.45" />
+					<stop offset="1" stop-color="#5a639e" stop-opacity="0.1" />
+				</linearGradient>
+				<linearGradient id="{uid}-roll" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="300">
+					<stop offset="0" stop-color="#b3bbef" stop-opacity="0.24" />
+					<stop offset="0.45" stop-color="#b3bbef" stop-opacity="0.11" />
+					<stop offset="1" stop-color="#b3bbef" stop-opacity="0.03" />
+				</linearGradient>
+				<!-- 왼쪽 끝 — 몸이 옆으로 돌아 들어가며 어두워진다 -->
+				<linearGradient id="{uid}-turn" x1="0" y1="0" x2="1" y2="0">
+					<stop offset="0" stop-color="#000" stop-opacity="0.5" />
+					<stop offset="1" stop-color="#000" stop-opacity="0" />
+				</linearGradient>
 				<linearGradient id="{uid}-shirt" x1="0" y1="0" x2="0" y2="1">
 					<stop offset="0" stop-color="#f7fafc" />
 					<stop offset="1" stop-color="#d6dee7" />
@@ -250,7 +293,8 @@
 			<path d="{vLine}L{X(1, 70)} 300H{X(-1, 70)}Z" fill="url(#{uid}-knit)" />
 			<path d="{vLine}L{X(1, 70)} 300H{X(-1, 70)}Z" fill="url(#{uid}-round)" opacity="0.5" />
 			<path d={vLine} fill="none" stroke="#2a2d36" stroke-width="7" stroke-linejoin="round" />
-			<path d={vLine} fill="none" stroke="#454954" stroke-width="1" stroke-dasharray="0.8 1.6" />
+			<path d={vLine} fill="none" stroke="#3b3f4a" stroke-width="5.4" stroke-dasharray="0.7 1.5" />
+			<path d={vLine} fill="none" stroke="#6b707b" stroke-opacity="0.35" stroke-width="0.8" transform="translate(0 -3)" />
 			<path d={vLine} fill="none" stroke="#000" stroke-opacity="0.25" stroke-width="1.2" transform="translate(0 4)" />
 
 			<!-- 셔츠 칼라 — 목 가운데서 만나 매듭 양옆으로 펼쳐진다 -->
@@ -295,16 +339,36 @@
 				</g>
 			{/if}
 
+			<!-- 깃이 조끼 · 셔츠 위로 떠 있어 앞섶 안쪽으로 드리운 그림자 -->
+			{#each [-1, 1] as const as s (s)}
+				<path d={front(s, -3.5, 3)} fill="none" stroke="#000" stroke-opacity="0.5" stroke-width="8" filter="url(#{uid}-blur2)" />
+			{/each}
+
 			<!-- 깃 (노치 라펠) — 몸판 위로 뜬 부드러운 그림자, 말리는 그늘, 바깥 가장자리 빛 · 손바느질 -->
 			{#each [-1, 1] as const as s (s)}
 				<path d={lapel(s)} fill="#03051a" opacity="0.6" transform="translate({s * 3} 4)" filter="url(#{uid}-blur2)" />
 				<path d={lapel(s)} fill="url(#{uid}-lapel{s})" class:lapel-r={s === 1} />
 				<path d={lapel(s)} fill="url(#{uid}-twill)" />
+				<g clip-path="url(#{uid}-clip{s})">
+					<!-- 깃이 둥글게 말려 넘어가며 받는 넓은 빛 띠, 앞섶 바로 안쪽의 오목한 그늘 -->
+					<path d={front(s, 16)} fill="none" stroke="url(#{uid}-roll)" stroke-width="18" filter="url(#{uid}-blur)" />
+					<path d={front(s, 4)} fill="none" stroke="#02041a" stroke-opacity="0.3" stroke-width="3" filter="url(#{uid}-soft)" />
+					{#if s === -1}
+						<!-- 몸이 옆으로 돌아 들어가는 쪽 + 깃에 진 부드러운 주름 -->
+						<rect x="-20" y="-20" width={C - 8} height="340" fill="url(#{uid}-turn)" />
+						<path d="M{X(-1, 62)} 20C{X(-1, 54)} 110 {X(-1, 44)} 200 {X(-1, 32)} 300" fill="none" stroke="#02041a" stroke-opacity="0.35" stroke-width="7" filter="url(#{uid}-blur2)" />
+						<path d="M{X(-1, 56)} 24C{X(-1, 48)} 112 {X(-1, 38)} 200 {X(-1, 26)} 300" fill="none" stroke="#9aa4dc" stroke-opacity="0.07" stroke-width="3" filter="url(#{uid}-soft)" />
+					{/if}
+				</g>
+				<!-- 앞섶 두께 — 둥근 가장자리 빛 + 윤곽 + 손바느질 -->
+				<path d={front(s, 1.3)} fill="none" stroke="url(#{uid}-rim)" stroke-width="1.5" />
+				<path d={front(s, -0.2)} fill="none" stroke="#02041a" stroke-opacity="0.85" stroke-width="1" />
+				<path d={front(s, 5.5)} fill="none" stroke="#8f99cf" stroke-opacity="0.24" stroke-width="0.7" stroke-dasharray="1.2 2.2" />
 				<path d={gorge(s)} fill="none" stroke="#05071a" stroke-opacity="0.7" stroke-width="1.3" />
 				<path d={gorge(s)} fill="none" stroke="#6f79b3" stroke-opacity="0.18" stroke-width="0.8" transform="translate(0 1.4)" />
 				<path d={lapelEdge(s)} fill="none" stroke="#aab3e6" stroke-opacity="0.16" stroke-width="5" filter="url(#{uid}-blur2)" />
 				<path d={lapelEdge(s, 5)} fill="none" stroke="#8f99cf" stroke-opacity="0.3" stroke-width="0.7" stroke-dasharray="1.2 2.2" />
-				<path d={lapel(s)} fill="none" stroke="#9aa4d6" stroke-opacity="0.32" stroke-width="1.2" stroke-linejoin="round" />
+				<path d={lapelOuter(s)} fill="none" stroke="#9aa4d6" stroke-opacity="0.32" stroke-width="1.2" stroke-linejoin="round" />
 			{/each}
 
 			<!-- 배지가 천에 드리운 그림자 -->
