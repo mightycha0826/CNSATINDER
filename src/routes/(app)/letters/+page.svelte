@@ -145,6 +145,25 @@
 	let vh = $state(844);
 	const k = $derived(Math.min(1.5, Math.max(0.75, Math.min(deskW / 390, vh / 844))));
 
+	// 책상 누르기 (Phase 82) — 책상이 통째로 줄지 않고 누른 것만 반응한다: 서류 더미 · 이름표는 눌리고 → 보관함,
+	// 책상 위 물건(머그 · 펜 · 연필 · 포스트잇 · 봉인 · 클립)은 그것만 톡 튀어 오른다 (보관함으로 가지 않는다)
+	function tapDesk(e: MouseEvent) {
+		const prop = (e.target as Element | null)?.closest<SVGElement>('.prop');
+		if (!prop) return void goto('/letters/archive');
+		haptic.select();
+		if (reducedMotion()) return;
+		prop.animate(
+			[
+				{ transform: 'none' },
+				{ transform: 'translateY(-7%) scale(1.1) rotate(-5deg)', offset: 0.3 },
+				{ transform: 'translateY(0) scale(0.96) rotate(3deg)', offset: 0.6 },
+				{ transform: 'scale(1.02) rotate(-1deg)', offset: 0.8 },
+				{ transform: 'none' }
+			],
+			{ duration: 480, easing: 'ease-out' }
+		);
+	}
+
 	// 편지 쓰기 단추는 보관함 이름표와 한 줄 (Phase 71) — 이름표 높이에 맞춘다 (글이 두 줄로 접혀도 같이)
 	let plateH = $state(64);
 
@@ -184,7 +203,7 @@
 
 	<!-- 편지 보관함 — 책상 위 서류 더미. 앞 한 줄은 [이름표 | 편지 쓰기] -->
 	<div class="desk-area">
-	<button class="desk" bind:clientWidth={deskW} onclick={() => goto('/letters/archive')} aria-label="편지 보관함 — 받은 편지 {count(readCount, BOX.more.received)}통, 보낸 편지 {count(sentCount, BOX.more.sent)}통{BOX.folders.length ? `, 폴더 ${BOX.folders.length}개` : ''}">
+	<button class="desk" bind:clientWidth={deskW} onclick={tapDesk} aria-label="편지 보관함 — 받은 편지 {count(readCount, BOX.more.received)}통, 보낸 편지 {count(sentCount, BOX.more.sent)}통{BOX.folders.length ? `, 폴더 ${BOX.folders.length}개` : ''}">
 		<span class="wood" aria-hidden="true">
 			<!-- 책상 위 물건들 (Phase 58) — 서류 더미를 피해 가장자리에. 위에서 내려다본 모습, 책상 비율(--k)대로 커지고 작아진다 -->
 			<span class="props">
@@ -357,10 +376,18 @@
 		flex-direction: column;
 		width: 100%;
 		text-align: left;
-		transition: transform 0.25s cubic-bezier(0.3, 0.7, 0.3, 1);
 	}
-	.desk:active {
-		transform: scale(0.985);
+	/* 누른 것만 반응 (Phase 82 — 전엔 책상이 물건 · 더미 · 이름표째 통째로 줄었다).
+	   더미: 더미나 빈 판자를 누르면 / 이름표: 이름표를 누르면 / 물건: 누르면 톡 (tapDesk) */
+	.pile,
+	.plate {
+		transition: scale 0.25s cubic-bezier(0.3, 0.7, 0.3, 1);
+	}
+	.desk:active:not(:has(.prop:active, .plate:active)) .pile {
+		scale: 0.95;
+	}
+	.plate:active {
+		scale: 0.97;
 	}
 	.wood {
 		position: relative;
@@ -379,11 +406,17 @@
 	.prop {
 		position: absolute;
 		height: auto;
+		pointer-events: auto; /* 누르면 그 물건만 톡 (tapDesk) */
+		-webkit-tap-highlight-color: transparent;
 		filter: drop-shadow(0 calc(3px * var(--k, 1)) calc(4px * var(--k, 1)) var(--wood-drop));
 	}
 	.defs {
 		width: 0;
 		height: 0;
+	}
+	.defs,
+	.ring {
+		pointer-events: none; /* 컵 자국은 물건이 아니다 */
 	}
 	.note {
 		left: calc(16px * var(--k, 1));

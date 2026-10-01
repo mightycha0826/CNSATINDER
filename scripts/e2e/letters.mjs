@@ -178,7 +178,25 @@ try {
 		const r = document.querySelector('.desk .wood').getBoundingClientRect();
 		return { l: r.left, r: r.right - innerWidth, pressed: r.width * 0.985 - innerWidth, sx: document.documentElement.scrollWidth - innerWidth };
 	});
-	check('★ 책상은 화면보다 양옆으로 넓다 — 눌러 줄어도(0.985) 모서리에 바깥 바탕이 비치지 않는다 · 가로 스크롤 없음', bleed.l <= -8 && bleed.r >= 8 && bleed.pressed > 0 && bleed.sx <= 0, JSON.stringify(bleed));
+	check('★ 책상은 화면보다 양옆으로 넓다 — (Phase 71) 모서리에 바깥 바탕이 비치지 않는다 · 가로 스크롤 없음', bleed.l <= -8 && bleed.r >= 8 && bleed.pressed > 0 && bleed.sx <= 0, JSON.stringify(bleed));
+	// 누른 것만 반응 (Phase 82) — 책상이 통째로 줄지 않는다
+	const pressAt = async (sel) => {
+		const b = await page.locator(sel).boundingBox();
+		await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down(); await page.waitForTimeout(350);
+		const st = await page.evaluate(() => {
+			const sc = (q) => getComputedStyle(document.querySelector(q)).scale;
+			return { desk: getComputedStyle(document.querySelector('button.desk')).transform, pile: sc('.desk .pile'), plate: sc('.desk .plate'), mug: getComputedStyle(document.querySelector('.desk .mug')).transform };
+		});
+		await page.mouse.move(5, 5); await page.mouse.up(); await page.waitForTimeout(300);
+		return st;
+	};
+	const onPile = await pressAt('.desk .pile .top-env'), onPlate = await pressAt('.desk .plate');
+	check('★ 편지 더미를 누르면 더미만 눌린다 — 책상 · 물건 · 이름표는 그대로', onPile.desk === 'none' && onPile.pile === '0.95' && onPile.plate === 'none' && onPile.mug === 'none', JSON.stringify(onPile));
+	check('★ 이름표를 누르면 이름표만 눌린다', onPlate.desk === 'none' && onPlate.plate === '0.97' && onPlate.pile === 'none', JSON.stringify(onPlate));
+	await page.locator('.desk .mug').click(); await page.waitForTimeout(80);
+	const mugTap = { anim: await page.locator('.desk .mug').evaluate((e) => e.getAnimations().length), others: await page.locator('.desk .pen').evaluate((e) => e.getAnimations().length) };
+	await page.waitForTimeout(500);
+	check('★ 물건(머그)을 누르면 그것만 톡 튀어 오르고 보관함으로 가지 않는다', mugTap.anim > 0 && mugTap.others === 0 && new URL(page.url()).pathname === '/letters', JSON.stringify(mugTap));
 	const desk = page.locator('button.desk');
 	check('★ 아래 책상 위 서류 더미 = 편지 보관함 (읽은 편지 · 보낸 편지)', (await desk.getAttribute('aria-label')) === '편지 보관함 — 받은 편지 1통, 보낸 편지 1통' && (await desk.locator('.layer').count()) >= 3 && (await desk.locator('.top-env .env').count()) === 1,
 		await desk.getAttribute('aria-label'));
