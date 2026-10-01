@@ -5,11 +5,13 @@
 	import BadgeDetail from '$lib/ui/BadgeDetail.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import {
+		featuredError,
 		featuredOf,
 		fetchMyAchievements,
 		placedFeatured,
 		progressText,
 		setFeaturedBadges,
+		slotsOf,
 		toggledFeatured,
 		type Achievement,
 		type MyAchievements
@@ -46,7 +48,7 @@
 		featBusy = true;
 		try {
 			const r = await setFeaturedBadges(codes);
-			if (r.status !== 'ok') throw new Error(r.status === 'too_many' ? '대표 업적은 3개까지예요' : '아직 딴 업적이 아니에요');
+			if (r.status !== 'ok') throw new Error(featuredError(r.status, slotsOf(fame)));
 			fame = { ...fame, featured: r.featured ?? fame.featured, chosen: codes };
 			medal = null;
 			toast('대표 업적을 바꿨어요');
@@ -66,7 +68,7 @@
 		fame = { ...fame, featured: featuredOf(fame.items, codes), chosen: codes };
 		try {
 			const r = await setFeaturedBadges(codes);
-			if (r.status !== 'ok') throw new Error(r.status === 'too_many' ? '대표 업적은 3개까지예요' : '아직 딴 업적이 아니에요');
+			if (r.status !== 'ok') throw new Error(featuredError(r.status, slotsOf(fame)));
 			if (fame) fame = { ...fame, featured: r.featured ?? fame.featured };
 		} catch (e) {
 			fame = prev;
@@ -184,6 +186,7 @@
 			<Uniform
 				neck={S.profile?.gender === 'f' ? 'ribbon' : 'tie'}
 				badges={fame.featured}
+				slots={slotsOf(fame)}
 				emptyHref="/me/achievements"
 				allHref="/me/achievements"
 				onpick={(b) => (medal = fame?.items.find((a) => a.code === b.code) ?? null)}

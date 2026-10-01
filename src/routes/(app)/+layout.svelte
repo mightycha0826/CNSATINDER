@@ -5,6 +5,7 @@
 	import { checkGate, lettersState } from '$lib/letters/gate.svelte';
 	import { S } from '$lib/state.svelte';
 	import Tour from '$lib/ui/Tour.svelte';
+	import CnsaBadgeTour from '$lib/ui/CnsaBadgeTour.svelte';
 	import { whileVisible } from '$lib/visible';
 	import { DM, refreshUnread } from '$lib/letters/unread.svelte';
 	import AchievementCelebrate from '$lib/ui/AchievementCelebrate.svelte';
@@ -84,6 +85,9 @@
 
 <!-- 처음 사용법 안내 (Phase 44) — 처음 홈에 왔을 때 한 번 (건너뛸 수 있다 · 설정에서 다시 보기) -->
 <Tour />
+
+<!-- CNSA 뱃지 안내 (Phase 84) — CNSA 뱃지를 처음 받으면 한 번 (업적 화면 · 설정에서 다시 보기) -->
+<CnsaBadgeTour />
 
 {#if showTabs}
 	<!-- 탭바에 가려지지 않게 같은 높이만큼 비워 둔다 -->

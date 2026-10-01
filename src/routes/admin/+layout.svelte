@@ -51,6 +51,7 @@
 			items: [
 				{ href: '/admin/users', label: '사용자', ic: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4.5-6 8-6s7 2 8 6' },
 				{ href: '/admin/badges', label: '뱃지', ic: 'M12 15a6 6 0 100-12 6 6 0 000 12zM8.5 13.9L7 21l5-2.6 5 2.6-1.5-7.1' },
+				{ href: '/admin/badge-requests', label: '뱃지 요청', ic: 'M4 8.5A1.5 1.5 0 015.5 7h2.2l1.3-2h6l1.3 2h2.2A1.5 1.5 0 0120 8.5v9a1.5 1.5 0 01-1.5 1.5h-13A1.5 1.5 0 014 17.5zM12 15.9a3.4 3.4 0 100-6.8 3.4 3.4 0 000 6.8z' },
 				{ href: '/admin/rooms', label: '전체 대화', ic: 'M3 5h12v9H7l-4 3V5zM9 17h8l4 3V9h-3' }
 			]
 		},

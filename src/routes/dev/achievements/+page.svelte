@@ -6,6 +6,7 @@
 	 *   /dev/achievements?uniform    교복 (Phase 60) — 넥타이 · 리본 × 배지 0~3개, 상대 프로필 시트 크기
 	 *                                (배지 3개짜리는 꾹 눌러 칸을 옮길 수 있다 — Phase 69)
 	 *   /dev/achievements?ribbon     업적 전체를 리본 교복으로
+	 *   /dev/achievements?five       대표 칸 5개 (Phase 84 — 금 뱃지 5개) · ?uniform 에는 5칸 교복도
 	 * 배포 빌드에서는 아무것도 그리지 않고 홈으로 보낸다.
 	 */
 	import { goto } from '$app/navigation';
@@ -67,8 +68,11 @@
 	let data = $state<MyAchievements>({
 		items,
 		featured: page.url.searchParams.has('club') ? [feat('club_geukjakso'), feat('fun'), feat('warm')] : [feat('fun'), feat('pioneer'), feat('warm')],
-		chosen: []
+		chosen: [],
+		slots: page.url.searchParams.has('five') ? 5 : 3,
+		golds: page.url.searchParams.has('five') ? 5 : 2
 	});
+	const FIVE = ['fun', 'pioneer', 'warm', 'beta', 'cnsa_student'].map((c) => feat(c));
 	const celebrate = page.url.searchParams.has('celebrate');
 	const uniform = page.url.searchParams.has('uniform');
 	let picked = $state('');
@@ -103,6 +107,12 @@
 						/>
 					</section>
 				{/each}
+			{/each}
+			<!-- 5칸 (Phase 84) — 깃 셋 + 가슴 주머니 위 둘 -->
+			{#each ['tie', 'ribbon'] as const as neck (neck)}
+				<section class="u" data-neck={neck} data-n="5">
+					<Uniform {neck} badges={FIVE} slots={5} onpick={(b) => (picked = b.title)} />
+				</section>
 			{/each}
 			<!-- 상대 프로필 시트 크기 — 빈 칸 없이 -->
 			<section class="u sheet-size" data-neck="partner"><Uniform badges={data.featured.slice(0, 2)} onpick={(b) => (picked = b.title)} /></section>

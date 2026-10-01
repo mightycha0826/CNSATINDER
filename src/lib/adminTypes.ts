@@ -325,6 +325,30 @@ export type UserBadgeRow = { code: string; title: string; description: string; h
 export type BadgeAdminRow = { code: string; title: string; description: string; icon: string; category: string; holders: number };
 /** 한 뱃지를 가진 학생 (admin_badge_holders) */
 export type BadgeHolderRow = { id: string; nickname: string | null; status: 'active' | 'suspended' | 'banned'; earned_at: string };
+/** 학생이 보낸 뱃지 요청 (admin_badge_requests, Phase 84) — 학번 · 이름 · 사진이 있어 관리자만 */
+export type BadgeRequestRow = {
+	id: number;
+	user_id: string;
+	kind: 'proof' | 'club' | 'new';
+	code: string | null;
+	/** 앱에 없는 뱃지 · 동아리 이름 */
+	title: string | null;
+	/** 앱에 있는 뱃지 이름 */
+	badge: string | null;
+	note: string;
+	member_nos: number[];
+	/** Storage badge-proofs 경로 (결정하면 비어 있다) */
+	photos: string[];
+	status: 'pending' | 'approved' | 'rejected';
+	staff_note: string | null;
+	created_at: string;
+	decided_at: string | null;
+	name: string | null;
+	grade: number | null;
+	no: string | null;
+	/** 이미 그 뱃지를 가졌나 */
+	has: boolean;
+};
 
 /** 학생 문의 (admin_inquiries, Phase 37) — 답변하면 그 학생에게 개인 공지로 간다 */
 export type InquiryRow = {

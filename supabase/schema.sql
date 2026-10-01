@@ -1548,8 +1548,10 @@ begin
            'interests',   to_jsonb(p.interests),
            'mbti',        p.mbti,
            'manner_temp', p.manner_temp,
-           'badges',      private.featured(v_other),
-           'badge_count', (select count(*) from private.user_achievements a where a.user_id = v_other),
+           -- 랜덤채팅에서 숨긴 뱃지는 빼고 (Phase 84 — 정하지 않았으면 CNSA 뱃지는 숨김)
+           'badges',      private.featured_for(v_other, 'chat'),
+           'badge_count', (select count(*) from private.user_achievements a join private.achievement_defs d on d.code = a.code
+                            where a.user_id = v_other and private.badge_chat_visible(p.badge_chat, d.code, d.category)),
            'online',      coalesce(up.online_until > now(), false))
     into v
     from public.rooms r
@@ -4103,7 +4105,7 @@ returns int language sql security definer set search_path = '' stable as $fn$
 $fn$;
 revoke all on function private.dm_streak(bigint, boolean) from public, anon, authenticated;
 
--- 학생 찾기 — 이름에 검색어가 들어간 사람 10명. 받기를 끈 사람 · 차단한 사이 · 이용 제한 · 나 자신은 빼고.
+-- 학생 찾기 — 이름에 검색어가 들어간 사람 10명. 받기를 끈 사람 · 차단한 사이 · 이용 제한 · 나 자신은 빼고. 대표 뱃지도 (Phase 84)
 create or replace function public.dm_search(p_q text)
 returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
 declare me uuid := auth.uid(); q text := btrim(coalesce(p_q, ''));
@@ -4111,7 +4113,8 @@ begin
   if me is null then raise exception 'unauthenticated'; end if;
   if char_length(q) < 2 or private.letters_locked() then return '[]'::jsonb; end if;   -- 잠겨 있으면 찾기도 없다 (Phase 44)
   return coalesce((
-    select jsonb_agg(jsonb_build_object('id', x.id, 'name', x.name, 'grade', x.grade, 'no', x.no, 'checked', x.source = 'roster')
+    select jsonb_agg(jsonb_build_object('id', x.id, 'name', x.name, 'grade', x.grade, 'no', x.no, 'checked', x.source = 'roster',
+                                        'badges', private.featured_for(x.id, 'letter'))   -- 대표 뱃지 (Phase 84 — 순서는 그 사람이 정한 대로)
                      order by x.exact desc, x.grade nulls last, x.no nulls last, x.name)
       from (select p.id, n.name, n.grade, n.source, n.name = q as exact,
                    -- 학번 = 학교 이메일 앞자리 (Phase 35 — 같은 학년 동명이인 구분)
@@ -5093,8 +5096,8 @@ $do$;
 --    가벼운 트리거가 올린다 — 메시지 · 공감 · 방(연장 · 고정 · 끝까지) · 공통 질문 답 · 편지 · 평가 · 접속(연속 일수).
 --  · 카탈로그: private.achievement_defs — 업적 정의는 여기가 유일한 출처다 (화면은 RPC 로 받아서 그린다).
 --  · 받은 등급: private.user_achievements — 올라가기만 하고 내려가지 않는다.
---  · 대표 업적: profiles.featured_badges (최대 3개, 비어 있으면 높은 등급 순으로 자동)
---  학생은 세 표 모두 직접 읽을 수 없다. 내 것은 my_achievements(), 상대 것은 partner_profile() 의 대표 3개뿐.
+--  · 대표 업적: profiles.featured_badges (3개 · 금 뱃지 5개면 5개 — Phase 84, 비어 있으면 높은 등급 순으로 자동)
+--  학생은 세 표 모두 직접 읽을 수 없다. 내 것은 my_achievements(), 상대 것은 partner_profile() 의 대표 뱃지뿐.
 -- ════════════════════════════════════════════════════════════════════
 
 create table if not exists private.user_stats (
@@ -5187,6 +5190,12 @@ begin
       insert into private.user_achievements (user_id, code, tier) values (p_user, d.code, t)
       on conflict (user_id, code) do update set tier = excluded.tier, earned_at = now()
        where private.user_achievements.tier < excluded.tier;
+      -- Landy 금 뱃지를 처음 따면 기본 CNSA 뱃지가 열린다 (Phase 84)
+      if t = 3 and not d.granted and d.category <> 'cnsa' then
+        insert into private.user_achievements (user_id, code, tier)
+        select p_user, 'cnsa_student', 3 where exists (select 1 from private.achievement_defs where code = 'cnsa_student')
+        on conflict (user_id, code) do nothing;
+      end if;
     end if;
   end loop;
 end
@@ -5399,21 +5408,8 @@ $fn$;
 
 
 -- ── 보이는 곳 ──
--- 대표 업적 (최대 3개) — 고른 것이 없거나 더는 없는 업적이면 높은 등급 · 최근 순으로 채운다
-create or replace function private.featured(p_user uuid)
-returns jsonb language sql stable security definer set search_path = public, private as $fn$
-  select coalesce(jsonb_agg(jsonb_build_object('code', x.code, 'title', x.title, 'icon', x.icon, 'tier', x.tier) order by x.o), '[]'::jsonb)
-  from (
-    select d.code, d.title, d.icon, a.tier,
-           row_number() over (order by coalesce(array_position(p.featured_badges, d.code), 99), a.tier desc, a.earned_at desc) as o
-      from private.user_achievements a
-      join private.achievement_defs d on d.code = a.code
-      join public.profiles p on p.id = a.user_id
-     where a.user_id = p_user
-     order by o
-     limit 3
-  ) x;
-$fn$;
+-- 대표 업적 — private.featured_for(사람, 어디에) (Phase 84: 칸 수 3 · 5, 랜덤채팅에서 숨긴 뱃지, 편지 찾기 무작위 순서).
+-- 고른 것이 없거나 더는 없는 업적이면 높은 등급 · 최근 순으로 채운다
 
 create or replace function public.my_achievements()
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
@@ -5437,8 +5433,13 @@ begin
              order by d.sort)
              from private.achievement_defs d
              left join private.user_achievements a on a.user_id = me and a.code = d.code), '[]'::jsonb),
-    'featured', private.featured(me),
-    'chosen', to_jsonb(p.featured_badges));
+    'featured', private.featured_for(me, 'own'),
+    'chosen', to_jsonb(p.featured_badges),
+    -- Phase 84 — 대표 뱃지 칸(금 뱃지 5개면 5) · 금 뱃지 수 · 랜덤채팅에 보이는 뱃지 (정하지 않았으면 CNSA 는 숨김)
+    'slots', private.badge_slots(me),
+    'golds', private.badge_golds(me),
+    'chat', coalesce((select jsonb_object_agg(d.code, private.badge_chat_visible(p.badge_chat, d.code, d.category))
+                        from private.achievement_defs d join private.user_achievements a on a.code = d.code and a.user_id = me), '{}'::jsonb));
 end
 $fn$;
 
@@ -5460,7 +5461,7 @@ begin
 end
 $fn$;
 
--- 대표 업적 고르기 — 가진 업적만, 3개까지 (빈 배열 = 자동)
+-- 대표 업적 고르기 — 가진 업적만, 칸 수까지(3 · 금 뱃지 5개면 5, Phase 84) (빈 배열 = 자동)
 create or replace function public.set_featured_badges(p_codes text[])
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare me uuid := auth.uid(); v text[];
@@ -5468,13 +5469,13 @@ begin
   if me is null then raise exception 'unauthenticated'; end if;
   select coalesce(array_agg(x order by o), '{}') into v
     from (select distinct on (x) x, o from unnest(coalesce(p_codes, '{}')) with ordinality as t(x, o) order by x, o) q;
-  if cardinality(v) > 3 then return jsonb_build_object('status', 'too_many'); end if;
+  if cardinality(v) > private.badge_slots(me) then return jsonb_build_object('status', 'too_many'); end if;
   if exists (select 1 from unnest(v) x
               where not exists (select 1 from private.user_achievements a where a.user_id = me and a.code = x)) then
     return jsonb_build_object('status', 'not_owned');
   end if;
   update public.profiles set featured_badges = v where id = me;
-  return jsonb_build_object('status', 'ok', 'featured', private.featured(me));
+  return jsonb_build_object('status', 'ok', 'featured', private.featured_for(me, 'own'));
 end
 $fn$;
 
@@ -5489,7 +5490,7 @@ begin
   end loop;
   foreach f in array array['ach_tier(private.achievement_defs, numeric)', 'award_stat(uuid, text, numeric)', 'bump(uuid, text, int)',
                            'set_stat(uuid, text, numeric)', 'seat_user(uuid, smallint)', 'bump_chat_done(uuid)', 'touch_streak(uuid)',
-                           'featured(uuid)', 'stats_on_message()', 'stats_on_reaction()', 'stats_on_room()', 'stats_on_hint()',
+                           'stats_on_message()', 'stats_on_reaction()', 'stats_on_room()', 'stats_on_hint()',
                            'stats_on_dm()', 'stats_on_rating()', 'stats_on_profile()']
   loop
     execute format('revoke all on function private.%s from public, anon, authenticated', f);
@@ -6909,3 +6910,374 @@ alter table public.app_settings alter column letter_burst set default 50;
 alter table public.app_settings alter column letter_refill_per_sec set default 0.000578704; -- 하루에 50통 분량 (50 / 86400)
 update public.app_settings set letter_burst = 50, letter_refill_per_sec = 0.000578704 where id and letter_burst = 3;
 alter table public.user_presence alter column letter_tokens set default 50;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 84 — CNSA 뱃지 안내 · 뱃지 제출 · 어디에 보일지 · 대표 뱃지 5칸 · 편지 추천
+--   · 기본 CNSA 뱃지(cnsa_student)는 Landy 금 뱃지를 처음 따면 저절로 (award_stat). 지금 금 뱃지가 있는 학생은 여기서 한 번 채운다.
+--   · 대표 뱃지 칸: Landy 금 뱃지(운영진이 주는 것 · CNSA 빼고) 5개를 모으면 3칸 → 5칸 (badge_slots).
+--   · 랜덤채팅에서 뱃지별로 숨기기(profiles.badge_chat — {코드: 보이기}). 정하지 않았으면 CNSA 뱃지는 숨김(나를 짐작하게 할 수 있다) · 나머지는 보임.
+--   · 편지 찾기에 나오는 내 뱃지 순서 — 내 순서(mine) / 무작위(random) (profiles.letter_badge_order).
+--   · 편지 쓰기 찾기 화면 아래 추천 5명 (dm_recommend) — 추천에 나오기 싫으면 profiles.letters_recommend 를 끈다 (기본 켜짐).
+--   · 뱃지 제출 (private.badge_requests): 있는 CNSA 뱃지 인증(proof) · 동아리 기장이 부원까지 한 번에(club) · 앱에 없는 뱃지 추가 요청(new).
+--     사진(뱃지 + 학번 · 이름)은 Storage 비공개 버킷 badge-proofs/{학생 id}/ 에 학생이 올리고, 학번 · 이름이 보이니 관리자(identity)만 본다.
+--     결정하면 사진 경로를 지우고(파일은 운영 서버가 지운다) 결과를 개인 공지로 알린다. 기다리는 요청 3개 · 하루 5개까지.
+--   · 인스타그램 제출 계정(app_settings.badge_instagram) — 비어 있으면 화면에 "준비 중".
+--   (my_achievements · set_featured_badges · partner_profile · dm_search · award_stat 는 제자리에서 고쳤다)
+-- ════════════════════════════════════════════════════════════════════
+alter table public.profiles add column if not exists badge_chat         jsonb   not null default '{}'::jsonb;
+alter table public.profiles add column if not exists letter_badge_order text    not null default 'mine';
+alter table public.profiles add column if not exists letters_recommend  boolean not null default true;
+do $do$
+begin
+  alter table public.profiles add constraint profiles_badge_chat_obj check (jsonb_typeof(badge_chat) = 'object' and pg_column_size(badge_chat) < 4000);
+exception when duplicate_object then null;
+end
+$do$;
+do $do$
+begin
+  alter table public.profiles add constraint profiles_letter_badge_order check (letter_badge_order in ('mine', 'random'));
+exception when duplicate_object then null;
+end
+$do$;
+-- 학생이 직접 바꾸는 두 가지 (뱃지별 숨기기는 가진 뱃지만 — set_badge_chat 로)
+grant update (letter_badge_order, letters_recommend) on public.profiles to authenticated;
+
+alter table public.app_settings add column if not exists badge_instagram text check (badge_instagram is null or badge_instagram ~ '^[A-Za-z0-9._]{1,30}$');
+
+-- Landy 금 뱃지 수 — 기준을 채워 딴 것만 (운영진이 주는 특별 · CNSA 뱃지는 빼고)
+create or replace function private.badge_golds(p_user uuid)
+returns int language sql stable security definer set search_path = '' as $fn$
+  select count(*)::int
+    from private.user_achievements a
+    join private.achievement_defs d on d.code = a.code
+   where a.user_id = p_user and a.tier = 3 and not d.granted and d.category <> 'cnsa';
+$fn$;
+
+-- 대표 뱃지 칸 — 금 뱃지 5개부터 5칸
+create or replace function private.badge_slots(p_user uuid)
+returns int language sql stable security definer set search_path = '' as $fn$
+  select case when private.badge_golds(p_user) >= 5 then 5 else 3 end;
+$fn$;
+
+-- 랜덤채팅에 보이는 뱃지인가 — 정하지 않았으면 CNSA 뱃지는 숨김
+create or replace function private.badge_chat_visible(p_pref jsonb, p_code text, p_category text)
+returns boolean language sql immutable set search_path = '' as $fn$
+  select coalesce((p_pref->>p_code)::boolean, p_category <> 'cnsa');
+$fn$;
+
+-- 대표 뱃지 (칸 수만큼) — 고른 순서대로, 남는 칸은 높은 등급 · 최근 순으로 채운다.
+--   own    내 화면 (전부)
+--   chat   랜덤채팅 상대에게 — 숨긴 뱃지는 빼고 다음 것으로 채운다
+--   letter 편지 찾기 · 추천 — 순서를 무작위로 해 두었으면 섞는다
+create or replace function private.featured_for(p_user uuid, p_ctx text default 'own')
+returns jsonb language sql volatile security definer set search_path = public, private as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object('code', x.code, 'title', x.title, 'icon', x.icon, 'tier', x.tier)
+                            order by case when x.shuffle then random() else x.o end), '[]'::jsonb)
+  from (
+    select d.code, d.title, d.icon, a.tier,
+           (p_ctx = 'letter' and p.letter_badge_order = 'random') as shuffle,
+           row_number() over (order by coalesce(array_position(p.featured_badges, d.code), 99), a.tier desc, a.earned_at desc)::float8 as o
+      from private.user_achievements a
+      join private.achievement_defs d on d.code = a.code
+      join public.profiles p on p.id = a.user_id
+     where a.user_id = p_user
+       and (p_ctx <> 'chat' or private.badge_chat_visible(p.badge_chat, d.code, d.category))
+     order by o
+     limit private.badge_slots(p_user)
+  ) x;
+$fn$;
+drop function if exists private.featured(uuid);   -- featured_for 로 바뀜
+
+-- 랜덤채팅에서 이 뱃지 보이기 · 숨기기 — 가진 뱃지만
+create or replace function public.set_badge_chat(p_code text, p_show boolean)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if p_show is null or not exists (select 1 from private.user_achievements where user_id = me and code = p_code) then
+    return jsonb_build_object('status', 'not_owned');
+  end if;
+  update public.profiles set badge_chat = badge_chat || jsonb_build_object(p_code, p_show) where id = me;
+  return jsonb_build_object('status', 'ok');
+end
+$fn$;
+
+-- 지금 Landy 금 뱃지가 있는 학생에게 기본 CNSA 뱃지 (앞으로는 award_stat 이 처음 금을 딸 때 준다)
+insert into private.user_achievements (user_id, code, tier)
+select distinct a.user_id, 'cnsa_student', 3::smallint
+  from private.user_achievements a
+  join private.achievement_defs d on d.code = a.code
+ where a.tier = 3 and not d.granted and d.category <> 'cnsa'
+   and exists (select 1 from private.achievement_defs where code = 'cnsa_student')
+on conflict (user_id, code) do nothing;
+
+-- ── 편지 추천 — 찾기 화면 아래 5명 (무작위). 추천을 끈 사람 · 받기를 끈 사람 · 차단한 사이 · 이용 제한 · 나 ·
+--    이미 내가 편지를 보내고 있는 사람 · 나에게서 편지를 끝낸 사람은 빼고 ──
+create or replace function public.dm_recommend()
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid();
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if private.letters_locked() then return '[]'::jsonb; end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', x.id, 'name', x.name, 'grade', x.grade, 'no', x.no, 'checked', x.source = 'roster',
+                                        'badges', private.featured_for(x.id, 'letter')))
+      from (select p.id, n.name, n.grade, n.source,
+                   (select private.email_student_no(u.email) from auth.users u where u.id = p.id) as no
+              from public.profiles p
+              cross join lateral private.person(p.id) n
+             where p.id <> me and p.letters_open and p.letters_recommend and p.onboarded and p.status = 'active'
+               and (p.suspended_until is null or p.suspended_until <= now())
+               and n.name is not null
+               and not private.blocked_between(me, p.id)
+               and not exists (select 1 from private.dm_threads t
+                                where t.sender_id = me and t.recipient_id = p.id and (t.status = 'open' or t.closed_by = 'recipient'))
+             order by random()
+             limit 5) x), '[]'::jsonb);
+end
+$fn$;
+
+-- ── 뱃지 제출 ──
+create table if not exists private.badge_requests (
+  id          bigint generated always as identity primary key,
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  kind        text not null check (kind in ('proof', 'club', 'new')),
+  code        text references private.achievement_defs(code) on delete set null,   -- 앱에 있는 뱃지
+  title       text check (char_length(btrim(title)) between 2 and 40),              -- 앱에 없는 뱃지 · 동아리 이름
+  note        text not null default '' check (char_length(note) <= 500),
+  member_nos  int[] not null default '{}' check (cardinality(member_nos) <= 200),   -- 동아리 기장이 함께 올린 부원 학번
+  photos      text[] not null default '{}' check (cardinality(photos) <= 3),        -- Storage badge-proofs 경로 (결정하면 비운다)
+  status      text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'canceled')),
+  staff_note  text check (char_length(staff_note) <= 500),
+  created_at  timestamptz not null default now(),
+  decided_at  timestamptz,
+  decided_by  uuid
+);
+create index if not exists badge_requests_user on private.badge_requests (user_id, id desc);
+create index if not exists badge_requests_open on private.badge_requests (id) where status = 'pending';
+alter table private.badge_requests enable row level security;
+revoke all on private.badge_requests from public, anon, authenticated;
+
+-- 학생: 제출 → ok | bad_input | not_club(동아리 뱃지는 기장 제출로) | already(이미 가진 뱃지) | too_many(기다리는 요청 3개) | rate(하루 5개)
+--   proof — 앱에 있는 CNSA 뱃지(동아리 · 기본 CNSA 뱃지 빼고) 인증. 사진 1~3장
+--   club  — 동아리 기장: 앱에 있는 동아리 뱃지(code) 또는 새 동아리 이름(title) + 부원 학번(나는 빼도 함께 받는다). 사진 1~3장
+--   new   — 앱에 없는 뱃지 추가 요청: 이름(title) · 설명(note). 사진 1~3장
+create or replace function public.badge_request_submit(p_kind text, p_code text, p_title text, p_note text, p_nos int[], p_photos text[])
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  me uuid := auth.uid();
+  d private.achievement_defs%rowtype;
+  t text := nullif(btrim(coalesce(p_title, '')), '');
+  n text := btrim(coalesce(p_note, ''));
+  nos int[];
+  v bigint;
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  if coalesce(p_kind, '') not in ('proof', 'club', 'new') or char_length(n) > 500
+     or coalesce(cardinality(p_photos), 0) not between 1 and 3
+     or exists (select 1 from unnest(p_photos) x where x !~ ('^' || me::text || '/[A-Za-z0-9_-]{8,64}\.(jpg|jpeg|png|webp)$')) then
+    return jsonb_build_object('status', 'bad_input');
+  end if;
+  select coalesce(array_agg(distinct x order by x), '{}') into nos from unnest(coalesce(p_nos, '{}')) x where x is not null;
+  if p_code is not null then
+    select * into d from private.achievement_defs where code = p_code and granted and category = 'cnsa';
+    if not found then return jsonb_build_object('status', 'bad_input'); end if;
+  end if;
+  if p_kind = 'proof' then
+    if p_code is null or t is not null or cardinality(nos) > 0 or p_code = 'cnsa_student' then return jsonb_build_object('status', 'bad_input'); end if;
+    if p_code like 'club\_%' then return jsonb_build_object('status', 'not_club'); end if;
+    if exists (select 1 from private.user_achievements where user_id = me and code = p_code) then return jsonb_build_object('status', 'already'); end if;
+  elsif p_kind = 'club' then
+    if (p_code is null) = (t is null) or (p_code is not null and p_code not like 'club\_%')
+       or cardinality(nos) > 200 or exists (select 1 from unnest(nos) x where x not between 1000 and 999999999) then
+      return jsonb_build_object('status', 'bad_input');
+    end if;
+  else
+    if p_code is not null or t is null or cardinality(nos) > 0 then return jsonb_build_object('status', 'bad_input'); end if;
+  end if;
+  if t is not null and char_length(t) not between 2 and 40 then return jsonb_build_object('status', 'bad_input'); end if;
+
+  perform pg_advisory_xact_lock(hashtextextended('badge_request:' || me::text, 0));
+  if (select count(*) from private.badge_requests where user_id = me and status = 'pending') >= 3 then
+    return jsonb_build_object('status', 'too_many');
+  end if;
+  if (select count(*) from private.badge_requests where user_id = me and created_at > now() - interval '1 day') >= 5 then
+    return jsonb_build_object('status', 'rate');
+  end if;
+  insert into private.badge_requests (user_id, kind, code, title, note, member_nos, photos)
+  values (me, p_kind, p_code, t, n, nos, p_photos) returning id into v;
+  return jsonb_build_object('status', 'ok', 'id', v);
+end
+$fn$;
+
+-- 학생: 내가 보낸 요청 (최근 20개) — 사진 경로는 주지 않는다
+create or replace function public.my_badge_requests()
+returns jsonb language sql security definer set search_path = '' stable as $fn$
+  select coalesce(jsonb_agg(jsonb_build_object('id', r.id, 'kind', r.kind, 'code', r.code,
+                                               'title', coalesce(r.title, (select d.title from private.achievement_defs d where d.code = r.code)),
+                                               'members', cardinality(r.member_nos), 'status', r.status, 'staff_note', r.staff_note,
+                                               'created_at', r.created_at, 'decided_at', r.decided_at) order by r.id desc), '[]'::jsonb)
+    from (select * from private.badge_requests where user_id = (select auth.uid()) order by id desc limit 20) r;
+$fn$;
+
+-- 학생: 기다리는 요청 거두기 — 지울 사진 경로를 돌려준다 (학생이 자기 사진을 지운다)
+create or replace function public.badge_request_cancel(p_id bigint)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare me uuid := auth.uid(); v text[];
+begin
+  if me is null then raise exception 'unauthenticated'; end if;
+  select photos into v from private.badge_requests where id = p_id and user_id = me and status = 'pending' for update;
+  if not found then return jsonb_build_object('status', 'not_found'); end if;
+  update private.badge_requests set status = 'canceled', decided_at = now(), photos = '{}' where id = p_id;
+  return jsonb_build_object('status', 'ok', 'photos', to_jsonb(v));
+end
+$fn$;
+
+-- 운영진: 요청 목록 — 학번 · 이름 · 사진이 보이므로 관리자(identity)만, 열람을 기록한다
+--   pending 이면 기다리는 것(오래된 순), 아니면 결정한 것(최근 순 50개)
+create or replace function public.admin_badge_requests(p_staff uuid, p_pending boolean default true)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare v jsonb;
+begin
+  perform private.require_staff(p_staff, true);
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', r.id, 'user_id', r.user_id, 'kind', r.kind, 'code', r.code, 'title', r.title,
+           'badge', (select d.title from private.achievement_defs d where d.code = r.code),
+           'note', r.note, 'member_nos', to_jsonb(r.member_nos), 'photos', to_jsonb(r.photos),
+           'status', r.status, 'staff_note', r.staff_note, 'created_at', r.created_at, 'decided_at', r.decided_at,
+           'name', n.name, 'grade', n.grade,
+           'no', (select private.email_student_no(u.email) from auth.users u where u.id = r.user_id),
+           'has', exists (select 1 from private.user_achievements a where a.user_id = r.user_id and a.code = r.code))
+         order by case when p_pending then r.id end asc, r.id desc), '[]'::jsonb) into v
+    from (select * from private.badge_requests
+           where (status = 'pending') = p_pending and status <> 'canceled'
+           order by case when p_pending then id end asc, id desc limit case when p_pending then 200 else 50 end) r
+    left join lateral private.person(r.user_id) n on true;
+  if jsonb_array_length(v) > 0 then
+    insert into private.audit_log (staff_id, action, detail)
+    values (p_staff, 'view_identity', jsonb_build_object('via', 'badge_requests', 'count', jsonb_array_length(v)));
+  end if;
+  return v;
+end
+$fn$;
+
+-- 운영진: 결정 — 승인하면 뱃지를 준다 (proof: 그 학생 / club: 기장 + 부원 학번 — 동아리 뱃지 code 는 운영진이 고를 수 있다 /
+--   new: 주지 않고 "추가할게요"). 결과는 학생에게 개인 공지로. 사진 경로는 비우고 돌려준다(운영 서버가 파일을 지운다). 기록에 남는다
+create or replace function public.admin_badge_request_decide(p_staff uuid, p_id bigint, p_ok boolean, p_note text default '', p_code text default null)
+returns jsonb language plpgsql security definer set search_path = public, private as $fn$
+declare
+  q private.badge_requests%rowtype;
+  v_code text;
+  v_users uuid[];
+  v_found int[];
+  v_given int := 0;
+  v_missing jsonb := '[]'::jsonb;
+  v_title text;
+  v_body text;
+  v_notice bigint;
+  a text := btrim(coalesce(p_note, ''));
+begin
+  perform private.require_staff(p_staff, true);
+  if char_length(a) > 500 or p_ok is null then raise exception 'bad_input'; end if;
+  select * into q from private.badge_requests where id = p_id for update;
+  if not found then raise exception 'request_not_found'; end if;
+  if q.status <> 'pending' then raise exception 'already_decided'; end if;
+
+  if p_ok and q.kind in ('proof', 'club') then
+    v_code := coalesce(p_code, q.code);
+    if v_code is null or not exists (select 1 from private.achievement_defs where code = v_code and granted and category = 'cnsa') then
+      raise exception 'need_code';
+    end if;
+    if q.kind = 'club' and v_code not like 'club\_%' then raise exception 'need_code'; end if;
+    if q.kind = 'proof' then
+      v_given := private.badge_apply(p_staff, v_code, array[q.user_id], true);
+    else
+      select coalesce(array_agg(x.id), '{}'), coalesce(array_agg(x.no), '{}') into v_users, v_found
+        from (select p.id, private.email_student_no(u.email)::int as no
+                from auth.users u join public.profiles p on p.id = u.id
+               where private.email_student_no(u.email)::int = any(q.member_nos)) x;
+      v_given := private.badge_apply(p_staff, v_code, array_append(v_users, q.user_id), true);
+      v_missing := (select coalesce(jsonb_agg(x order by x), '[]'::jsonb) from unnest(q.member_nos) x where not x = any(v_found));
+    end if;
+  end if;
+
+  update private.badge_requests
+     set status = case when p_ok then 'approved' else 'rejected' end, staff_note = nullif(a, ''),
+         code = coalesce(v_code, code), decided_at = now(), decided_by = p_staff, photos = '{}'
+   where id = p_id;
+
+  v_title := case when p_ok then '뱃지 요청을 승인했어요' else '뱃지 요청을 반려했어요' end;
+  v_body := coalesce((select d.title from private.achievement_defs d where d.code = coalesce(v_code, q.code)), q.title, '뱃지')
+            || case
+                 when not p_ok then ' 요청을 이번에는 받지 못했어요.'
+                 when q.kind = 'new' then ' — 앱에 추가할게요. 추가되면 다시 알려 드려요.'
+                 when q.kind = 'club' then ' — 기장님과 부원들에게 달아 드렸어요.'
+                 else ' — 교복에 달아 드렸어요.'
+               end
+            || case when a <> '' then E'\n\n' || a else '' end;
+  insert into private.personal_notices (user_id, kind, title, body, created_by)
+  values (q.user_id, 'message', v_title, v_body, p_staff) returning id into v_notice;
+
+  insert into private.audit_log (staff_id, action, target_user, detail)
+  values (p_staff, case when p_ok then 'approve_badge_request' else 'reject_badge_request' end, q.user_id,
+          jsonb_build_object('request', p_id, 'kind', q.kind, 'code', coalesce(v_code, q.code), 'given', v_given));
+  return jsonb_build_object('status', case when p_ok then 'approved' else 'rejected' end, 'given', v_given, 'missing', v_missing,
+                            'photos', to_jsonb(q.photos), 'notice', v_notice);
+end
+$fn$;
+
+do $do$
+declare f text;
+begin
+  foreach f in array array['set_badge_chat(text, boolean)', 'dm_recommend()',
+                           'badge_request_submit(text, text, text, text, int[], text[])', 'my_badge_requests()', 'badge_request_cancel(bigint)']
+  loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+  foreach f in array array['admin_badge_requests(uuid, boolean)', 'admin_badge_request_decide(uuid, bigint, boolean, text, text)']
+  loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+    execute format('grant execute on function public.%s to service_role', f);
+  end loop;
+  foreach f in array array['badge_golds(uuid)', 'badge_slots(uuid)', 'badge_chat_visible(jsonb, text, text)', 'featured_for(uuid, text)']
+  loop
+    execute format('revoke all on function private.%s from public, anon, authenticated', f);
+  end loop;
+end
+$do$;
+
+-- 결정한 지 180일 뒤 요청 기록을 지운다 (사진은 결정할 때 이미 지웠다)
+do $do$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.unschedule(jobid) from cron.job where jobname = 'simbun-purge-badge-requests';
+    perform cron.schedule('simbun-purge-badge-requests', '53 4 * * *',
+      $q$delete from private.badge_requests where status <> 'pending' and decided_at < now() - interval '180 days'$q$);
+  end if;
+end
+$do$;
+
+-- 사진 버킷 (비공개) — 학생은 자기 폴더(badge-proofs/{학생 id}/)에만 올리고 지운다. 운영진은 운영 서버(service_role)의 서명 주소로만 본다.
+-- 한 장 5MB · 사진 형식만. Storage 가 없는 곳(테스트용 DB 등)에서는 건너뛴다
+do $do$
+begin
+  if to_regclass('storage.buckets') is not null then
+    insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+    values ('badge-proofs', 'badge-proofs', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+    on conflict (id) do update
+      set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+    execute 'drop policy if exists "badge-proofs: upload own" on storage.objects';
+    execute $p$create policy "badge-proofs: upload own" on storage.objects for insert to authenticated
+      with check (bucket_id = 'badge-proofs' and (storage.foldername(name))[1] = (select auth.uid())::text)$p$;
+    -- 지우려면 읽기 권한도 있어야 한다 (Storage 규칙) — 자기 사진만
+    execute 'drop policy if exists "badge-proofs: read own" on storage.objects';
+    execute $p$create policy "badge-proofs: read own" on storage.objects for select to authenticated
+      using (bucket_id = 'badge-proofs' and (storage.foldername(name))[1] = (select auth.uid())::text)$p$;
+    execute 'drop policy if exists "badge-proofs: delete own" on storage.objects';
+    execute $p$create policy "badge-proofs: delete own" on storage.objects for delete to authenticated
+      using (bucket_id = 'badge-proofs' and (storage.foldername(name))[1] = (select auth.uid())::text)$p$;
+  end if;
+end
+$do$;

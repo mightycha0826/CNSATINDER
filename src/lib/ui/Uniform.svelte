@@ -1,6 +1,7 @@
 <script lang="ts" module>
-	/** 깃에 다는 배지 칸 — 대표 업적 수와 같다 (학교 실제 배지가 늘면 여기서) */
+	/** 깃에 다는 배지 칸 — 기본 3, Landy 금 뱃지 5개면 5 (Phase 84 — 넷째 · 다섯째는 가슴 주머니 위) */
 	export const LAPEL_SLOTS = 3;
+	export const MAX_SLOTS = 5;
 </script>
 
 <script lang="ts">
@@ -35,7 +36,8 @@
 	 * Phase 70 — 움직이지 않는다 (숨 쉬기 · 넥타이 · 리본 흔들림을 뺐다). 배지를 그림 폭에 맞춰 크게(폰 폭에서 약 50).
 	 *   오른쪽 아래에 작은 "전체 업적 보기 ›" (allHref).
 	 *   neck — 넥타이(남학생 · 상대 프로필) / 리본(여학생)
-	 *   badges — 깃에 위에서부터 (최대 LAPEL_SLOTS)
+	 *   badges — 깃에 위에서부터 (최대 slots)
+	 *   slots — 칸 수 3 · 5 (Phase 84 — 금 뱃지 5개면 5칸: 깃 셋 + 가슴 주머니 위 둘). 남의 교복은 뱃지 수에 맞춘다
 	 *   emptyHref — 있으면 빈 칸을 점선 동그라미 "+" 로 (내 프로필 → 업적 화면)
 	 *   allHref — 있으면 오른쪽 아래에 "전체 업적 보기 ›" (내 프로필)
 	 *   onplace — 있으면 배지를 꾹 눌러 다른 칸으로 끌어 옮긴다 (Phase 69, lib/ui/badgeDrag). 빈 칸도 점선 동그라미로 보이고
@@ -49,6 +51,7 @@
 	let {
 		neck = 'tie',
 		badges = [],
+		slots: slotCount,
 		onpick,
 		emptyHref,
 		allHref,
@@ -56,6 +59,7 @@
 	}: {
 		neck?: 'tie' | 'ribbon';
 		badges?: BadgeLite[];
+		slots?: number;
 		onpick?: (b: BadgeLite) => void;
 		emptyHref?: string;
 		allHref?: string;
@@ -145,9 +149,14 @@
 	const SLOTS = [
 		{ x: R(97), y: 108, tilt: -7 },
 		{ x: R(75), y: 170, tilt: 5 },
-		{ x: R(54), y: 232, tilt: -3 }
-	].slice(0, LAPEL_SLOTS);
-	const slots = $derived(SLOTS.map((s, i) => ({ ...s, b: badges[i] as BadgeLite | undefined })));
+		{ x: R(54), y: 232, tilt: -3 },
+		// 5칸 (Phase 84) — 깃 바깥 · 소매 솔기 사이, 가슴 주머니 위에 비스듬히 둘 (주머니 · 교표를 가리지 않게)
+		{ x: PX - 17, y: 66, tilt: 6 },
+		{ x: PX + 29, y: 94, tilt: -4 }
+	];
+	/** 칸 수 — 정하지 않았으면(남의 교복) 뱃지 수에 맞춰 3 · 5 */
+	const count = $derived(Math.min(MAX_SLOTS, Math.max(LAPEL_SLOTS, slotCount ?? (badges.length > LAPEL_SLOTS ? MAX_SLOTS : LAPEL_SLOTS))));
+	const slots = $derived(SLOTS.slice(0, count).map((s, i) => ({ ...s, b: badges[i] as BadgeLite | undefined })));
 	const pct = (v: number, of: number) => `${(v / of) * 100}%`;
 </script>
 

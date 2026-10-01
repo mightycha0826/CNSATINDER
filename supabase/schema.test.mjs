@@ -103,6 +103,29 @@ await db.exec(`
 	grant usage on schema realtime to anon, authenticated;
 	grant select, insert on realtime.messages to anon, authenticated;
 	grant execute on function realtime.topic() to anon, authenticated;
+
+	-- Supabase Storage 흉내 (Phase 84 — 뱃지 사진 버킷 · 자기 폴더 권한)
+	create schema storage;
+	create table storage.buckets (
+		id                 text primary key,
+		name               text not null,
+		public             boolean not null default false,
+		file_size_limit    bigint,
+		allowed_mime_types text[]
+	);
+	create table storage.objects (
+		id        uuid primary key default gen_random_uuid(),
+		bucket_id text references storage.buckets(id),
+		name      text not null,
+		owner     uuid default auth.uid()
+	);
+	alter table storage.objects enable row level security;
+	create function storage.foldername(name text) returns text[] language sql immutable as $x$
+		select (string_to_array(name, '/'))[1:cardinality(string_to_array(name, '/')) - 1]
+	$x$;
+	grant usage on schema storage to anon, authenticated;
+	grant select, insert, delete on storage.objects to authenticated;
+	grant execute on function storage.foldername(text) to anon, authenticated;
 `);
 
 /** uid 사용자로 로그인한 것처럼 RLS 를 적용해 실행한다. */
@@ -3745,6 +3768,150 @@ console.log('\n[95] 새 편지 한도 — 하루 50통 (Phase 78)');
 	check('★ 넷째 · 다섯째 새 편지도 보낼 수 있다 (전엔 셋째에서 막혔다)', got.every((x) => x === 'ok'), JSON.stringify(got));
 	await db.query('update public.user_presence set letter_tokens = 0, letter_at = now() where user_id = $1', [A]);
 	check('한도를 다 쓰면 그래도 막힌다', (await rpcAs(A, 'dm_send', await named('오십더'), '하나 더')).status === 'rate_limited');
+}
+
+console.log('\n[96] CNSA 뱃지 — 기본 뱃지 열림 · 5칸 · 랜덤채팅 숨기기 · 편지 찾기 순서 · 추천 · 제출 (Phase 84)');
+{
+	await db.query('update public.app_settings set letters_gate = false where id');
+	let no = 39000;
+	const emailOf = async (id) => (await one('select email from auth.users where id = $1', [id])).email;
+	const named = async (name, grade = 2) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, $2, $3) on conflict (student_no) do update set name = excluded.name', [n, grade, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query("update public.profiles set gender = 'f', want = 'm', onboarded = true where id = $1", [id]);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const has = async (u, code) => !!(await one('select 1 x from private.user_achievements where user_id = $1 and code = $2', [u, code]));
+
+	console.log('  [기본 CNSA 뱃지 · 칸]');
+	const U = await named('뱃지주인');
+	const my0 = await rpcAs(U, 'my_achievements');
+	check('★ 처음엔 대표 뱃지 3칸 · 금 0', my0.slots === 3 && my0.golds === 0, JSON.stringify({ slots: my0.slots, golds: my0.golds }));
+	await db.query(`select private.set_stat($1, 'chats', 5)`, [U]);
+	check('동 · 은으로는 기본 CNSA 뱃지가 열리지 않는다', !(await has(U, 'cnsa_student')));
+	await db.query(`select private.set_stat($1, 'chats', 100)`, [U]);
+	check('★ Landy 금 뱃지를 처음 따면 기본 CNSA 뱃지가 열린다 (새 업적 축하에도)', (await has(U, 'cnsa_student')) && (await rpcAs(U, 'new_achievements')).some((b) => b.code === 'cnsa_student'));
+	await db.query(`select private.badge_apply((select user_id from private.staff where role = 'admin' limit 1), 'beta', array[$1]::uuid[], true)`, [U]);
+	check('특별 업적(베타)은 금 뱃지로 세지 않는다', (await rpcAs(U, 'my_achievements')).golds === 1);
+	check('3칸일 때 4개는 too_many', (await rpcAs(U, 'set_featured_badges', ['chats', 'cnsa_student', 'beta', 'talk'])).status === 'too_many');
+	for (const [st, v] of [['msgs', 10000], ['hearts', 500], ['answers', 50], ['owl', 50]]) await db.query('select private.set_stat($1, $2, $3)', [U, st, v]);
+	const my5 = await rpcAs(U, 'my_achievements');
+	check('★ 금 뱃지 5개면 5칸', my5.golds === 5 && my5.slots === 5, JSON.stringify({ slots: my5.slots, golds: my5.golds }));
+	const five = ['cnsa_student', 'chats', 'talk', 'heart', 'question'];
+	const set5 = await rpcAs(U, 'set_featured_badges', five);
+	check('★ 5칸이면 대표 뱃지 5개까지 — 고른 순서대로', set5.status === 'ok' && set5.featured.map((b) => b.code).join() === five.join(), JSON.stringify(set5));
+	check('6개는 too_many', (await rpcAs(U, 'set_featured_badges', [...five, 'owl'])).status === 'too_many');
+
+	console.log('  [랜덤채팅에서 숨기기]');
+	const W = await named('대화상대');
+	await db.query(`update public.user_presence set current_room_id = null where user_id in ($1, $2)`, [U, W]);
+	const room = (await one(`select private.dev_open_room($1, $2, 10) as id`, [await emailOf(U), await emailOf(W)])).id;
+	const seen = async () => (await rpcAs(W, 'partner_profile', room)).badges.map((b) => b.code);
+	const chat0 = await seen();
+	check('★ 정하지 않았으면 CNSA 뱃지는 랜덤채팅에서 숨김 — 다음 뱃지로 채운다', !chat0.includes('cnsa_student') && chat0.length === 5 && chat0[0] === 'chats', chat0.join());
+	check('내 화면에는 그대로', (await rpcAs(U, 'my_achievements')).featured[0].code === 'cnsa_student');
+	check('★ 내 뱃지마다 랜덤채팅에 보이는지 (CNSA 숨김 · 나머지 보임)', (() => { const c = my5.chat; return c.cnsa_student === false && c.chats === true && !('club_beatus' in c); })(), JSON.stringify(my5.chat));
+	check('★ 보이게 하면 랜덤채팅에도', (await rpcAs(U, 'set_badge_chat', 'cnsa_student', true)).status === 'ok' && (await seen())[0] === 'cnsa_student');
+	await rpcAs(U, 'set_badge_chat', 'chats', false);
+	check('Landy 뱃지도 숨길 수 있다', !(await seen()).includes('chats'));
+	check('가진 뱃지만 정할 수 있다', (await rpcAs(U, 'set_badge_chat', 'club_beatus', true)).status === 'not_owned');
+	const cnt = (await rpcAs(W, 'partner_profile', room)).badge_count;
+	check('상대에게 보이는 뱃지 수도 숨긴 것은 빼고', cnt === (await rpcAs(U, 'my_achievements')).items.filter((a) => a.tier > 0).length - 1, String(cnt));
+	await expectError('★ 숨기기 목록을 직접 고칠 수 없다 (가진 뱃지만 — set_badge_chat)', () => rowsAs(U, `update public.profiles set badge_chat = '{"x":true}' where id = $1`, [U]), 'permission denied');
+
+	console.log('  [편지 찾기 · 추천]');
+	const found = (await rpcAs(W, 'dm_search', '뱃지주인')).find((p) => p.id === U);
+	check('★ 편지 찾기 결과에 대표 뱃지 — 내 순서 (CNSA 도 보인다)', found?.badges.map((b) => b.code).join() === five.join(), JSON.stringify(found?.badges));
+	await rowsAs(U, `update public.profiles set letter_badge_order = 'random' where id = $1`, [U]);
+	const orders = new Set();
+	for (let i = 0; i < 12; i++) orders.add((await rpcAs(W, 'dm_search', '뱃지주인')).find((p) => p.id === U).badges.map((b) => b.code).join());
+	check('★ 무작위로 해 두면 같은 뱃지가 섞여 나온다', orders.size > 1 && [...orders].every((o) => o.split(',').sort().join() === [...five].sort().join()), [...orders].join(' | '));
+	await expectError('순서는 내 순서 · 무작위만', () => rowsAs(U, `update public.profiles set letter_badge_order = 'abc' where id = $1`, [U]), 'profiles_letter_badge_order');
+
+	const off = await named('추천싫음');
+	await rowsAs(off, `update public.profiles set letters_recommend = false where id = $1`, [off]);
+	const closed = await named('편지끔');
+	await rowsAs(closed, `update public.profiles set letters_open = false where id = $1`, [closed]);
+	let recs = [];
+	for (let i = 0; i < 15; i++) recs.push(await rpcAs(W, 'dm_recommend'));
+	check('★ 추천은 5명 — 이름 · 학년 · 대표 뱃지', recs.every((r) => r.length === 5 && r.every((p) => p.name && p.id && Array.isArray(p.badges))), JSON.stringify(recs[0]).slice(0, 200));
+	const ids = recs.flat().map((p) => p.id);
+	check('★ 추천을 끈 사람 · 받기를 끈 사람 · 나는 나오지 않는다', !ids.includes(off) && !ids.includes(closed) && !ids.includes(W));
+	check('추천은 매번 섞인다', new Set(recs.map((r) => r.map((p) => p.id).join())).size > 1);
+	await rpcAs(W, 'dm_send', U, '안녕 뱃지주인');
+	const after = [];
+	for (let i = 0; i < 10; i++) after.push(...(await rpcAs(W, 'dm_recommend')).map((p) => p.id));
+	check('이미 편지를 보내고 있는 사람은 추천에서 빠진다', !after.includes(U));
+	await db.query('update public.app_settings set letters_gate = true, letters_gate_min = 10000 where id');
+	check('익명편지가 잠겨 있으면 추천도 없다', (await rpcAs(W, 'dm_recommend')).length === 0);
+	await db.query('update public.app_settings set letters_gate = false, letters_gate_min = 100 where id');
+
+	console.log('  [뱃지 제출]');
+	const S1 = await named('기장');
+	const ph = (u, k = 'aaaaaaaa1') => [`${u}/${k}.jpg`];
+	const sub = (u, kind, code, title, note, nos, photos) => rpcAs(u, 'badge_request_submit', kind, code, title, note, nos, photos);
+	check('★ 남의 폴더 사진 · 사진 없음은 bad_input', (await sub(S1, 'proof', 'msmsp_gold', null, '', [], ph(U))).status === 'bad_input' && (await sub(S1, 'proof', 'msmsp_gold', null, '', [], [])).status === 'bad_input');
+	check('★ 동아리 뱃지는 기장 제출로만 (not_club)', (await sub(S1, 'proof', 'club_beatus', null, '', [], ph(S1))).status === 'not_club');
+	check('기본 CNSA 뱃지는 제출하지 않는다 (금 뱃지로 열린다)', (await sub(S1, 'proof', 'cnsa_student', null, '', [], ph(S1))).status === 'bad_input');
+	check('기준으로 따는 Landy 업적은 제출 못 한다', (await sub(S1, 'proof', 'chats', null, '', [], ph(S1))).status === 'bad_input');
+	check('이미 가진 뱃지는 already', (await sub(U, 'proof', 'cnsa_student', null, '', [], ph(U))).status === 'bad_input'
+		&& (await (async () => { await db.query(`select private.badge_apply((select user_id from private.staff where role = 'admin' limit 1), 'msmsp_gold', array[$1]::uuid[], true)`, [U]); return (await sub(U, 'proof', 'msmsp_gold', null, '', [], ph(U))).status; })()) === 'already');
+	const r1 = await sub(S1, 'proof', 'msmsp_gold', null, '학생증이랑 같이 찍었어요', [], ph(S1, 'proof0001'));
+	check('★ 내 뱃지 인증 제출', r1.status === 'ok' && r1.id > 0, JSON.stringify(r1));
+	const n1 = await named('부원하나'), n2 = await named('부원둘');
+	const nos = [no - 1, no, 39999999];
+	const r2 = await sub(S1, 'club', 'club_beatus', null, '기장 인증', nos, [`${S1}/club00001.jpg`, `${S1}/club00002.png`]);
+	check('★ 동아리 기장 — 부원 학번까지 한 번에', r2.status === 'ok', JSON.stringify(r2));
+	check('동아리 제출은 동아리 뱃지 또는 새 동아리 이름 하나만', (await sub(S1, 'club', 'msmsp_gold', null, '', [], ph(S1))).status === 'bad_input' && (await sub(S1, 'club', 'club_beatus', '새동아리', '', [], ph(S1))).status === 'bad_input');
+	const r3 = await sub(S1, 'new', null, '로봇 동아리 뱃지', '은색 톱니 모양', [], ph(S1, 'new000001'));
+	check('★ 앱에 없는 뱃지 추가 요청', r3.status === 'ok');
+	check('★ 기다리는 요청은 3개까지', (await sub(S1, 'new', null, '하나 더', '', [], ph(S1))).status === 'too_many');
+	const mine = await rpcAs(S1, 'my_badge_requests');
+	check('내가 보낸 요청 — 상태 · 뱃지 이름 · 부원 수 (사진 경로는 안 준다)', mine.length === 3 && mine[1].title === '동아리 Beatus 뱃지' && mine[1].members === 3 && mine.every((m) => m.status === 'pending' && !('photos' in m)), JSON.stringify(mine));
+	const cancel = await rpcAs(S1, 'badge_request_cancel', r3.id);
+	check('★ 기다리는 요청 거두기 — 지울 사진 경로를 돌려준다', cancel.status === 'ok' && cancel.photos[0] === `${S1}/new000001.jpg`, JSON.stringify(cancel));
+	check('남의 요청 · 끝난 요청은 거둘 수 없다', (await rpcAs(U, 'badge_request_cancel', r1.id)).status === 'not_found' && (await rpcAs(S1, 'badge_request_cancel', r3.id)).status === 'not_found');
+
+	console.log('  [운영진 검토]');
+	const mod = (await one(`select user_id from private.staff where role = 'moderator' order by created_at desc limit 1`)).user_id;
+	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
+	await expectError('★ 학번 · 이름 · 사진이 보이므로 관리자만', () => svc('admin_badge_requests', mod, true), 'admin_only');
+	await expectError('학생은 부를 수 없다', () => rowsAs(S1, `select public.admin_badge_requests($1, true)`, [S1]), 'permission denied');
+	const logs0 = Number((await one(`select count(*) n from private.audit_log where action = 'view_identity' and detail->>'via' = 'badge_requests'`)).n);
+	const pend = await svc('admin_badge_requests', adm, true);
+	const p1 = pend.find((x) => x.id === r1.id), p2 = pend.find((x) => x.id === r2.id);
+	check('★ 기다리는 요청 — 이름 · 학번 · 사진 · 부원 학번 (거둔 것은 없다)', p1?.name === '기장' && String(p1.no) === String(no - 2) && p1.photos[0] === `${S1}/proof0001.jpg` && p2?.member_nos.length === 3 && !pend.some((x) => x.id === r3.id), JSON.stringify(p1));
+	check('열람은 기록에 남는다', Number((await one(`select count(*) n from private.audit_log where action = 'view_identity' and detail->>'via' = 'badge_requests'`)).n) === logs0 + 1);
+	const d1 = await svc('admin_badge_request_decide', adm, r1.id, true, '확인했어요', null);
+	check('★ 승인 — 뱃지를 주고 사진 경로를 돌려준다 · 요청에서는 비운다', d1.status === 'approved' && d1.given === 1 && (await has(S1, 'msmsp_gold')) && d1.photos[0] === `${S1}/proof0001.jpg`
+		&& (await one('select photos from private.badge_requests where id = $1', [r1.id])).photos.length === 0, JSON.stringify(d1));
+	const note = await one(`select title, body from private.personal_notices where id = $1`, [d1.notice]);
+	check('결과는 개인 공지로 (운영진 메모 포함)', note.title === '뱃지 요청을 승인했어요' && note.body.includes('MSMSP 우수 금뱃지') && note.body.includes('확인했어요'), JSON.stringify(note));
+	await expectError('한 번 결정한 요청은 다시 못 한다', () => svc('admin_badge_request_decide', adm, r1.id, false, '', null), 'already_decided');
+	const d2 = await svc('admin_badge_request_decide', adm, r2.id, true, '', null);
+	check('★ 동아리 승인 — 기장 + 부원 모두에게 · 못 찾은 학번을 돌려준다', d2.given === 3 && (await has(S1, 'club_beatus')) && (await has(n1, 'club_beatus')) && (await has(n2, 'club_beatus'))
+		&& JSON.stringify(d2.missing) === '[39999999]', JSON.stringify(d2));
+	const r4 = await sub(S1, 'club', null, '로봇동아리', '', [no], ph(S1, 'robot0001'));
+	await expectError('★ 앱에 없는 동아리는 뱃지를 먼저 만들어야 승인 (need_code)', () => svc('admin_badge_request_decide', adm, r4.id, true, '', null), 'need_code');
+	const d4 = await svc('admin_badge_request_decide', adm, r4.id, false, '사진이 흐려요', null);
+	check('★ 반려 — 뱃지는 주지 않고 공지로', d4.status === 'rejected' && d4.given === 0 && (await one(`select body from private.personal_notices where id = $1`, [d4.notice])).body.includes('사진이 흐려요'));
+	const done = await svc('admin_badge_requests', adm, false);
+	check('결정한 요청 목록 (최근 순)', done[0].id === r4.id && done.some((x) => x.id === r1.id && x.status === 'approved'));
+	check('결정 · 반려는 기록에 남는다', Number((await one(`select count(*) n from private.audit_log where action in ('approve_badge_request', 'reject_badge_request') and target_user = $1`, [S1])).n) === 3);
+
+	console.log('  [사진 버킷]');
+	const bucket = await one(`select public, file_size_limit, allowed_mime_types from storage.buckets where id = 'badge-proofs'`);
+	check('★ 사진 버킷은 비공개 · 5MB · 사진 형식만', bucket && bucket.public === false && Number(bucket.file_size_limit) === 5242880 && bucket.allowed_mime_types.includes('image/jpeg'), JSON.stringify(bucket));
+	await rowsAs(S1, `insert into storage.objects (bucket_id, name) values ('badge-proofs', $1)`, [`${S1}/upload001.jpg`]);
+	check('★ 내 폴더에는 올릴 수 있다', !!(await one(`select 1 x from storage.objects where name = $1`, [`${S1}/upload001.jpg`])));
+	await expectError('★ 남의 폴더에는 못 올린다', () => rowsAs(S1, `insert into storage.objects (bucket_id, name) values ('badge-proofs', $1)`, [`${U}/upload002.jpg`]), 'row-level security');
+	await db.query(`insert into storage.objects (bucket_id, name) values ('badge-proofs', $1)`, [`${U}/other0001.jpg`]);
+	const vis = (await rowsAs(S1, `select name from storage.objects where bucket_id = 'badge-proofs'`)).map((r) => r.name);
+	check('남의 사진은 읽을 수 없다 (운영진은 운영 서버의 서명 주소로만)', vis.length === 1 && vis[0] === `${S1}/upload001.jpg`, vis.join());
+	await rowsAs(S1, `delete from storage.objects where name = $1`, [`${S1}/upload001.jpg`]);
+	check('내 사진은 지울 수 있다', !(await one(`select 1 x from storage.objects where name = $1`, [`${S1}/upload001.jpg`])));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

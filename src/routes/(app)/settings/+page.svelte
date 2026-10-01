@@ -5,7 +5,8 @@
 	 *    글자 크기(대화 · 편지) · 움직임 줄이기 · 진동(안드로이드) — 이 기기에만 저장 (lib/prefs.svelte.ts, Phase 43)
 	 *  · 테마 색상: 앱 전체의 포인트 색 (버튼 · 로고 · 내 말풍선 …). 이 기기에만 저장되고 상대 화면은 그대로다 (lib/themeColor.svelte.ts)
 	 *  · 알림: 푸시 알림 · 종류별로 끄기(대화 메시지 · 공감 · 편지 — 서버 구독에 저장, Phase 43) · 앱 안 알림 띠
-	 *  · 대화: 만났던 사람 다시 만나기 · Enter 키로 보내기 / 편지: 편지 받기 · 편지지 글씨 · 봉투 여는 장면
+	 *  · 대화: 만났던 사람 다시 만나기 · Enter 키로 보내기 / 편지: 편지 받기 · 추천에 나오기(Phase 84) · 편지지 글씨 · 봉투 여는 장면
+	 *  · 뱃지 (Phase 84): 랜덤채팅에서 보일 뱃지(뱃지마다) · 편지 찾기의 내 뱃지 순서 · CNSA 뱃지 안내 다시 보기 · 뱃지 제출
 	 *  · 비밀번호 · 계정 상태 · 약관 및 정책(이용약관 · 개인정보 처리방침 · 운영정책 → /settings/[doc])
 	 *  · 앱: 버전(빌드 시각) · 앱 새로고침 · 이 기기 설정 초기화 · 로그아웃
 	 * 홈의 "비밀번호를 만들어 두세요"와 비밀번호 찾기 인증 뒤에는 /settings#password 로 와서 비밀번호 칸이 펼쳐져 있다.
@@ -35,6 +36,7 @@
 		sendOtpToMe,
 		setAllowRematch,
 		setPassword,
+		setProfileField,
 		loadProfile,
 		signOut,
 		toast,
@@ -47,6 +49,10 @@
 	import { LEGAL, LEGAL_IDS } from '$lib/legal';
 	import PasswordFields from '$lib/ui/PasswordFields.svelte';
 	import { reloadApp } from '$lib/reload';
+	import Sheet from '$lib/ui/Sheet.svelte';
+	import BadgeChatToggles from '$lib/ui/BadgeChatToggles.svelte';
+	import { fetchMyAchievements, type MyAchievements } from '$lib/achievements';
+	import { openBadgeTour } from '$lib/badgeTour.svelte';
 
 	let reloading = $state(false);
 
@@ -240,6 +246,49 @@
 		}
 	}
 
+	// ── 편지 추천 · 뱃지 (Phase 84) ──
+	let recBusy = $state(false);
+	async function toggleRecommend(e: Event) {
+		const box = e.currentTarget as HTMLInputElement;
+		const on = box.checked;
+		box.checked = S.profile?.letters_recommend !== false; // 저장된 뒤에 바뀐다
+		if (recBusy) return;
+		recBusy = true;
+		try {
+			await setProfileField({ letters_recommend: on });
+			toast(on ? '편지 쓰기 추천에 나와요' : '이제 편지 쓰기 추천에 나오지 않아요 · 이름으로는 찾을 수 있어요');
+		} catch (err) {
+			toast(errMsg(err));
+		} finally {
+			recBusy = false;
+		}
+	}
+	let orderBusy = $state(false);
+	async function setOrder(v: 'mine' | 'random') {
+		if (orderBusy || (S.profile?.letter_badge_order ?? 'mine') === v) return;
+		orderBusy = true;
+		try {
+			await setProfileField({ letter_badge_order: v });
+		} catch (err) {
+			toast(errMsg(err));
+		} finally {
+			orderBusy = false;
+		}
+	}
+	// 랜덤채팅에서 보일 뱃지 — 열 때 내 뱃지를 받아 온다
+	let chatSheet = $state(false);
+	let mineBadges = $state<MyAchievements | null>(null);
+	function openChatSheet() {
+		chatSheet = true;
+		mineBadges = null;
+		fetchMyAchievements()
+			.then((d) => (mineBadges = d))
+			.catch((e) => {
+				chatSheet = false;
+				toast(errMsg(e));
+			});
+	}
+
 	async function out() {
 		await signOut();
 		void goto('/login', { replaceState: true });
@@ -404,6 +453,18 @@
 				onchange={toggleLetters}
 			/>
 		</label>
+		<!-- 편지 쓰기 찾기 화면 아래 추천 5명에 나오기 (Phase 84 — 기본 켜짐). 끄면 이름으로 찾을 때만 나온다 -->
+		<label class="g-row">
+			<span>추천에 나오기</span>
+			<input
+				class="switch"
+				type="checkbox"
+				role="switch"
+				checked={S.profile?.letters_recommend !== false}
+				disabled={recBusy || !S.profile || S.profile.letters_recommend === undefined || S.profile.letters_open === false}
+				onchange={toggleRecommend}
+			/>
+		</label>
 		<!-- 편지지 글씨 (Phase 43) — 손글씨가 읽기 어려우면 반듯한 글씨로. 단추 글자가 그 글씨로 보인다 -->
 		<div class="g-row">
 			<span id="font-h">편지지 글씨</span>
@@ -425,6 +486,49 @@
 			<input class="switch" type="checkbox" role="switch" checked={PREFS.envelope} onchange={(e) => setPref('envelope', e.currentTarget.checked)} />
 		</label>
 	</div>
+
+	<!-- 뱃지 (Phase 84) — 어디에 보일지 · CNSA 뱃지 안내 · 운영진에게 뱃지 사진 보내기 -->
+	<h2 class="g-head">뱃지</h2>
+	<div class="g-card">
+		<button class="g-row" onclick={openChatSheet}>
+			<span>랜덤채팅에서 보일 뱃지</span>
+			<Chevron />
+		</button>
+		<div class="g-row">
+			<span id="border-h">편지 찾기의 뱃지 순서</span>
+			<div class="seg" role="radiogroup" aria-labelledby="border-h">
+				{#each [['mine', '내 순서'], ['random', '무작위']] as const as [v, label] (v)}
+					<button
+						class="seg-btn word"
+						class:on={(S.profile?.letter_badge_order ?? 'mine') === v}
+						role="radio"
+						aria-checked={(S.profile?.letter_badge_order ?? 'mine') === v}
+						disabled={orderBusy || !S.profile || S.profile.letter_badge_order === undefined}
+						onclick={() => setOrder(v)}>{label}</button
+					>
+				{/each}
+			</div>
+		</div>
+		<button class="g-row" onclick={openBadgeTour}>
+			<span>CNSA 뱃지 안내</span>
+			<Chevron />
+		</button>
+		<a class="g-row" href="/me/achievements/submit">
+			<span>뱃지 제출하기</span>
+			<Chevron />
+		</a>
+	</div>
+	<p class="g-foot">랜덤채팅에선 뱃지가 나를 짐작하게 할 수 있어요. CNSA 뱃지는 따로 켜지 않으면 숨겨져요.</p>
+
+	{#if chatSheet}
+		<Sheet onclose={() => (chatSheet = false)} label="랜덤채팅에서 보일 뱃지">
+			<div class="chat-badges">
+				<h3>랜덤채팅에서 보일 뱃지</h3>
+				<p class="muted small">끈 뱃지는 대화 상대의 교복에 달리지 않아요. 편지 찾기에서는 그대로 보여요.</p>
+				{#if mineBadges}<BadgeChatToggles data={mineBadges} />{:else}<p class="muted small">불러오는 중…</p>{/if}
+			</div>
+		</Sheet>
+	{/if}
 
 	<h2 class="g-head">계정</h2>
 	<div class="g-card" id="password">
@@ -634,6 +738,19 @@
 		font-family: var(--hand);
 		font-size: 21px;
 		font-weight: 400;
+	}
+	/* 랜덤채팅에서 보일 뱃지 (Phase 84) — 시트 안 목록 */
+	.chat-badges {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		max-height: 70dvh;
+		overflow-y: auto;
+		padding: 0 4px 8px;
+	}
+	.chat-badges h3 {
+		margin: 0;
+		font-size: 17px;
 	}
 	/* 푸시 알림 아래의 종류별 줄 — 한 단계 들여서 */
 	.g-row.sub {

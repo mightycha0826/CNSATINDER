@@ -4,6 +4,7 @@ import { requestModeration } from '../moderation';
 import { notifyDm } from '../push';
 import { waitText } from '../time';
 import type { LetterFmt } from './rich';
+import type { BadgeLite } from '../achievements';
 
 /**
  * 익명편지 (Phase 32) — 편지 한 통 = 봉투 하나. 받은 편지함 · 보낸 편지함을 따로, 답장도 편지로만.
@@ -15,7 +16,15 @@ import type { LetterFmt } from './rich';
 export type Gender = 'm' | 'f' | 'x';
 export type Box = 'received' | 'sent';
 /** no = 학번 (같은 학년 동명이인 구분, Phase 35) */
-export type DmPerson = { id: string; name: string; grade: number | null; no?: string | number | null; checked: boolean };
+export type DmPerson = {
+	id: string;
+	name: string;
+	grade: number | null;
+	no?: string | number | null;
+	checked: boolean;
+	/** 대표 뱃지 (Phase 84) — 순서는 그 사람이 정한 대로(내 순서 · 무작위) */
+	badges?: BadgeLite[];
+};
 
 /** 편지함의 한 통 — 봉투 겉면에 쓰일 것만 (본문은 봉투를 열어야 받는다) */
 export type MailItem = {
@@ -114,6 +123,8 @@ export const paperDate = (iso: string) => new Date(iso).toLocaleDateString('ko-K
 // ── 읽기 ──
 /** 두 글자 이상. 받기를 끈 사람 · 차단한 사이는 나오지 않는다 */
 export const searchPeople = (q: string) => rpc<DmPerson[]>('dm_search', { p_q: q });
+/** 찾기 화면 아래 추천 5명 (Phase 84 — 무작위. 추천을 끈 사람 · 이미 편지를 보내고 있는 사람은 빼고) */
+export const recommendPeople = () => rpc<DmPerson[]>('dm_recommend');
 
 /** 받은/보낸 편지 중 폴더에 넣지 않은 것. 첫 쪽이면 내 폴더 목록도 같이 온다 (요청을 늘리지 않게, G13) */
 export async function fetchMailbox(box: Box, before: number | null = null): Promise<{ letters: MailItem[]; folders: Folder[] | null }> {

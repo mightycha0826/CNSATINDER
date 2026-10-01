@@ -35,6 +35,42 @@ export const BADGE_ICONS: Record<string, string> = {
 	beta: 'M9.5 3.5h5M10.5 3.5v5.3L5.3 17.7a1.9 1.9 0 0 0 1.7 2.8h10a1.9 1.9 0 0 0 1.7-2.8L13.5 8.8V3.5M7.6 14h8.8M10 17.2v.1M13.5 16.4v.1'
 };
 
+/**
+ * 에나멜 색 (Phase 84) — 아이콘 모양 핀의 닫힌 모양 안을 채우는 색. 뱃지마다 달라 한눈에 구분된다 (금속 판 색은 등급).
+ * 없는 코드는 브랜드 코랄.
+ */
+export const ENAMEL: Record<string, string> = {
+	// 매너
+	warm: '#ff6a3d',
+	good: '#3b82f6',
+	kind: '#ff5d8f',
+	fun: '#ffb020',
+	listen: '#14b8a6',
+	fast: '#ffd23f',
+	manner: '#4f46e5',
+	rater: '#22c55e',
+	// 대화
+	chats: '#38bdf8',
+	extend: '#f59e0b',
+	deep: '#0284c7',
+	pin: '#ef4444',
+	hello: '#fb923c',
+	talk: '#a855f7',
+	heart: '#f43f5e',
+	question: '#6366f1',
+	owl: '#7c5cff',
+	// 편지
+	letter_got: '#ec4899',
+	letter_sent: '#60a5fa',
+	reply: '#10b981',
+	deco: '#e879f9',
+	// 특별
+	streak: '#16a34a',
+	clean: '#7dd3fc',
+	pioneer: '#ef4444',
+	beta: '#a78bfa'
+};
+
 /** 운영진이 주는 특별 업적 — 금속 대신 무지갯빛 테두리, 등급 대신 "특별" (Badge.svelte) */
 export const SPECIAL_BADGES = new Set(['beta']);
 

@@ -23,6 +23,10 @@ export type Profile = {
 	letters_open?: boolean;
 	/** 매너 온도 (Phase 30) — 서버만 바꾼다 */
 	manner_temp?: number;
+	/** 편지 쓰기 찾기 화면의 추천에 나오기 (설정, Phase 84 — 기본 켜짐) */
+	letters_recommend?: boolean;
+	/** 편지 찾기 · 추천에 보이는 내 뱃지 순서 — 내 순서 / 무작위 (Phase 84) */
+	letter_badge_order?: 'mine' | 'random';
 };
 
 export type Settings = {
@@ -52,6 +56,8 @@ export type Settings = {
 	maintenance_until?: string | null;
 	/** Phase 53 — 점검 예약 (이 시각부터 저절로 점검 중) */
 	maintenance_at?: string | null;
+	/** Phase 84 — 뱃지 사진을 받는 인스타그램 계정 (비어 있으면 "준비 중") */
+	badge_instagram?: string | null;
 };
 
 export const S = $state({
@@ -206,12 +212,23 @@ export async function loadProfile() {
 	// ★ select('*') 를 쓰지 않는다. 항상 명시 컬럼.
 	const cols = 'id, nickname, bio, interests, mbti, gender, want, status, suspended_until, verified, onboarded';
 	const read = (c: string) => supabase.from('profiles').select(c).eq('id', S.session?.user.id ?? '').maybeSingle();
-	let { data, error } = await read(`${cols}, allow_rematch, letters_open, manner_temp`);
-	// Phase 21 · 23 · 30 을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
+	let { data, error } = await read(`${cols}, allow_rematch, letters_open, manner_temp, letters_recommend, letter_badge_order`);
+	// Phase 21 · 23 · 30 · 84 를 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
+	if (error) ({ data, error } = await read(`${cols}, allow_rematch, letters_open, manner_temp`));
 	if (error) ({ data, error } = await read(`${cols}, allow_rematch, letters_open`));
 	if (error) ({ data, error } = await read(`${cols}, allow_rematch`));
 	if (error) ({ data } = await read(cols));
 	S.profile = (data as unknown as Profile) ?? null;
+}
+
+/** 내 프로필 한 칸 바꾸기 (설정 스위치 — 편지 추천 · 뱃지 순서, Phase 84) */
+export async function setProfileField(patch: Pick<Profile, 'letters_recommend'> | Pick<Profile, 'letter_badge_order'>) {
+	const { error } = await supabase
+		.from('profiles')
+		.update(patch)
+		.eq('id', S.session?.user.id ?? '');
+	if (error) throw error;
+	await loadProfile();
 }
 
 /** 만났던 사람도 다시 만나기 (설정 화면 스위치) */
@@ -230,8 +247,9 @@ async function loadSettings() {
 	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();
 	const AI = 'ai_moderation, ai_chat, ai_chat_per_user';
 	const MAINT = 'maintenance, maintenance_msg, maintenance_until';
-	let { data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}, maintenance_at`);
-	// 점검 예약(53) · 서버 점검(52) · 편지 잠금(44) · AI 설정(19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
+	let { data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}, maintenance_at, badge_instagram`);
+	// 뱃지 인스타(84) · 점검 예약(53) · 서버 점검(52) · 편지 잠금(44) · AI 설정(19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
+	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}, maintenance_at`));
 	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}`));
 	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min`));
 	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}`));

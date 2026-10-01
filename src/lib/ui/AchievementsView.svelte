@@ -6,6 +6,8 @@
 	 * Phase 69 — 대표 업적은 교복(프로필과 같은 그림)으로. 클래시로얄 덱처럼 딴 메달을 꾹 눌러 교복 깃의 칸으로 끌어 놓으면
 	 *   그 칸의 대표 업적이 되고(있던 배지는 밀려난다), 교복의 배지도 꾹 눌러 다른 칸과 자리를 바꾼다 (lib/ui/badgeDrag).
 	 *   집는 순간 교복이 화면 밖이면 보이게 스크롤한다. 잠긴 메달은 집히지 않는다.
+	 * Phase 84 — 대표 칸은 3개, Landy 금 뱃지 5개면 5개 (교복 가슴 주머니 위에 둘 더) · 금 뱃지 진행도.
+	 *   CNSA 탭 위에는 "CNSA 뱃지 안내" · "뱃지 제출하기" (onguide · submitHref).
 	 */
 	import Badge from './Badge.svelte';
 	import BadgeDetail from './BadgeDetail.svelte';
@@ -14,7 +16,9 @@
 	import { badgeDrag } from './badgeDrag';
 	import {
 		CATEGORIES,
+		GOLDS_FOR_FIVE,
 		placedFeatured,
+		slotsOf,
 		progress,
 		progressText,
 		toggledFeatured,
@@ -26,13 +30,21 @@
 	let {
 		data,
 		onfeature,
-		neck = 'tie'
+		neck = 'tie',
+		onguide,
+		submitHref
 	}: {
 		data: MyAchievements;
 		/** 대표 업적 바꾸기 — quiet 면 알림 없이 (끌어 놓기는 교복이 바로 바뀌는 게 알림이다) */
 		onfeature: (codes: string[], quiet?: boolean) => Promise<boolean>;
 		neck?: 'tie' | 'ribbon';
+		/** CNSA 뱃지 안내 열기 (Phase 84) */
+		onguide?: () => void;
+		/** 뱃지 제출 화면 주소 (Phase 84) */
+		submitHref?: string;
 	} = $props();
+	const slots = $derived(slotsOf(data));
+	const golds = $derived(data.golds ?? 0);
 	let dress: HTMLDivElement | undefined = $state();
 
 	let cat = $state<Category | 'all'>('all');
@@ -73,13 +85,22 @@
 
 <section class="featured" aria-labelledby="feat-h">
 	<div class="feat-head">
-		<h2 id="feat-h">대표 업적</h2>
+		<h2 id="feat-h">대표 업적 <small class="num">{data.featured.length}/{slots}</small></h2>
 		{#if earned.length}<span class="hint">메달을 꾹 눌러 교복에 달아요</span>{/if}
 	</div>
 	<!-- 교복 — 깃의 칸에 메달을 끌어 놓는다 -->
 	<div class="dress" bind:this={dress}>
-		<Uniform {neck} badges={data.featured} onpick={(b) => (open = data.items.find((a) => a.code === b.code) ?? null)} onplace={place} />
+		<Uniform {neck} badges={data.featured} {slots} onpick={(b) => (open = data.items.find((a) => a.code === b.code) ?? null)} onplace={place} />
 	</div>
+	<!-- 금 뱃지 5개면 칸이 5개 (Phase 84) -->
+	<p class="five" class:done={slots >= 5}>
+		{#if slots >= 5}
+			<b>금 뱃지 {golds}개</b> · 대표 칸이 5개로 늘었어요
+		{:else}
+			<span class="five-bar" aria-hidden="true"><i style:width="{(Math.min(golds, GOLDS_FOR_FIVE) / GOLDS_FOR_FIVE) * 100}%"></i></span>
+			<span>Landy 금 뱃지 <b class="num">{golds}/{GOLDS_FOR_FIVE}</b> · 다 모으면 대표 칸이 5개</span>
+		{/if}
+	</p>
 </section>
 
 <nav class="cats" aria-label="분류">
@@ -87,6 +108,14 @@
 		<button class:on={cat === c.k} aria-pressed={cat === c.k} onclick={() => (cat = c.k)}>{c.label}</button>
 	{/each}
 </nav>
+
+{#if cat === 'cnsa' && (onguide || submitHref)}
+	<!-- CNSA 뱃지 (Phase 84) — 무엇인지 · 얻는 법 안내, 운영진에게 뱃지 사진 보내기 -->
+	<div class="cnsa-acts">
+		{#if onguide}<button class="cnsa-btn u-tap" onclick={onguide}>CNSA 뱃지 안내</button>{/if}
+		{#if submitHref}<a class="cnsa-btn primary u-tap" href={submitHref}>뱃지 제출하기</a>{/if}
+	</div>
+{/if}
 
 <ul class="grid">
 	{#each shown as a (a.code)}
@@ -205,6 +234,62 @@
 	.feat-head h2 {
 		margin: 0;
 		font-size: 15px;
+	}
+	.feat-head h2 small {
+		margin-left: 4px;
+		font-size: 12px;
+		font-weight: 700;
+		color: var(--text-2);
+	}
+	/* 금 뱃지 진행도 — 5개면 대표 칸 5개 */
+	.five {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin: 12px 0 0;
+		font-size: 12px;
+		font-weight: 600;
+		color: var(--text-2);
+	}
+	.five b {
+		color: var(--text);
+	}
+	.five.done {
+		color: #9b6c05;
+	}
+	.five-bar {
+		flex: none;
+		width: 64px;
+		height: 6px;
+		border-radius: 999px;
+		background: var(--field);
+		overflow: hidden;
+	}
+	.five-bar i {
+		display: block;
+		height: 100%;
+		border-radius: inherit;
+		background: linear-gradient(90deg, #f5c95a, #c48a0c);
+	}
+	.cnsa-acts {
+		display: flex;
+		gap: 8px;
+	}
+	.cnsa-btn {
+		flex: 1;
+		display: grid;
+		place-items: center;
+		min-height: 44px;
+		border-radius: 14px;
+		background: var(--field);
+		color: var(--text);
+		font-size: 14px;
+		font-weight: 700;
+		text-decoration: none;
+	}
+	.cnsa-btn.primary {
+		background: var(--accent-fill-deep);
+		color: var(--on-accent);
 	}
 	.hint {
 		font-size: 12px;

@@ -29,6 +29,12 @@ const BADGES = [
 	{ code: 'club_beatus', title: '동아리 Beatus 뱃지', description: 'IT 동아리 Beatus의 뱃지', icon: '💻', category: 'cnsa' }
 ];
 const HOLDERS = { club_beatus: [A] }; // Phase 71 — 뱃지마다 가진 학생
+// Phase 84 — 학생이 보낸 뱃지 요청 (사진 · 학번 · 이름 — 관리자만)
+let BREQ = [
+	{ id: 11, user_id: A, kind: 'proof', code: 'cnsa_student', title: null, badge: 'CNSA 뱃지', note: '학생증이랑 같이 찍었어요', member_nos: [], photos: [`${A}/p1.jpg`], status: 'pending', staff_note: null, created_at: t, decided_at: null, name: '홍길동', grade: 2, no: '29999', has: false },
+	{ id: 12, user_id: B, kind: 'club', code: null, title: '로봇부', badge: null, note: '', member_nos: [20101, 20102], photos: [`${B}/c1.jpg`, `${B}/c2.jpg`], status: 'pending', staff_note: null, created_at: t, decided_at: null, name: '김기장', grade: 1, no: '19998', has: false }
+];
+const REMOVED = []; // Storage 에서 지운 사진
 const calls = [];
 
 const user = (i, nick) => ({ id: i, nickname: nick, status: 'active', suspended_until: null, strikes: 0, verified: true, onboarded: true, created_at: t, online: false, last_seen: t, staff_role: null, reports_received: 1 });
@@ -80,6 +86,15 @@ const RPC = {
 	},
 	admin_grant_badge_by_no: (a) => ({ given: 1, found: 1, missing: a.p_nos.filter((n) => n !== 29999) }),
 	admin_grant_badge_all: () => 3,
+	admin_badge_requests: (a) => BREQ.filter((r) => (r.status === 'pending') === (a.p_pending !== false)),
+	admin_badge_request_decide: (a) => {
+		const r = BREQ.find((x) => x.id === a.p_id);
+		if (r.kind === 'club' && a.p_ok && !a.p_code && !r.code) throw { status: 400, body: { message: 'need_code' } };
+		const photos = r.photos;
+		Object.assign(r, { status: a.p_ok ? 'approved' : 'rejected', staff_note: a.p_note || null, photos: [], decided_at: t });
+		return { status: r.status, given: a.p_ok ? (r.kind === 'club' ? 2 : 1) : 0, missing: r.kind === 'club' && a.p_ok ? [20102] : [], photos, notice: 99 };
+	},
+	personal_notice_push: () => ({ skip: 'no_devices' }),
 	admin_user_rooms: () => [],
 	admin_user_letters: () => [{ letter_id: 7, alias: '맑은 하늘', is_author: true, status: 'open', created_at: t, preview: '광고 편지', my_comments: 0 }],
 	admin_get_settings: () => ({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5, letters_gate: true, letters_gate_min: 100, maintenance: MAINT_ON, maintenance_msg: '', maintenance_until: null, maintenance_at: MAINT_AT }),
@@ -119,6 +134,19 @@ const sb = http.createServer((req, res) => {
 		const au = u.pathname.match(/^\/auth\/v1\/admin\/users\/(.+)$/);
 		if (au) return send(200, { id: au[1], email: au[1] === A ? '29999@cnsa.hs.kr' : '19998@cnsa.hs.kr', aud: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: t });
 		if (u.pathname === '/rest/v1/signup_stats') return send(200, { students: 42 }); // Phase 44 — 가입한 학생 수
+		// Phase 84 — 뱃지 사진: 서명 주소 · 지우기
+		if (u.pathname === '/storage/v1/object/sign/badge-proofs') {
+			const { paths } = JSON.parse(body || '{}');
+			return send(200, (paths ?? []).map((p) => ({ path: p, signedURL: `/storage/v1/object/sign/badge-proofs/${p}?token=x`, error: null })));
+		}
+		if (u.pathname.startsWith('/storage/v1/object/sign/badge-proofs/')) {
+			res.writeHead(200, { 'content-type': 'image/svg+xml', ...cors });
+			return res.end('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#c33"/></svg>');
+		}
+		if (u.pathname === '/storage/v1/object/badge-proofs' && req.method === 'DELETE') {
+			REMOVED.push(...(JSON.parse(body || '{}').prefixes ?? []));
+			return send(200, []);
+		}
 		const fn = u.pathname.match(/^\/rest\/v1\/rpc\/([a-z_]+)/)?.[1];
 		if (!fn || !RPC[fn]) return send(404, { message: `no mock ${req.url}` });
 		const args = body ? JSON.parse(body) : {};
@@ -473,7 +501,7 @@ try {
 		await dialogs(bp, () => true);
 		const done = (txt) => bp.locator(`[data-ack-msg*="${txt}"], .toast:has-text("${txt}")`).first();
 		const r = await bp.go('/admin/badges');
-		check('/admin/badges → 200 · 사이드바 "뱃지"', r.status() === 200 && (await bp.locator('.side nav a', { hasText: '뱃지' }).getAttribute('aria-current')) === 'page');
+		check('/admin/badges → 200 · 사이드바 "뱃지"', r.status() === 200 && (await bp.locator('.side nav a[href="/admin/badges"]').getAttribute('aria-current')) === 'page');
 		const list = (await bp.locator('nav.list').innerText()).replace(/\s+/g, ' ');
 		check('★ 분류(특별 · CNSA)별 뱃지 · 가진 사람 수', list.includes('특별') && list.includes('CNSA') && list.includes('동아리 Beatus 뱃지 1명') && list.includes('베타 테스터 0명'), list);
 		await bp.locator('nav.list a', { hasText: 'Beatus' }).click(); await bp.waitForURL('**/admin/badges?code=club_beatus'); await bp.waitForTimeout(300);
@@ -515,6 +543,51 @@ try {
 		const { page: mp, ctx: mctx } = await session();
 		await mp.go('/admin/badges?code=club_beatus');
 		check('★ 운영자도 뱃지 화면 — 학번으로 주기는 없다 (학생 신원)', (await mp.getByRole('tab', { name: '학번으로' }).count()) === 0 && (await mp.getByRole('tab', { name: '모두에게' }).count()) === 1);
+		await mctx.close();
+		ROLE = 'admin';
+	}
+
+	console.log('\n[뱃지 요청] 학생이 보낸 뱃지 사진 · 동아리 기장 제출 (Phase 84)');
+	{
+		ROLE = 'admin';
+		const { page: qp, ctx: qctx } = await session();
+		await dialogs(qp, () => true);
+		const done = (txt) => qp.locator(`[data-ack-msg*="${txt}"], .toast:has-text("${txt}")`).first();
+		const r = await qp.go('/admin/badge-requests');
+		check('/admin/badge-requests → 200 · 사이드바 "뱃지 요청"', r.status() === 200 && (await qp.locator('.side nav a[href="/admin/badge-requests"]').getAttribute('aria-current')) === 'page');
+		const first = qp.locator('li.req').first();
+		const t1 = (await first.innerText()).replace(/\s+/g, ' ');
+		check('★ 기다리는 요청 — 종류 · 뱃지 · 이름 · 학번 · 메모 · 사진(서명 주소)', t1.includes('내 뱃지 인증') && t1.includes('CNSA 뱃지') && t1.includes('홍길동') && t1.includes('학번 29999') && t1.includes('학생증이랑')
+			&& ((await first.locator('.photos img').first().getAttribute('src')) ?? '').includes('/storage/v1/object/sign/badge-proofs/'), t1);
+		const t2 = (await qp.locator('li.req').nth(1).innerText()).replace(/\s+/g, ' ');
+		check('★ 동아리 기장 제출 — 앱에 없는 동아리 · 부원 학번 · 줄 동아리 뱃지 고르기', t2.includes('로봇부') && t2.includes('앱에 없는 동아리') && t2.includes('부원 학번 2명') && t2.includes('20101, 20102')
+			&& (await qp.locator('li.req').nth(1).locator('select[name="code"] option').count()) === 2, t2);
+		await first.getByRole('button', { name: '승인' }).click();
+		await done('1명에게 뱃지를 줬어요').waitFor({ timeout: 5000 }).catch(() => {});
+		const d1 = calls.filter((c) => c[0] === 'admin_badge_request_decide').at(-1)?.[1];
+		check('★ 승인 → admin_badge_request_decide(ok) · 사진을 Storage 에서 지운다', d1?.p_id === 11 && d1.p_ok === true && REMOVED.includes(`${A}/p1.jpg`), JSON.stringify({ d1, REMOVED }));
+		await qp.waitForTimeout(400);
+		const club = qp.locator('li.req').first();
+		await club.locator('select[name="code"]').selectOption('club_beatus');
+		await club.getByRole('textbox', { name: '반려 이유' }).fill('');
+		await club.getByRole('button', { name: '승인' }).click();
+		await done('2명에게 뱃지를 줬어요').waitFor({ timeout: 5000 }).catch(() => {});
+		const d2 = calls.filter((c) => c[0] === 'admin_badge_request_decide').at(-1)?.[1];
+		check('★ 동아리 — 고른 동아리 뱃지로 승인 · 못 찾은 학번을 알려 준다', d2?.p_id === 12 && d2.p_code === 'club_beatus' && (await done('못 찾은 학번 20102').count()) === 1 && REMOVED.includes(`${B}/c2.jpg`), JSON.stringify(d2));
+		await qp.waitForTimeout(400);
+		check('다 결정하면 "기다리는 요청이 없어요"', (await qp.getByText('기다리는 요청이 없어요').count()) === 1);
+		await qp.getByRole('tab', { name: '결정한 요청' }).click(); await qp.waitForURL('**/admin/badge-requests?tab=done'); await qp.waitForTimeout(300);
+		check('결정한 요청 — 승인 표시 · 사진은 없다', (await qp.locator('li.req .st.approved').count()) === 2 && (await qp.locator('li.req .photos').count()) === 0);
+		await qp.screenshot({ path: `${SP}/audit-badge-requests.png`, fullPage: true });
+		check('페이지 오류 없음 (뱃지 요청)', qp.errs.length === 0, qp.errs.join(' / '));
+		await qctx.close();
+
+		ROLE = 'moderator';
+		const { page: mp, ctx: mctx } = await session();
+		const r2 = await mp.goto(base + '/admin/badge-requests');
+		check('★ 운영자는 뱃지 요청을 볼 수 없다 (학번 · 이름 · 사진 — 관리자만) · 메뉴에도 없다', r2.status() === 403);
+		await mp.go('/admin/badges');
+		check('운영자 메뉴에 "뱃지 요청" 없음', (await mp.locator('.side nav a[href="/admin/badge-requests"]').count()) === 0);
 		await mctx.close();
 		ROLE = 'admin';
 	}

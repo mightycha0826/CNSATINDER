@@ -2,13 +2,16 @@
 	/**
 	 * 새 편지 (Phase 32) — 1) 받을 학생을 이름으로 찾고 → 2) 봉투를 열어 편지지에 쓰고 → 봉투에 담아 보낸다 (EnvelopeCompose).
 	 * 받는 사람에게 나는 "익명의 ○학생"(성별만) 또는 내가 적은 서명으로만 보인다 (Phase 35). 받기를 끈 사람 · 차단한 사이는 검색에 나오지 않는다.
-	 * 찾기 결과에는 학년 · 학번 — 같은 학년 동명이인을 구분한다.
+	 * 찾기 결과에는 학년 · 학번 — 같은 학년 동명이인을 구분한다. 대표 뱃지도 (Phase 84 — 순서는 그 사람이 정한 대로).
+	 * 아직 찾지 않았으면 아래에 추천 5명 (Phase 84 — 들어올 때 한 번, "다른 추천"을 누르면 다시. 추천에 안 나오기는 설정 › 편지).
 	 */
+	import { onMount } from 'svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import Avatar from '$lib/ui/Avatar.svelte';
+	import Badge from '$lib/ui/Badge.svelte';
 	import EnvelopeCompose from '$lib/letters/EnvelopeCompose.svelte';
 	import type { LetterFmt } from '$lib/letters/rich';
-	import { anonName, searchPeople, sendLetter, type DmPerson } from '$lib/letters/api';
+	import { anonName, recommendPeople, searchPeople, sendLetter, type DmPerson } from '$lib/letters/api';
 	import { afterSent, deliver } from '$lib/letters/send';
 	import { S, errMsg, toast } from '$lib/state.svelte';
 
@@ -36,6 +39,23 @@
 		}, 250);
 		return () => clearTimeout(t);
 	});
+
+	// 추천 5명 — 들어올 때 한 번 (주기 요청 없음)
+	let recs = $state<DmPerson[] | null>(null);
+	let recBusy = $state(false);
+	async function loadRecs() {
+		if (recBusy) return;
+		recBusy = true;
+		try {
+			recs = (await recommendPeople()) ?? [];
+		} catch {
+			recs = [];
+		} finally {
+			recBusy = false;
+		}
+	}
+	// 처음 한 번만 — effect 로 부르면 recBusy 를 읽어 바뀔 때마다 다시 돌아 요청이 끝없이 나간다
+	onMount(() => void loadRecs());
 
 	// 폰 키보드 내리기 — 찾기 칸이 화면에서 사라져도 키보드는 저절로 내려가지 않는다(아이폰). 고르거나 "검색"을 누르면 직접 내린다
 	const hideKeyboard = () => (document.activeElement as HTMLElement | null)?.blur?.();
@@ -85,30 +105,51 @@
 		</label>
 
 		{#if results === null}
-			<div class="empty">
-				<span class="big" aria-hidden="true">✉️</span>
-				<p>이름을 두 글자 이상 적어 주세요</p>
-			</div>
+			<p class="prompt muted">이름을 두 글자 이상 적어 주세요</p>
+			<!-- 추천 5명 (Phase 84) -->
+			{#if recs === null}
+				<p class="sr-only">추천을 불러오는 중…</p>
+				<div class="rec-sk" aria-hidden="true">{#each [0, 1, 2] as i (i)}<i class="skeleton"></i>{/each}</div>
+			{:else if recs.length}
+				<section class="recs" aria-labelledby="rec-h">
+					<div class="rec-head">
+						<h2 id="rec-h">이 친구에게 써 볼까요?</h2>
+						<button class="again u-tap" onclick={loadRecs} disabled={recBusy}>다른 추천</button>
+					</div>
+					<ul class="people">
+						{#each recs as p (p.id)}
+							<li>{@render row(p)}</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
 		{:else if results.length === 0}
 			<p class="muted center">{searching ? '찾는 중…' : '찾는 사람이 없어요'}</p>
 		{:else}
 			<ul class="people">
 				{#each results as p (p.id)}
-					<li>
-						<button class="person" onclick={() => pick(p)}>
-							<Avatar name={p.name} size={44} />
-							<span class="who">
-								<b>{p.name}</b>
-								<small class="muted">{[p.grade ? `${p.grade}학년` : '', p.no ? `학번 ${p.no}` : '', p.checked ? '' : '직접 적은 이름'].filter(Boolean).join(' · ')}</small>
-							</span>
-							<span class="go">편지 쓰기</span>
-						</button>
-					</li>
+					<li>{@render row(p)}</li>
 				{/each}
 			</ul>
 		{/if}
 	</div>
 {/if}
+
+{#snippet row(p: DmPerson)}
+	<button class="person" onclick={() => pick(p)}>
+		<Avatar name={p.name} size={44} />
+		<span class="who">
+			<b>{p.name}</b>
+			<small class="muted">{[p.grade ? `${p.grade}학년` : '', p.no ? `학번 ${p.no}` : '', p.checked ? '' : '직접 적은 이름'].filter(Boolean).join(' · ')}</small>
+			{#if p.badges?.length}
+				<span class="badges" aria-label="대표 뱃지 {p.badges.map((b) => b.title).join(', ')}">
+					{#each p.badges as b (b.code)}<Badge code={b.code} icon={b.icon} tier={b.tier} title={b.title} size={22} />{/each}
+				</span>
+			{/if}
+		</span>
+		<span class="go">편지 쓰기</span>
+	</button>
+{/snippet}
 
 <style>
 	.pick {
@@ -139,20 +180,43 @@
 		color: var(--text);
 		font-size: 16px;
 	}
-	.empty {
+	.prompt {
+		margin: 4px 2px 0;
+		font-size: 13px;
+	}
+	.recs {
+		margin-top: 10px;
+	}
+	.rec-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+	.rec-head h2 {
+		margin: 0;
+		font-size: 15px;
+	}
+	.again {
+		min-height: 44px;
+		padding: 0 4px;
+		font-size: 13px;
+		font-weight: 700;
+		color: var(--accent);
+	}
+	.rec-sk {
 		display: flex;
 		flex-direction: column;
-		align-items: center;
-		gap: 8px;
-		margin-top: 48px;
-		color: var(--text-2);
-		font-size: 14px;
+		gap: 10px;
+		margin-top: 46px;
 	}
-	.empty p {
-		margin: 0;
+	.rec-sk i {
+		height: 56px;
+		border-radius: 16px;
 	}
-	.big {
-		font-size: 44px;
+	.badges {
+		display: flex;
+		gap: 3px;
+		margin-top: 4px;
 	}
 	.center {
 		margin: 32px 0;

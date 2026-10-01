@@ -35,7 +35,23 @@ export type Achievement = BadgeLite &
 		new: boolean;
 	};
 
-export type MyAchievements = { items: Achievement[]; featured: BadgeLite[]; chosen: string[] };
+export type MyAchievements = {
+	items: Achievement[];
+	featured: BadgeLite[];
+	chosen: string[];
+	/** 대표 뱃지 칸 — 3, Landy 금 뱃지 5개면 5 (Phase 84) */
+	slots?: number;
+	/** Landy 금 뱃지 수 (운영진이 주는 특별 · CNSA 빼고) */
+	golds?: number;
+	/** 가진 뱃지마다 랜덤채팅에 보이는지 — 정하지 않았으면 CNSA 는 숨김 */
+	chat?: Record<string, boolean>;
+};
+
+/** 금 뱃지 몇 개면 칸이 5개가 되나 */
+export const GOLDS_FOR_FIVE = 5;
+export const slotsOf = (d: Pick<MyAchievements, 'slots'> | null | undefined) => d?.slots ?? 3;
+/** Landy 뱃지 (기준을 채워 딴 것) — CNSA · 운영진이 주는 특별 업적이 아닌 것 */
+export const isLandy = (a: Pick<Achievement, 'category' | 'granted'>) => a.category !== 'cnsa' && !a.granted;
 
 export const TIER_NAME: Record<Tier, string> = { 0: '잠김', 1: '동', 2: '은', 3: '금' };
 
@@ -60,6 +76,10 @@ export const fetchNewAchievements = () =>
 export const markAchievementsSeen = () => rpc<void>('mark_achievements_seen');
 export const setFeaturedBadges = (codes: string[]) =>
 	rpc<{ status: 'ok' | 'too_many' | 'not_owned'; featured?: BadgeLite[] }>('set_featured_badges', { p_codes: codes });
+/** 대표 뱃지를 못 바꿨을 때 알림 글 */
+export const featuredError = (status: string, slots = 3) => (status === 'too_many' ? `대표 업적은 ${slots}개까지예요` : '아직 딴 업적이 아니에요');
+/** 랜덤채팅에서 이 뱃지 보이기 · 숨기기 (Phase 84 — 가진 뱃지만) */
+export const setBadgeChat = (code: string, show: boolean) => rpc<{ status: 'ok' | 'not_owned' }>('set_badge_chat', { p_code: code, p_show: show });
 
 /**
  * 업적 카탈로그 (Phase 44) — 남의 메달을 눌렀을 때 설명 · 기준을 그린다. 앱을 켠 동안 한 번만 받는다 (정의는 거의 안 바뀐다).
@@ -77,10 +97,10 @@ export function fetchCatalog(): Promise<Map<string, AchievementDef>> {
 	return catalog;
 }
 
-/** 대표 업적 걸기 · 내리기 — 걸면 맨 앞, 3개까지. 고른 것이 없으면(자동) 지금 보이는 대표 업적에서 시작한다 */
-export function toggledFeatured(data: Pick<MyAchievements, 'chosen' | 'featured'>, code: string): string[] {
+/** 대표 업적 걸기 · 내리기 — 걸면 맨 앞, 칸 수(3 · 5)까지. 고른 것이 없으면(자동) 지금 보이는 대표 업적에서 시작한다 */
+export function toggledFeatured(data: Pick<MyAchievements, 'chosen' | 'featured' | 'slots'>, code: string): string[] {
 	const base = data.chosen.length ? [...data.chosen] : data.featured.map((b) => b.code);
-	return base.includes(code) ? base.filter((c) => c !== code) : [code, ...base].slice(0, 3);
+	return base.includes(code) ? base.filter((c) => c !== code) : [code, ...base].slice(0, slotsOf(data));
 }
 
 /**
@@ -88,7 +108,7 @@ export function toggledFeatured(data: Pick<MyAchievements, 'chosen' | 'featured'
  *  · 이미 대표인 배지를 다른 칸에 놓으면 그 칸의 배지와 자리를 맞바꾼다 (빈 칸이면 맨 뒤로)
  *  · 대표가 아닌 메달을 놓으면 그 칸의 배지를 밀어내고 앉는다 (빈 칸이면 뒤에 붙는다)
  */
-export function placedFeatured(data: Pick<MyAchievements, 'featured'>, code: string, slot: number): string[] {
+export function placedFeatured(data: Pick<MyAchievements, 'featured' | 'slots'>, code: string, slot: number): string[] {
 	const cur = data.featured.map((b) => b.code);
 	const from = cur.indexOf(code);
 	if (from >= 0) {
@@ -96,7 +116,7 @@ export function placedFeatured(data: Pick<MyAchievements, 'featured'>, code: str
 		[cur[from], cur[slot]] = [cur[slot], cur[from]];
 		return cur;
 	}
-	if (slot >= cur.length) return [...cur, code].slice(0, 3);
+	if (slot >= cur.length) return [...cur, code].slice(0, slotsOf(data));
 	cur[slot] = code;
 	return cur;
 }

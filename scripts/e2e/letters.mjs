@@ -69,6 +69,11 @@ async function openApp(browser, w, opts = {}) {
 		const req = route.request(); const u = new URL(req.url());
 		const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 		const rpc = u.pathname.startsWith('/rest/v1/rpc/') ? u.pathname.slice('/rest/v1/rpc/'.length) : null;
+		// 뱃지 사진 (Phase 84) — Storage 올리기 · 지우기. 몸이 사진(이진)이라 JSON 으로 읽기 전에
+		if (u.pathname.startsWith('/storage/v1/')) {
+			w.calls.push(['storage', req.method(), u.pathname]);
+			return json(req.method() === 'DELETE' ? [] : { Key: u.pathname.replace('/storage/v1/object/', ''), Id: 'obj' });
+		}
 		const a = req.method() === 'POST' ? req.postDataJSON() ?? {} : {};
 		if (rpc) w.calls.push([rpc, a]);
 		if (u.pathname === '/auth/v1/token') return json(session);
@@ -103,8 +108,13 @@ async function openApp(browser, w, opts = {}) {
 		if (rpc === 'dm_open') return json(open(w, a.p_msg));
 		if (rpc === 'dm_search') {
 			const q = String(a.p_q ?? '');
-			return json(q.length >= 2 && '박받음'.includes(q) ? [{ id: 'u-b', name: '박받음', grade: 2, no: 20314, checked: true }, { id: 'u-c', name: '박받음', grade: 2, no: 20522, checked: true }] : []);
+			return json(q.length >= 2 && '박받음'.includes(q) ? [{ id: 'u-b', name: '박받음', grade: 2, no: 20314, checked: true, badges: [{ code: 'fun', title: '이야기꾼', icon: '🎉', tier: 3 }, { code: 'club_beatus', title: '동아리 Beatus 뱃지', icon: '💻', tier: 3 }] }, { id: 'u-c', name: '박받음', grade: 2, no: 20522, checked: true, badges: [] }] : []);
 		}
+		// 추천 5명 (Phase 84) — 가짜로 둘
+		if (rpc === 'dm_recommend') return json([
+			{ id: 'u-r1', name: '최추천', grade: 1, no: 10233, checked: true, badges: [{ code: 'heart', title: '공감 부자', icon: '❤️', tier: 2 }, { code: 'cnsa_student', title: 'CNSA 뱃지', icon: '🏫', tier: 3 }] },
+			{ id: 'u-r2', name: '정추천', grade: 3, no: 30101, checked: true, badges: [] }
+		]);
 		if (rpc === 'dm_send') {
 			const id = w.nextId++;
 			w.letters.push({ id, thread_id: 9, box: 'sent', to_name: '박받음', to_grade: 2, opened: false, replied: false, is_reply: false, body: a.p_body, fmt: a.p_fmt ?? null, created_at: new Date().toISOString() });
@@ -310,11 +320,18 @@ try {
 	await page.getByRole('link', { name: '편지 쓰기' }).click(); await page.waitForURL('**/letters/new');
 	const search = page.getByRole('searchbox', { name: '편지 받을 학생 찾기' });
 	check('찾기 화면에 설명 문구 없음 (처음 사용법 안내가 알려 준다, Phase 44)', (await page.locator('.pick .hint').count()) === 0);
+	await page.locator('.recs .person').first().waitFor({ timeout: 3000 });
+	const recRows = await page.locator('.recs .person .who').allInnerTexts();
+	check('★ 찾기 전에는 아래에 추천 (Phase 84) — 이름 · 학년 · 대표 뱃지', recRows.length === 2 && recRows[0].includes('최추천') && recRows[0].includes('1학년')
+		&& (await page.locator('.recs .person').first().locator('.badges .medal').count()) === 2 && called(w, 'dm_recommend').length === 1, JSON.stringify([recRows, await page.locator('.recs .person').first().locator('.badges .medal').count(), called(w, 'dm_recommend').length]));
+	await page.getByRole('button', { name: '다른 추천' }).click(); await page.waitForTimeout(300);
+	check('"다른 추천"을 누르면 다시 받는다 (그때만)', called(w, 'dm_recommend').length === 2);
 	await search.fill('박'); await page.waitForTimeout(400);
-	check('한 글자로는 찾지 않는다', called(w, 'dm_search').length === 0 && (await page.locator('.person').count()) === 0);
+	check('한 글자로는 찾지 않는다 (추천은 그대로)', called(w, 'dm_search').length === 0 && (await page.locator('.recs .person').count()) === 2);
 	await search.fill('박받'); await page.waitForTimeout(600);
 	const people = await page.locator('.person .who').allInnerTexts();
 	check('★ 이름으로 찾기 — 동명이인은 학년 · 학번으로 구분', people.length === 2 && people[0].includes('2학년') && people[0].includes('학번 20314') && people[1].includes('학번 20522'), JSON.stringify(people));
+	check('★ 찾기 결과에 대표 뱃지 (Phase 84) · 찾으면 추천은 걷힌다', (await page.locator('.person').first().locator('.badges .medal').count()) === 2 && (await page.locator('.person').nth(1).locator('.badges').count()) === 0 && (await page.locator('.recs').count()) === 0);
 	await page.locator('.person').first().click();
 	await page.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'write', null, { timeout: 4000 });
 	check('마우스 · 키보드가 있는 기기는 편지지에 바로 커서', await page.evaluate(() => !!document.activeElement?.closest('.le-doc')));
@@ -386,7 +403,7 @@ try {
 	check('★ 버리면 그 사람과의 편지가 보관함에서 사라진다', called(w, 'dm_close').at(-1)?.[1]?.p_thread === 9 && !(await page.locator('.archive .stack .item').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).some((l) => l.includes('박받음')));
 
 	console.log('[예전 주소 · 대화 목록 길게 누르기]');
-	await page.goto(`${BASE}/letters/7`); await page.waitForTimeout(800);
+	await page.goto(`${BASE}/letters/7`); await page.waitForURL(/\/letters$/, { timeout: 5000 }).catch(() => {});
 	check('예전 편지 주소(/letters/7) → 편지함', new URL(page.url()).pathname === '/letters');
 	await page.goto(`${BASE}/`); await page.locator('button.room').first().waitFor({ timeout: 8000 });
 	await page.locator('button.room').first().click({ button: 'right' }); await page.waitForTimeout(300);
@@ -534,6 +551,113 @@ try {
 		check('라이트 모드 우체통은 그대로 — 앱 아이콘 그라디언트', L.c.join('|') === 'rgb(255, 122, 80)|rgb(251, 92, 104)|rgb(240, 57, 110)', L.c.join('|'));
 		check('★ 다크 모드 우체통은 라이트보다 어둡다 (세 색 모두)', D.c.length === 3 && D.c.every((x, i) => lum(x) < lum(L.c[i]) - 15), D.c.join('|'));
 		check('페이지 오류 없음 (다크 우체통)', L.errs.length + D.errs.length === 0, [...L.errs, ...D.errs].join(' / '));
+	}
+
+	console.log('[CNSA 뱃지 — 안내 · 제출 · 어디에 보일지 · 5칸 (Phase 84)]');
+	{
+		const w11 = world();
+		Object.assign(w11.prof, { letters_recommend: true, letter_badge_order: 'mine' });
+		const r11 = await openApp(browser, w11);
+		const p11 = r11.page;
+		const def = (code, title, category, tier, extra = {}) => ({ code, title, icon: '', tier, category, tiers: [1, 1, 1], value: 0, description: title, unit: '', lower_better: false, earned_at: null, new: false, granted: category === 'cnsa', ...extra });
+		const ach = {
+			items: [
+				def('fun', '이야기꾼', 'manner', 3, { granted: false }),
+				def('cnsa_student', 'CNSA 뱃지', 'cnsa', 3),
+				def('msmsp_gold', 'MSMSP 우수 금뱃지', 'cnsa', 0),
+				def('club_beatus', '동아리 Beatus 뱃지', 'cnsa', 0),
+				def('club_geukjakso', '극작소', 'cnsa', 0)
+			],
+			featured: [{ code: 'fun', title: '이야기꾼', icon: '', tier: 3 }], chosen: [], slots: 3, golds: 1, chat: { fun: true, cnsa_student: false }
+		};
+		const reqs = [];
+		await p11.route('https://fake-proj.supabase.co/rest/v1/rpc/my_achievements', (rt) => rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ach) }));
+		await p11.route('https://fake-proj.supabase.co/rest/v1/rpc/set_badge_chat', (rt) => { w11.calls.push(['set_badge_chat', rt.request().postDataJSON()]); return rt.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"ok"}' }); });
+		await p11.route('https://fake-proj.supabase.co/rest/v1/rpc/my_badge_requests', (rt) => rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reqs) }));
+		await p11.route('https://fake-proj.supabase.co/rest/v1/rpc/badge_request_submit', (rt) => {
+			const a = rt.request().postDataJSON();
+			w11.calls.push(['badge_request_submit', a]);
+			reqs.unshift({ id: 1, kind: a.p_kind, code: a.p_code, title: 'MSMSP 우수 금뱃지', members: 0, status: 'pending', staff_note: null, created_at: new Date().toISOString(), decided_at: null });
+			return rt.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"ok","id":1}' });
+		});
+
+		// 업적 화면 — 금 뱃지 진행도 · CNSA 탭의 안내 · 제출. CNSA 뱃지를 가졌고 안내를 아직 안 봤으면 저절로 (?tour — 자동 테스트에서도 띄우게)
+		await p11.goto(`${BASE}/me/achievements?tour`);
+		const tour = p11.getByRole('dialog', { name: 'CNSA 뱃지 안내' });
+		await tour.waitFor({ timeout: 4000 });
+		check('★ CNSA 뱃지를 가졌으면 CNSA 뱃지 안내가 한 번 저절로 — 다섯 장', (await tour.locator('.dots i').count()) === 5 && (await tour.locator('h2').innerText()) === 'CNSA 뱃지란?'
+			&& (await tour.locator('.pins .medal').count()) === 4);
+		await tour.getByRole('button', { name: '다음' }).click(); await p11.waitForTimeout(200);
+		const how = await tour.innerText();
+		check('★ 얻는 법 — 기본 뱃지는 Landy 금 뱃지로 · 나머지는 학번 · 이름과 함께 찍어 운영진에게 · 인스타는 준비 중', how.includes('금 뱃지를 처음 따면') && how.includes('학번 · 이름') && how.includes('인스타그램 DM · 준비 중'), how);
+		await tour.getByRole('button', { name: '다음' }).click(); await p11.waitForTimeout(200);
+		const club = await tour.innerText();
+		check('★ 앱에 없는 뱃지는 추가 요청 · 동아리 뱃지는 기장이 부원까지', club.includes('추가 요청') && club.includes('기장만') && club.includes('부원 학번'), club);
+		await tour.getByRole('button', { name: '다음' }).click(); await p11.waitForTimeout(400);
+		const sw = tour.getByRole('switch', { name: 'CNSA 뱃지 랜덤채팅에 보이기' });
+		check('★ 어디에 보일지 — 뱃지마다 랜덤채팅 스위치 (CNSA 는 꺼져 있음)', !(await sw.isChecked()) && (await tour.getByRole('switch', { name: '이야기꾼 랜덤채팅에 보이기' }).isChecked()));
+		await sw.click(); await p11.waitForTimeout(300);
+		check('켜면 set_badge_chat 으로 저장 · 바로 켜져 보인다', JSON.stringify(called(w11, 'set_badge_chat').at(-1)?.[1]) === '{"p_code":"cnsa_student","p_show":true}' && (await sw.isChecked()));
+		await tour.getByRole('radio', { name: '무작위' }).click(); await p11.waitForTimeout(400);
+		check('★ 편지 찾기에서 내 뱃지 순서 — 무작위로 저장', w11.patches.some((x) => x.letter_badge_order === 'random'), JSON.stringify(w11.patches));
+		await tour.getByRole('button', { name: '다음' }).click(); await p11.waitForTimeout(200);
+		check('★ 마지막 장 — 금 뱃지 5개면 칸 5개 · 지금 1/5', (await tour.locator('h2').innerText()) === '금 뱃지 5개면 칸이 5개' && (await tour.innerText()).includes('1/5'));
+		await p11.screenshot({ path: `${SP}/cnsa-tour.png` });
+		await tour.getByRole('button', { name: '확인' }).click(); await p11.waitForTimeout(300);
+		check('닫으면 이 기기에 "봤음" — 다시 와도 저절로 뜨지 않는다', (await p11.evaluate(() => localStorage.getItem('cnsa-tour-v1'))) === '1');
+		// 다시 열어 마지막 장의 "뱃지 제출하기" — 창을 닫으며 제출 화면으로, 뒤로 오면 업적 화면
+		await p11.getByRole('button', { name: 'CNSA', exact: true }).click(); await p11.getByRole('button', { name: 'CNSA 뱃지 안내' }).click();
+		for (let i = 0; i < 4; i++) { await tour.getByRole('button', { name: '다음' }).click(); await p11.waitForTimeout(150); }
+		await tour.getByRole('button', { name: '뱃지 제출하기' }).click();
+		await p11.waitForURL('**/me/achievements/submit', { timeout: 4000 }).catch(() => {});
+		await p11.waitForTimeout(500);
+		check('★ 안내 마지막 장 "뱃지 제출하기" → 제출 화면 (안내는 닫힌다)', new URL(p11.url()).pathname === '/me/achievements/submit' && (await tour.count()) === 0, p11.url());
+		await p11.goBack(); await p11.waitForURL('**/me/achievements', { timeout: 4000 }).catch(() => {}); await p11.waitForTimeout(400);
+		check('뒤로 오면 업적 화면 (안내가 다시 뜨지 않는다)', new URL(p11.url()).pathname === '/me/achievements' && (await tour.count()) === 0, p11.url());
+		check('★ 업적 화면: 대표 업적 1/3 · Landy 금 뱃지 1/5', (await p11.locator('.feat-head h2').innerText()).includes('1/3') && (await p11.locator('.five').innerText()).includes('1/5'));
+		await p11.getByRole('button', { name: 'CNSA', exact: true }).click(); await p11.waitForTimeout(200);
+		check('CNSA 탭 위에 "CNSA 뱃지 안내" · "뱃지 제출하기"', (await p11.getByRole('button', { name: 'CNSA 뱃지 안내' }).count()) === 1 && (await p11.getByRole('link', { name: '뱃지 제출하기' }).getAttribute('href')) === '/me/achievements/submit');
+
+		console.log('  [뱃지 제출]');
+		await p11.getByRole('link', { name: '뱃지 제출하기' }).click(); await p11.waitForURL('**/me/achievements/submit');
+		await p11.locator('.pick').first().waitFor();
+		const picks = await p11.locator('.picks .pick').allInnerTexts();
+		check('★ 내 뱃지 인증 — 고를 수 있는 뱃지는 동아리 · 기본 CNSA 뱃지 · 가진 것 빼고', picks.length === 1 && picks[0].includes('MSMSP'), JSON.stringify(picks));
+		const sendBtn = p11.getByRole('button', { name: '운영진에게 보내기' });
+		await p11.locator('.picks .pick').first().click();
+		check('사진이 없으면 보낼 수 없다', await sendBtn.isDisabled());
+		// 진짜 사진처럼 — 브라우저에서 그린 PNG (줄여서 JPEG 로 올라가는지 본다)
+		const png = Buffer.from(await p11.evaluate(() => { const c = document.createElement('canvas'); c.width = 2400; c.height = 1800; const g = c.getContext('2d'); g.fillStyle = '#c33'; g.fillRect(0, 0, 2400, 1800); return c.toDataURL('image/png').split(',')[1]; }), 'base64');
+		await p11.locator('input[type=file]').setInputFiles({ name: 'proof.png', mimeType: 'image/png', buffer: png });
+		await p11.locator('.photos .ph img').first().waitFor({ timeout: 3000 });
+		check('★ 고른 사진이 바로 보인다 (이 기기에서 줄여서)', (await p11.locator('.photos .ph img').count()) === 1 && !(await sendBtn.isDisabled()));
+		await sendBtn.click(); await p11.waitForTimeout(800);
+		const up = w11.calls.filter((c) => c[0] === 'storage' && c[1] === 'POST');
+		const sub = called(w11, 'badge_request_submit').at(-1)?.[1];
+		check('★ 사진은 내 폴더(badge-proofs/내 id/)에 올리고 그 경로로 요청', up.length === 1 && up[0][2].startsWith(`/storage/v1/object/badge-proofs/${uid}/`) && sub?.p_kind === 'proof' && sub.p_code === 'msmsp_gold'
+			&& sub.p_photos.length === 1 && sub.p_photos[0].startsWith(`${uid}/`) && sub.p_photos[0].endsWith('.jpg'), JSON.stringify({ up, sub }));
+		check('★ 보낸 요청 목록에 "확인 중"', (await p11.locator('.mine li').first().innerText()).includes('확인 중') && (await p11.getByRole('button', { name: '거두기' }).count()) === 1);
+		await p11.getByRole('tab', { name: '동아리 기장 제출' }).click(); await p11.waitForTimeout(200);
+		const clubs = await p11.locator('.picks .pick').allInnerTexts();
+		check('★ 동아리 기장 — 동아리 뱃지 + "목록에 없는 동아리"', clubs.length === 3 && clubs.some((t) => t.includes('Beatus')) && clubs.at(-1).includes('목록에 없는 동아리'), JSON.stringify(clubs));
+		await p11.locator('#nos').fill('20701, 20702\n20815 20701');
+		check('부원 학번은 쉼표 · 띄어쓰기 · 줄바꿈 어느 것으로 나눠도 (같은 학번은 한 번)', (await p11.locator('.lbl small').first().innerText()).startsWith('3명'));
+		await p11.screenshot({ path: `${SP}/badge-submit.png`, fullPage: true });
+
+		console.log('  [설정 · 뱃지]');
+		await p11.goto(`${BASE}/settings`); await p11.getByRole('heading', { name: '뱃지' }).waitFor();
+		const rec = p11.getByRole('switch', { name: '추천에 나오기' });
+		check('★ 편지 › 추천에 나오기 (기본 켜짐)', await rec.isChecked());
+		await rec.click(); await p11.waitForTimeout(500);
+		check('끄면 letters_recommend = false 로 저장', w11.patches.some((x) => x.letters_recommend === false), JSON.stringify(w11.patches));
+		await p11.getByRole('button', { name: '랜덤채팅에서 보일 뱃지' }).click();
+		const sheet = p11.getByRole('dialog', { name: '랜덤채팅에서 보일 뱃지' });
+		await sheet.getByRole('switch').first().waitFor({ timeout: 3000 });
+		check('★ 설정 › 뱃지 › 랜덤채팅에서 보일 뱃지 — 가진 뱃지마다 스위치', (await sheet.getByRole('switch').count()) === 2);
+		check('편지 찾기의 뱃지 순서 · CNSA 뱃지 안내 · 뱃지 제출하기', (await p11.getByRole('radio', { name: '내 순서' }).count()) >= 1
+			&& (await p11.getByRole('button', { name: 'CNSA 뱃지 안내' }).count()) === 1 && (await p11.getByRole('link', { name: '뱃지 제출하기' }).count()) === 1);
+		check('페이지 오류 없음 (CNSA 뱃지)', r11.errors.length === 0, r11.errors.join(' / '));
+		await r11.ctx.close();
 	}
 
 	console.log('[명단에 없는 학생 — 이름 적기]');

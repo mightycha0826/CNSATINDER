@@ -18,6 +18,7 @@ try {
 	console.log('[업적 화면]');
 	await page.goto(U('/dev/achievements')); await page.locator('.grid').waitFor(); await page.waitForTimeout(400);
 	check('요약: 모은 업적 수 · 금 · 은 · 동 (특별 업적은 금 · 은 · 동에 안 셈)', (await page.locator('.summary').innerText()).replace(/\s+/g, ' ').includes('13 / 17') && (await page.locator('.metals').innerText()).replace(/\s+/g, '') === '금2은3동4', await page.locator('.summary').innerText());
+	check('★ 대표 업적 3/3 · Landy 금 뱃지 2/5 (5개면 칸 5개, Phase 84)', (await page.locator('.feat-head h2').innerText()).includes('3/3') && (await page.locator('.five').innerText()).includes('2/5'));
 	check('★ 대표 업적 = 교복 깃의 배지 3개 (Phase 69 — 칸 줄 대신 교복)', (await page.locator('.featured .uniform button.pin [role="img"]').count()) === 3
 		&& (await page.locator('.featured .hint').innerText()) === '메달을 꾹 눌러 교복에 달아요');
 	check('메달 17개 · 잠긴 것은 잠김으로', (await page.locator('.grid .card').count()) === 17 && (await page.locator('.card.locked').count()) === 4);
@@ -26,6 +27,22 @@ try {
 	check('새로 딴 업적에 NEW', (await page.locator('.card .new').count()) === 2);
 	check('진행도: "7 / 20번"', (await page.locator('.card', { hasText: '연장의 달인' }).innerText()).includes('7 / 20번'));
 	check('개척자는 가입 순서로', (await page.locator('.card', { hasText: '개척자' }).innerText()).includes('가입 42번째'));
+	// Phase 84 — Landy 뱃지는 동그란 메달 대신 아이콘 모양 그대로 오린 입체 핀 (금속 판 · 두께 · 에나멜 · 금속 선)
+	const die = await page.evaluate(() => {
+		const cards = [...document.querySelectorAll('.grid .card')].filter((c) => !c.querySelector('.medal.pin'));
+		const one = document.querySelector('.card .die');
+		return {
+			landy: cards.length,
+			die: cards.filter((c) => c.querySelector('.medal .die svg')).length,
+			round: document.querySelectorAll('.card .medal .rim').length,
+			layers: one ? ['side', 'plate', 'enamel', 'gloss', 'wire'].every((k) => one.querySelector(`path.${k}`)) : false,
+			gold: getComputedStyle(document.querySelector('.card .medal.t3:not(.sp):not(.pin) .die')).getPropertyValue('--m2').trim(),
+			bronze: getComputedStyle(document.querySelector('.card .medal.t1:not(.pin) .die')).getPropertyValue('--m2').trim(),
+			enamel: [...new Set([...document.querySelectorAll('.card .medal:not(.t0) .die')].map((d) => getComputedStyle(d.querySelector('.enamel')).fill))].length
+		};
+	});
+	check('★ Landy 뱃지는 아이콘 모양 핀 — 동그란 테 없이 판 · 두께 · 에나멜 · 광택 · 금속 선', die.landy === 13 && die.die === 13 && die.round === 0 && die.layers, JSON.stringify(die));
+	check('★ 금속은 등급 색 (금 ≠ 동) · 에나멜은 뱃지마다 다른 색', die.gold && die.bronze && die.gold !== die.bronze && die.enamel >= 7, JSON.stringify(die));
 	await page.screenshot({ path: `${SP}/ach-1-grid.png`, fullPage: true });
 	await page.getByRole('button', { name: '편지', exact: true }).click();
 	check('★ 분류 탭에 CNSA', (await page.locator('.cats button').allInnerTexts()).at(-1) === 'CNSA');
@@ -322,6 +339,25 @@ try {
 		try { await img.decode(); return `${img.naturalWidth}x${img.naturalHeight}`; } catch { return 'fail'; }
 	});
 	check('★ 가슴의 교표 그림이 불러와진다', crest === '244x256', crest);
+	// Phase 84 — 5칸: 깃 셋 + 가슴 주머니 위 둘. 그림 안 · 서로 겹치지 않고(누름 44) · 주머니 · 교표를 가리지 않는다
+	for (const neck of ['tie', 'ribbon']) {
+		const five = await uni(neck, 5).evaluate((u) => {
+			const f = u.getBoundingClientRect(), pins = [...u.querySelectorAll('button.pin')].map((b) => b.getBoundingClientRect());
+			const c = pins.map((r) => [r.left + r.width / 2, r.top + r.height / 2]);
+			let near = 1e9;
+			for (let i = 0; i < c.length; i++) for (let j = i + 1; j < c.length; j++) near = Math.min(near, Math.hypot(c[i][0] - c[j][0], c[i][1] - c[j][1]));
+			const pocket = u.querySelector('.pocket').getBoundingClientRect(), crest = u.querySelector('image').getBoundingClientRect();
+			const medals = [...u.querySelectorAll('button.pin .coin')].slice(3).map((m) => m.getBoundingClientRect());
+			return {
+				n: pins.length,
+				inFrame: pins.every((r) => r.left + r.width / 2 > f.left && r.right - r.width / 2 < f.right && r.top >= f.top - 2 && r.bottom <= f.bottom),
+				near: Math.round(near),
+				clear: medals.every((m) => m.bottom <= pocket.top + 1 && m.bottom <= crest.top)
+			};
+		});
+		check(`★ 대표 칸 5개 교복 — 깃 셋 + 주머니 위 둘 (${neck})`, five.n === 5 && five.inFrame && five.near >= 44 && five.clear, JSON.stringify(five));
+	}
+	await uni('tie', 5).screenshot({ path: `${SP}/ach-7b-uniform-five.png` });
 	await uni('tie', 3).screenshot({ path: `${SP}/ach-7-uniform-tie.png` });
 	await uni('ribbon', 2).screenshot({ path: `${SP}/ach-8-uniform-ribbon.png` });
 	await page.emulateMedia({ reducedMotion: 'no-preference' });

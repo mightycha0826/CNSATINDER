@@ -803,4 +803,14 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       교복: 넥타이는 짙은 남색 민무늬(가는 사선 결) · 작은 역사다리꼴 매듭 · 아래로 살짝 넓어지는 날, 리본은 남색 + 하늘색 사선 줄 —
       두 날개 · 가운데 매듭 · 바깥으로 벌어지는 꼬리. 겹겹이 쌓던 그늘 · 주름(매듭 판 · 보조개 · 비단 광 · 날개 주름 등)을 한두 겹으로 줄였다.
       e2e achievements 71(매듭 크기 기준을 사진대로 카라 벌어짐의 1/3 남짓) · letters 170 · login.
+- [x] **Phase 84 — CNSA 뱃지 안내 · 뱃지 제출 · 어디에 보일지 · 대표 칸 5개 · 편지 추천 · Landy 뱃지를 아이콘 모양 핀으로**
+      CNSA 뱃지 안내(CnsaBadgeTour, 다섯 장 — 무엇인가 · 얻는 법 · 없는 뱃지와 동아리 · 어디에 보일지 · 금 뱃지 5개면 5칸): CNSA 뱃지를 처음 받으면 한 번,
+      업적 화면 CNSA 탭 · 설정 › 뱃지에서 다시. 기본 CNSA 뱃지는 Landy 금 뱃지를 처음 따면 저절로(award_stat · 지금 금 뱃지 가진 학생은 한 번 채움).
+      뱃지 제출(/me/achievements/submit — 내 뱃지 인증 · 동아리 기장이 부원 학번까지 · 앱에 없는 뱃지 요청): 사진은 이 기기에서 줄여(1600 · JPEG)
+      Storage 비공개 버킷 badge-proofs/{학생 id}/ 에, 학번 · 이름이 보여서 관리자만 /admin/badge-requests 에서 보고(열람 기록) 승인 · 반려하면 사진을 지우고
+      결과는 개인 공지로. 기다리는 요청 3개 · 하루 5개. 인스타그램 제출은 app_settings.badge_instagram(비면 "준비 중").
+      랜덤채팅에서 뱃지마다 숨기기(set_badge_chat — 정하지 않았으면 CNSA 는 숨김) · 편지 찾기의 내 뱃지 순서(내 순서 · 무작위).
+      대표 칸: Landy 금 뱃지 5개면 3 → 5 (badge_slots · 교복 가슴 주머니 위에 둘). 편지 쓰기 찾기 아래 추천 5명(dm_recommend · 설정 › 편지 › 추천에 나오기, 기본 켜짐).
+      Landy 뱃지: 동그란 메달 대신 아이콘 선을 굵게 따라 오린 입체 핀 — 금속 판(동 · 은 · 금 · 특별 무지갯빛) · 두께 · 뱃지마다 다른 에나멜(ENAMEL) · 금속 선 · 광택
+      (/dev/pins 미리보기). 실DB 반영 (phase84_cnsa_badges_submissions_recommend). 스키마 테스트 [96] (1161) · e2e letters 195 · achievements 76 · audit 128.
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

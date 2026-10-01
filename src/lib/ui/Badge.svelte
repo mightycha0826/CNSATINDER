@@ -4,9 +4,13 @@
 	 * 잠긴 업적(tier 0)은 흑백. shine 이면 빛이 한 번 부드럽게 스친다. enter 면 동전이 돌며 튀어나온다 (축하 화면).
 	 * 동작 줄이기면 app.css 가 애니메이션을 끈다.
 	 * CNSA 뱃지 (Phase 70, pins/) — 동그란 메달 대신 실제 에나멜 핀 모양 그대로. 잠겼으면 흑백 · 흐리게.
+	 * Phase 84 — Landy 뱃지도 동그란 메달 대신 아이콘 모양 그대로 오려 낸 입체 핀 (CNSA 핀과 어울리게):
+	 *   금속 판(아이콘 선을 굵게 따라 오린 누끼, 등급 색 동 · 은 · 금 · 특별은 무지갯빛) → 아래로 비치는 두께(옆면) →
+	 *   닫힌 모양 안은 뱃지마다 다른 색 에나멜(ENAMEL) → 아이콘 선은 도드라진 금속 선 → 에나멜 윗면의 광택.
+	 *   잠긴 것은 회색 판. shine 이면 빛이 핀 모양 안에서만 한 번 스친다(mask). 이모지만 있는 옛 코드는 예전 동전 그대로.
 	 */
 	import { TIER_NAME, type Tier } from '$lib/achievements';
-	import { BADGE_ICONS, FALLBACK_ICON, SPECIAL_BADGES } from './badgeIcons';
+	import { BADGE_ICONS, ENAMEL, FALLBACK_ICON, SPECIAL_BADGES } from './badgeIcons';
 	import { PIN_BADGES } from './pins';
 
 	let {
@@ -39,24 +43,61 @@
 	const special = $derived(SPECIAL_BADGES.has(code));
 	const Pin = $derived(PIN_BADGES[code] as (typeof PIN_BADGES)[string] | undefined);
 	const tierName = $derived(Pin && tier > 0 ? 'CNSA' : special && tier > 0 ? '특별' : TIER_NAME[tier]);
+	const enamel = $derived(ENAMEL[code] ?? '#fb5c68');
+	const uid = $props.id();
 </script>
 
 <span class="medal t{tier}" class:sp={special && tier > 0} class:pin={!!Pin} class:shine class:enter style:--s="{size}px" style:--d="{delay}ms" role="img" aria-label="{title} {tierName}">
 	{#if Pin}
 		<span class="coin art" aria-hidden="true"><Pin shine={shine && tier > 0} {delay} /></span>
+	{:else if path}
+		<!-- 아이콘 모양 핀 (Phase 84) — 좌표는 아이콘 칸(24) 그대로, 굵은 테두리가 들어가게 둘레를 넉넉히 -->
+		<span class="coin die" aria-hidden="true" style:--enamel={enamel}>
+			<svg viewBox="-3.3 -3 30.6 30.6">
+				<defs>
+					<linearGradient id="{uid}-metal" x1="0" y1="0" x2="0.35" y2="1">
+						<stop offset="0" style:stop-color="var(--m1)" />
+						<stop offset="0.5" style:stop-color="var(--m2)" />
+						<stop offset="1" style:stop-color="var(--m3)" />
+					</linearGradient>
+					<linearGradient id="{uid}-wire" x1="0" y1="0" x2="0" y2="1">
+						<stop offset="0" style:stop-color="var(--w1)" />
+						<stop offset="1" style:stop-color="var(--m2)" />
+					</linearGradient>
+					<linearGradient id="{uid}-gloss" x1="0" y1="0" x2="0.2" y2="1">
+						<stop offset="0" stop-color="#fff" stop-opacity="0.55" />
+						<stop offset="0.42" stop-color="#fff" stop-opacity="0.12" />
+						<stop offset="0.5" stop-color="#fff" stop-opacity="0" />
+					</linearGradient>
+					<linearGradient id="{uid}-sweep" x1="0" y1="0" x2="1" y2="0">
+						<stop offset="0" stop-color="#fff" stop-opacity="0" />
+						<stop offset="0.5" stop-color="#fff" stop-opacity="0.85" />
+						<stop offset="1" stop-color="#fff" stop-opacity="0" />
+					</linearGradient>
+					<mask id="{uid}-cut" maskUnits="userSpaceOnUse" x="-6" y="-6" width="36" height="36">
+						<path d={path} fill="#fff" stroke="#fff" class="cut" />
+					</mask>
+				</defs>
+				<!-- 두께 — 판 아래로 비치는 옆면 -->
+				<path d={path} class="side" />
+				<!-- 금속 판 (아이콘을 따라 오린 누끼) -->
+				<path d={path} class="plate" fill="url(#{uid}-metal)" stroke="url(#{uid}-metal)" />
+				<!-- 에나멜 (닫힌 모양 안) + 윗면 광택 -->
+				<path d={path} class="enamel" />
+				<path d={path} class="gloss" fill="url(#{uid}-gloss)" />
+				<!-- 도드라진 금속 선 — 아래로 살짝 그림자 -->
+				<path d={path} class="wire-sh" />
+				<path d={path} class="wire" stroke="url(#{uid}-wire)" />
+				{#if shine && tier > 0}
+					<g mask="url(#{uid}-cut)"><rect class="sweep" x="-30" y="-6" width="18" height="36" fill="url(#{uid}-sweep)" /></g>
+				{/if}
+			</svg>
+		</span>
 	{:else}
 		<span class="coin" aria-hidden="true">
 			<span class="rim">
 				<span class="disk">
-					{#if path}
-						<svg viewBox="0 0 24 24" class="ico">
-							<!-- 새긴 자국: 아래쪽 밝은 테 + 위쪽 어두운 홈 -->
-							<path d={path} class="lit" />
-							<path d={path} class="ink" />
-						</svg>
-					{:else}
-						<span class="emo">{icon}</span>
-					{/if}
+					<span class="emo">{icon}</span>
 				</span>
 			</span>
 		</span>
@@ -111,27 +152,114 @@
 			inset 0 calc(var(--s) * -0.02) calc(var(--s) * 0.04) rgb(255 255 255 / 0.5),
 			0 0 0 1px rgb(0 0 0 / 0.06);
 	}
-	.ico {
-		width: 58%;
-		height: 58%;
-		overflow: visible;
-		fill: none;
-		stroke-linecap: round;
-		stroke-linejoin: round;
-	}
-	.ico .ink {
-		stroke: var(--ink);
-		stroke-width: 1.9;
-	}
-	.ico .lit {
-		stroke: rgb(255 255 255 / 0.55);
-		stroke-width: 1.9;
-		transform: translate(0.35px, 0.6px);
-	}
 	.emo {
 		font-size: calc(var(--s) * 0.42);
 		line-height: 1;
 	}
+	/* ── 아이콘 모양 핀 (Phase 84) ── 판 · 에나멜 · 선 굵기는 아이콘 칸(24) 단위 */
+	.die {
+		border-radius: 0;
+		filter: drop-shadow(0 calc(var(--s) * 0.05) calc(var(--s) * 0.06) rgb(0 0 0 / 0.28));
+	}
+	.die svg {
+		display: block;
+		width: 100%;
+		height: 100%;
+		overflow: visible;
+	}
+	.die path {
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.die .cut,
+	.die .plate,
+	.die .side {
+		stroke-width: 5.4;
+	}
+	.die .side {
+		fill: var(--edge);
+		stroke: var(--edge);
+		transform: translateY(1.15px);
+	}
+	.die .enamel {
+		fill: var(--enamel);
+		stroke: none;
+	}
+	.die .gloss {
+		stroke: none;
+	}
+	.die .wire,
+	.die .wire-sh {
+		fill: none;
+		stroke-width: 1.85;
+	}
+	.die .wire-sh {
+		stroke: rgb(0 0 0 / 0.3);
+		transform: translateY(0.45px);
+	}
+	/* 금속 — 등급마다 (위가 밝고 아래가 어둡다) · 옆면 · 선의 빛 */
+	.die.coin {
+		--m1: #fff3c4;
+		--m2: #e3a823;
+		--m3: #a06b05;
+		--edge: #7a5000;
+		--w1: #fffbe6;
+	}
+	.t1 .die {
+		--m1: #ffd9b3;
+		--m2: #c27a43;
+		--m3: #8a4f22;
+		--edge: #5e3313;
+		--w1: #ffe7cf;
+	}
+	.t2 .die {
+		--m1: #ffffff;
+		--m2: #b9c3cd;
+		--m3: #7b8692;
+		--edge: #56606b;
+		--w1: #ffffff;
+	}
+	.t3 .die {
+		--m1: #fff3c4;
+		--m2: #e3a823;
+		--m3: #a06b05;
+		--edge: #7a5000;
+		--w1: #fffbe6;
+	}
+	/* 특별 업적 — 무지갯빛 판 */
+	.medal.sp .die {
+		--m1: #c9b8ff;
+		--m2: #7aa8ff;
+		--m3: #b05ec9;
+		--edge: #4b3aa8;
+		--w1: #ffffff;
+	}
+	/* 잠긴 것 — 회색 판 · 빈 에나멜 */
+	.t0 .die {
+		--m1: var(--field);
+		--m2: var(--field);
+		--m3: var(--line);
+		--edge: var(--line);
+		--w1: var(--surface);
+		--enamel: var(--surface) !important;
+		filter: none;
+		opacity: 0.7;
+	}
+	.t0 .die .gloss,
+	.t0 .die .wire-sh {
+		display: none;
+	}
+	/* 빛이 핀 모양 안에서 한 번 스친다 */
+	.die .sweep {
+		transform: translateX(0);
+		animation: die-sweep 1.9s calc(var(--d) + 0.45s) cubic-bezier(0.45, 0, 0.25, 1) forwards;
+	}
+	@keyframes die-sweep {
+		to {
+			transform: translateX(64px);
+		}
+	}
+
 	/* 금속 — 위에서 비치는 빛 방향으로 */
 	.t1 {
 		--metal: conic-gradient(from 200deg, #8a5329, #e6a877, #a4652f, #f3c89c, #8a5329);
@@ -169,12 +297,6 @@
 	.t0 .rim {
 		background: var(--field);
 		box-shadow: none;
-	}
-	.t0 .ico {
-		opacity: 0.4;
-	}
-	.t0 .ico .lit {
-		display: none;
 	}
 	.t0 .emo {
 		filter: grayscale(1);

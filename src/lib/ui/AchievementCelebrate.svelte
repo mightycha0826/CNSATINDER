@@ -14,6 +14,7 @@
 	import { SPECIAL_BADGES } from './badgeIcons';
 	import { PIN_BADGES } from './pins';
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
+	import { maybeOpenBadgeTour } from '$lib/badgeTour.svelte';
 	import { UI } from '$lib/state.svelte';
 
 	let { preview = null }: { preview?: BadgeLite[] | null } = $props();
@@ -45,9 +46,14 @@
 		await new Promise((r) => setTimeout(r, 240));
 		// 보러 가기 — 이 창의 뒤로가기 칸을 업적 화면으로 바꿔 끼운다 (창을 닫으며 이동, lib/overlay.svelte.ts)
 		if (view) void navigateFromOverlay('/me/achievements');
+		// CNSA 뱃지를 처음 받았으면 이어서 CNSA 뱃지 안내 (Phase 84 — 한 번만)
+		const gotCnsa = fresh.some((b) => PIN_BADGES[b.code]);
 		fresh = [];
 		leaving = false;
-		if (!preview) await markAchievementsSeen().catch(() => {});
+		if (!preview) {
+			await markAchievementsSeen().catch(() => {});
+			if (!view) maybeOpenBadgeTour(gotCnsa);
+		}
 	}
 	// 처음 사용법 안내(튜토리얼)가 떠 있으면 그 뒤에 (Phase 44)
 	const showing = $derived(!!fresh.length && (onRoot || !!preview) && !UI.touring);

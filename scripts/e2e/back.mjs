@@ -141,7 +141,7 @@ try {
 	await page.locator('button.settings').click(); await page.waitForURL('**/settings'); await page.waitForTimeout(300);
 	check('톱니 → 설정 화면 (탭바 숨김)', (await page.locator('.title').innerText()) === '설정' && (await page.locator('nav.tabbar').count()) === 0);
 	const setHeads = await heads();
-	check('★ 설정 = 화면 · 테마 색상 · 알림 · 대화 · 편지 · 계정 · 도움(문의) · 약관 및 정책 · 앱 · 로그아웃', setHeads.join(',') === '테마 색상,알림,대화,편지,계정,도움,약관 및 정책,앱'
+	check('★ 설정 = 화면 · 테마 색상 · 알림 · 대화 · 편지 · 뱃지(Phase 84) · 계정 · 도움(문의) · 약관 및 정책 · 앱 · 로그아웃', setHeads.join(',') === '테마 색상,알림,대화,편지,뱃지,계정,도움,약관 및 정책,앱'
 		&& (await page.getByRole('switch', { name: '푸시 알림' }).count()) === 1 && (await page.getByText('학교 인증').count()) === 1
 		&& (await page.getByRole('button', { name: '로그아웃' }).count()) === 1, setHeads.join(','));
 	check('뒤로는 둥근 단추 · 제목 가운데', (await page.locator('button.back').evaluate((e) => getComputedStyle(e).borderRadius)) === '50%'
