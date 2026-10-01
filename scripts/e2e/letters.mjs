@@ -452,14 +452,23 @@ try {
 		await p9.locator('a.logo').waitFor({ timeout: 8000 }); await p9.waitForTimeout(600);
 		// 로고 — 그라디언트를 칠하는 칸이 y 꼬리(줄 높이 1 에서 글자 칸 아래로 0.175em)까지 덮는다
 		const logo = await p9.locator('a.logo').evaluate(async (el) => {
-			await document.fonts.load('100px "Partial Sans KR"', 'Landy');
-			const c = document.createElement('canvas').getContext('2d'); c.font = '100px "Partial Sans KR"';
+			await document.fonts.load('100px "Lotteria Chab"', 'Landy');
+			const c = document.createElement('canvas').getContext('2d'); c.font = '100px "Lotteria Chab"';
 			const m = c.measureText('Landy'), cs = getComputedStyle(el), fs = parseFloat(cs.fontSize), lh = parseFloat(cs.lineHeight);
 			const base = (lh - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent) * fs / 100) / 2 + m.fontBoundingBoxAscent * fs / 100;
 			const r = el.getBoundingClientRect();
 			return { inkBottom: r.top + parseFloat(cs.paddingTop) + base + m.actualBoundingBoxDescent * fs / 100, boxBottom: r.bottom };
 		});
 		check('★ 머리글 Landy 의 y 꼬리가 잘리지 않는다 (그라디언트 칸이 글자 아래 끝까지)', logo.boxBottom >= logo.inkBottom + 0.5, JSON.stringify(logo));
+		const font9 = await p9.locator('a.logo').evaluate((el) => ({ fam: getComputedStyle(el).fontFamily, ok: document.fonts.check('27px "Lotteria Chab"', 'Landy'), tab: getComputedStyle(document.querySelector('a.tab .label, a.tab span') ?? document.body).fontFamily }));
+		check('★ 로고 글꼴만 롯데리아 촵땡겨체 (Phase 83)', font9.fam.startsWith('"Lotteria Chab"') && font9.ok, JSON.stringify(font9));
+		const splash = await p9.evaluate(() => {
+			const d = document.createElement('div'); d.className = 'splash'; d.innerHTML = '<span class="wordmark">Landy</span>'; document.body.append(d);
+			const w = d.querySelector('.wordmark'), cs = getComputedStyle(w), ds = getComputedStyle(d);
+			const out = { bg: ds.backgroundColor, fill: cs.webkitTextFillColor, img: cs.backgroundImage, fixed: ds.position };
+			d.remove(); return out;
+		});
+		check('★ 시작 화면(아이콘 + 이름)은 늘 어두운 바탕에 흰 이름', splash.bg === 'rgb(12, 10, 11)' && splash.fill === 'rgb(255, 255, 255)' && splash.img === 'none' && splash.fixed === 'fixed', JSON.stringify(splash));
 		await p9.locator('a.logo').screenshot({ path: `${SP}/logo.png` });
 
 		// 앱이 떠 있을 때 온 편지 푸시 → 위에서 알림 띠 → 누르면 편지함 우체통에서 꺼낸다

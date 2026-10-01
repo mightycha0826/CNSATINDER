@@ -167,7 +167,7 @@ export async function storyImage(l: StoryLetter): Promise<File> {
 	const sans = v('--sans', 'sans-serif');
 	const plain = root.dataset.letterFont === 'plain';
 	const hand = plain ? sans : v('--hand', sans);
-	const display = v('--display', sans);
+	const logo = v('--logo', sans); // 로고 글자 (Phase 83 — 롯데리아 촵땡겨체)
 	// 줄 간격 : 글씨 = 설정(글자 크기)의 비율 그대로
 	const fs = parseFloat(v('--letter-fs', '24')) || 24;
 	const ratio = (parseFloat(v('--rule-h', '34')) || 34) / fs;
@@ -175,7 +175,7 @@ export async function storyImage(l: StoryLetter): Promise<File> {
 	const nameFont = plain ? `700 ${Math.round(19 * S)}px ${sans}` : `400 ${Math.round(26 * S)}px ${hand}`;
 	const namePx = Math.round((plain ? 19 : 26) * S);
 	const dateFont = `600 ${Math.round(12 * S)}px ${sans}`;
-	const brandFont = `400 84px ${display}`; // 짧은 이름(Landy)이라 크게 (Phase 58)
+	const brandFont = `400 84px ${logo}`; // 짧은 이름(Landy)이라 크게 (Phase 58)
 	const subFont = `700 30px ${sans}`;
 	const startPx = Math.round(fs * S * 1.25); // 짧은 편지는 화면보다 크게 — 스토리에서 한눈에
 	await loadFonts([

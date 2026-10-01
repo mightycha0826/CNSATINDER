@@ -30,6 +30,8 @@
 	 * 리본: 가운데 조인 띠 · 위 면은 빛 · 아래 면은 접혀 그늘인 두 날개(안쪽은 모아 잡은 주름) · 바깥으로 벌어지는 제비꼬리 두 개(끝이 조끼 목둘레 단 바로 위)
 	 * · 꼬리 사이로 셔츠 여밈 단추. 목 둘레 모양은 모두 목 가운데를 0 으로 둔 좌표 (translate(C 0)).
 	 * Phase 69 — 리본 꼬리를 굵게(폭 약 1.35배) · 길게 — 조끼보다 나중에 그려 조끼 목둘레 단을 넘어 조끼 위로 늘어진다 (조끼 밖).
+	 * Phase 83 — 넥타이 · 리본을 사진처럼 단순하게 다시: 넥타이는 짙은 남색 민무늬(가는 사선 결) · 작은 역사다리꼴 매듭 · 아래로 살짝 넓어지는 날,
+	 * 리본은 남색 + 하늘색 사선 줄 · 작은 무늬 — 넓게 펼친 두 날개 · 작은 가운데 매듭 · 바깥으로 벌어지며 내려오는 꼬리 두 개. 그늘은 한두 겹만.
 	 * Phase 70 — 움직이지 않는다 (숨 쉬기 · 넥타이 · 리본 흔들림을 뺐다). 배지를 그림 폭에 맞춰 크게(폰 폭에서 약 50).
 	 *   오른쪽 아래에 작은 "전체 업적 보기 ›" (allHref).
 	 *   neck — 넥타이(남학생 · 상대 프로필) / 리본(여학생)
@@ -126,27 +128,17 @@
 	/** 카라 꺾임(접힌 선) — 잎이 목에서 앞으로 꺾여 내려오는 곳의 부드러운 능선 */
 	const leafFold = 'M13 3C33 9.5 58 6 92 -5';
 
-	// 넥타이 — 머리(매듭): 윗변은 카라 밑에 숨고, 어깨가 넓다가 아래로 좁아지는 사다리꼴 · 아래 끝은 완만한 치마 곡선
-	const knot = 'M-13 -4C-16 3-21.5 11-23.5 20C-25.5 29-23 39-14 45C-8 47.6 8 47.6 14 45C23 39 25.5 29 23.5 20C21.5 11 16 3 13 -4Z';
-	/** 머리 앞면 — 넓은 쪽 천이 감긴 가운데 판 (양옆 판과 줄무늬 방향이 다르다) */
-	const knotFront = 'M-13 -4C-12 14-9 32-5.5 47L5.5 47C9 32 12 14 13 -4Z';
-	/** 날 — 머리 아래에서 좁게 나와 아래로 넓어진다. 끝은 조끼 속 */
-	const blade = 'M-12.5 26C-12.5 60-16 96-22 130L-27 152L27 152L22 130C16 96 12.5 60 12.5 26Z';
-	/** 머리 바로 아래 오목한 보조개 */
-	const dimple = 'M-2.2 48C-1.6 56-0.6 63 1 70C1.6 63 2.4 55 3 48Z';
+	// 넥타이 (Phase 83 — 사진처럼 단순하게) — 작은 역사다리꼴 매듭(윗변은 카라 밑) + 매듭 아래에서 나와 아래로 살짝 넓어지는 날(끝은 조끼 속)
+	const knot = 'M-14.5 -6H14.5C16 -6 16.6 -4.8 16.2 -3.4L10.6 23.8C10.3 25.2 9.4 26 8 26H-8C-9.4 26-10.3 25.2-10.6 23.8L-16.2 -3.4C-16.6 -4.8-16 -6-14.5 -6Z';
+	const blade = 'M-8.2 21H8.2L17.5 152H-17.5Z';
 
-	// 리본 — 가운데 머리 하나 · 양옆 날개(고리) · 아래로 늘어진 제비꼬리 두 개. 목 가운데(0, 20) 기준
-	const wing = 'M6 14.5C13 10.5 19 5 27 3.5C31 2.8 34.5 4 35 8.5C36 15 36 24 35 30.5C34.5 35 31 37 27 36.5C19 35.5 13 29.5 6 25.5Z';
-	/** 날개를 위 · 아래로 접는 가운데 주름 */
-	const wingCrease = 'M7 20.4C15 19.8 27 19.4 35.6 19.6';
-	const wingPleats = 'M7.6 16C11.6 13.8 15.2 11.6 19.6 9M7.6 24.6C11.6 26.8 15.2 29 19.6 31.6';
-	/** 가운데 머리 — 날개 안쪽 끝을 감싼 작은 띠 */
-	const bowKnot = 'M-8.6 10.5C-3 8.8 3 8.8 8.6 10.5C10.2 17.5 10.2 24.5 8.6 31.5C3 33.2-3 33.2-8.6 31.5C-10.2 24.5-10.2 17.5-8.6 10.5Z';
-	/** 꼬리 (오른쪽 — 왼쪽은 거울) — 머리 뒤에서 내려와 살짝 벌어지고 끝은 제비꼬리.
-	 *  Phase 69 — 굵게(폭 16.5 → 22 · 아래로 조금 넓어진다) · 길게(조끼 목둘레 단을 넘어 조끼 위로 늘어진다) */
-	const tail = 'M-2 22L20 22C21.2 54 22.8 90 25 126L13.8 115.5L2.4 128C1 92-0.6 56-2 22Z';
-	const tailFold = 'M6.6 36C7.4 62 8.6 90 10.2 116';
-	const tailShine = 'M12.6 26C13.4 56 14.8 88 16.8 118';
+	// 리본 (Phase 83 — 사진처럼) — 목 가운데(0, 20) 기준. 날개는 가운데에서 좁게 나와 바깥으로 넓어지고 위 끝이 살짝 들린다
+	const wing = 'M4 13.2L26 2.2C30.4 0.2 33.4 2.4 33.4 7V34C33.4 39.2 30.6 41.4 26.4 40L4 27.6Z';
+	/** 날개 가운데 접힌 주름 한 줄 */
+	const wingCrease = 'M6 20.4C14 19.6 24 19 32.6 19.4';
+	const bowKnot = 'M-7.4 10.6C-2.6 9.2 2.6 9.2 7.4 10.6C8.4 16.8 8.4 23.4 7.4 29.6C2.6 31-2.6 31-7.4 29.6C-8.4 23.4-8.4 16.8-7.4 10.6Z';
+	/** 꼬리 (오른쪽 — 왼쪽은 거울) — 매듭 뒤에서 바깥으로 비스듬히 내려와 끝은 제비꼬리 */
+	const tail = 'M-6 24H15L32.6 104L22.6 97.4L11.2 111Z';
 
 	// 배지 자리 — 깃 가운데 선을 따라 위에서 아래로. 칸 사이 62 — 폰 폭 280 에서 그림이 0.78배로 줄어도 누름 영역 44 가 겹치지 않게.
 	// 손으로 꽂은 듯 조금씩 기울게 (tilt, 도)
@@ -163,9 +155,8 @@
 	<div class="body">
 		<svg viewBox="0 0 {W} {H}" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
 			<defs>
-				<!-- 넥타이 · 리본 무늬 (사진): 남색 바탕 + 흰 테를 두른 하늘색 넓은 사선 줄 + 작은 잎 무늬.
-				     A · B = 넥타이 (날 / 감긴 머리), a · b = 리본 (날개 · 꼬리) — 줄 간격을 그린 물건 크기에 맞췄다 -->
-				{#each [['a', -40, 0.78], ['b', 40, 0.78], ['A', -40, 1.1], ['B', 40, 0.9]] as [k, deg, sc] (k)}
+				<!-- 리본 무늬 (사진): 남색 바탕 + 흰 테를 두른 하늘색 넓은 사선 줄 + 작은 잎 무늬. a · b = 날개 · 꼬리 / 매듭 (줄 방향이 반대) -->
+				{#each [['a', -40, 0.78], ['b', 40, 0.78]] as [k, deg, sc] (k)}
 					<pattern id="{uid}-tie-{k}" patternUnits="userSpaceOnUse" width="22" height="22" patternTransform="rotate({deg}) scale({sc})">
 						<rect width="22" height="22" fill="#1a2858" />
 						<rect y="0.9" width="22" height="7" fill="#8fc6ec" />
@@ -173,6 +164,13 @@
 						<rect y="7.9" width="22" height="0.9" fill="#eef6fb" />
 						<path d="M6 15.2c1.6-2.4 3.8-2.9 5.6-1.6-1.4 1.9-3.4 2.5-5.6 1.6Z" fill="#62b8e6" />
 						<path d="M8.6 17.6c1-1.5 2.4-1.8 3.5-1-0.9 1.2-2.1 1.5-3.5 1Z" fill="#3f86c9" />
+					</pattern>
+				{/each}
+				<!-- 넥타이 (Phase 83, 사진) — 짙은 남색 민무늬 · 가는 사선 결. T = 날, K = 매듭(결 방향이 반대) -->
+				{#each [['T', -38], ['K', 38]] as [k, deg] (k)}
+					<pattern id="{uid}-tie-{k}" patternUnits="userSpaceOnUse" width="3" height="3" patternTransform="rotate({deg})">
+						<rect width="3" height="3" fill="#1d2546" />
+						<rect width="3" height="1" fill="#2a3360" opacity="0.7" />
 					</pattern>
 				{/each}
 				<!-- 천 결 (능직) -->
@@ -258,32 +256,10 @@
 					<stop offset="0.75" stop-color="#000" stop-opacity="0.04" />
 					<stop offset="1" stop-color="#000" stop-opacity="0.36" />
 				</linearGradient>
-				<!-- 매듭 — 위 왼쪽에서 빛, 아래로 갈수록 감겨 들어가 어둡게 -->
-				<radialGradient id="{uid}-knot" cx="0.38" cy="0.2" r="0.95">
-					<stop offset="0" stop-color="#fff" stop-opacity="0.22" />
-					<stop offset="0.45" stop-color="#fff" stop-opacity="0" />
-					<stop offset="1" stop-color="#000" stop-opacity="0.42" />
-				</radialGradient>
 				<!-- 넥타이 머리 — 카라 밑이라 위쪽이 그늘, 앞판이 볼록하게 빛을 받는다 -->
 				<linearGradient id="{uid}-knotTop" gradientUnits="userSpaceOnUse" x1="0" y1="-4" x2="0" y2="22">
 					<stop offset="0" stop-color="#02061a" stop-opacity="0.62" />
 					<stop offset="1" stop-color="#02061a" stop-opacity="0" />
-				</linearGradient>
-				<radialGradient id="{uid}-knotVol" gradientUnits="userSpaceOnUse" cx="-5" cy="22" r="30">
-					<stop offset="0" stop-color="#fff" stop-opacity="0.1" />
-					<stop offset="0.55" stop-color="#fff" stop-opacity="0" />
-					<stop offset="1" stop-color="#000" stop-opacity="0.3" />
-				</radialGradient>
-				<!-- 날 위쪽 — 머리 그늘이 덮여 아래로 옅어지고, 비단 광이 대각선으로 -->
-				<linearGradient id="{uid}-bladeTop" gradientUnits="userSpaceOnUse" x1="0" y1="40" x2="0" y2="104">
-					<stop offset="0" stop-color="#02061a" stop-opacity="0.55" />
-					<stop offset="0.35" stop-color="#02061a" stop-opacity="0.16" />
-					<stop offset="1" stop-color="#02061a" stop-opacity="0" />
-				</linearGradient>
-				<linearGradient id="{uid}-sheen" gradientUnits="userSpaceOnUse" x1="-22" y1="60" x2="22" y2="104">
-					<stop offset="0.25" stop-color="#fff" stop-opacity="0" />
-					<stop offset="0.55" stop-color="#fff" stop-opacity="0.13" />
-					<stop offset="0.85" stop-color="#fff" stop-opacity="0" />
 				</linearGradient>
 				<!-- 리본 날개 — 위쪽 면은 빛을, 아래쪽 면은 접혀 그늘로 -->
 				<linearGradient id="{uid}-wing" gradientUnits="userSpaceOnUse" x1="0" y1="3" x2="0" y2="37">
@@ -292,12 +268,6 @@
 					<stop offset="0.52" stop-color="#000" stop-opacity="0.12" />
 					<stop offset="1" stop-color="#000" stop-opacity="0.38" />
 				</linearGradient>
-				<!-- 날개 안쪽(머리로 모이는 곳) 그늘 — 경계 없이 번지게 방사형으로 -->
-				<radialGradient id="{uid}-hub" gradientUnits="userSpaceOnUse" cx="5" cy="20" r="19">
-					<stop offset="0" stop-color="#02061a" stop-opacity="0.62" />
-					<stop offset="0.55" stop-color="#02061a" stop-opacity="0.24" />
-					<stop offset="1" stop-color="#02061a" stop-opacity="0" />
-				</radialGradient>
 				<!-- 머리(가운데 띠) — 원통처럼 가운데 밝고 양 끝 어둡게 -->
 				<linearGradient id="{uid}-band" x1="0" y1="0" x2="1" y2="0">
 					<stop offset="0" stop-color="#000" stop-opacity="0.5" />
@@ -310,12 +280,7 @@
 					<stop offset="0.3" stop-color="#000" stop-opacity="0.05" />
 					<stop offset="1" stop-color="#fff" stop-opacity="0.06" />
 				</linearGradient>
-				<clipPath id="{uid}-cKnot"><path d={knot} /></clipPath>
-				<clipPath id="{uid}-cBlade"><path d={blade} /></clipPath>
 				<clipPath id="{uid}-cLeaf"><path d={leaf} /></clipPath>
-				<clipPath id="{uid}-cWing"><path d={wing} /></clipPath>
-				<clipPath id="{uid}-cTail"><path d={tail} /></clipPath>
-				<clipPath id="{uid}-cBand"><path d={bowKnot} /></clipPath>
 				<linearGradient id="{uid}-welt" x1="0" y1="0" x2="0" y2="1">
 					<stop offset="0" stop-color="#262d58" />
 					<stop offset="1" stop-color="#151938" />
@@ -374,49 +339,17 @@
 				<ellipse cx={C} cy="-4" rx="21" ry="12" fill="url(#{uid}-hole)" />
 
 				{#if neck === 'tie'}
-					<g class="tie">
-						<!-- 날 — 매듭에 매달려 살짝 흔들리고, 조끼 속으로 들어간다 -->
-						<g>
-							<g transform="translate({C} 0)">
-								<!-- 셔츠 위에 드리운 그림자 -->
-								<path d={blade} fill="#0a1230" opacity="0.3" transform="translate(3.2 3.4)" filter="url(#{uid}-blur2)" />
-								<path class="blade" d={blade} fill="url(#{uid}-tie-A)" />
-								<path d={blade} fill="url(#{uid}-twill)" />
-								<g clip-path="url(#{uid}-cBlade)">
-									<!-- 접혀 말린 양옆 가장자리의 그늘 · 가운데 빛 -->
-									<path d={blade} fill="none" stroke="#02061a" stroke-opacity="0.5" stroke-width="9" filter="url(#{uid}-blur2)" />
-									<path d="M-2 40C-2.5 80-4 110-6 150" fill="none" stroke="#fff" stroke-opacity="0.1" stroke-width="10" filter="url(#{uid}-blur2)" />
-									<path d={blade} fill="url(#{uid}-bladeTop)" />
-									<path d={blade} fill="url(#{uid}-sheen)" />
-									<!-- 머리가 날 위에 드리우는 그림자 (치마 아래로) -->
-									<path d={knot} fill="#02061a" opacity="0.6" transform="translate(0 6)" filter="url(#{uid}-blur2)" />
-									<!-- 머리 아래 보조개 — 가운데가 오목하게 접힌 그늘 + 옆으로 부푼 빛 -->
-									<path d={dimple} fill="#02061a" opacity="0.55" filter="url(#{uid}-soft)" />
-								</g>
-								<path d={blade} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.9" />
-								<path d="M-11.6 34C-11.6 62-15 96-21 128" fill="none" stroke="#b9d9f2" stroke-opacity="0.22" stroke-width="0.7" />
-							</g>
-						</g>
-						<!-- 머리(매듭) — 살짝 기울어 손으로 맨 느낌. 옆 판은 줄무늬가 날과 반대로 감기고, 가운데 판은 날 방향으로 -->
-						<g transform="translate({C} 0) rotate(-1.4 0 26)">
-							<path d={knot} fill="#0a1230" opacity="0.34" transform="translate(3 4.5)" filter="url(#{uid}-blur2)" />
-							<path class="knot" d={knot} fill="url(#{uid}-tie-B)" />
-							<g clip-path="url(#{uid}-cKnot)">
-								<path d={knotFront} fill="url(#{uid}-tie-A)" />
-								<!-- 판이 만나는 접힌 선 · 양옆 판이 가운데 판 밑으로 들어가는 그늘 -->
-								<path d="M-13 -4C-12 14-9 32-5.5 47M13 -4C12 14 9 32 5.5 47" fill="none" stroke="#02061a" stroke-opacity="0.55" stroke-width="3.4" filter="url(#{uid}-soft)" />
-								<path d="M-13 -4C-12 14-9 32-5.5 47M13 -4C12 14 9 32 5.5 47" fill="none" stroke="#02061a" stroke-opacity="0.6" stroke-width="0.9" />
-								<path d="M-10.6 0C-9.8 14-7 30-3.6 44M10.6 0C9.8 14 7 30 3.6 44" fill="none" stroke="#fff" stroke-opacity="0.1" stroke-width="0.8" />
-								<!-- 감긴 천의 가로 주름 -->
-								<path d="M-22 33C-13 36-6 37 0 37C6 37 13 36 22 33" fill="none" stroke="#02061a" stroke-opacity="0.28" stroke-width="1" />
-								<path d={knot} fill="none" stroke="#02061a" stroke-opacity="0.5" stroke-width="8" filter="url(#{uid}-blur2)" />
-								<path d={knot} fill="url(#{uid}-knotVol)" />
-								<path d={knot} fill="url(#{uid}-knotTop)" />
-							</g>
-							<!-- 치마(아래 끝) 가장자리에 걸리는 빛 -->
-							<path d="M-11 44.6C-6 46.6 6 46.6 11 44.6" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1" stroke-linecap="round" />
-							<path d={knot} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.9" />
-						</g>
+					<!-- 넥타이 (Phase 83) — 날(셔츠 위 그림자 · 둥근 그늘) → 매듭(카라 밑이라 위가 그늘). 카라 잎이 매듭 어깨를 덮는다 -->
+					<g class="tie" transform="translate({C} 0)">
+						<path d={blade} fill="#0a1230" opacity="0.3" transform="translate(2.6 3)" filter="url(#{uid}-blur2)" />
+						<path class="blade" d={blade} fill="url(#{uid}-tie-T)" />
+						<path d={blade} fill="url(#{uid}-round)" />
+						<path d={blade} fill="none" stroke="#0b1229" stroke-opacity="0.6" stroke-width="0.9" />
+						<path d={knot} fill="#0a1230" opacity="0.4" transform="translate(1.6 3.4)" filter="url(#{uid}-blur2)" />
+						<path class="knot" d={knot} fill="url(#{uid}-tie-K)" />
+						<path d={knot} fill="url(#{uid}-knotTop)" />
+						<path d="M-8.4 24.6C-3 26.2 3 26.2 8.4 24.6" fill="none" stroke="#fff" stroke-opacity="0.14" stroke-width="1" stroke-linecap="round" />
+						<path d={knot} fill="none" stroke="#0b1229" stroke-opacity="0.6" stroke-width="0.9" />
 					</g>
 				{/if}
 
@@ -469,57 +402,28 @@
 				<path d={vLine} fill="none" stroke="#5a6080" stroke-opacity="0.35" stroke-width="1" transform="translate(0 -4.5)" />
 
 				{#if neck === 'ribbon'}
-					<!-- 꼬리 (Phase 69) — 머리 뒤에서 내려와 살짝 벌어지고, 조끼 목둘레 단을 넘어 조끼 위로 늘어진다. 끝은 제비꼬리 -->
+					<!-- 리본 (Phase 83) — 꼬리(조끼 위로 늘어진다) → 날개 두 개 → 가운데 매듭. 그늘은 한두 겹 -->
 					<g class="ribbon-tails" transform="translate({C} 0)">
-						<g>
-							{#each [[1, 7], [-1, 9]] as const as [sg, deg] (sg)}
-								<g transform="scale({sg} 1) rotate({-deg} 0 22)">
-									<!-- 조끼 · 셔츠 위에 드리운 그림자 -->
-									<path d={tail} fill="#060a1c" opacity="0.4" transform="translate(2.8 3.8)" filter="url(#{uid}-blur2)" />
-									<path class="tail" d={tail} fill="url(#{uid}-tie-a)" />
-									<path d={tail} fill="url(#{uid}-twill)" />
-									<g clip-path="url(#{uid}-cTail)">
-										<path d={tail} fill="none" stroke="#02061a" stroke-opacity="0.5" stroke-width="8" filter="url(#{uid}-blur2)" />
-										<path d={tail} fill="url(#{uid}-tailShade)" />
-										<path d={tailShine} fill="none" stroke="#fff" stroke-opacity="0.13" stroke-width="6" filter="url(#{uid}-blur2)" />
-									</g>
-									<path d={tailFold} fill="none" stroke="#050a20" stroke-opacity="0.3" stroke-width="0.9" />
-									<path d={tail} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.9" stroke-linejoin="round" />
-								</g>
-							{/each}
-						</g>
+						{#each [[1, 4], [-1, 6]] as const as [sg, deg] (sg)}
+							<g transform="scale({sg} 1) rotate({-deg} 0 22)">
+								<path d={tail} fill="#060a1c" opacity="0.35" transform="translate(2.4 3.2)" filter="url(#{uid}-blur2)" />
+								<path class="tail" d={tail} fill="url(#{uid}-tie-a)" />
+								<path d={tail} fill="url(#{uid}-tailShade)" />
+								<path d={tail} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.9" stroke-linejoin="round" />
+							</g>
+						{/each}
 					</g>
 					<g class="ribbon" filter="url(#{uid}-drop)" transform="translate({C} 0)">
-						<!-- 날개 — 가운데 주름으로 위 면은 빛을, 아래 면은 그늘을. 머리 쪽은 모아 잡은 주름 -->
-						<g>
-							{#each [[-1, 'b', 2.4], [1, 'a', -3]] as const as [sg, k, tilt] (sg)}
-								<g transform="scale({sg * 0.91} 1) rotate({tilt} 0 20)">
-									<path class="loop" d={wing} fill="url(#{uid}-tie-{k})" />
-									<path d={wing} fill="url(#{uid}-twill)" />
-									<g clip-path="url(#{uid}-cWing)">
-										<path d={wing} fill="url(#{uid}-wing)" />
-										<path d={wing} fill="none" stroke="#02061a" stroke-opacity="0.42" stroke-width="6" filter="url(#{uid}-blur2)" />
-										<!-- 머리 쪽으로 모이는 안쪽 그늘 -->
-										<path d={wing} fill="url(#{uid}-hub)" />
-										<path d={wingCrease} fill="none" stroke="#02061a" stroke-opacity="0.45" stroke-width="2.2" filter="url(#{uid}-soft)" />
-										<path d="M8 22.2C16 21.6 27 21.2 35.6 21.4" fill="none" stroke="#fff" stroke-opacity="0.16" stroke-width="1" />
-									</g>
-									<path d={wingPleats} fill="none" stroke="#050a20" stroke-opacity="0.32" stroke-width="0.9" stroke-linecap="round" />
-									<path d="M12 9.4C18 5.6 24 4 30 4.2" fill="none" stroke="#fff" stroke-opacity="0.2" stroke-width="1" stroke-linecap="round" />
-									<path d={wing} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.9" stroke-linejoin="round" />
-								</g>
-							{/each}
-						</g>
-						<!-- 머리(가운데 띠) — 날개 안쪽 끝을 감싸 조인 곳. 줄이 가로로 감기고 위아래 조인 주름 -->
-						<path d={bowKnot} fill="#0a1230" opacity="0.4" transform="translate(1.6 2.6)" filter="url(#{uid}-blur2)" />
+						{#each [[-1, 'b', 3], [1, 'a', -3]] as const as [sg, k, tilt] (sg)}
+							<g transform="scale({sg} 1) rotate({tilt} 0 20)">
+								<path class="loop" d={wing} fill="url(#{uid}-tie-{k})" />
+								<path d={wing} fill="url(#{uid}-wing)" />
+								<path d={wingCrease} fill="none" stroke="#02061a" stroke-opacity="0.3" stroke-width="1.4" filter="url(#{uid}-soft)" />
+								<path d={wing} fill="none" stroke="#0b1433" stroke-opacity="0.55" stroke-width="0.9" stroke-linejoin="round" />
+							</g>
+						{/each}
 						<path class="bow-knot" d={bowKnot} fill="url(#{uid}-tie-b)" />
-						<g clip-path="url(#{uid}-cBand)">
-							<path d={bowKnot} fill="url(#{uid}-band)" />
-							<path d="M-11 15.6C-4 17.8 4 17.8 11 15.6M-11 25.6C-4 27.6 4 27.6 11 25.6" fill="none" stroke="#02061a" stroke-opacity="0.32" stroke-width="1" />
-							<path d="M-11 12C-4 14 4 14 11 12" fill="none" stroke="#02061a" stroke-opacity="0.4" stroke-width="2.2" filter="url(#{uid}-soft)" />
-							<path d="M-11 30C-4 32 4 32 11 30" fill="none" stroke="#fff" stroke-opacity="0.14" stroke-width="1.2" />
-						</g>
-						<path d="M-6.5 11.4C-2.5 10.2 2.5 10.2 6.5 11.4" fill="none" stroke="#fff" stroke-opacity="0.2" stroke-width="1" stroke-linecap="round" />
+						<path d={bowKnot} fill="url(#{uid}-band)" />
 						<path d={bowKnot} fill="none" stroke="#0b1433" stroke-opacity="0.6" stroke-width="0.9" />
 					</g>
 				{/if}

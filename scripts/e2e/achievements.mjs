@@ -274,7 +274,8 @@ try {
 	for (const neck of ['tie', 'ribbon']) {
 		const f = await fit(neck);
 		check(`★ 카라 잎 둘 · 끝이 뾰족하다 (${neck})`, f.leaves === 2 && f.tipAngle >= 40 && f.tipAngle <= 85, JSON.stringify(f));
-		if (neck === 'tie') check('★ 넥타이 매듭은 카라 벌어짐의 절반쯤 · 카라 잎이 매듭 어깨를 덮는다', f.knotRatio >= 0.4 && f.knotRatio <= 0.62 && f.collarCoversKnot, JSON.stringify(f));
+		// Phase 83 — 사진처럼 매듭은 작게 (카라 벌어짐의 1/3 남짓 — 전엔 절반쯤)
+		if (neck === 'tie') check('★ 넥타이 매듭은 작다 (카라 벌어짐의 1/3 남짓) · 카라 잎이 매듭 어깨를 덮는다', f.knotRatio >= 0.28 && f.knotRatio <= 0.45 && f.collarCoversKnot, JSON.stringify(f));
 		else {
 			check('★ 리본은 카라 벌어짐의 2/3쯤 · 프레임 안 · 카라 위에 얹힌다', f.bowRatio >= 0.55 && f.bowRatio <= 0.8 && f.bowInFrame && f.bowOverCollar, JSON.stringify(f));
 			check('★ 리본 꼬리 둘이 서로 벌어진다 (한 장처럼 겹치지 않게)', f.tails === 2 && f.tailGap >= 0.04, JSON.stringify(f));

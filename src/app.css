@@ -18,6 +18,15 @@
 	font-style: normal;
 	font-display: swap;
 }
+/* 롯데리아 촵땡겨체 (Phase 83) — Landy 로고 글자에만 (--logo). 눈누 배포 원본 파일 그대로.
+   로고는 다른 글꼴로 잠깐 보였다가 바뀌지 않게 block — 처음 한 번만 받는 동안 잠깐 비어 있다 */
+@font-face {
+	font-family: 'Lotteria Chab';
+	src: url('./lib/fonts/LOTTERIACHAB.woff2') format('woff2');
+	font-weight: 400;
+	font-style: normal;
+	font-display: block;
+}
 
 :root {
 	--bg: #fbf9f7;
@@ -120,6 +129,8 @@
 		'Malgun Gothic', 'Segoe UI', Roboto, sans-serif;
 	/* 브랜드 글씨 — 한 가지 굵기뿐이라 font-weight 는 400 으로 둔다 (가짜 굵게가 입혀지지 않게) */
 	--display: 'Partial Sans KR', var(--sans);
+	/* 로고 글자 (Phase 83) — 탭 제목 · 큰 숫자는 그대로 파셜산스, 로고만 롯데리아 촵땡겨체 */
+	--logo: 'Lotteria Chab', var(--display);
 }
 
 /* 이 앱은 라이트 · 다크를 스스로 그린다고 브라우저에 알린다 (Phase 43) — 안드로이드 Chrome "사이트에 어두운 테마 적용" ·
@@ -599,7 +610,7 @@ a {
 /* 로고 글자 — 브랜드 글씨 + 그라디언트를 글자에만 입힌다 */
 .wordmark {
 	width: fit-content; /* 그라디언트가 글자 폭에 맞게 펼쳐지도록 */
-	font-family: var(--display);
+	font-family: var(--logo);
 	font-weight: 400;
 	letter-spacing: 0;
 	/* 로고는 늘 한 줄 (Phase 47-2) — 아이패드 사파리는 글자 폭에 맞춘 칸을 글자보다 소수점만큼 좁게 재기도 해서,
@@ -607,7 +618,7 @@ a {
 	white-space: nowrap;
 	/* 그라디언트는 칸 안에만 칠해진다 — 통통한 글자의 획이 칸 밖(양옆 · 아래)으로 조금 나와도 잘리지 않게 칸을 넓히고,
 	   넓힌 만큼 바깥 여백을 당겨 글자 자리는 그대로.
-	   아래는 y 꼬리까지 — 파셜산스는 줄 높이 1 에서 y 가 칸 아래로 0.175em 나간다 (Phase 80: 0.06em 이라 머리글 Landy 의 y 끝이 잘렸다).
+	   아래는 y 꼬리까지 — 줄 높이 1 에서 y 가 칸 아래로 파셜산스 0.175em · 촵땡겨체 0.136em 나간다 (Phase 80: 0.06em 이라 머리글 Landy 의 y 끝이 잘렸다).
 	   전엔 아래 0.06em 만큼 칸이 컸으니 그만큼은 남기고 나머지만 당긴다 (자리는 예전 그대로) */
 	padding: 0 0.12em 0.22em;
 	margin-inline: -0.12em;
@@ -1029,9 +1040,15 @@ html.kb-open .toasts {
 	}
 }
 
-/* 부팅 스플래시 — 리다이렉트 플리커 방지 */
+/* 부팅 스플래시 — 리다이렉트 플리커 방지.
+   Phase 83 — 앱 아이콘 + 이름만 있는 이 화면은 테마와 상관없이 늘 같은 색: 어두운 바탕(시스템이 먼저 띄우는 시작 화면 ·
+   manifest background_color #0c0a0b 와 같아 이어진다) 위에 흰 이름. 화면 전체(상태바 · 홈 막대 자리까지)를 덮는다 */
 .splash {
-	flex: 1;
+	position: fixed;
+	inset: 0;
+	z-index: 50;
+	background: #0c0a0b;
+	color: #fff;
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -1040,6 +1057,11 @@ html.kb-open .toasts {
 	/* 로고 글자 — 아이콘(72)과 어울리게 (Phase 58 — 예전 긴 이름 기준 18px 는 짧은 이름에서 너무 작았다) */
 	font-size: 38px;
 	line-height: 1;
+}
+.splash .wordmark {
+	background: none;
+	-webkit-text-fill-color: #fff;
+	color: #fff;
 }
 
 /* 화면에는 안 보이고 화면 낭독기만 읽는 글 */
