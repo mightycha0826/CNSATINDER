@@ -28,7 +28,7 @@ const recent = new Map<string, number>();
 export function notifyInApp(n: Omit<InApp, 'n'>, dedupeKey = '') {
 	untrack(() => {
 		if (!PREFS.inApp) return;
-		if (typeof location !== 'undefined' && location.pathname === n.url) return;
+		if (typeof location !== 'undefined' && location.pathname === n.url.split('?')[0]) return; // 편지함을 보고 있으면 편지 알림(/letters?take=…)도 — 우체통에 바로 보인다
 		if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
 		if (dedupeKey) {
 			const t = recent.get(dedupeKey);

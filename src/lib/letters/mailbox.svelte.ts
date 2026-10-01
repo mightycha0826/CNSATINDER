@@ -34,6 +34,14 @@ export const POSTED = { pending: false };
 export type Knock = { w: number; top: number; wallH: number; count: number };
 export const KNOCK = { at: 0, hand: null as Knock | null };
 export const knockFresh = () => KNOCK.hand != null && performance.now() - KNOCK.at < 2000;
+/**
+ * 알림에서 편지로 (Phase 80) — 편지 한 통(/letters/m/번호)을 가리키는 알림은 편지함으로 보내 우체통에서 꺼내게 한다
+ * (편지함이 ?take=번호 를 보면 우체통을 보여 준 뒤 스스로 눌러 — 두 번 덜컹 → 투입구에서 편지). 서비스워커(static/sw.js)도 같은 규칙
+ */
+export const viaMailbox = (url: string) => {
+	const m = /^\/letters\/m\/(\d+)$/.exec(url);
+	return m ? `/letters?take=${m[1]}` : url;
+};
 export function takeKnock(): Knock | null {
 	const h = knockFresh() ? KNOCK.hand : null;
 	KNOCK.hand = null;

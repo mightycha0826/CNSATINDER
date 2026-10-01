@@ -21,7 +21,7 @@
 	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import { markNavigating, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { reducedMotion } from '$lib/motion';
-	import { knockFresh } from '$lib/letters/mailbox.svelte';
+	import { knockFresh, viaMailbox } from '$lib/letters/mailbox.svelte';
 	import { dismissKeyboard, dismissOnTap, trackKeyboard } from '$lib/keyboard.svelte';
 
 	let { children } = $props();
@@ -91,10 +91,10 @@
 		return listenServiceWorker({
 			push: (n) =>
 				notifyInApp(
-					{ key: n.tag, title: n.title, body: n.body, url: n.url, kind: n.kind === 'other' ? 'notice' : n.kind },
+					{ key: n.tag, title: n.title, body: n.body, url: viaMailbox(n.url), kind: n.kind === 'other' ? 'notice' : n.kind },
 					`${n.tag}|${n.body.slice(0, 60)}`
 				),
-			open: (url) => void navigateFromOverlay(url)
+			open: (url) => void navigateFromOverlay(viaMailbox(url))
 		});
 	});
 

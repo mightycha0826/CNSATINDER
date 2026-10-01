@@ -252,6 +252,8 @@ try {
 	console.log('[편지로 답장]');
 	await page.getByRole('button', { name: '편지로 답장 쓰기' }).click(); await page.waitForURL('**/letters/m/70/reply');
 	await page.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'write', null, { timeout: 4000 });
+	await page.waitForTimeout(400);
+	check('★ 쓰는 동안 우체통은 숨는다 — 색 고르기 줄 · 편지지 사이로 비쳐 겹치지 않게 (Phase 80)', await page.locator('.compose .post .postbox').evaluate((e) => getComputedStyle(e).opacity === '0'));
 	check('★ 봉투에서 편지지가 나와 쓰는 칸이 된다 — To. 익명의 여학생 · From. 내 이름', (await page.locator('.letter-paper .lp-to').innerText()).startsWith('To. 익명의 여학생')
 		&& (await page.locator('.letter-paper .lp-from').innerText()) === 'From. 김보냄');
 	check('비어 있으면 못 보낸다', await page.getByRole('button', { name: '봉투에 넣어 보내기' }).isDisabled());
@@ -423,6 +425,69 @@ try {
 	check('다시 불러와도 편지함 그대로 (로그인 유지)', new URL(pg.url()).pathname === '/letters' && (await pg.locator('button.post').getAttribute('aria-label')).includes('새 편지 2통'));
 	check('페이지 오류 없음 (새로고침)', r4.errors.length === 0, r4.errors.join(' / '));
 	await r4.ctx.close();
+
+	console.log('[알림에서 편지 — 우체통에서 꺼낸다 (Phase 80) · 로고]');
+	{
+		const w9 = world();
+		const r9 = await openApp(browser, w9);
+		const p9 = r9.page;
+		await p9.locator('a.logo').waitFor({ timeout: 8000 }); await p9.waitForTimeout(600);
+		// 로고 — 그라디언트를 칠하는 칸이 y 꼬리(줄 높이 1 에서 글자 칸 아래로 0.175em)까지 덮는다
+		const logo = await p9.locator('a.logo').evaluate(async (el) => {
+			await document.fonts.load('100px "Partial Sans KR"', 'Landy');
+			const c = document.createElement('canvas').getContext('2d'); c.font = '100px "Partial Sans KR"';
+			const m = c.measureText('Landy'), cs = getComputedStyle(el), fs = parseFloat(cs.fontSize), lh = parseFloat(cs.lineHeight);
+			const base = (lh - (m.fontBoundingBoxAscent + m.fontBoundingBoxDescent) * fs / 100) / 2 + m.fontBoundingBoxAscent * fs / 100;
+			const r = el.getBoundingClientRect();
+			return { inkBottom: r.top + parseFloat(cs.paddingTop) + base + m.actualBoundingBoxDescent * fs / 100, boxBottom: r.bottom };
+		});
+		check('★ 머리글 Landy 의 y 꼬리가 잘리지 않는다 (그라디언트 칸이 글자 아래 끝까지)', logo.boxBottom >= logo.inkBottom + 0.5, JSON.stringify(logo));
+		await p9.locator('a.logo').screenshot({ path: `${SP}/logo.png` });
+
+		// 앱이 떠 있을 때 온 편지 푸시 → 위에서 알림 띠 → 누르면 편지함 우체통에서 꺼낸다
+		await p9.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { type: 'push', note: { kind: 'letter', title: '새 편지가 왔어요', body: '봉투를 열어 확인해 보세요', url: '/letters/m/70', tag: 'dm-70' } } })));
+		const banner = p9.locator('.inapp .card'); await banner.waitFor({ timeout: 3000 });
+		await banner.click();
+		await p9.waitForURL(/\/letters(\?take=70)?$/, { timeout: 4000 });
+		const trail = [];
+		const seen = await p9.waitForFunction(() => location.pathname === '/letters' && !location.search && !!document.querySelector('.wall .post .dot'), null, { timeout: 4000, polling: 16 }).then(() => true, async () => (trail.push(p9.url(), await p9.locator('.wall .post .dot').count()), false));
+		const before9 = await p9.locator('.wall button.post').boundingBox();
+		await p9.waitForURL('**/letters/m/70', { timeout: 5000 }); await p9.locator('.stage').waitFor();
+		const after9 = await p9.locator('.stage span.post').boundingBox();
+		const knock9 = await p9.locator('.stage .post .postbox').evaluate((e) => e.getAnimations().length);
+		check('★ 알림 띠를 누르면 편지함 우체통이 먼저 보이고 → 스스로 눌러 같은 우체통이 덜컹 덜컹', seen && knock9 > 0 && Math.abs(before9.y - after9.y) < 1.5 && Math.abs(before9.width - after9.width) < 1.5, JSON.stringify({ seen, trail, knock9, before9, after9 }));
+		await p9.waitForFunction(() => document.querySelector('.stage')?.getAttribute('data-phase') === 'emerge', null, { timeout: 2500 }).catch(() => {});
+		check('★ 그다음 투입구에서 편지가 나온다', (await phase(p9)) === 'emerge');
+		await p9.goBack(); await p9.waitForTimeout(1600);
+		check('편지에서 뒤로 오면 편지함 그대로 — 주소에 take 가 남지 않아 다시 꺼내지 않는다', new URL(p9.url()).pathname === '/letters' && !new URL(p9.url()).search, p9.url());
+
+		// 편지함을 보고 있을 때는 편지 알림 띠를 띄우지 않는다 (우체통에 바로 보인다)
+		await p9.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { type: 'push', note: { kind: 'letter', title: '새 편지가 왔어요', body: '또 왔어요', url: '/letters/m/55', tag: 'dm-55' } } })));
+		await p9.waitForTimeout(400);
+		check('편지함에서는 편지 알림 띠를 띄우지 않는다', (await p9.locator('.inapp .card').count()) === 0);
+
+		// 시스템 알림을 누름 (서비스워커가 "열어 줘") — 다른 화면에 있어도 편지함 우체통을 거친다
+		await p9.goto(`${BASE}/`); await p9.locator('a.logo').waitFor({ timeout: 8000 });
+		await p9.evaluate(() => navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { type: 'open', url: '/letters/m/55' } })));
+		await p9.waitForURL('**/letters/m/55', { timeout: 6000 }).catch(() => {});
+		await p9.locator('.stage').waitFor({ timeout: 2000 }).catch(() => {});
+		check('★ 시스템 알림을 눌러도 편지함 우체통에서 꺼낸다 (같은 자리 · 크기로 이어 받음)', new URL(p9.url()).pathname === '/letters/m/55'
+			&& (await p9.locator('.stage').getAttribute('style').catch(() => ''))?.includes('--mb-w'), p9.url());
+		check('페이지 오류 없음 (알림 → 우체통)', r9.errors.length === 0, r9.errors.join(' / '));
+		await r9.ctx.close();
+	}
+
+	// 앱이 꺼져 있을 때 알림을 누르면 서비스워커가 /letters?take=번호 로 연다
+	{
+		const w9 = world();
+		const r9 = await openApp(browser, w9);
+		await r9.page.locator('a.logo').waitFor({ timeout: 8000 });
+		await r9.page.goto(`${BASE}/letters?take=70`);
+		await r9.page.waitForURL('**/letters/m/70', { timeout: 6000 }).catch(() => {});
+		check('★ 앱을 새로 열며 온 알림(/letters?take=번호)도 우체통을 거쳐 그 편지로', new URL(r9.page.url()).pathname === '/letters/m/70' && (await r9.page.locator('.stage').count()) === 1, r9.page.url());
+		check('페이지 오류 없음 (새로 열기)', r9.errors.length === 0, r9.errors.join(' / '));
+		await r9.ctx.close();
+	}
 
 	console.log('[명단에 없는 학생 — 이름 적기]');
 	const w2 = world({ named: false });

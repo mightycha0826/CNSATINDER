@@ -67,7 +67,7 @@
 		const n = DM.unread;
 		if (!DM.loaded) return;
 		if (lastUnread >= 0 && n > lastUnread && pushState() !== 'granted')
-			notifyInApp({ key: 'dm', title: '새 편지가 왔어요', body: '봉투를 열어 확인해 보세요', url: '/letters', kind: 'letter' }, `dm|${n}`);
+			notifyInApp({ key: 'dm', title: '새 편지가 왔어요', body: '봉투를 열어 확인해 보세요', url: '/letters?take=new', kind: 'letter' }, `dm|${n}`);
 		lastUnread = n;
 	});
 

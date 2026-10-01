@@ -12,6 +12,7 @@
 // v8: 알림 배지(badge-96.png) 추가
 // v9: 앱 안 알림 · 대화별로 모이는 알림 · 알림을 누르면 새로고침 없이 그 화면으로 (Phase 35)
 // v10: 앱 이름을 랜디(Landy)로 — 캐시 이름도 바꾼다 (옛 캐시는 activate 에서 지워진다)
+// (Phase 80) 편지 알림을 누르면 편지함의 우체통에서 꺼낸다 — /letters/m/번호 → /letters?take=번호 (앱의 viaMailbox 와 같은 규칙)
 const VERSION = 'landy-v10';
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/badge-96.png', '/manifest.webmanifest'];
 // 버전이 바뀌어도 지우지 않는 작은 저장소 — "설치한 앱으로 쓰는 기기인지", 앱 창 id
@@ -131,6 +132,10 @@ self.addEventListener('message', (e) => {
 //     앱이 대답하지 않으면(멈춰 있던 창) 그 주소로 다시 연다
 //  2) 이 기기에서 앱을 써 왔으면 새로 연다 — 안드로이드는 설치한 앱의 범위(scope) 안 주소를 앱으로 연다
 //  3) 앱을 안 쓰는 기기(브라우저로만)는 열려 있는 탭을 쓰고, 없으면 새로
+const viaMailbox = (url) => {
+	const m = /^\/letters\/m\/(\d+)$/.exec(url);
+	return m ? `/letters?take=${m[1]}` : url;
+};
 const navigateTo = (w, url) => (w && 'navigate' in w ? w.navigate(url) : w);
 const go = (w, url) =>
 	new Promise((resolve) => {
@@ -145,7 +150,7 @@ const go = (w, url) =>
 	});
 self.addEventListener('notificationclick', (e) => {
 	e.notification.close();
-	const url = (e.notification.data && e.notification.data.url) || '/';
+	const url = viaMailbox((e.notification.data && e.notification.data.url) || '/');
 	e.waitUntil(
 		Promise.all([self.clients.matchAll({ type: 'window', includeUncontrolled: true }), metaGet()]).then(([list, meta]) => {
 			const ours = list.filter((c) => new URL(c.url).origin === self.location.origin);

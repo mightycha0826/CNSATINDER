@@ -247,7 +247,7 @@
 		font-weight: 400;
 		line-height: 1.05;
 		letter-spacing: -0.01em;
-		margin-bottom: 18px;
+		margin-bottom: calc(18px - 0.16em); /* y 꼬리까지 넓힌 칸(.wordmark)만큼 당겨 자리는 그대로 */
 	}
 	section {
 		display: flex;

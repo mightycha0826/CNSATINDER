@@ -5,14 +5,16 @@
 	 *       오른쪽 위에 빨간 점 (투입구에 봉투 끝은 안 보인다). 새 편지가 오면 봉투가 위에서 떨어져 투입구로 들어가고 → 통이 출렁 · 위에 "+✉" · 빨간 점 (한 통에 한 번).
 	 *       누르면 가장 최근에 온 안 읽은 편지를 꺼낸다 — 편지 화면이 같은 자리의 같은 우체통으로 이어 받아(KNOCK) 통이 두 번 덜컹 → 투입구에서 편지가 나와 → 열어 읽는다.
 	 *       편지를 보내고 돌아오면 우체통 위에 "+✉" · 보낸 편지가 책상 더미에 내려앉는다.
+	 *       알림을 누르고 오면(?take=편지 번호 · new, Phase 80) 우체통을 보여 준 뒤(새 편지면 투입구로 떨어지는 것까지) 스스로 눌러 그 편지를 꺼낸다.
 	 *   아래: 갈색 책상 위 서류 더미 = 편지 보관함. 읽은 편지 · 보낸 편지가 겹겹이 쌓여 있고, 누르면 지금까지 받은 · 쓴 편지 전부 (/letters/archive).
 	 *   책상은 화면 아래쪽에 놓이고(남는 자리는 위에), 책상 · 더미 · 봉투 · 우체통은 화면 크기에 맞춰 같은 비율로 커지고 작아진다 (Phase 46).
 	 *   책상 앞 한 줄 = [편지 보관함 이름표 | 편지 쓰기] (Phase 71 — 전엔 편지 쓰기가 화면 위에 떠 있었다).
 	 * 봉투를 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 — 열기 · 답장 · 버리기 · 차단 · 신고 (LetterMenu).
 	 * 목록은 앱 안에서 기억해 두고(mailbox.svelte.ts) 다시 들어오면 바로 그린 뒤 뒤에서 새로 읽는다.
 	 */
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import Envelope from '$lib/letters/Envelope.svelte';
 	import Postbox from '$lib/letters/Postbox.svelte';
@@ -28,8 +30,9 @@
 	onDestroy(() => timers.forEach(clearTimeout));
 	let added = $state(0);
 	let landing = $state(false);
+	let firstLoad: Promise<void> | null = null; // 들어올 때 새로 읽는 것 — 알림에서 왔을 때 한 번 더 읽지 않고 같이 기다린다
 	$effect(() => {
-		const loaded = reloadMailbox();
+		const loaded = (firstLoad = reloadMailbox());
 		// 방금 편지를 보냈다 (Phase 72) — 목록을 새로 읽은 뒤(더미 맨 위가 그 편지) 우체통 위에 "+✉" · 책상 더미에 내려앉는다
 		if (POSTED.pending) {
 			POSTED.pending = false;
@@ -60,6 +63,7 @@
 			dropN = news.length;
 			drop++;
 		});
+		dropAt = performance.now();
 		haptic.select();
 	});
 	// 편지 꺼내기 (Phase 79) — 지금 우체통 자리 · 크기를 적어 두고 편지 화면으로 (넘김 없이 같은 우체통이 이어서 두 번 덜컹 → 투입구에서 편지)
@@ -68,18 +72,53 @@
 	let postEl = $state<HTMLElement>();
 	function tapPostbox() {
 		const first = unread[0];
-		if (!first) {
-			bump++;
-			return;
-		}
+		if (first) takeOut(first.id);
+		else bump++;
+	}
+	function takeOut(id: number) {
 		if (wallEl && postEl && !reducedMotion() && PREFS.envelope && scrollY < 2) {
 			const w = wallEl.getBoundingClientRect();
 			const p = postEl.getBoundingClientRect();
 			KNOCK.hand = { w: p.width, top: p.top - w.top, wallH: w.height, count: unread.length };
 			KNOCK.at = performance.now();
 		}
-		void goto(`/letters/m/${first.id}`);
+		void goto(`/letters/m/${id}`);
 	}
+
+	// ── 알림에서 왔다 (Phase 80) — ?take=편지 번호 (new = 가장 최근에 온 안 읽은 편지) ──
+	// 목록을 새로 읽고 → 우체통을 잠깐 보여 준 뒤(새 편지가 투입구로 떨어지는 중이면 다 들어갈 때까지) → 스스로 눌러 꺼낸다.
+	// 주소의 ?take 는 먼저 지운다 — 편지를 읽고 뒤로 와도 다시 꺼내지 않게. 이미 연 편지면 그냥 그 편지로
+	let dropAt = 0;
+	let gone = false;
+	onDestroy(() => (gone = true));
+	let taking: string | null = null; // 지금 꺼내는 중인 것 — 탭의 뒤로가기 기록(guard)이 쌓이며 주소가 다시 읽혀도 한 번만
+	$effect(() => {
+		const take = page.url.searchParams.get('take');
+		if (take === taking) return;
+		taking = take;
+		if (!take) return;
+		untrack(() => {
+			const p = firstLoad ?? reloadMailbox();
+			firstLoad = null;
+			void p.then(async () => {
+				if (gone) return;
+				// 기록을 바꿔 끼우는 진짜 이동으로 지운다 — 얕은 replaceState 는 page.url 을 그대로 둬서 뒤로 오면 다시 꺼냈다.
+				// 기록 상태(page.state — 탭의 뒤로가기 guard)는 그대로 넘긴다. 비우면 tabBack 이 뒤로가기로 알고 홈으로 간다
+				await goto('/letters', { replaceState: true, noScroll: true, keepFocus: true, state: page.state });
+				await tick(); // 새 편지가 떨어지기 시작했는지(dropAt) 본 뒤에
+				if (gone) return;
+				const wait = Math.max(450, dropAt + 1250 - performance.now());
+				timers.push(
+					setTimeout(() => {
+						const id = take === 'new' ? unread[0]?.id : Number(take);
+						if (!id) return;
+						if (unread.some((i) => i.id === id)) takeOut(id);
+						else void goto(`/letters/m/${id}`);
+					}, wait)
+				);
+			});
+		});
+	});
 	// 폴더에 넣은 편지는 보관함 목록(BOX.received · sent)에서 빠진다 — 폴더마다 받은 · 보낸 수를 더해야 편지 수가 줄지 않는다
 	// (안 연 편지는 폴더에 못 넣으니 폴더의 받은 편지는 모두 읽은 편지)
 	const filed = $derived(BOX.folders.reduce((n, f) => ({ received: n.received + (f.received ?? 0), sent: n.sent + (f.sent ?? 0) }), { received: 0, sent: 0 }));

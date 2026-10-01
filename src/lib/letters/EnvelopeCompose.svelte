@@ -347,6 +347,14 @@
 			transform: translateY(-24px);
 		}
 	}
+	/* 쓰는 동안은 숨긴다 (Phase 80) — 화면에 붙어 있어 키보드를 올리고 스크롤하면 서식 막대 아래 색 고르기 줄 · 편지지 사이로 비쳐 겹쳐 보였다.
+	   편지지를 접기 시작하면 다시 나타나 봉투를 받는다 */
+	.post :global(.postbox) {
+		transition: opacity 0.3s ease;
+	}
+	[data-phase='write'] .post :global(.postbox) {
+		opacity: 0;
+	}
 
 	/* ── 편지지(쓰는 칸) — 봉투에서 솟아올라 펼쳐진다 ── */
 	.sheet-wrap {

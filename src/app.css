@@ -588,9 +588,12 @@ a {
 	   낱말 넘김(overflow-wrap)이 끝 글자를 다음 줄로 보냈다(예: "LAND / Y") */
 	white-space: nowrap;
 	/* 그라디언트는 칸 안에만 칠해진다 — 통통한 글자의 획이 칸 밖(양옆 · 아래)으로 조금 나와도 잘리지 않게 칸을 넓히고,
-	   넓힌 만큼 바깥 여백을 당겨 글자 자리는 그대로 */
-	padding: 0 0.12em 0.06em;
+	   넓힌 만큼 바깥 여백을 당겨 글자 자리는 그대로.
+	   아래는 y 꼬리까지 — 파셜산스는 줄 높이 1 에서 y 가 칸 아래로 0.175em 나간다 (Phase 80: 0.06em 이라 머리글 Landy 의 y 끝이 잘렸다).
+	   전엔 아래 0.06em 만큼 칸이 컸으니 그만큼은 남기고 나머지만 당긴다 (자리는 예전 그대로) */
+	padding: 0 0.12em 0.22em;
 	margin-inline: -0.12em;
+	margin-bottom: -0.16em;
 	background: linear-gradient(90deg, var(--g-orange), var(--g-coral) 50%, var(--g-pink));
 	-webkit-background-clip: text;
 	background-clip: text;
