@@ -812,5 +812,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       랜덤채팅에서 뱃지마다 숨기기(set_badge_chat — 정하지 않았으면 CNSA 는 숨김) · 편지 찾기의 내 뱃지 순서(내 순서 · 무작위).
       대표 칸: Landy 금 뱃지 5개면 3 → 5 (badge_slots · 교복 가슴 주머니 위에 둘). 편지 쓰기 찾기 아래 추천 5명(dm_recommend · 설정 › 편지 › 추천에 나오기, 기본 켜짐).
       Landy 뱃지: 동그란 메달 대신 아이콘 선을 굵게 따라 오린 입체 핀 — 금속 판(동 · 은 · 금 · 특별 무지갯빛) · 두께 · 뱃지마다 다른 에나멜(ENAMEL) · 금속 선 · 광택
-      (/dev/pins 미리보기). 실DB 반영 (phase84_cnsa_badges_submissions_recommend). 스키마 테스트 [96] (1161) · e2e letters 195 · achievements 76 · audit 128.
+      (/dev/pins 미리보기). 실DB 반영 (phase84_cnsa_badges_submissions_recommend). 스키마 테스트 [96] (1161) · e2e letters 197 · achievements 76 · audit 128.
+      창을 닫으며 이동(navigateFromOverlay)을 고침 — 창의 얕은 기록 칸을 새 화면으로 바꿔 끼우면 SvelteKit 이 같은 화면의 기록으로 여겨
+      새 화면에서 뒤로 와도 주소만 바뀌고 화면이 그대로였다(축하 "업적 보러 가기" · 안내 "뱃지 제출하기"). 이제 창의 칸을 먼저 걷어 내고 간다.
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

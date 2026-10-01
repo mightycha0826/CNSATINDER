@@ -83,14 +83,21 @@ export function historySettled(ms = 600): Promise<void> {
 }
 
 /**
- * 창을 닫으면서 다른 화면으로 — 창의 기록 칸을 새 화면으로 바꿔 끼운다(새 화면에서 뒤로 가면 창 아래 화면으로).
- * 창이 없으면 평소 goto 와 같다.
+ * 창을 닫으면서 다른 화면으로 — 창의 기록 칸(들)을 먼저 뒤로 걷어 내고(창은 그때 onclose 로 닫힌다) 새 화면으로 간다.
+ * 새 화면에서 뒤로 가면 창 아래 화면으로. 창이 없으면 평소 goto 와 같다.
+ * (Phase 84 — 예전엔 창의 칸을 새 화면으로 바꿔 끼웠는데, 그 칸은 같은 화면의 얕은 기록이라 SvelteKit 이 같은 화면으로 여겨
+ *  새 화면에서 뒤로 가면 주소만 바뀌고 화면은 그대로였다 — 축하 "업적 보러 가기" · CNSA 뱃지 안내 "뱃지 제출하기")
  */
 export async function navigateFromOverlay(url: string, opts: { state?: App.PageState; replaceState?: boolean } = {}) {
-	const open = ids().length > 0;
+	const n = ids().length;
 	markNavigating(true);
 	try {
-		await goto(url, { state: opts.state, replaceState: opts.replaceState || open });
+		if (n > 0) {
+			const left = historySettled(800);
+			history.go(-n);
+			await left;
+		}
+		await goto(url, { state: opts.state, replaceState: opts.replaceState });
 	} finally {
 		markNavigating(false);
 	}
