@@ -2,25 +2,27 @@
 	/**
 	 * 편지 한 통 (Phase 32) — 봉투를 열어 읽는다.
 	 * 처음 여는 받은 편지는 연출 (Phase 77 — 편지 쓰기의 반대 순서, 같은 장면: 벽의 우체통 · 나무 책상):
-	 *   봉투가 우체통 투입구에서 쏙 빠져나와 → 커지며 책상 한가운데로 내려앉고(주소 면) → 뒤집기 → 밀랍 봉인에 금이 가고 →
+	 *   우체통이 두 번 덜컹(Phase 79) → 봉투가 우체통 투입구에서 쏙 빠져나와 → 커지며 책상 한가운데로 내려앉고(주소 면) → 뒤집기 → 밀랍 봉인에 금이 가고 →
 	 *   봉인이 붙은 채 덮개가 열리고 → 편지지가 나와 → 펼쳐 읽는다.
+	 * 편지함의 우체통을 눌러 왔으면(KNOCK, Phase 79) 편지함과 같은 자리 · 크기의 우체통을 곧바로 그리고(편지를 받아 오는 동안에도) 바로 덜컹 —
+	 * 화면이 넘어간 줄 모르게 같은 우체통에서 편지가 나온다.
 	 * 이미 열어 본 편지 · 내가 보낸 편지는 연출 없이 편지지만 펼친다. 화면을 누르면 연출을 건너뛴다.
 	 * 아래: 받은 편지면 "답장 쓰기" + 인스타 스토리 공유(Phase 45, story.ts), 보낸 편지면 읽음 · 답장 여부. ⋯ 는 편지 버리기 · 차단 · 신고 (LetterMenu).
 	 */
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { navigateFromOverlay } from '$lib/overlay.svelte';
 	import { page } from '$app/state';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import MoreButton from '$lib/ui/MoreButton.svelte';
 	import Envelope from '$lib/letters/Envelope.svelte';
-	import Postbox from '$lib/letters/Postbox.svelte';
+	import Postbox, { slotRect } from '$lib/letters/Postbox.svelte';
 	import LetterSheet from '$lib/letters/LetterSheet.svelte';
 	import LetterMenu from '$lib/letters/LetterMenu.svelte';
 	import { anonName, borderOf, iAmRecipient, myLabel, openLetter, otherLabel, paperDate, stampDate, toLabel, type Letter } from '$lib/letters/api';
 	import { shareImage, storyImage } from '$lib/letters/story';
 	import { DM, LIST, refreshUnread } from '$lib/letters/unread.svelte';
-	import { markOpened } from '$lib/letters/mailbox.svelte';
+	import { markOpened, takeKnock } from '$lib/letters/mailbox.svelte';
 	import { clearNotifications } from '$lib/push';
 	import { envWidth, play } from '$lib/letters/stage';
 	import * as haptic from '$lib/haptics';
@@ -37,6 +39,25 @@
 	onDestroy(() => stop());
 	const w = $derived(envWidth());
 
+	// ── 우체통 두 번 덜컹 (Phase 79) — 편지함에서 우체통을 눌러 왔으면 그 우체통 그대로 곧바로, 아니면 연출 처음에 ──
+	const KNOCK_MS = 760; // 두 번째 덜컹이 잦아들 즈음 편지가 나온다
+	const hand = takeKnock();
+	let knock = $state(0);
+	let knockedAt = 0;
+	// 우체통 안의 편지 수 (빨간 점 · 투입구에 삐죽) — 편지가 나오면 하나 준다
+	let inBox = $state(hand?.count ?? 0);
+	let skipped = false;
+	function knockNow() {
+		knock++;
+		knockedAt = performance.now();
+		haptic.select();
+		setTimeout(() => haptic.select(), 430);
+	}
+	// 우체통이 그려진 다음에 (처음 값은 장면 없이 넘기는 Postbox 라)
+	onMount(() => {
+		if (hand) knockNow();
+	});
+
 	$effect(() => {
 		const target = id;
 		void (async () => {
@@ -47,6 +68,7 @@
 					return;
 				}
 				const first = r.role === 'received' && !letter && r.first_open;
+				if (first && !hand) inBox = Math.max(1, DM.unread);
 				letter = r;
 				LIST.tab = r.role;
 				if (r.role === 'received') {
@@ -56,21 +78,28 @@
 					void refreshUnread();
 				}
 				// 처음 여는 받은 편지만 봉투 연출
-				stop = first
-					? play([
-							// 우체통 투입구 안에서 시작 → 빠져나와 → 책상 가운데로
-							[0, fromSlot],
-							[60, () => ((phase = 'emerge'), bump++)],
-							[600, () => (phase = 'land')],
-							[1300, () => (phase = 'front')],
-							[1800, () => (phase = 'back')],
-							[2500, () => ((phase = 'crack'), haptic.select())],
-							[3150, () => (phase = 'open')],
-							[3650, () => (phase = 'out')],
-							[4300, () => (phase = 'unfold')],
-							[4750, () => (phase = 'read')]
-						])
-					: play([[0, () => (phase = 'read')]]);
+				// 덜컹이 이미 시작됐으면(우체통을 눌러 왔다) 남은 만큼만 기다린다
+				const k = hand ? Math.max(0, KNOCK_MS - (performance.now() - knockedAt)) : KNOCK_MS;
+				stop =
+					first && !skipped
+						? play(
+								(
+									[
+										// 우체통 투입구 안에서 시작 · 덜컹 덜컹 → 빠져나와 → 책상 가운데로
+										[-k, () => (fromSlot(), hand || knockNow())],
+										[60, () => ((phase = 'emerge'), (inBox = Math.max(0, inBox - 1)))],
+										[600, () => (phase = 'land')],
+										[1300, () => (phase = 'front')],
+										[1800, () => (phase = 'back')],
+										[2500, () => ((phase = 'crack'), haptic.select())],
+										[3150, () => (phase = 'open')],
+										[3650, () => (phase = 'out')],
+										[4300, () => (phase = 'unfold')],
+										[4750, () => (phase = 'read')]
+									] as [number, () => void][]
+								).map(([t, fn]) => [t + k, fn] as [number, () => void])
+							)
+						: play([[0, () => (phase = 'read')]]);
 			} catch (e) {
 				toast(errMsg(e));
 			}
@@ -80,13 +109,12 @@
 	// ── 우체통에서 나오기 (Phase 77) — 편지 쓰기의 aim() 을 거꾸로: 책상 가운데(봉투 자리)에서 투입구까지의 거리 · 크기를 재서
 	// 봉투를 투입구 안(투입구 선 아래로 숨은 채)에 두었다가 빠져나오게 한다
 	let envEl = $state<HTMLElement>();
-	let slotEl = $state<Element>();
-	let bump = $state(0);
+	let postEl = $state<HTMLElement>();
 	let target = $state({ x: 0, y: 0, s: 0.3 });
 	function fromSlot() {
-		if (envEl && slotEl) {
+		if (envEl && postEl) {
 			const e = envEl.getBoundingClientRect();
-			const s = slotEl.getBoundingClientRect();
+			const s = slotRect(postEl.getBoundingClientRect());
 			const scale = Math.min(0.55, (s.width * 0.8) / e.width);
 			target = {
 				x: s.left + s.width / 2 - (e.left + e.width / 2),
@@ -100,6 +128,7 @@
 
 	function skip() {
 		if (phase === 'read') return;
+		skipped = true;
 		stop();
 		phase = 'read';
 	}
@@ -165,13 +194,21 @@
 
 {#if gone}
 	<div class="page"><p class="muted center">편지를 찾을 수 없어요</p></div>
-{:else if letter}
-	{#if staging}
-		<!-- 봉투 열기 연출 — 누르면 건너뛴다 -->
-		<button class="stage" data-phase={phase} onclick={skip} aria-label="봉투 열기 건너뛰기">
-			<!-- 편지 쓰기와 같은 장면 — 벽의 우체통 · 나무 책상 -->
-			<span class="scene" aria-hidden="true"><i class="wall"></i><i class="wood"></i></span>
-			<span class="post" aria-hidden="true"><Postbox bind:slot={slotEl} {bump} /></span>
+{:else if (letter || hand) && staging}
+	<!-- 봉투 열기 연출 — 누르면 건너뛴다. 우체통을 눌러 왔으면 편지를 받아 오는 동안에도 우체통부터 (편지함과 같은 자리 · 크기) -->
+	<button
+		class="stage"
+		data-phase={phase}
+		onclick={skip}
+		aria-label="봉투 열기 건너뛰기"
+		style:--mb-w={hand ? `${hand.w}px` : null}
+		style:--mb-top={hand ? `${hand.top}px` : null}
+		style:--wall-h={hand ? `${hand.wallH}px` : null}
+	>
+		<!-- 편지 쓰기와 같은 장면 — 벽의 우체통 · 나무 책상 -->
+		<span class="scene" aria-hidden="true"><i class="wall"></i><i class="wood"></i></span>
+		<span class="post" aria-hidden="true" bind:this={postEl}><Postbox {knock} count={inBox} /></span>
+		{#if letter}
 			<span class="env-wrap" style:--w="{w}px" style:--tx="{target.x}px" style:--ty="{target.y}px" style:--ts={target.s} bind:this={envEl}>
 				<span class="env-inner">
 					<Envelope
@@ -194,64 +231,64 @@
 				<span>{#if arriving}<b>{names.from}</b>에게서 편지가 왔어요{:else}봉투를 여는 중…{/if}</span>
 				<small>눌러서 건너뛰기</small>
 			</span>
-		</button>
-	{:else}
-		<div class="page read">
-			<div class="unfold">
-				<LetterSheet
-					to={names.to}
-					toSub={names.toSub}
-					from={names.from}
-					date={paperDate(letter.created_at)}
-					body={letter.body}
-					fmt={letter.fmt}
-					removed={letter.removed}
-				/>
-			</div>
-
-			<div class="actions">
-				{#if letter.role === 'received'}
-					<!-- 답장(넓게) · 인스타 스토리(작게, 오른쪽) 한 줄 -->
-					<div class="row">
-						{#if letter.can_reply && !letter.wait_reply}
-							<button class="btn reply" onclick={() => goto(`/letters/m/${letter!.id}/reply`)}>
-								<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7l8 6 8-6M4 7v10h16V7H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
-								편지로 답장 쓰기
-							</button>
-						{:else if letter.wait_reply}
-							<p class="note">답장을 기다리는 중이에요 · 상대가 답하면 다시 쓸 수 있어요</p>
-						{:else}
-							<p class="note">끝난 편지예요</p>
-						{/if}
-						{#if canStory}
-							<button class="ig" class:busy={drawing} onclick={shareStory} aria-label="인스타그램 스토리에 공유" aria-busy={drawing}>
-								<svg viewBox="0 0 24 24" aria-hidden="true">
-									<defs>
-										<linearGradient id="ig-grad" x1="0" y1="1" x2="1" y2="0">
-											<stop offset="0" stop-color="#feda75" />
-											<stop offset="0.3" stop-color="#fa7e1e" />
-											<stop offset="0.6" stop-color="#d62976" />
-											<stop offset="1" stop-color="#4f5bd5" />
-										</linearGradient>
-									</defs>
-									<rect x="3" y="3" width="18" height="18" rx="5.5" fill="none" stroke="url(#ig-grad)" stroke-width="2" />
-									<circle cx="12" cy="12" r="4.2" fill="none" stroke="url(#ig-grad)" stroke-width="2" />
-									<circle cx="17.2" cy="6.8" r="1.25" fill="url(#ig-grad)" />
-								</svg>
-							</button>
-						{/if}
-					</div>
-				{:else}
-					<p class="note">
-						{#if letter.replied}답장이 왔어요 · 받은 편지함에서 확인해 보세요
-						{:else if letter.opened}{toLabel(letter)}님이 봉투를 열어 봤어요
-						{:else}아직 봉투를 열지 않았어요{/if}
-					</p>
-					{#if letter.wait_reply}<p class="note small">답장이 오기 전에는 3통까지 보낼 수 있어요</p>{/if}
-				{/if}
-			</div>
+		{/if}
+	</button>
+{:else if letter}
+	<div class="page read">
+		<div class="unfold">
+			<LetterSheet
+				to={names.to}
+				toSub={names.toSub}
+				from={names.from}
+				date={paperDate(letter.created_at)}
+				body={letter.body}
+				fmt={letter.fmt}
+				removed={letter.removed}
+			/>
 		</div>
-	{/if}
+
+		<div class="actions">
+			{#if letter.role === 'received'}
+				<!-- 답장(넓게) · 인스타 스토리(작게, 오른쪽) 한 줄 -->
+				<div class="row">
+					{#if letter.can_reply && !letter.wait_reply}
+						<button class="btn reply" onclick={() => goto(`/letters/m/${letter!.id}/reply`)}>
+							<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7l8 6 8-6M4 7v10h16V7H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+							편지로 답장 쓰기
+						</button>
+					{:else if letter.wait_reply}
+						<p class="note">답장을 기다리는 중이에요 · 상대가 답하면 다시 쓸 수 있어요</p>
+					{:else}
+						<p class="note">끝난 편지예요</p>
+					{/if}
+					{#if canStory}
+						<button class="ig" class:busy={drawing} onclick={shareStory} aria-label="인스타그램 스토리에 공유" aria-busy={drawing}>
+							<svg viewBox="0 0 24 24" aria-hidden="true">
+								<defs>
+									<linearGradient id="ig-grad" x1="0" y1="1" x2="1" y2="0">
+										<stop offset="0" stop-color="#feda75" />
+										<stop offset="0.3" stop-color="#fa7e1e" />
+										<stop offset="0.6" stop-color="#d62976" />
+										<stop offset="1" stop-color="#4f5bd5" />
+									</linearGradient>
+								</defs>
+								<rect x="3" y="3" width="18" height="18" rx="5.5" fill="none" stroke="url(#ig-grad)" stroke-width="2" />
+								<circle cx="12" cy="12" r="4.2" fill="none" stroke="url(#ig-grad)" stroke-width="2" />
+								<circle cx="17.2" cy="6.8" r="1.25" fill="url(#ig-grad)" />
+							</svg>
+						</button>
+					{/if}
+				</div>
+			{:else}
+				<p class="note">
+					{#if letter.replied}답장이 왔어요 · 받은 편지함에서 확인해 보세요
+					{:else if letter.opened}{toLabel(letter)}님이 봉투를 열어 봤어요
+					{:else}아직 봉투를 열지 않았어요{/if}
+				</p>
+				{#if letter.wait_reply}<p class="note small">답장이 오기 전에는 3통까지 보낼 수 있어요</p>{/if}
+			{/if}
+		</div>
+	</div>
 {:else}
 	<div class="page"><p class="muted center">봉투를 가져오는 중…</p></div>
 {/if}
@@ -308,7 +345,7 @@
 	.post {
 		position: absolute;
 		left: 50%;
-		top: 30px;
+		top: var(--mb-top, 30px);
 		width: var(--mb-w);
 		translate: -50% 0;
 	}

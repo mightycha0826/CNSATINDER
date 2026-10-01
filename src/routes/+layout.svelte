@@ -21,6 +21,7 @@
 	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import { markNavigating, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { reducedMotion } from '$lib/motion';
+	import { knockFresh } from '$lib/letters/mailbox.svelte';
 	import { dismissKeyboard, dismissOnTap, trackKeyboard } from '$lib/keyboard.svelte';
 
 	let { children } = $props();
@@ -128,6 +129,8 @@
 		const from = nav.from?.url.pathname ?? '';
 		const to = nav.to?.url.pathname ?? '';
 		if (from === to) return;
+		// 우체통에서 편지를 꺼낼 때(Phase 79)는 넘김 없이 — 편지 화면이 같은 자리의 같은 우체통으로 이어 받는다
+		if (from === '/letters' && to.startsWith('/letters/m/') && knockFresh()) return;
 		// 하위 화면으로 들어가면 오른쪽에서, 돌아오면 왼쪽에서 (탭끼리는 겹쳐 사라지기만)
 		const depth = (p: string) => (p === '/' || p === '/letters' || p === '/me' ? 0 : p.split('/').filter(Boolean).length);
 		const dir = depth(to) > depth(from) ? 'push' : depth(to) < depth(from) ? 'pop' : 'fade';

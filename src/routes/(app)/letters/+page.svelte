@@ -1,11 +1,11 @@
 <script lang="ts">
 	/**
-	 * 익명편지 탭 = 편지함 (Phase 32 · 35 · 71 · 72).
-	 *   위: 화면 폭 가득한 납작한 빨간 우체통 (Phase 72 — 2D 네모: 봉투 문양 · 긴 투입구). 안 읽은 편지 수가 붙고 투입구에 봉투 끝이 삐죽 나온다.
-	 *       새 편지가 오면 봉투가 위에서 떨어져 투입구로 들어가고 → 통이 출렁 · 위에 "+✉" → 그 편지가 우체통 밑으로 나와 놓인다 (한 통에 한 번).
-	 *       편지를 보내고 돌아오면 우체통 위에 "+✉" · 보낸 편지가 책상 더미에 내려앉는다. 누르면 가장 최근에 온 안 읽은 편지를 연다.
-	 *   그 아래: 아직 안 연 받은 편지 — 봉인된 봉투가 비스듬히 쌓여 있다 (누르면 봉투를 연다).
-	 *   맨 아래: 갈색 책상 위 서류 더미 = 편지 보관함. 읽은 편지 · 보낸 편지가 겹겹이 쌓여 있고, 누르면 지금까지 받은 · 쓴 편지 전부 (/letters/archive).
+	 * 익명편지 탭 = 편지함 (Phase 32 · 35 · 71 · 72 · 79).
+	 *   위: 벽에 걸린 우체통. 안 읽은 편지는 우체통 안에 있다 (Phase 79 — 전엔 책상 위에 봉투로 쌓였다):
+	 *       오른쪽 위에 빨간 점 · 투입구에 봉투 끝이 삐죽. 새 편지가 오면 봉투가 위에서 떨어져 투입구로 들어가고 → 통이 출렁 · 위에 "+✉" · 빨간 점 (한 통에 한 번).
+	 *       누르면 가장 최근에 온 안 읽은 편지를 꺼낸다 — 편지 화면이 같은 자리의 같은 우체통으로 이어 받아(KNOCK) 통이 두 번 덜컹 → 투입구에서 편지가 나와 → 열어 읽는다.
+	 *       편지를 보내고 돌아오면 우체통 위에 "+✉" · 보낸 편지가 책상 더미에 내려앉는다.
+	 *   아래: 갈색 책상 위 서류 더미 = 편지 보관함. 읽은 편지 · 보낸 편지가 겹겹이 쌓여 있고, 누르면 지금까지 받은 · 쓴 편지 전부 (/letters/archive).
 	 *   책상은 화면 아래쪽에 놓이고(남는 자리는 위에), 책상 · 더미 · 봉투 · 우체통은 화면 크기에 맞춰 같은 비율로 커지고 작아진다 (Phase 46).
 	 *   책상 앞 한 줄 = [편지 보관함 이름표 | 편지 쓰기] (Phase 71 — 전엔 편지 쓰기가 화면 위에 떠 있었다).
 	 * 봉투를 길게 누르면(마우스는 오른쪽 클릭) 봉투 메뉴 — 열기 · 답장 · 버리기 · 차단 · 신고 (LetterMenu).
@@ -15,11 +15,11 @@
 	import { goto } from '$app/navigation';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import Envelope from '$lib/letters/Envelope.svelte';
-	import MailStack from '$lib/letters/MailStack.svelte';
 	import Postbox from '$lib/letters/Postbox.svelte';
 	import { borderOf, myLabel, otherLabel, stampDate } from '$lib/letters/api';
-	import { ANNOUNCED, BOX, PAGE, POSTED, pollMailbox, reloadMailbox } from '$lib/letters/mailbox.svelte';
+	import { ANNOUNCED, BOX, KNOCK, PAGE, POSTED, pollMailbox, reloadMailbox } from '$lib/letters/mailbox.svelte';
 	import { reducedMotion } from '$lib/motion';
+	import { PREFS } from '$lib/prefs.svelte';
 	import * as haptic from '$lib/haptics';
 	import { whileVisible } from '$lib/visible';
 	import { S } from '$lib/state.svelte';
@@ -45,10 +45,8 @@
 
 	const unread = $derived(BOX.received.filter((i) => !i.opened && !i.removed));
 
-	// ── 우체통으로 편지가 온다 (Phase 71 · 72) ──
-	// 처음 보는 안 읽은 편지가 생기면: 봉투가 투입구로 떨어지고(0) → 출렁 · "+✉"(0.8s, Postbox) → 편지가 한 통씩 우체통 밑으로 나온다
-	const OUT = 850;
-	let emerge = $state<Record<number, number>>({}); // 편지 id → 나오기 시작하는 때(ms). 한 번 정하면 그대로 (바꾸면 장면이 다시 돈다)
+	// ── 우체통으로 편지가 온다 (Phase 71 · 72 · 79) ──
+	// 처음 보는 안 읽은 편지가 생기면: 봉투가 투입구로 떨어지고(0) → 출렁 · "+✉" · 빨간 점(0.8s, Postbox). 편지는 우체통 안에 그대로
 	let drop = $state(0);
 	let dropN = $state(1);
 	let bump = $state(0);
@@ -59,16 +57,28 @@
 		news.forEach((id) => ANNOUNCED.add(id));
 		if (reducedMotion()) return;
 		untrack(() => {
-			emerge = { ...emerge, ...Object.fromEntries(news.map((id, i) => [id, OUT + i * 110])) };
 			dropN = news.length;
 			drop++;
 		});
 		haptic.select();
 	});
+	// 편지 꺼내기 (Phase 79) — 지금 우체통 자리 · 크기를 적어 두고 편지 화면으로 (넘김 없이 같은 우체통이 이어서 두 번 덜컹 → 투입구에서 편지)
+	// 스크롤로 우체통이 올라가 있으면 자리가 안 맞아 평소처럼 넘긴다
+	let wallEl = $state<HTMLElement>();
+	let postEl = $state<HTMLElement>();
 	function tapPostbox() {
 		const first = unread[0];
-		if (first) void goto(`/letters/m/${first.id}`);
-		else bump++;
+		if (!first) {
+			bump++;
+			return;
+		}
+		if (wallEl && postEl && !reducedMotion() && PREFS.envelope && scrollY < 2) {
+			const w = wallEl.getBoundingClientRect();
+			const p = postEl.getBoundingClientRect();
+			KNOCK.hand = { w: p.width, top: p.top - w.top, wallH: w.height, count: unread.length };
+			KNOCK.at = performance.now();
+		}
+		void goto(`/letters/m/${first.id}`);
 	}
 	// 폴더에 넣은 편지는 보관함 목록(BOX.received · sent)에서 빠진다 — 폴더마다 받은 · 보낸 수를 더해야 편지 수가 줄지 않는다
 	// (안 연 편지는 폴더에 못 넣으니 폴더의 받은 편지는 모두 읽은 편지)
@@ -119,23 +129,19 @@
 <div class="page mailbox" style:--k={k} style:--plate-h="{plateH}px">
 	<h2 class="sr-only">새 편지</h2>
 	<!-- 벽 — 우체통이 걸려 있다. 새 편지가 여기로 온다 -->
-	<div class="wall">
+	<div class="wall" bind:this={wallEl}>
 		<button
 			class="post"
+			bind:this={postEl}
 			onclick={tapPostbox}
-			aria-label={unread.length ? `우체통 — 새 편지 ${unread.length}통, 눌러서 가장 최근 편지 열기` : BOX.loaded.received ? '우체통 — 새 편지 없음' : '우체통'}
+			aria-label={unread.length ? `우체통 — 새 편지 ${unread.length}통, 눌러서 가장 최근 편지 꺼내기` : BOX.loaded.received ? '우체통 — 새 편지 없음' : '우체통'}
 		>
 			<Postbox count={unread.length} {drop} {dropN} {added} {bump} />
 		</button>
 	</div>
 
-	<!-- 책상 — 벽 아래로 이어지는 한 장의 나무 판. 우체통에서 나온 새 편지가 위쪽에 놓이고, 아래쪽엔 편지 보관함(서류 더미) -->
+	<!-- 책상 — 벽 아래로 이어지는 한 장의 나무 판. 아래쪽엔 편지 보관함(서류 더미) -->
 	<div class="surface">
-	{#if !BOX.loaded.received || unread.length}
-		<div class="fresh">
-			<MailStack items={unread} box="received" loading={!BOX.loaded.received} {emerge} />
-		</div>
-	{/if}
 
 	<!-- 편지 보관함 — 책상 위 서류 더미. 앞 한 줄은 [이름표 | 편지 쓰기] -->
 	<div class="desk-area">
@@ -300,13 +306,6 @@
 		box-shadow: 0 -1px 0 rgb(255 255 255 / 0.3);
 		pointer-events: none;
 	}
-	/* 우체통에서 나온 새 편지 — 책상 위쪽에 */
-	.fresh {
-		display: flex;
-		flex-direction: column;
-		padding: 18px var(--side) 4px;
-	}
-
 	/* ── 책상 위 서류 더미 · 이름표 줄 ── */
 	/* 더미는 책상 아래쪽 — 남는 자리는 새 편지와 더미 사이로 (margin-top: auto). 이름표 줄은 책상 앞 모서리에 걸쳐 아래로 나온다 */
 	.desk-area {

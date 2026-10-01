@@ -26,6 +26,20 @@ export const ANNOUNCED = new Set<number>();
 /** 방금 편지를 보냈다 (Phase 72) — 편지함으로 돌아오면 우체통 위에 "+✉" · 책상 더미에 그 편지가 내려앉는다 (한 번 쓰고 끈다) */
 export const POSTED = { pending: false };
 
+/**
+ * 우체통을 눌러 편지를 꺼낸다 (Phase 79) — 편지함이 누른 순간의 우체통 자리 · 크기 · 안에 든 편지 수를 적어 두면
+ * 편지 화면이 같은 자리에 같은 우체통을 그려 이어 받는다 (화면 넘김 없이 그대로 → 우체통이 두 번 덜컹 → 투입구에서 편지가 나온다).
+ * 적은 지 2초가 지났거나 한 번 가져가면 끝 (화면을 그리는 데 쓰지 않아 반응형이 아니다)
+ */
+export type Knock = { w: number; top: number; wallH: number; count: number };
+export const KNOCK = { at: 0, hand: null as Knock | null };
+export const knockFresh = () => KNOCK.hand != null && performance.now() - KNOCK.at < 2000;
+export function takeKnock(): Knock | null {
+	const h = knockFresh() ? KNOCK.hand : null;
+	KNOCK.hand = null;
+	return h;
+}
+
 export async function loadBox(box: Box) {
 	try {
 		const r = await fetchMailbox(box);

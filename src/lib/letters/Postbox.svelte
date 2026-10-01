@@ -1,14 +1,25 @@
+<script lang="ts" module>
+	/** 투입구 자리 — 우체통을 담은 틀(흔들리지 않는 바깥 상자)의 자리에서 그림 비율로 (Phase 79: 덜컹이는 중에 재도 어긋나지 않게) */
+	export const slotRect = (r: DOMRect) => {
+		const u = r.width / 300;
+		return { left: r.left + 70 * u, top: r.top + 135 * u, width: 160 * u, height: 12 * u };
+	};
+</script>
+
 <script lang="ts">
 	/**
-	 * 우체통 (Phase 71 · 72 · 73 · 74 · 75) — 벽에 걸린 우편함을 정면에서 본 2D 네모. 앱의 얼굴 그대로 (docs · app.css 토큰):
+	 * 우체통 (Phase 71 · 72 · 73 · 74 · 75 · 79) — 벽에 걸린 우편함을 정면에서 본 2D 네모. 앱의 얼굴 그대로 (docs · app.css 토큰):
 	 * 앱 아이콘과 같은 브랜드 그라디언트(주황 → 코랄 → 핑크, 대각선) · 큰 둥근 모서리 · 흰 봉투 문양(로고처럼 흰 모양) ·
 	 * 반투명 흰 테 안의 투입구 · 브랜드색 빛 그림자(--glow 처럼). 알림 숫자 · "+✉" 는 앱의 흰 알약.
-	 *   count — 안 읽은 편지 수: 오른쪽 위 숫자 + 투입구에 봉투 끝이 삐죽 나온다(3장까지).
-	 *   drop — 바뀔 때마다 봉투 한 통이 위에서 떨어져 투입구로 쏙 → 통이 출렁 → 위에 "+✉" (편지가 왔다). dropN 은 몇 통인지.
+	 *   count — 안에 든(안 읽은) 편지 수: 오른쪽 위에 빨간 점(Phase 79 — 전엔 숫자) + 투입구에 봉투 끝이 삐죽 나온다(3장까지).
+	 *   drop — 바뀔 때마다 봉투 한 통이 위에서 떨어져 투입구로 쏙 → 통이 출렁 → 위에 "+✉" · 빨간 점이 톡 (편지가 왔다). dropN 은 몇 통인지.
+	 *          떨어지는 동안은 그 편지들을 아직 안에 없는 셈으로 친다 (점 · 삐죽 나온 봉투는 들어간 다음에).
+	 *   knock — 바뀔 때마다 통이 두 번 덜컹 (Phase 79 — 우체통을 눌러 편지를 꺼낼 때, 편지 화면이 부른다).
 	 *   added — 바뀔 때마다 출렁 + 위에 "+✉" 만 (편지를 보내고 편지함으로 돌아왔을 때). bump — 출렁만.
 	 *   slot — 투입구 자리 (보낼 때 봉투를 맞춰 넣으려고 부르는 쪽이 잰다).
 	 * 폭은 부르는 쪽이 정한다 (높이는 그림 비율대로). 동작 줄이기면 움직이지 않는다 (CSS 는 app.css 가 끄고, 여기서 쓰는 WAAPI 는 직접 거른다).
 	 */
+	import { untrack } from 'svelte';
 	import { reducedMotion } from '../motion';
 
 	let {
@@ -17,6 +28,7 @@
 		dropN = 1,
 		added = 0,
 		bump = 0,
+		knock = 0,
 		slot = $bindable()
 	}: {
 		count?: number;
@@ -24,6 +36,7 @@
 		dropN?: number;
 		added?: number;
 		bump?: number;
+		knock?: number;
 		slot?: Element;
 	} = $props();
 	const uid = $props.id();
@@ -45,6 +58,21 @@
 			],
 			{ duration: 620, easing: 'ease-out' }
 		);
+	// 덜컹 덜컹 — 두 번 (한 번에 0.4초쯤: 아래로 툭 · 반대로 · 제자리)
+	const knockKnock = () =>
+		box?.animate(
+			[
+				{ transform: 'rotate(0deg) translateY(0)' },
+				{ transform: 'rotate(-2deg) translateY(4px)', offset: 0.1 },
+				{ transform: 'rotate(1.3deg) translateY(0)', offset: 0.26 },
+				{ transform: 'rotate(0deg)', offset: 0.42 },
+				{ transform: 'rotate(2deg) translateY(4px)', offset: 0.54 },
+				{ transform: 'rotate(-1.3deg) translateY(0)', offset: 0.7 },
+				{ transform: 'rotate(0.4deg)', offset: 0.85 },
+				{ transform: 'rotate(0deg)' }
+			],
+			{ duration: 860, easing: 'ease-out' }
+		);
 	// "+✉" — 위 가장자리에서 톡 튀어나와 잠깐 머물다 떠오르며 사라진다
 	const pop = (n: number) => {
 		plusN = n;
@@ -62,11 +90,16 @@
 
 	// 처음 값은 장면 없이 — 바뀔 때만
 	// svelte-ignore state_referenced_locally
-	const last = { bump, added, drop };
+	const last = { bump, added, drop, knock };
 	$effect(() => {
 		if (bump === last.bump) return;
 		last.bump = bump;
 		if (!reducedMotion()) wobble();
+	});
+	$effect(() => {
+		if (knock === last.knock) return;
+		last.knock = knock;
+		if (!reducedMotion()) knockKnock();
 	});
 	$effect(() => {
 		if (added === last.added) return;
@@ -81,6 +114,7 @@
 		last.drop = drop;
 		if (reducedMotion() || !falling) return;
 		const n = dropN;
+		held = Math.max(0, untrack(() => count) - n);
 		falling
 			.animate(
 				[
@@ -93,14 +127,18 @@
 			)
 			.finished.then(
 				() => {
+					held = null;
 					wobble();
 					pop(n);
 				},
-				() => {}
+				() => (held = null)
 			);
 	});
 
-	const peek = $derived(Math.min(3, count));
+	// 떨어지는 중인 편지는 아직 밖에 — 들어간 다음에 점 · 봉투 끝이 생긴다
+	let held = $state<number | null>(null);
+	const inside = $derived(held ?? count);
+	const peek = $derived(Math.min(3, inside));
 </script>
 
 <span class="postbox" bind:this={box}>
@@ -153,13 +191,21 @@
 			<path d="M131 114L150 127L169 114" fill="none" stroke="#e3cfae" stroke-width="1.1" />
 			<circle cx="150" cy="127" r="3.4" fill="#e0405f" />
 		</g>
+
+		<!-- 편지가 왔다 — 오른쪽 위 모서리에 빨간 점 (벽색 테로 통과 떼어 놓고, 은은히 퍼지는 고리) -->
+		{#if inside > 0}
+			<g class="dot">
+				<circle class="ping" cx="276" cy="20" r="13" />
+				<circle cx="276" cy="20" r="13" fill="#ff2d3f" stroke="var(--wall)" stroke-width="4.5" paint-order="stroke" />
+				<circle cx="272" cy="16" r="4" fill="#fff" fill-opacity="0.35" />
+			</g>
+		{/if}
 	</svg>
 	<!-- "+✉" — 편지가 들어왔다 (종이 꼬리표처럼) -->
 	<span class="plus" bind:this={plus} aria-hidden="true">
 		<b>+{plusN > 1 ? plusN : ''}</b>
 		<svg viewBox="0 0 24 18"><rect x="1.5" y="1.5" width="21" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2.2" /><path d="M2.5 3l9.5 7 9.5-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" /></svg>
 	</span>
-	{#if count > 0}<span class="count num" aria-hidden="true">{count > 99 ? '99+' : count}</span>{/if}
 </span>
 
 <style>
@@ -209,23 +255,32 @@
 		height: 17px;
 		filter: none;
 	}
-	.count {
-		position: absolute;
-		top: -2px;
-		right: -6px;
-		min-width: 28px;
-		height: 28px;
-		padding: 0 8px;
-		border-radius: 14px;
-		/* 앱의 숫자 배지 그대로 — 짙은 브랜드 면 · 흰 숫자, 바탕색 고리로 우체통과 떼어 놓는다 */
-		background: var(--accent-fill-deep);
-		color: var(--on-accent);
-		font-size: 14px;
-		font-weight: 900;
-		line-height: 28px;
-		text-align: center;
-		box-shadow:
-			0 0 0 3px var(--bg),
-			var(--shadow-1);
+	/* 빨간 점 — 톡 하고 나타나고, 고리가 천천히 퍼진다 */
+	.dot {
+		transform-box: fill-box;
+		transform-origin: 50% 50%;
+		animation: dot-in 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+	}
+	@keyframes dot-in {
+		from {
+			transform: scale(0);
+		}
+	}
+	.ping {
+		fill: #ff2d3f;
+		transform-box: fill-box;
+		transform-origin: 50% 50%;
+		animation: ping 2.2s 0.5s ease-out infinite;
+	}
+	@keyframes ping {
+		from {
+			opacity: 0.55;
+			transform: scale(1);
+		}
+		70%,
+		to {
+			opacity: 0;
+			transform: scale(2.1);
+		}
 	}
 </style>

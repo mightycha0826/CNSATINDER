@@ -147,24 +147,27 @@ try {
 	await page.waitForTimeout(600);
 	check('★ 안 연 편지 → 하단 익명편지 탭에 빨간 점', (await page.locator('a.tab', { hasText: '익명편지' }).locator('.tab-dot').count()) === 1);
 	await page.locator('a.tab', { hasText: '익명편지' }).click(); await page.waitForURL('**/letters');
-	await page.locator('.stack .item').first().waitFor(); await page.waitForTimeout(500);
-	const items = page.locator('.stack .item');
-	check('★ 편지함 위: 안 연 편지만 봉투 2장 — 봉인 + "새 편지"', (await items.count()) === 2 && (await page.locator('.stack .new').count()) === 2 && (await page.locator('.stack .seal').count()) === 2);
-	const labels = await items.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
-	check('★ 모르는 사람은 "익명의 여학생" (성별만) · 내 편지의 답장은 이름', labels[0] === '익명의 여학생에게서 온 편지, 안 읽음' && labels[1] === '박받음에게서 온 답장, 안 읽음', JSON.stringify(labels));
-	check('봉투 뒷면에 손글씨 From.', (await items.nth(0).locator('.back .back-from').innerText()).includes('익명의 여학생'));
-	check('★ 받은 편지 테두리 = 보낸 사람 성별 색 (여학생 붉은색)', (await items.nth(0).locator('.env.b-f').count()) === 1 && (await items.nth(1).locator('.env.b-brand').count()) === 1);
+	const dropping = await page.waitForFunction(() => document.querySelector('.post .falling')?.getAnimations().length > 0, null, { timeout: 4000, polling: 16 }).then(() => true, () => false);
+	const dotEarly = await page.locator('.post .dot').count();
+	check('★ 새 편지는 투입구로 떨어지고 — 들어간 다음에 빨간 점', dropping && dotEarly === 0, JSON.stringify({ dropping, dotEarly }));
+	await page.locator('.post .dot').waitFor({ timeout: 4000 }); await page.waitForTimeout(500);
+	check('★ 안 읽은 편지는 우체통 안에 — 책상 위에 봉투가 없다 (Phase 79)', (await page.locator('.surface .stack .item').count()) === 0);
+	const dot = await page.evaluate(() => {
+		const b = document.querySelector('.post .postbox').getBoundingClientRect(), d = document.querySelector('.post .dot').getBoundingClientRect();
+		return { x: (d.left + d.right) / 2 - b.left - b.width * 0.85, y: (d.top + d.bottom) / 2 - b.top - b.height * 0.2, size: d.width, fill: getComputedStyle(document.querySelector('.post .dot circle:not(.ping)')).fill };
+	});
+	check('★ 편지가 왔다 = 우체통 오른쪽 위 빨간 점 (숫자 대신)', dot.x > 0 && dot.y < 0 && dot.size > 10 && dot.fill.includes('255, 45, 63') && (await page.locator('.post .count').count()) === 0, JSON.stringify(dot));
+	check('★ 우체통 — 읽는 사람용 이름에는 새 편지 수', (await page.locator('button.post').getAttribute('aria-label')).includes('새 편지 2통'));
+	check('투입구에 봉투 끝이 삐죽 (2통)', (await page.locator('.post g[clip-path] > g').count()) === 2);
 	check('채팅 말풍선은 없다 (편지만)', (await page.locator('.bubble').count()) === 0 && (await page.getByRole('textbox', { name: '메시지' }).count()) === 0);
-	check('★ 우체통 — 새 편지 수 (Phase 71)', (await page.locator('.post .count').innerText()) === '2' && (await page.locator('button.post').getAttribute('aria-label')).includes('새 편지 2통'));
 	check('"새로 온 편지가 없어요" 문구는 없다', (await page.getByText('새로 온 편지가 없어요').count()) === 0);
 	const scene = await page.evaluate(() => {
 		const r = (q) => document.querySelector(q)?.getBoundingClientRect();
 		const box = r('.wall .post .postbox'), wall = r('.wall'), surf = r('.surface');
 		return { boxW: box.width, boxH: box.height, wallL: wall.left, wallR: wall.right - innerWidth, touch: Math.abs(wall.bottom - surf.top),
-			fresh: !!document.querySelector('.surface .fresh .stack'), desk: !!document.querySelector('.surface .desk-area .desk') };
+			desk: !!document.querySelector('.surface .desk-area .desk') };
 	});
-	check('★ 한 장면 — 벽에 걸린 2D 네모 우체통 → 바로 아래 책상 한 장에 새 편지 · 서류 더미 (Phase 73)', scene.boxW > scene.boxH * 1.3 && scene.wallL <= 0 && scene.wallR >= 0 && scene.touch < 1 && scene.fresh && scene.desk, JSON.stringify(scene));
-	check('★ 처음 보는 안 읽은 편지는 우체통에서 나온다', (await page.locator('.stack li.emerge').count()) === 2);
+	check('★ 한 장면 — 벽에 걸린 2D 네모 우체통 → 바로 아래 책상 한 장에 서류 더미 (Phase 73)', scene.boxW > scene.boxH * 1.3 && scene.wallL <= 0 && scene.wallR >= 0 && scene.touch < 1 && scene.desk, JSON.stringify(scene));
 	const rowOf = (pg) => pg.evaluate(() => {
 		const p = document.querySelector('.desk .plate').getBoundingClientRect(), f = document.querySelector('.desk-area .fab').getBoundingClientRect();
 		return { dy: Math.abs(p.top - f.top) + Math.abs(p.bottom - f.bottom), gap: f.left - p.right, plateW: p.width, fabW: f.width };
@@ -186,6 +189,8 @@ try {
 	check('★ 보관함 받은 편지: 편지함처럼 큰 봉투 — 전부 (안 연 편지는 봉인 · "새 편지")', recvRows.length === 3 && recvRows[0] === '익명의 여학생에게서 온 편지, 안 읽음'
 		&& (await page.locator('.archive .stack .new').count()) === 2 && (await page.locator('.archive .stack .seal').count()) === 2
 		&& (await page.locator('.archive .stack .item').first().evaluate((e) => e.getBoundingClientRect().width)) > 280, JSON.stringify(recvRows));
+	check('★ 모르는 사람은 "익명의 여학생" (성별만) · 내 편지의 답장은 이름', recvRows.includes('익명의 여학생에게서 온 편지, 안 읽음') && recvRows.includes('박받음에게서 온 답장, 안 읽음'), JSON.stringify(recvRows));
+	check('봉투 뒷면에 손글씨 From.', (await page.locator('.archive .stack .item').first().locator('.back .back-from').innerText()).includes('익명의 여학생'));
 	check('보관함 봉투도 보낸 사람 성별 색', (await page.locator('.archive .stack .env.b-f').count()) === 1 && (await page.locator('.archive .stack .env.b-m').count()) === 1);
 	await page.screenshot({ path: `${SP}/letters-2-archive.png`, fullPage: true });
 	await page.getByRole('tab', { name: '보낸 편지' }).click(); await page.waitForTimeout(700);
@@ -194,15 +199,25 @@ try {
 		&& sentRow.includes('박받음') && sentRow.includes('2학년') && (await page.locator('.archive .stack .front .sticker').first().innerText()) === '답장 옴', sentRow);
 	await page.screenshot({ path: `${SP}/letters-2-sent.png` });
 	await page.getByRole('tab', { name: '받은 편지' }).click(); await page.waitForTimeout(200);
-	await page.locator('button.back').click(); await page.waitForURL(/\/letters$/); await page.locator('.stack .item').first().waitFor();
+	await page.locator('button.back').click(); await page.waitForURL(/\/letters$/); await page.locator('.post .dot').waitFor(); await page.waitForTimeout(500);
 
-	console.log('[봉투 열기]');
-	await items.nth(0).click(); await page.waitForURL('**/letters/m/70');
-	await page.locator('.stage').waitFor(); await page.waitForTimeout(250);
+	console.log('[봉투 열기 — 우체통을 눌러 꺼낸다]');
+	const before = await page.locator('.wall button.post').boundingBox();
+	await page.locator('button.post').click(); await page.waitForURL('**/letters/m/70');
+	await page.locator('.stage').waitFor();
+	const after = await page.locator('.stage span.post').boundingBox();
+	const knocking = await page.locator('.stage .post .postbox').evaluate((e) => e.getAnimations().length);
+	check('★ 편지 화면이 같은 자리 · 같은 크기의 우체통으로 이어 받는다 (넘김 없이)', Math.abs(before.x - after.x) < 1.5 && Math.abs(before.y - after.y) < 1.5 && Math.abs(before.width - after.width) < 1.5 && !(await page.evaluate(() => document.documentElement.dataset.nav)), JSON.stringify({ before, after }));
+	check('★ 누르면 우체통이 덜컹 덜컹 · 빨간 점은 그대로', knocking > 0 && (await page.locator('.stage .post .dot').count()) === 1, String(knocking));
+	await page.waitForTimeout(250);
 	const p0 = await phase(page), cap = await page.locator('.caption').innerText();
 	check('★ 처음 여는 편지는 연출: 우체통에서 나와 주소 면부터 · "익명의 여학생에게서 편지가 왔어요"', ['slot', 'emerge', 'land', 'front'].includes(p0) && cap.includes('익명의 여학생에게서 편지가 왔어요'), `${p0} | ${cap}`);
+	// 덜컹이 다 잦아든 뒤(투입구가 제자리) — 봉투는 아직 투입구 자리에서 빠져나오는 중
+	await page.waitForFunction(() => document.querySelector('.stage')?.getAttribute('data-phase') === 'emerge' && document.querySelector('.stage .post .postbox').getAnimations().length === 0, null, { timeout: 2000, polling: 16 }).catch(() => {});
 	const out0 = await page.evaluate(() => { const e = document.querySelector('.stage .env-wrap').getBoundingClientRect(), s = document.querySelector('.stage .post .slot').getBoundingClientRect(); return { dx: Math.abs((e.left + e.right) / 2 - (s.left + s.right) / 2), dy: Math.abs(e.bottom - (s.top + s.bottom) / 2), small: e.width <= s.width }; });
 	check('★ 받은 편지는 우체통 투입구에서 빠져나온다 (편지 쓰기의 반대 — Phase 77)', out0.dx < 3 && out0.dy < 3 && out0.small, JSON.stringify(out0));
+
+	check('★ 덜컹이 끝날 즈음 투입구에서 편지가 나온다 · 우체통 안엔 1통 남아 점은 그대로', (await phase(page)) === 'emerge' && (await page.locator('.stage .post g[clip-path] > g').count()) === 1 && (await page.locator('.stage .post .dot').count()) === 1);
 	await page.waitForFunction(() => document.querySelector('.stage')?.getAttribute('data-phase') === 'front', null, { timeout: 3000 }).catch(() => {});
 	const land = await page.evaluate(() => { const e = document.querySelector('.stage .env-wrap').getBoundingClientRect(), wall = document.querySelector('.stage .scene .wall').getBoundingClientRect(), st = document.querySelector('.stage').getBoundingClientRect(); return { top: e.top - wall.bottom, mid: Math.abs((e.top + e.bottom) / 2 - (wall.bottom + st.bottom) / 2) }; });
 	check('★ 책상 한가운데에 내려앉는다 — 우체통 · 벽을 가리지 않는다', land.top > 0 && land.mid < 12, JSON.stringify(land));
@@ -388,7 +403,7 @@ try {
 	const w4 = world();
 	const r4 = await openApp(browser, w4);
 	const pg = r4.page;
-	await pg.goto(`${BASE}/letters`); await pg.locator('.stack .item').first().waitFor(); await pg.waitForTimeout(400);
+	await pg.goto(`${BASE}/letters`); await pg.locator('.post .dot').waitFor(); await pg.waitForTimeout(400);
 	const cdp = await pg.context().newCDPSession(pg);
 	const drag = async (dist) => {
 		await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 160 }] });
@@ -404,8 +419,8 @@ try {
 	const load = pg.waitForEvent('load', { timeout: 8000 }).then(() => true, () => false);
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
 	check('★ 맨 위에서 당겼다 놓으면 앱을 다시 불러온다', await load);
-	await pg.locator('.stack .item').first().waitFor(); await pg.waitForTimeout(400);
-	check('다시 불러와도 편지함 그대로 (로그인 유지)', new URL(pg.url()).pathname === '/letters' && (await pg.locator('.stack .item').count()) === 2);
+	await pg.locator('.post .dot').waitFor(); await pg.waitForTimeout(400);
+	check('다시 불러와도 편지함 그대로 (로그인 유지)', new URL(pg.url()).pathname === '/letters' && (await pg.locator('button.post').getAttribute('aria-label')).includes('새 편지 2통'));
 	check('페이지 오류 없음 (새로고침)', r4.errors.length === 0, r4.errors.join(' / '));
 	await r4.ctx.close();
 
