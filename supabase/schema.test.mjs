@@ -1542,9 +1542,11 @@ console.log('\n[50] 익명편지 — 도배 제한');
 {
 	await resetLetters();
 	const w = await person('m', 'f');
+	// Phase 78 — 한도가 50통이 되어, 남은 한도를 3통으로 두고 본다
+	await db.query('update public.user_presence set letter_tokens = 3, letter_at = now() where user_id = $1', [w]);
 	const got = [];
 	for (let i = 0; i < 4; i++) got.push((await postLetter(w, `편지 ${i}`)).status);
-	check('편지는 한 번에 3통까지, 4번째는 제한', got.slice(0, 3).every((s) => s === 'ok') && got[3] === 'rate_limited');
+	check('남은 한도(3통)만큼 쓰면 그다음은 제한', got.slice(0, 3).every((s) => s === 'ok') && got[3] === 'rate_limited');
 	await db.query(`update public.user_presence set letter_at = now() - interval '9 hours' where user_id = $1`, [w]);
 	check('시간이 지나면 다시 쓸 수 있다', (await postLetter(w, '다시')).status === 'ok');
 
@@ -3719,6 +3721,30 @@ console.log('\n[94] CNSA 뱃지 셋 · 운영자 뱃지 화면 — 여러 명에
 		&& (await rpcAs(X, 'my_achievements')).items.find((a) => a.code === 'cnsa_student').tier === 3);
 	check('다시 눌러도 더 주지 않는다', (await svc('admin_grant_badge_all', mod, 'cnsa_student')) === 0);
 	check('시작하기 전인 계정은 빠진다', !(await one(`select 1 x from private.user_achievements where user_id = $1 and code = 'cnsa_student'`, [late])));
+}
+
+console.log('\n[95] 새 편지 한도 — 하루 50통 (Phase 78)');
+{
+	const s = await one('select letter_burst, letter_refill_per_sec from public.app_settings where id');
+	check('★ 편지 한도 50통 · 하루에 50통 분량이 다시 찬다', Number(s.letter_burst) === 50 && Math.abs(Number(s.letter_refill_per_sec) * 86400 - 50) < 0.1, JSON.stringify(s));
+	await db.query('update public.app_settings set letters_gate = false where id');
+	let no = 38000;
+	// 편지를 보내려면 명렬표 이름이 있어야 한다 — 학교 이메일 앞자리 = 학번
+	const named = async (name) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, 1, $2) on conflict (student_no) do update set name = excluded.name', [n, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query("update public.profiles set gender = 'm', want = 'f', onboarded = true where id = $1", [id]);
+		await rpcAs(id, 'ensure_self');
+		return id;
+	};
+	const A = await named('오십보냄');
+	check('새로 가입한 학생도 처음부터 50통', Number((await one('select letter_tokens from public.user_presence where user_id = $1', [A])).letter_tokens) === 50);
+	const got = [];
+	for (let i = 0; i < 5; i++) got.push((await rpcAs(A, 'dm_send', await named(`오십받음${i}`), `안녕 ${i}`)).status);
+	check('★ 넷째 · 다섯째 새 편지도 보낼 수 있다 (전엔 셋째에서 막혔다)', got.every((x) => x === 'ok'), JSON.stringify(got));
+	await db.query('update public.user_presence set letter_tokens = 0, letter_at = now() where user_id = $1', [A]);
+	check('한도를 다 쓰면 그래도 막힌다', (await rpcAs(A, 'dm_send', await named('오십더'), '하나 더')).status === 'rate_limited');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

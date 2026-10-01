@@ -6897,3 +6897,15 @@ begin
   end loop;
 end
 $do$;
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 78 — 새 편지 한도: 하루 3통 → 하루 50통
+--   새 편지(새 편지 줄기)는 토큰 버킷(letter_bucket_take 'letter') — 한 번에 50통까지 · 하루에 50통 분량이 다시 찬다.
+--   한쪽이 답 없이 3통까지(wait_reply) · 받는 사람이 끝내면 다시 못 보냄 같은 괴롭힘 막기는 그대로.
+--   새로 가입한 학생도 처음부터 50통. (지금 학생들의 토큰은 실DB 반영 때 한 번 50으로 채웠다 — 여기서는 다시 채우지 않는다)
+-- ════════════════════════════════════════════════════════════════════
+alter table public.app_settings alter column letter_burst set default 50;
+alter table public.app_settings alter column letter_refill_per_sec set default 0.000578704; -- 하루에 50통 분량 (50 / 86400)
+update public.app_settings set letter_burst = 50, letter_refill_per_sec = 0.000578704 where id and letter_burst = 3;
+alter table public.user_presence alter column letter_tokens set default 50;
