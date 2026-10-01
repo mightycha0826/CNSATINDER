@@ -44,7 +44,7 @@
 	const hand = takeKnock();
 	let knock = $state(0);
 	let knockedAt = 0;
-	// 우체통 안의 편지 수 (빨간 점 · 투입구에 삐죽) — 편지가 나오면 하나 준다
+	// 우체통 안의 편지 수 (빨간 점) — 편지가 나오면 하나 준다
 	let inBox = $state(hand?.count ?? 0);
 	let skipped = false;
 	function knockNow() {

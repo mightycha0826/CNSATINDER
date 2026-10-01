@@ -158,7 +158,7 @@ try {
 	});
 	check('★ 편지가 왔다 = 우체통 오른쪽 위 빨간 점 (숫자 대신)', dot.x > 0 && dot.y < 0 && dot.size > 10 && dot.fill.includes('255, 45, 63') && (await page.locator('.post .count').count()) === 0, JSON.stringify(dot));
 	check('★ 우체통 — 읽는 사람용 이름에는 새 편지 수', (await page.locator('button.post').getAttribute('aria-label')).includes('새 편지 2통'));
-	check('투입구에 봉투 끝이 삐죽 (2통)', (await page.locator('.post g[clip-path] > g').count()) === 2);
+	check('★ 투입구에 봉투 끝이 보이지 않는다 — 빨간 점만', (await page.locator('.post svg g[clip-path]').count()) === 0 && (await page.locator('.post svg rect[fill="#fffaf0"]').count()) === 1);
 	check('채팅 말풍선은 없다 (편지만)', (await page.locator('.bubble').count()) === 0 && (await page.getByRole('textbox', { name: '메시지' }).count()) === 0);
 	check('"새로 온 편지가 없어요" 문구는 없다', (await page.getByText('새로 온 편지가 없어요').count()) === 0);
 	const scene = await page.evaluate(() => {
@@ -217,7 +217,7 @@ try {
 	const out0 = await page.evaluate(() => { const e = document.querySelector('.stage .env-wrap').getBoundingClientRect(), s = document.querySelector('.stage .post .slot').getBoundingClientRect(); return { dx: Math.abs((e.left + e.right) / 2 - (s.left + s.right) / 2), dy: Math.abs(e.bottom - (s.top + s.bottom) / 2), small: e.width <= s.width }; });
 	check('★ 받은 편지는 우체통 투입구에서 빠져나온다 (편지 쓰기의 반대 — Phase 77)', out0.dx < 3 && out0.dy < 3 && out0.small, JSON.stringify(out0));
 
-	check('★ 덜컹이 끝날 즈음 투입구에서 편지가 나온다 · 우체통 안엔 1통 남아 점은 그대로', (await phase(page)) === 'emerge' && (await page.locator('.stage .post g[clip-path] > g').count()) === 1 && (await page.locator('.stage .post .dot').count()) === 1);
+	check('★ 덜컹이 끝날 즈음 투입구에서 편지가 나온다 · 우체통 안엔 1통 남아 점은 그대로', (await phase(page)) === 'emerge' && (await page.locator('.stage .post .dot').count()) === 1);
 	await page.waitForFunction(() => document.querySelector('.stage')?.getAttribute('data-phase') === 'front', null, { timeout: 3000 }).catch(() => {});
 	const land = await page.evaluate(() => { const e = document.querySelector('.stage .env-wrap').getBoundingClientRect(), wall = document.querySelector('.stage .scene .wall').getBoundingClientRect(), st = document.querySelector('.stage').getBoundingClientRect(); return { top: e.top - wall.bottom, mid: Math.abs((e.top + e.bottom) / 2 - (wall.bottom + st.bottom) / 2) }; });
 	check('★ 책상 한가운데에 내려앉는다 — 우체통 · 벽을 가리지 않는다', land.top > 0 && land.mid < 12, JSON.stringify(land));

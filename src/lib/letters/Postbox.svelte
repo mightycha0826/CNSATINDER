@@ -11,9 +11,9 @@
 	 * 우체통 (Phase 71 · 72 · 73 · 74 · 75 · 79) — 벽에 걸린 우편함을 정면에서 본 2D 네모. 앱의 얼굴 그대로 (docs · app.css 토큰):
 	 * 앱 아이콘과 같은 브랜드 그라디언트(주황 → 코랄 → 핑크, 대각선) · 큰 둥근 모서리 · 흰 봉투 문양(로고처럼 흰 모양) ·
 	 * 반투명 흰 테 안의 투입구 · 브랜드색 빛 그림자(--glow 처럼). 알림 숫자 · "+✉" 는 앱의 흰 알약.
-	 *   count — 안에 든(안 읽은) 편지 수: 오른쪽 위에 빨간 점(Phase 79 — 전엔 숫자) + 투입구에 봉투 끝이 삐죽 나온다(3장까지).
+	 *   count — 안에 든(안 읽은) 편지 수: 오른쪽 위에 빨간 점(Phase 79 — 전엔 숫자 · 투입구에 봉투 끝이 삐죽 나왔다).
 	 *   drop — 바뀔 때마다 봉투 한 통이 위에서 떨어져 투입구로 쏙 → 통이 출렁 → 위에 "+✉" · 빨간 점이 톡 (편지가 왔다). dropN 은 몇 통인지.
-	 *          떨어지는 동안은 그 편지들을 아직 안에 없는 셈으로 친다 (점 · 삐죽 나온 봉투는 들어간 다음에).
+	 *          떨어지는 동안은 그 편지들을 아직 안에 없는 셈으로 친다 (점은 들어간 다음에).
 	 *   knock — 바뀔 때마다 통이 두 번 덜컹 (Phase 79 — 우체통을 눌러 편지를 꺼낼 때, 편지 화면이 부른다).
 	 *   added — 바뀔 때마다 출렁 + 위에 "+✉" 만 (편지를 보내고 편지함으로 돌아왔을 때). bump — 출렁만.
 	 *   slot — 투입구 자리 (보낼 때 봉투를 맞춰 넣으려고 부르는 쪽이 잰다).
@@ -135,10 +135,9 @@
 			);
 	});
 
-	// 떨어지는 중인 편지는 아직 밖에 — 들어간 다음에 점 · 봉투 끝이 생긴다
+	// 떨어지는 중인 편지는 아직 밖에 — 들어간 다음에 점이 생긴다
 	let held = $state<number | null>(null);
 	const inside = $derived(held ?? count);
-	const peek = $derived(Math.min(3, inside));
 </script>
 
 <span class="postbox" bind:this={box}>
@@ -154,7 +153,6 @@
 				<stop offset="0" stop-color="#fff" stop-opacity="0.28" />
 				<stop offset="0.45" stop-color="#fff" stop-opacity="0" />
 			</linearGradient>
-			<clipPath id="{uid}-above-slot"><rect x="0" y="-240" width="300" height="381" /></clipPath>
 		</defs>
 
 		<!-- 몸통 — 둥근 네모, 위쪽에 은은한 빛 · 가는 흰 테 -->
@@ -172,18 +170,6 @@
 		<rect x="58" y="126" width="184" height="30" rx="15" fill="#fff" fill-opacity="0.28" />
 		<rect class="slot" x="70" y="135" width="160" height="12" rx="6" fill="#7a1330" fill-opacity="0.78" bind:this={slot} />
 		<rect x="70" y="135" width="160" height="4" rx="2" fill="#4a0a1e" fill-opacity="0.45" />
-
-		<!-- 안 읽은 편지 — 투입구에 봉투 끝이 삐죽 -->
-		{#if peek}
-			<g clip-path="url(#{uid}-above-slot)">
-				{#each [[-28, -7], [2, 4], [30, -3]].slice(0, peek) as [dx, r] (dx)}
-					<g transform="translate({150 + dx} 145) rotate({r})">
-						<rect x="-18" y="-27" width="36" height="30" rx="2.5" fill="#fffaf0" stroke="#ecdcc2" stroke-width="1" />
-						<path d="M-17 -26L0 -14L17 -26" fill="none" stroke="#e3cfae" stroke-width="1.1" />
-					</g>
-				{/each}
-			</g>
-		{/if}
 
 		<!-- 편지가 떨어져 들어간다 (drop) — 평소엔 안 보인다 -->
 		<g class="falling" bind:this={falling}>
