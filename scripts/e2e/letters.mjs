@@ -489,6 +489,26 @@ try {
 		await r9.ctx.close();
 	}
 
+	console.log('[다크 모드 우체통 (Phase 81)]');
+	{
+		const look = async (scheme) => {
+			const r = await openApp(browser, world(), { colorScheme: scheme });
+			await r.page.locator('a.logo').waitFor({ timeout: 8000 });
+			await r.page.locator('a.tab', { hasText: '익명편지' }).click(); await r.page.waitForURL('**/letters');
+			await r.page.locator('.post .dot').waitFor({ timeout: 4000 }); await r.page.waitForTimeout(600);
+			const c = await r.page.evaluate(() => [...document.querySelectorAll('.post linearGradient')[0].querySelectorAll('stop')].map((e) => getComputedStyle(e).stopColor));
+			if (scheme === 'dark') await r.page.screenshot({ path: `${SP}/letters-dark.png` });
+			const errs = r.errors.slice();
+			await r.ctx.close();
+			return { c, errs };
+		};
+		const lum = (rgb) => { const [r, g, b] = rgb.match(/\d+/g).map(Number); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+		const L = await look('light'), D = await look('dark');
+		check('라이트 모드 우체통은 그대로 — 앱 아이콘 그라디언트', L.c.join('|') === 'rgb(255, 122, 80)|rgb(251, 92, 104)|rgb(240, 57, 110)', L.c.join('|'));
+		check('★ 다크 모드 우체통은 라이트보다 어둡다 (세 색 모두)', D.c.length === 3 && D.c.every((x, i) => lum(x) < lum(L.c[i]) - 15), D.c.join('|'));
+		check('페이지 오류 없음 (다크 우체통)', L.errs.length + D.errs.length === 0, [...L.errs, ...D.errs].join(' / '));
+	}
+
 	console.log('[명단에 없는 학생 — 이름 적기]');
 	const w2 = world({ named: false });
 	const two = await openApp(browser, w2);

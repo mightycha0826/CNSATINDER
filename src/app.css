@@ -78,6 +78,12 @@
 	--wood-ink: #9a5b3a;
 	/* 판자 아래쪽 색 — 책상 위에 붙는 띠(편지 쓰기의 보내기 줄)의 바탕 */
 	--wood-base: #e3b690;
+	/* 우체통 (Phase 75 · 81) — 앱 아이콘과 같은 브랜드 그라디언트 · 위쪽 빛 · 브랜드색 빛 그림자. 다크 모드에서는 한 단계 어둡게 */
+	--post-a: #ff7a50;
+	--post-b: #fb5c68;
+	--post-c: #f0396e;
+	--post-sheen: 0.28;
+	--post-glow: drop-shadow(0 14px 18px rgb(240 57 110 / 0.28)) drop-shadow(0 3px 5px rgb(150 30 60 / 0.18));
 	--hand: 'Nanum Pen Script', var(--sans);
 	/* 탭 첫 화면 위쪽의 빛 번짐 */
 	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.16), transparent 70%),
@@ -158,6 +164,12 @@
 		--wood-drop: rgb(20 5 0 / 0.45);
 		--wood-ink: #f3dcc6;
 		--wood-base: #825c42;
+		/* 우체통 — 어두운 화면에서 튀지 않게 한 단계 어둡게 · 빛 그림자도 낮게 (Phase 81) */
+		--post-a: #d65a36;
+		--post-b: #cc4252;
+		--post-c: #bb2a59;
+		--post-sheen: 0.14;
+		--post-glow: drop-shadow(0 14px 18px rgb(0 0 0 / 0.45)) drop-shadow(0 3px 5px rgb(0 0 0 / 0.35));
 		--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.13), transparent 70%),
 			radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.12), transparent 70%);
 		--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -8px rgb(0 0 0 / 0.6);
@@ -193,6 +205,12 @@
 	--wood-drop: rgb(20 5 0 / 0.45);
 	--wood-ink: #f3dcc6;
 	--wood-base: #825c42;
+	/* 우체통 — 어두운 화면에서 튀지 않게 한 단계 어둡게 · 빛 그림자도 낮게 (Phase 81) */
+	--post-a: #d65a36;
+	--post-b: #cc4252;
+	--post-c: #bb2a59;
+	--post-sheen: 0.14;
+	--post-glow: drop-shadow(0 14px 18px rgb(0 0 0 / 0.45)) drop-shadow(0 3px 5px rgb(0 0 0 / 0.35));
 	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.13), transparent 70%),
 		radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.12), transparent 70%);
 	--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -8px rgb(0 0 0 / 0.6);

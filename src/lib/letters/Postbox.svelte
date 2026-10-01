@@ -145,12 +145,12 @@
 		<defs>
 			<!-- 앱 아이콘과 같은 브랜드 그라디언트 (왼쪽 위 주황 → 오른쪽 아래 핑크) -->
 			<linearGradient id="{uid}-brand" x1="0" y1="0" x2="1" y2="1">
-				<stop offset="0" stop-color="#ff7a50" />
-				<stop offset="0.5" stop-color="#fb5c68" />
-				<stop offset="1" stop-color="#f0396e" />
+				<stop offset="0" style:stop-color="var(--post-a)" />
+				<stop offset="0.5" style:stop-color="var(--post-b)" />
+				<stop offset="1" style:stop-color="var(--post-c)" />
 			</linearGradient>
 			<linearGradient id="{uid}-sheen" x1="0" y1="0" x2="0" y2="1">
-				<stop offset="0" stop-color="#fff" stop-opacity="0.28" />
+				<stop offset="0" stop-color="#fff" style:stop-opacity="var(--post-sheen)" />
 				<stop offset="0.45" stop-color="#fff" stop-opacity="0" />
 			</linearGradient>
 		</defs>
@@ -178,11 +178,11 @@
 			<circle cx="150" cy="127" r="3.4" fill="#e0405f" />
 		</g>
 
-		<!-- 편지가 왔다 — 오른쪽 위 모서리에 빨간 점 (벽색 테로 통과 떼어 놓고, 은은히 퍼지는 고리) -->
+		<!-- 편지가 왔다 — 오른쪽 위 모서리에 빨간 점 (바탕색 테로 통과 떼어 놓고, 은은히 퍼지는 고리) -->
 		{#if inside > 0}
 			<g class="dot">
 				<circle class="ping" cx="276" cy="20" r="13" />
-				<circle cx="276" cy="20" r="13" fill="#ff2d3f" stroke="var(--wall)" stroke-width="4.5" paint-order="stroke" />
+				<circle cx="276" cy="20" r="13" fill="#ff2d3f" style:stroke="var(--bg)" stroke-width="4.5" paint-order="stroke" />
 				<circle cx="272" cy="16" r="4" fill="#fff" fill-opacity="0.35" />
 			</g>
 		{/if}
@@ -207,7 +207,7 @@
 		height: auto;
 		overflow: visible;
 		/* 브랜드색 빛 그림자 — 버튼의 --glow 와 같은 결 */
-		filter: drop-shadow(0 14px 18px rgb(240 57 110 / 0.28)) drop-shadow(0 3px 5px rgb(150 30 60 / 0.18));
+		filter: var(--post-glow); /* app.css — 다크 모드에서는 어둡게 */
 	}
 	.falling {
 		opacity: 0;
