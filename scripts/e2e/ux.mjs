@@ -1,5 +1,5 @@
 import { ROOT, CHROME } from './_env.mjs';
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 // 사용 흐름이 말없이 끊기지 않는지 (Phase 39 · docs/UX-GUIDELINES.md) — 가짜 Supabase 를 브라우저 가로채기로
 //  · 로그인 직후 "계정 정보를 불러오지 못함"이 번쩍이지 않는다
@@ -237,7 +237,7 @@ try {
 } catch (e) { fail++; console.error(e); }
 finally {
 	await browser.close();
-	try { process.kill(-vite.pid); } catch { try { vite.kill(); } catch {} }
+	stopProcess(vite);
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1,6 +1,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import { S } from '../state.svelte';
+import { accountIsCurrent, accountToken, currentAccountId, onAccountChange } from '../accountScope';
 
 /**
  * 익명편지 잠금 (Phase 44) — 가입한 학생이 적을 때는 편지를 누가 보냈는지 쉽게 짐작된다.
@@ -12,6 +13,7 @@ import { S } from '../state.svelte';
  * 앱으로 돌아올 때만 한 번 더 읽는다 (내려 둔 사이 Realtime 이 끊겼을 수 있다). 한 번 열린 걸 보면 이번에 켠 동안은 다시 묻지 않는다.
  */
 export const GATE = $state({ students: null as number | null, opened: false });
+onAccountChange(() => { GATE.students = null; GATE.opened = false; });
 
 export const gateOn = () => S.settings?.letters_gate === true;
 export const gateMin = () => S.settings?.letters_gate_min ?? 100;
@@ -25,7 +27,10 @@ export function lettersState(): 'open' | 'locked' | 'checking' {
 }
 
 async function load() {
+	if (!currentAccountId()) return;
+	const token = accountToken();
 	const { data } = await supabase.from('signup_stats').select('students').maybeSingle();
+	if (!accountIsCurrent(token)) return;
 	const n = (data as { students: number } | null)?.students;
 	// 표가 없으면(DB 반영 전) 잠그지 않는다 — 서버도 잠그지 않는다
 	GATE.students = typeof n === 'number' ? n : Number.MAX_SAFE_INTEGER;
@@ -40,10 +45,12 @@ export function checkGate() {
 /** 잠금 화면이 떠 있는 동안 — 가입 인원을 실시간으로. 돌려준 함수로 멈춘다 */
 export function watchSignups(): () => void {
 	if (!gateOn() || GATE.opened) return () => {};
+	const token = accountToken();
 	void load();
 	const ch: RealtimeChannel = supabase
 		.channel('signups', { config: { private: true } })
 		.on('broadcast', { event: 'students' }, ({ payload }) => {
+			if (!accountIsCurrent(token)) return;
 			const n = (payload as { students?: number } | undefined)?.students;
 			if (typeof n !== 'number') return;
 			GATE.students = n;
@@ -51,7 +58,7 @@ export function watchSignups(): () => void {
 		})
 		.subscribe();
 	const onVis = () => {
-		if (document.visibilityState === 'visible') void load();
+		if (accountIsCurrent(token) && document.visibilityState === 'visible') void load();
 	};
 	document.addEventListener('visibilitychange', onVis);
 	return () => {

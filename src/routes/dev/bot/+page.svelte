@@ -37,12 +37,13 @@
 		async turn(_id, lines) {
 			sent.push(lines);
 			(window as unknown as { __botSent: unknown }).__botSent = sent;
-			await new Promise((r) => setTimeout(r, 300));
+			await new Promise((r) => setTimeout(r, Number(q.get('delay') ?? 300)));
 			const tail: string[] = [];
 			for (let i = lines.length - 1; i >= 0 && lines[i].role === 'user'; i--) tail.unshift(lines[i].content);
 			const text = tail.join('\n');
 			if (/01[016789]\d{7,8}/.test(text.replace(/[\s.-]/g, ''))) return { status: 'blocked', code: 'personal_info' };
 			if (q.has('down')) return { status: 'ai_unavailable' };
+			if (q.has('network')) return { status: 'network' };
 			used++;
 			return { status: 'ok', reply: `봇 답: ${text}`, turns: used, max_turns: maxTurns };
 		}

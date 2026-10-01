@@ -33,7 +33,7 @@ export const actions: Actions = {
 		if (!isAdmin(locals)) return fail(403, { error: '이메일 확인은 관리자만 가능' });
 		await detail(params.id, locals.staff!.id);
 		const [who] = await revealIdentity(locals, [params.id], null);
-		return { email: who.email ?? '(탈퇴)', name: who.name };
+		return { userId: params.id, email: who.email ?? '(탈퇴)', name: who.name };
 	},
 
 	letters: async ({ params, locals }) => {
@@ -42,7 +42,7 @@ export const actions: Actions = {
 			p_user: params.id,
 			p_staff: locals.staff!.id
 		});
-		return { letters };
+		return { userId: params.id, letters };
 	},
 
 	// 개인 공지 (Phase 35) — 이 학생에게만 (경고 · 개인 연락). 학생 앱의 공지 · 알림(하트)에 뜨고 푸시도 간다. 운영진 누구나, 기록에 남는다

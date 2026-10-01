@@ -54,13 +54,12 @@ export function chatPrompt(turns: ChatTurn[]): AiMessage[] {
 }
 
 /**
- * 규칙 필터(ai_chat_turn)에 넣을 글 — 봇은 연달아 보낸 말을 한 번에 읽고 답하므로 마지막 봇 말 뒤의 사용자 말 전부.
- * DB 한도(500자)에 맞춰 자른다 (한 말은 이미 500자까지라, 넘는 건 여러 말을 아주 길게 연달아 보낸 경우뿐).
+ * 규칙 필터(ai_chat_turn)에 넣을 글 — 모델에 전달하는 클라이언트 기록 전부.
+ * assistant 역할도 클라이언트가 지정하므로 함께 검사한다. cleanHistory의 20개 × 500자와 구분 줄 19개,
+ * 최대 10019자를 DB에서도 받는다. 필터만 짧게 잘라 모델에 보내는 뒷부분을 놓치지 않는다.
  */
-export function unansweredText(turns: ChatTurn[]): string {
-	const tail: string[] = [];
-	for (let i = turns.length - 1; i >= 0 && turns[i].role === 'user'; i--) tail.unshift(turns[i].content);
-	return tail.join('\n').slice(0, 500);
+export function conversationText(turns: ChatTurn[]): string {
+	return turns.map((t) => t.content).join('\n');
 }
 
 /** AI 답도 한 번 더 — 전화번호 · @아이디 모양이 섞여 나오면 그 부분을 가린다 */

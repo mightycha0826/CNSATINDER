@@ -53,6 +53,9 @@ export class ChatRoom {
 	#t: ChatTransport;
 	#byCid = new Map<string, Msg>();
 	#maxId = 0;
+	/** 조회가 끝난 메시지까지만 전진한다. 실시간 도착은 과거 갭을 메웠다는 증거가 아니다. */
+	#fetchedId = 0;
+	#fetching: Promise<void> | null = null;
 	#retry = 0;
 	#reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	#tailTimer: ReturnType<typeof setTimeout> | null = null;
@@ -121,6 +124,7 @@ export class ChatRoom {
 		if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
 		if (this.#tailTimer) clearTimeout(this.#tailTimer);
 		if (this.#safetyTimer) clearInterval(this.#safetyTimer);
+		if (this.#readTimer) clearTimeout(this.#readTimer);
 		document.removeEventListener('visibilitychange', this.#onVisibility);
 		window.removeEventListener('online', this.#onOnline);
 	}
@@ -183,6 +187,7 @@ export class ChatRoom {
 			return;
 		}
 		if (!this.closed) void this.#view(true);
+		this.#scheduleRead();
 		if (this.#hiddenAt && Date.now() - this.#hiddenAt > BG_RECREATE_MS) this.#reconnectNow();
 		else void this.resync();
 	}
@@ -200,7 +205,11 @@ export class ChatRoom {
 			this.#t.disconnect();
 			return;
 		}
-		for (const r of await this.#t.fetchAfter(this.roomId, this.#maxId)) this.upsert(r, 'sent');
+		try {
+			await this.#fetchMessages();
+		} catch {
+			return; // 조회가 실패하면 커서는 그대로 — 다음 동기화가 같은 갭을 다시 읽는다
+		}
 		// 끊겨 있던 동안 바뀐 공감도 — 방 전체를 다시 읽어 통째로 맞춘다 (방 하나에 많아야 메시지 수 × 2)
 		try {
 			this.#setReactions(await this.#t.fetchReactions(this.roomId));
@@ -216,7 +225,11 @@ export class ChatRoom {
 		this.#tailTimer = setTimeout(async () => {
 			this.#tailTimer = null;
 			if (this.#disposed || this.closed) return;
-			for (const r of await this.#t.fetchRecent(this.roomId, 50)) this.upsert(r, 'sent');
+			try {
+				for (const r of await this.#t.fetchRecent(this.roomId, 50)) this.upsert(r, 'sent');
+			} catch {
+				/* 다음 동기화 때 다시 읽는다 */
+			}
 		}, TAIL_SWEEP_DELAY_MS);
 	}
 
@@ -232,7 +245,30 @@ export class ChatRoom {
 			return;
 		}
 		if (this.closed) return;
-		for (const r of await this.#t.fetchAfter(this.roomId, this.#maxId)) this.upsert(r, 'sent');
+		try {
+			await this.#fetchMessages();
+		} catch {
+			/* 다음 안전망 · 재연결 때 같은 커서로 다시 읽는다 */
+		}
+	}
+
+	/** 중첩 동기화도 같은 조회를 기다린다. 페이지 전부를 받은 뒤에만 커서를 확정한다. */
+	#fetchMessages(): Promise<void> {
+		if (this.#fetching) return this.#fetching;
+		const after = this.#fetchedId;
+		const fetch = (async () => {
+			const rows = await this.#t.fetchAfter(this.roomId, after);
+			if (this.#disposed || this.closed) return;
+			for (const r of rows) {
+				this.upsert(r, 'sent');
+				this.#fetchedId = Math.max(this.#fetchedId, r.id);
+			}
+		})();
+		this.#fetching = fetch;
+		void fetch.finally(() => {
+			if (this.#fetching === fetch) this.#fetching = null;
+		}).catch(() => {});
+		return fetch;
 	}
 
 	#absorb(s: RoomSnap) {
@@ -432,7 +468,11 @@ export class ChatRoom {
 		}
 		if (res.reason === 'duplicate') {
 			// 타임아웃 후 재시도였는데 서버엔 이미 들어가 있다 → 그 행을 읽어 확정
-			for (const r of await this.#t.fetchRecent(this.roomId, 50)) this.upsert(r, 'sent');
+			try {
+				for (const r of await this.#t.fetchRecent(this.roomId, 50)) this.upsert(r, 'sent');
+			} catch {
+				/* 읽기가 실패하면 다시 보내기 상태로 남긴다 */
+			}
 			if (m && m.id == null) m.state = 'failed';
 			return null;
 		}
@@ -514,17 +554,39 @@ export class ChatRoom {
 	}
 
 	#readSent = 0;
+	#readTarget = 0;
+	#reading = false;
+	/** 잇달아 실패한 횟수 — 간격을 벌리고(2 · 2 · 4 · 8 · 16초) 다섯 번이면 멈춘다. 서버가 계속 거절하는데 2초마다 묻지 않게 */
+	#readFails = 0;
 	#readTimer: ReturnType<typeof setTimeout> | null = null;
 	/** 스크롤이 맨 아래일 때만 호출. 2초 스로틀 — rooms UPDATE 브로드캐스트 폭증 방지. */
 	markRead() {
-		if (this.#readTimer || this.closed) return;
-		this.#readTimer = setTimeout(() => {
+		if (this.#disposed || this.closed) return;
+		// 기다리는 사이 위로 스크롤해도, 그 뒤에 온 아직 안 본 메시지를 읽음 처리하지 않는다.
+		this.#readTarget = Math.max(this.#readTarget, this.#maxId);
+		this.#scheduleRead();
+	}
+
+	/** retry = 실패한 뒤 저절로 다시 — 다섯 번 실패하면 그만둔다 (그 뒤로는 새 메시지를 보거나 화면에 돌아올 때 한 번씩만) */
+	#scheduleRead(retry = false) {
+		if (this.#disposed || this.closed || this.#reading || this.#readTimer || this.#readTarget <= this.#readSent) return;
+		if (retry && this.#readFails >= 5) return;
+		this.#readTimer = setTimeout(async () => {
 			this.#readTimer = null;
-			const last = this.#maxId;
-			if (last > this.#readSent) {
-				this.#readSent = last;
-				void this.#t.markRead(this.roomId, last);
+			if (this.#disposed || this.closed || document.visibilityState !== 'visible') return;
+			const last = this.#readTarget;
+			this.#reading = true;
+			try {
+				await this.#t.markRead(this.roomId, last);
+				this.#readSent = Math.max(this.#readSent, last);
+				this.#readFails = 0;
+			} catch {
+				/* 같은 읽음 목표를 다시 보낸다 — 실패를 성공으로 기억하지 않는다 */
+				this.#readFails++;
+			} finally {
+				this.#reading = false;
+				this.#scheduleRead(true);
 			}
-		}, 2000);
+		}, Math.min(30_000, 2000 * 2 ** Math.max(0, this.#readFails - 1)));
 	}
 }

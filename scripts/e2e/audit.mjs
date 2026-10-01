@@ -1,7 +1,7 @@
 import { ROOT, CHROME, OUT, answerDialogs } from './_env.mjs';
 import http from 'node:http';
 import { createHmac } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 
 /** 운영자 화면 전체 점검 — 가짜 Supabase(RPC·Auth) + 실제 SvelteKit 서버 + 실제 브라우저 */
@@ -593,7 +593,7 @@ try {
 	}
 } finally {
 	await browser.close();
-	vite.kill();
+	stopProcess(vite);
 	sb.close();
 }
 console.log(`\n${pass} passed, ${fail} failed`);

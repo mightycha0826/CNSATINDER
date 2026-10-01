@@ -1,9 +1,8 @@
 import { ROOT, CHROME, OUT, answerDialogs } from './_env.mjs';
 import http from 'node:http';
 import { createHmac } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
-import { execSync } from 'node:child_process';
 
 /**
  * 서비스워커(static/sw.js)가 켜진 상태에서 운영자 화면이 최신 데이터를 보여주는지.
@@ -183,9 +182,9 @@ try {
 	check('★ 앱 창이 알리면 "앱으로 쓰는 기기" · 창 id 를 기억 (알림은 이 창/앱으로)', meta?.app === true && meta.ids.length === 1, JSON.stringify(meta));
 } finally {
 	await browser.close();
-	vite.kill();
+	stopProcess(vite);
 	sb.close();
-	try { execSync("pkill -f 'node_modules/.bin/vite dev --port 5198'"); } catch {}
+
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

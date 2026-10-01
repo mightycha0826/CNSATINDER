@@ -1,5 +1,5 @@
 import { ROOT, CHROME } from './_env.mjs';
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 // 요청 수 지키기 — 앱을 열 때 부팅 요청이 한 번씩만, 탭을 오가도 공지를 다시 부르지 않기, 찾는 중 폴링 간격
 // (가짜 Supabase 를 브라우저 가로채기로 · 나가는 요청을 전부 센다)
@@ -83,7 +83,7 @@ try {
 } catch (e) { fail++; console.error(e); }
 finally {
 	await browser.close();
-	try { process.kill(-vite.pid); } catch {}
+	stopProcess(vite);
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

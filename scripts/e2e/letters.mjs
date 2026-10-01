@@ -955,8 +955,8 @@ try {
 		await pk.getByRole('textbox', { name: '편지 내용' }).tap(); await pk.keyboard.type('테스트');
 		await pk.setViewportSize({ width: 412, height: 380 }); // 안드로이드 키보드 — 화면이 줄어든다
 		// 안드로이드 크롬처럼 커서 쪽으로 스크롤하며 편지지 머리를 서식 막대 밑으로 밀어 올린다
-		await pk.evaluate(() => { const b = document.querySelector('.le .bar').getBoundingClientRect(), p = document.querySelector('.letter-paper').getBoundingClientRect(); scrollBy(0, p.top - b.bottom + 70); });
-		const before = await pk.evaluate(() => document.querySelector('.le .bar').getBoundingClientRect().bottom - document.querySelector('.letter-paper').getBoundingClientRect().top);
+		// 밀어 올린 직후를 같은 호출에서 잰다 — 따로 재면 그 사이에 앱이 이미 바로잡아 before 가 음수로 나온다
+		const before = await pk.evaluate(() => { const b = document.querySelector('.le .bar').getBoundingClientRect(), p = document.querySelector('.letter-paper').getBoundingClientRect(); scrollBy(0, p.top - b.bottom + 70); return document.querySelector('.le .bar').getBoundingClientRect().bottom - document.querySelector('.letter-paper').getBoundingClientRect().top; });
 		await pk.waitForTimeout(900);
 		const after = await pk.evaluate(() => ({ gap: document.querySelector('.letter-paper').getBoundingClientRect().top - document.querySelector('.le .bar').getBoundingClientRect().bottom, kb: document.documentElement.classList.contains('kb-open') }));
 		check('★ 키보드가 올라와 편지지 머리(To.)가 가려지면 다시 서식 막대 아래로', before > 20 && after.kb && after.gap >= 0, JSON.stringify({ before, after }));

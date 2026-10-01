@@ -1,4 +1,5 @@
 import { fetchUnread } from './api';
+import { accountIsCurrent, accountToken, currentAccountId, onAccountChange } from '../accountScope';
 
 /**
  * 안 연 편지 수 — 하단 탭 "익명편지" 위의 빨간 점.
@@ -8,8 +9,12 @@ import { fetchUnread } from './api';
 export const DM = $state({ unread: 0, loaded: false });
 
 export async function refreshUnread() {
+	if (!currentAccountId()) return;
+	const token = accountToken();
 	try {
-		DM.unread = await fetchUnread();
+		const unread = await fetchUnread();
+		if (!accountIsCurrent(token)) return;
+		DM.unread = unread;
 		DM.loaded = true;
 	} catch {
 		/* DB 가 편지함 전이거나 네트워크 — 점을 그대로 둔다 */
@@ -21,3 +26,9 @@ export async function refreshUnread() {
  * 편지를 열면 그 편지 쪽(보낸/받은)으로 맞춘다.
  */
 export const LIST = $state({ tab: 'received' as 'received' | 'sent' });
+
+onAccountChange(() => {
+	DM.unread = 0;
+	DM.loaded = false;
+	LIST.tab = 'received';
+});

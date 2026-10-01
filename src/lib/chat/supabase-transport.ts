@@ -1,4 +1,4 @@
-import type { RealtimeChannel } from '@supabase/supabase-js';
+import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '../supabase';
 import { rpc } from '../rpc';
 import { notifyReaction, notifySent } from '../push';
@@ -46,11 +46,12 @@ const REACTION_COLS = 'message_id, room_id, seat, emoji';
  * 메시지 · 방 상태 · 연장 투표 · 공감은 DB 트리거가 이 방 채널(room:<id>)에 직접 방송한다(schema.sql Phase 55).
  * 채널은 비공개라 참여할 때 한 번 "이 방 사람인가"를 DB 정책(rt_allowed)으로 확인한다 — 다른 사람은 참여 자체가 안 된다.
  * (예전 postgres_changes 는 변경마다 구독자마다 RLS 를 다시 돌리고 DB 가 변경 기록을 계속 훑었다 — 실DB 에서 가장 비싼 일이었다)
- * 타이핑은 DB 에 쓰면 쿼터를 태우므로 앱끼리 broadcast, 접속 여부는 presence (둘 다 같은 비공개 채널).
+ * 학생은 room 채널에 쓸 수 없다. 타이핑 · 접속은 별도의 peer:<id> 채널에서만 주고받는다.
  */
 export class SupabaseTransport implements ChatTransport {
-	#ch: RealtimeChannel | null = null;
-	#disposed = false;
+	#roomCh: RealtimeChannel | null = null;
+	#peerCh: RealtimeChannel | null = null;
+	#generation = 0;
 	/**
 	 * 상대가 지금 이 방 화면에 있는지 (presence). 있으면 푸시 알림 요청(/api/push)을 아예 보내지 않는다 —
 	 * 서버도 "앱을 보고 있음"이면 어차피 안 보내지만, 요청 자체가 Workers 무료 한도(하루 10만)를 쓴다.
@@ -58,13 +59,32 @@ export class SupabaseTransport implements ChatTransport {
 	#partnerHere = false;
 	#seat: 1 | 2 = 1;
 
+	constructor(private readonly client: SupabaseClient = supabase) {}
+
 	connect(roomId: string, seat: 1 | 2, h: TransportHandlers) {
 		this.disconnect();
-		this.#disposed = false;
+		const generation = this.#generation;
+		const current = () => generation === this.#generation;
 		this.#seat = seat;
 		this.#partnerHere = false;
+		let roomReady = false;
+		let peerReady = false;
+		let announced = false;
+		const subscribed = () => {
+			if (current() && roomReady && peerReady && !announced) {
+				announced = true;
+				h.onSubscribed();
+			}
+		};
+		const down = (reason: string) => {
+			announced = false;
+			this.#partnerHere = false;
+			h.onPresence([]);
+			h.onDown(reason);
+		};
 
-		const ch = supabase.channel(`room:${roomId}`, {
+		const roomCh = this.client.channel(`room:${roomId}`, { config: { private: true } });
+		const peerCh = this.client.channel(`peer:${roomId}`, {
 			config: {
 				private: true,
 				// ★ presence 키는 seat. user id 를 넣으면 익명성이 한 줄로 무너진다.
@@ -72,64 +92,83 @@ export class SupabaseTransport implements ChatTransport {
 				broadcast: { self: false }
 			}
 		});
+		this.#roomCh = roomCh;
+		this.#peerCh = peerCh;
 
 		// 이 방 행이 맞을 때만 — 방송 페이로드는 DB 트리거가 만든 행 그대로다
 		const mine = (p: unknown): p is { room_id: string } => !!p && (p as { room_id?: string }).room_id === roomId;
-		ch.on('broadcast', { event: 'msg' }, ({ payload }) => {
+		roomCh.on('broadcast', { event: 'msg' }, ({ payload }) => {
 			// 새 메시지 · 보낸 사람이 지움 (Phase 28)
-			if (mine(payload) && 'client_msg_id' in payload) h.onMessage(payload as unknown as MsgRow);
+			if (current() && mine(payload) && 'client_msg_id' in payload) h.onMessage(payload as unknown as MsgRow);
 		})
 			.on('broadcast', { event: 'room' }, ({ payload }) => {
-				if (payload && (payload as { id?: string }).id === roomId) h.onRoom(payload as RoomRow);
+				if (current() && payload && (payload as { id?: string }).id === roomId) h.onRoom(payload as RoomRow);
 			})
 			.on('broadcast', { event: 'vote' }, ({ payload }) => {
 				// 마음 바꾸기도 같은 이벤트로 온다
-				if (mine(payload) && 'seat' in payload) h.onVote(payload as unknown as VoteRow);
+				if (current() && mine(payload) && 'seat' in payload) h.onVote(payload as unknown as VoteRow);
 			})
 			.on('broadcast', { event: 'reaction' }, ({ payload }) => {
 				// 공감은 지우지 않고 emoji = null 로 바꾼다 — 취소도 같은 이벤트
-				if (mine(payload) && 'seat' in payload) h.onReaction(payload as unknown as ReactionRow);
+				if (current() && mine(payload) && 'seat' in payload) h.onReaction(payload as unknown as ReactionRow);
 			})
-			.on('broadcast', { event: 'typing' }, ({ payload }) => {
+			.subscribe((status, err) => {
+				if (!current()) return;
+				if (status === 'SUBSCRIBED') {
+					roomReady = true;
+					subscribed();
+				} else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+					roomReady = false;
+					down(err?.message ?? status);
+				}
+			});
+
+		peerCh.on('broadcast', { event: 'typing' }, ({ payload }) => {
+				if (!current()) return;
 				const s = Number(payload?.seat);
 				if (s === 1 || s === 2) h.onTyping(s);
 			})
 			.on('presence', { event: 'sync' }, () => {
-				const seats = Object.keys(ch.presenceState())
+				if (!current()) return;
+				const seats = Object.keys(peerCh.presenceState())
 					.map(Number)
 					.filter((n) => n === 1 || n === 2);
 				this.#partnerHere = seats.some((s) => s !== this.#seat);
 				h.onPresence(seats);
 			})
 			.subscribe(async (status, err) => {
-				if (this.#disposed) return;
+				if (!current()) return;
 				if (status === 'SUBSCRIBED') {
+					peerReady = false;
 					// ★ presence 에는 seat 외 아무것도 싣지 않는다
-					await ch.track({ seat });
-					h.onSubscribed();
+					const result = await peerCh.track({ seat }).catch(() => 'error');
+					if (!current()) return;
+					if (result !== 'ok') return down('presence_failed');
+					peerReady = true;
+					subscribed();
 				} else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-					h.onDown(err?.message ?? status);
+					peerReady = false;
+					down(err?.message ?? status);
 				}
 			});
-
-		this.#ch = ch;
 	}
 
 	disconnect() {
-		this.#disposed = true;
+		this.#generation++;
 		this.#partnerHere = false; // 연결이 끊기면 모른다 — 알림은 보내는 쪽으로
-		if (this.#ch) {
+		for (const ch of [this.#roomCh, this.#peerCh]) {
 			// 방이 닫히면 즉시 해제 — 붙들고 있으면 Realtime 동시 연결 한도를 태운다
-			void supabase.removeChannel(this.#ch);
-			this.#ch = null;
+			if (ch) void this.client.removeChannel(ch);
 		}
+		this.#roomCh = null;
+		this.#peerCh = null;
 	}
 
 	async send(roomId: string, seat: 1 | 2, body: string, clientMsgId: string, replyTo: number | null = null): Promise<SendResult> {
 		try {
 			// 답장일 때만 reply_to 를 싣는다 — 보통 메시지는 Phase 18 전 DB 에서도 그대로 된다
 			const row = { room_id: roomId, sender_seat: seat, body, client_msg_id: clientMsgId, ...(replyTo != null && { reply_to: replyTo }) };
-			const { data, error } = await withMsgCols((cols) => supabase.from('messages').insert(row).select(cols).single());
+			const { data, error } = await withMsgCols((cols) => this.client.from('messages').insert(row).select(cols).single());
 			if (!error) {
 				const sent = data as unknown as MsgRow; // 열 목록이 문자열 변수라 supabase 타입 추론이 안 된다
 				if (!this.#partnerHere) notifySent(sent.id); // 상대가 이 방에 없으면 — 보낼지는 서버가 한 번 더 판단
@@ -157,10 +196,11 @@ export class SupabaseTransport implements ChatTransport {
 		let cursor = afterId;
 		for (;;) {
 			const { data, error } = await withMsgCols((cols) =>
-				supabase.from('messages').select(cols).eq('room_id', roomId).gt('id', cursor).order('id', { ascending: true }).limit(200)
+				this.client.from('messages').select(cols).eq('room_id', roomId).gt('id', cursor).order('id', { ascending: true }).limit(200)
 			);
 			const rows = data as unknown as MsgRow[] | null;
-			if (error || !rows?.length) break;
+			if (error) throw error; // 부분 조회를 완료된 갭으로 착각해 커서를 넘기지 않는다
+			if (!rows?.length) break;
 			out.push(...rows);
 			cursor = rows[rows.length - 1].id;
 			if (rows.length < 200) break;
@@ -169,9 +209,10 @@ export class SupabaseTransport implements ChatTransport {
 	}
 
 	async fetchRecent(roomId: string, n: number): Promise<MsgRow[]> {
-		const { data } = await withMsgCols((cols) =>
-			supabase.from('messages').select(cols).eq('room_id', roomId).order('id', { ascending: false }).limit(n)
+		const { data, error } = await withMsgCols((cols) =>
+			this.client.from('messages').select(cols).eq('room_id', roomId).order('id', { ascending: false }).limit(n)
 		);
+		if (error) throw error;
 		return (data as unknown as MsgRow[] | null) ?? [];
 	}
 
@@ -214,12 +255,13 @@ export class SupabaseTransport implements ChatTransport {
 	}
 
 	async markRead(roomId: string, lastId: number) {
-		await supabase.rpc('mark_read', { p_room: roomId, p_last_id: lastId });
+		const { error } = await this.client.rpc('mark_read', { p_room: roomId, p_last_id: lastId });
+		if (error) throw error;
 	}
 
 	async react(roomId: string, messageId: number, emoji: ReactionKey | null): Promise<ReactResult> {
 		try {
-			const { data, error } = await supabase.rpc('react_message', { p_message: messageId, p_emoji: emoji });
+			const { data, error } = await this.client.rpc('react_message', { p_message: messageId, p_emoji: emoji });
 			if (error) return 'network';
 			const status = (data as { status: ReactResult }).status;
 			// 공감을 달았을 때만 (취소는 알리지 않는다). 보낼지 말지는 서버가 정한다.
@@ -231,7 +273,7 @@ export class SupabaseTransport implements ChatTransport {
 	}
 
 	async fetchReactions(roomId: string): Promise<ReactionRow[]> {
-		const { data, error } = await supabase
+		const { data, error } = await this.client
 			.from('message_reactions')
 			.select(REACTION_COLS)
 			.eq('room_id', roomId)
@@ -249,6 +291,6 @@ export class SupabaseTransport implements ChatTransport {
 	}
 
 	typing(seat: 1 | 2) {
-		void this.#ch?.send({ type: 'broadcast', event: 'typing', payload: { seat } });
+		void this.#peerCh?.send({ type: 'broadcast', event: 'typing', payload: { seat } });
 	}
 }

@@ -1,5 +1,5 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 // 업적 (Phase 31) — /dev/achievements 미리보기 · 상대 프로필의 대표 업적(/dev/chat)
 const SP = OUT, PORT = 5185;
@@ -404,6 +404,6 @@ try {
 	check('★ 프로필 시트 위에 메달 자세히 (동 1명 · 동만 달성)', (await pin.innerText()).includes('둘 다 고정한 채팅') && (await pin.locator('.tiers li.done').count()) === 1);
 	check('카탈로그는 한 번만 받는다', catalogCalls === 1, String(catalogCalls));
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
-} finally { await browser.close(); vite.kill(); try { execSync(`pkill -f 'vite dev --port ${PORT}'`); } catch {} }
+} finally { await browser.close(); stopProcess(vite);  }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

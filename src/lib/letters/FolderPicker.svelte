@@ -5,8 +5,14 @@
 	 * 넣은 뒤의 처리(목록 고치기 · 알림)는 부르는 쪽이 — ondone(폴더 이름)
 	 */
 	import Sheet from '$lib/ui/Sheet.svelte';
+	import { onDestroy } from 'svelte';
 	import { FOLDER_MAX, folderError, putInFolder, type Folder } from './api';
 	import { errMsg, toast } from '$lib/state.svelte';
+	import { accountIsCurrent, accountToken } from '$lib/accountScope';
+	const account = accountToken();
+	let alive = true;
+	onDestroy(() => (alive = false));
+	const current = () => alive && accountIsCurrent(account);
 
 	let {
 		ids,
@@ -29,15 +35,16 @@
 	const clean = $derived(name.trim().replace(/\s+/g, ' '));
 
 	async function put(to: { folder: number } | { name: string }) {
-		if (busy) return;
+		if (busy || !current()) return;
 		busy = true;
 		try {
 			const r = await putInFolder(ids, to);
+			if (!current()) return;
 			const err = folderError(r);
 			if (err) return toast(err);
 			ondone(r.status === 'ok' && r.folder ? r.folder.name : '');
 		} catch (e) {
-			toast(errMsg(e));
+			if (current()) toast(errMsg(e));
 		} finally {
 			busy = false;
 		}

@@ -1,5 +1,5 @@
 import { ROOT, CHROME } from './_env.mjs';
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 // 보안 헤더 · 콘텐츠 보안 정책(CSP) — 헤더가 붙는지, 실제로 막는지, 앱이 스스로 막히지 않는지
 const PORT = 5190;
@@ -85,7 +85,7 @@ try {
 } catch (e) { fail++; console.error(e); }
 finally {
 	await browser.close();
-	try { process.kill(-vite.pid); } catch {}
+	stopProcess(vite);
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

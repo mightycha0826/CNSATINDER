@@ -6,12 +6,18 @@
 	 * 보내면 보낸 편지함으로.
 	 */
 	import { page } from '$app/state';
+	import { onDestroy } from 'svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import EnvelopeCompose from '$lib/letters/EnvelopeCompose.svelte';
 	import type { LetterFmt } from '$lib/letters/rich';
 	import { anonName, fromLabel, openLetter, replyToLetter, type Letter } from '$lib/letters/api';
 	import { afterSent, deliver } from '$lib/letters/send';
 	import { S, errMsg, toast } from '$lib/state.svelte';
+	import { accountIsCurrent, accountToken } from '$lib/accountScope';
+	const account = accountToken();
+	let alive = true;
+	onDestroy(() => (alive = false));
+	const current = () => alive && accountIsCurrent(account);
 
 	const id = $derived(Number(page.params.id));
 	const back = $derived(`/letters/m/${id}`);
@@ -20,15 +26,20 @@
 
 	$effect(() => {
 		const target = id;
+		let active = true;
+		letter = null;
+		gone = false;
 		void (async () => {
 			try {
 				const r = await openLetter(target);
+				if (!active || !current()) return;
 				if (r.status !== 'ok' || r.role !== 'received' || !r.can_reply) gone = true;
 				else letter = r;
 			} catch (e) {
-				toast(errMsg(e));
+				if (active && current()) toast(errMsg(e));
 			}
 		})();
+		return () => { active = false; };
 	});
 
 	// 내가 익명 쪽(이름으로 보낸 사람의 답장에 다시 답장)이면 서명을 적을 수 있다
@@ -36,7 +47,7 @@
 	const from = $derived(anonSide ? anonName(S.profile?.gender) : (S.me?.name ?? '나'));
 
 	const send = (body: string, fmt: LetterFmt | null, nick: string | null) =>
-		letter ? deliver(() => replyToLetter(letter!.id, body, fmt, nick)) : Promise.resolve(false);
+		current() && letter ? deliver(() => replyToLetter(letter!.id, body, fmt, nick)) : Promise.resolve(false);
 </script>
 
 <div class="topbar">
@@ -54,7 +65,7 @@
 		nick={letter.my_nick ?? ''}
 		placeholder={'받은 편지에 답장을 적어 보세요.\n답장도 봉투에 담겨 전해져요.'}
 		onsend={send}
-		ondone={() => afterSent('답장을 보냈어요')}
+		ondone={() => { if (current()) afterSent('답장을 보냈어요', account); }}
 	/>
 {/if}
 

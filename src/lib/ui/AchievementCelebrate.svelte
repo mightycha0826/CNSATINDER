@@ -16,6 +16,8 @@
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
 	import { maybeOpenBadgeTour } from '$lib/badgeTour.svelte';
 	import { UI } from '$lib/state.svelte';
+	import { accountIsCurrent, accountToken } from '$lib/accountScope';
+	const account = accountToken();
 
 	let { preview = null }: { preview?: BadgeLite[] | null } = $props();
 
@@ -35,8 +37,8 @@
 			UI.achNew = false;
 			if (fresh.length) return; // 이미 떠 있으면 그대로
 			void fetchNewAchievements().then((got) => {
-				if (got.length) fresh = got;
-			});
+				if (accountIsCurrent(account) && got.length) fresh = got;
+			}).catch(() => {});
 		});
 	});
 
@@ -44,6 +46,7 @@
 		if (leaving) return;
 		leaving = true;
 		await new Promise((r) => setTimeout(r, 240));
+		if (!accountIsCurrent(account)) return;
 		// 보러 가기 — 이 창의 뒤로가기 칸을 업적 화면으로 바꿔 끼운다 (창을 닫으며 이동, lib/overlay.svelte.ts)
 		if (view) void navigateFromOverlay('/me/achievements');
 		// CNSA 뱃지를 처음 받았으면 이어서 CNSA 뱃지 안내 (Phase 84 — 한 번만)
@@ -52,6 +55,7 @@
 		leaving = false;
 		if (!preview) {
 			await markAchievementsSeen().catch(() => {});
+			if (!accountIsCurrent(account)) return;
 			if (!view) maybeOpenBadgeTour(gotCnsa);
 		}
 	}

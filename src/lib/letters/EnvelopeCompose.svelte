@@ -20,6 +20,10 @@
 	import { KB } from '../keyboard.svelte';
 	import * as haptic from '../haptics';
 	import { NICK_MAX, paperDate, stampDate } from './api';
+	import { accountIsCurrent, accountToken } from '$lib/accountScope';
+	const account = accountToken();
+	let alive = true;
+	const current = () => alive && accountIsCurrent(account);
 
 	let {
 		to,
@@ -64,18 +68,22 @@
 		[900, () => (phase = 'rising')],
 		[1550, () => (phase = 'write')]
 	]);
-	onDestroy(() => stop());
+	onDestroy(() => {
+		alive = false;
+		stop();
+	});
 
 	const writing = $derived(phase === 'write');
 	const sending = $derived(!['enter', 'opened', 'rising', 'write'].includes(phase));
 	const ready = $derived(writing && len > 0 && len <= MAX);
 
 	async function send() {
-		if (!ready) return;
+		if (!ready || !current()) return;
 		(document.activeElement as HTMLElement | null)?.blur(); // 키보드를 내리고 연출을 보여 준다
 		aimFold();
 		phase = 'fold';
 		const ok = await onsend(body, fmt, nickable ? nick.trim() || null : null);
+		if (!current()) return;
 		if (!ok) {
 			phase = 'write';
 			return;
@@ -91,7 +99,7 @@
 			[3500, () => (phase = 'post')],
 			// 봉투가 투입구로 다 들어간 순간
 			[3500 + 520, () => (bump++, haptic.success())],
-			[4700, ondone]
+			[4700, () => { if (current()) ondone(); }]
 		]);
 	}
 

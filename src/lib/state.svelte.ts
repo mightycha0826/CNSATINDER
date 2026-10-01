@@ -2,6 +2,8 @@ import type { Session } from '@supabase/supabase-js';
 import { hasSupabase, supabase } from './supabase';
 import { rpc } from './rpc';
 import { disablePush, syncPush } from './push';
+import { accountIsCurrent, accountToken, changeAccount } from './accountScope';
+import { toasts } from './toast.svelte';
 
 /** 내 프로필. 상대에게는 nickname·bio·interests·mbti 만 partner_profile() 을 거쳐 보인다 (성별·선호·상태는 안 보인다). */
 export type Profile = {
@@ -63,6 +65,7 @@ export type Settings = {
 export const S = $state({
 	booted: false,
 	session: null as Session | null,
+	accountVersion: 0,
 	profile: null as Profile | null,
 	settings: null as Settings | null,
 	/** 로그인 직후 프로필 · 설정을 불러오는 중 — 이 동안은 스플래시 (홈이 "계정 정보를 불러오지 못함"으로 번쩍이지 않게) */
@@ -168,18 +171,13 @@ export async function init() {
 	const {
 		data: { session }
 	} = await supabase.auth.getSession();
-	S.session = session;
+	selectSession(session);
 	if (session) await afterLogin(session.user.id);
 	S.booted = true;
 
 	supabase.auth.onAuthStateChange((event, sess) => {
-		S.session = sess;
-		if (event === 'SIGNED_OUT') {
-			S.profile = null;
-			S.hasPassword = null;
-			S.me = undefined;
-			loadedFor = null;
-		} else if (sess && event !== 'TOKEN_REFRESHED') {
+		selectSession(sess);
+		if (sess && event !== 'TOKEN_REFRESHED') {
 			// 등록하자마자 INITIAL_SESSION 이 오고, 탭으로 돌아올 때 SIGNED_IN 이 다시 오기도 한다 —
 			// 같은 계정이면 위에서 이미 불러왔으니 건너뛴다 (예전엔 앱을 열 때마다 부팅 요청이 두 번씩 나갔다)
 			void afterLogin(sess.user.id);
@@ -192,33 +190,61 @@ export async function init() {
 /** 부팅 요청을 이미 보낸 계정 — 같은 계정으로 또 오면 건너뛴다 */
 let loadedFor: string | null = null;
 
+/** 계정이 바뀌면 전역 캐시와 화면 수명을 함께 바꾼다. 토큰 갱신은 같은 계정이다. */
+function selectSession(session: Session | null) {
+	const previous = S.session?.user.id;
+	if (changeAccount(session?.user.id ?? null)) {
+		S.accountVersion = accountToken();
+		S.profile = null;
+		S.settings = null;
+		S.hasPassword = null;
+		S.me = undefined;
+		S.maint = null;
+		S.maintAt = null;
+		S.profileLoading = false;
+		loadedFor = null;
+		achAsked = false;
+		otpVerifiedAt = 0;
+		UI.busy = UI.celebrating = UI.touring = UI.seekOnHome = UI.achNew = false;
+		if (previous) UI.afterLogin = null;
+		toasts.splice(0);
+	}
+	S.session = session;
+}
+
 async function afterLogin(uid: string) {
 	if (loadedFor === uid) return;
+	const token = accountToken();
 	loadedFor = uid;
 	S.profileLoading = true;
 	try {
 		// 트리거가 못 만든 경우를 대비한 폴백 (gyeol ensureProfile 패턴). 익명 이름도 여기서 보장된다.
 		await supabase.rpc('ensure_self');
+		if (!accountIsCurrent(token)) return;
 		await Promise.all([loadProfile(), loadSettings(), loadAccount()]);
 	} finally {
-		S.profileLoading = false;
+		if (accountIsCurrent(token)) S.profileLoading = false;
 	}
+	if (!accountIsCurrent(token)) return;
 	void beat(true);
 	// 이미 알림을 허락한 기기면 이 계정으로 구독을 다시 저장 (기기 주인이 바뀌었을 수도 있다)
 	void syncPush().catch(() => {});
 }
 
 export async function loadProfile() {
+	const uid = S.session?.user.id;
+	if (!uid) return;
+	const token = accountToken();
 	// ★ select('*') 를 쓰지 않는다. 항상 명시 컬럼.
 	const cols = 'id, nickname, bio, interests, mbti, gender, want, status, suspended_until, verified, onboarded';
-	const read = (c: string) => supabase.from('profiles').select(c).eq('id', S.session?.user.id ?? '').maybeSingle();
+	const read = (c: string) => supabase.from('profiles').select(c).eq('id', uid).maybeSingle();
 	let { data, error } = await read(`${cols}, allow_rematch, letters_open, manner_temp, letters_recommend, letter_badge_order`);
 	// Phase 21 · 23 · 30 · 84 를 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
 	if (error) ({ data, error } = await read(`${cols}, allow_rematch, letters_open, manner_temp`));
 	if (error) ({ data, error } = await read(`${cols}, allow_rematch, letters_open`));
 	if (error) ({ data, error } = await read(`${cols}, allow_rematch`));
 	if (error) ({ data } = await read(cols));
-	S.profile = (data as unknown as Profile) ?? null;
+	if (accountIsCurrent(token)) S.profile = (data as unknown as Profile) ?? null;
 }
 
 /** 내 프로필 한 칸 바꾸기 (설정 스위치 — 편지 추천 · 뱃지 순서, Phase 84) */
@@ -244,6 +270,7 @@ export async function setAllowRematch(on: boolean) {
 const SETTINGS_COLS =
 	'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms, letter_max_len, comment_max_len';
 async function loadSettings() {
+	const token = accountToken();
 	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();
 	const AI = 'ai_moderation, ai_chat, ai_chat_per_user';
 	const MAINT = 'maintenance, maintenance_msg, maintenance_until';
@@ -254,6 +281,7 @@ async function loadSettings() {
 	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min`));
 	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}`));
 	if (error) ({ data } = await read(SETTINGS_COLS));
+	if (!accountIsCurrent(token)) return;
 	S.settings = (data as unknown as Settings) ?? null;
 	// 예약 시각이 지났으면 점검 중 (Phase 53 — DB 의 private.in_maintenance 와 같은 규칙)
 	const at = S.settings?.maintenance_at ? new Date(S.settings.maintenance_at).getTime() : null;
@@ -268,7 +296,10 @@ function setMaint(m: { msg: string; until: string | null } | null) {
 }
 
 export async function loadAccount() {
+	if (!S.session) return;
+	const token = accountToken();
 	const { data } = await supabase.rpc('my_account');
+	if (!accountIsCurrent(token)) return;
 	const a = data as { has_password?: boolean; name?: string | null; grade?: number | null; name_source?: 'roster' | 'self' } | null;
 	S.hasPassword = a?.has_password ?? null;
 	// 'name' 키가 없으면 DB 가 Phase 23 전 — 이름을 묻지 않는다
@@ -293,10 +324,11 @@ let achAsked = false;
 
 async function beat(online: boolean) {
 	if (!S.session) return;
+	const token = accountToken();
 	try {
 		const { data, error } = await supabase.rpc('heartbeat', { p_online: online });
 		// 서버 점검(Phase 52) — 박동 대답에 실려 온다. 오류(오프라인 등)면 그대로 둔다
-		if (!error && online) {
+		if (accountIsCurrent(token) && !error && online) {
 			const d = data as {
 				maintenance?: { msg?: string; until?: string | null } | null;
 				maintenance_at?: string | null;
@@ -452,12 +484,14 @@ export async function setPassword(password: string) {
 }
 
 export async function signOut() {
+	const token = accountToken();
 	await disablePush().catch(() => {}); // 이 기기로 이 계정 알림이 더 오지 않게
+	if (!accountIsCurrent(token)) return;
 	await beat(false);
-	await supabase.auth.signOut();
-	S.profile = null;
-	S.hasPassword = null;
-	S.me = undefined;
+	if (!accountIsCurrent(token)) return;
+	const { error } = await supabase.auth.signOut();
+	if (error) throw error;
+	if (accountIsCurrent(token)) selectSession(null);
 }
 
 // ── 프로필 ────────────────────────────────────────────────────────────

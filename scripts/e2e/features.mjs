@@ -1,5 +1,5 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 // 답장 · 첫마디 도우미 · 시간 구분선 · 연결 화면 — /dev/chat 미리보기
 const SP = OUT, PORT = 5192;
@@ -299,6 +299,6 @@ try {
 	check('★ 스크롤해도 말풍선마다 제 위치의 색 (어긋남 1px 미만)', worst < 1, `${worst}px`);
 	check('말풍선 바탕은 테마의 가운데 색 (옛 보라 #9a36e4 아님)', (await sp.locator('.mine .bubble').first().evaluate((b) => getComputedStyle(b).backgroundColor)) === 'rgb(238, 67, 96)');
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
-} finally { await browser.close(); vite.kill(); try { execSync("pkill -f 'vite dev --port 5192'"); } catch {} }
+} finally { await browser.close(); stopProcess(vite);  }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

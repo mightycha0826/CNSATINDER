@@ -14,12 +14,21 @@ function findChrome() {
 	if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
 	const base = process.env.PLAYWRIGHT_BROWSERS_PATH;
 	if (!base || !existsSync(base)) return undefined;
-	const found = readdirSync(base)
+	const names = readdirSync(base)
 		.filter((d) => /^chromium-\d+$/.test(d))
-		.map((d) => join(base, d, 'chrome-linux', 'chrome'))
-		.filter((p) => existsSync(p))
-		.sort();
-	return found.at(-1);
+		.sort((a, b) => Number(b.slice(9)) - Number(a.slice(9)));
+	const binaries = process.platform === 'win32'
+		? [['chrome-win', 'chrome.exe'], ['chrome-win64', 'chrome.exe']]
+		: process.platform === 'darwin'
+			? [['chrome-mac', 'Chromium.app', 'Contents', 'MacOS', 'Chromium'], ['chrome-mac-arm64', 'Chromium.app', 'Contents', 'MacOS', 'Chromium']]
+			: [['chrome-linux', 'chrome'], ['chrome-linux64', 'chrome']];
+	for (const d of names) {
+		for (const binary of binaries) {
+			const path = join(base, d, ...binary);
+			if (existsSync(path)) return path;
+		}
+	}
+	return undefined;
 }
 export const CHROME = findChrome();
 /** 스크린샷 저장 위치 (저장소 밖) */

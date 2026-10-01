@@ -5,7 +5,7 @@
 	 * 찾기 결과에는 학년 · 학번 — 같은 학년 동명이인을 구분한다. 대표 뱃지도 (Phase 84 — 순서는 그 사람이 정한 대로).
 	 * 아직 찾지 않았으면 아래에 추천 5명 (Phase 84 — 들어올 때 한 번, "다른 추천"을 누르면 다시. 추천에 안 나오기는 설정 › 편지).
 	 */
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
@@ -14,6 +14,11 @@
 	import { anonName, recommendPeople, searchPeople, sendLetter, type DmPerson } from '$lib/letters/api';
 	import { afterSent, deliver } from '$lib/letters/send';
 	import { S, errMsg, toast } from '$lib/state.svelte';
+	import { accountIsCurrent, accountToken } from '$lib/accountScope';
+	const account = accountToken();
+	let alive = true;
+	onDestroy(() => (alive = false));
+	const current = () => alive && accountIsCurrent(account);
 
 	let q = $state('');
 	let results = $state<DmPerson[] | null>(null);
@@ -27,31 +32,33 @@
 			return;
 		}
 		searching = true;
+		let active = true;
 		const t = setTimeout(async () => {
 			try {
 				const r = await searchPeople(term);
-				if (q.trim() === term) results = r;
+				if (active && current() && q.trim() === term) results = r;
 			} catch (e) {
-				toast(errMsg(e));
+				if (active && current()) toast(errMsg(e));
 			} finally {
-				searching = false;
+				if (active && current()) searching = false;
 			}
 		}, 250);
-		return () => clearTimeout(t);
+		return () => { active = false; clearTimeout(t); };
 	});
 
 	// 추천 5명 — 들어올 때 한 번 (주기 요청 없음)
 	let recs = $state<DmPerson[] | null>(null);
 	let recBusy = $state(false);
 	async function loadRecs() {
-		if (recBusy) return;
+		if (recBusy || !current()) return;
 		recBusy = true;
 		try {
-			recs = (await recommendPeople()) ?? [];
+			const r = await recommendPeople();
+			if (current()) recs = r ?? [];
 		} catch {
-			recs = [];
+			if (current()) recs = [];
 		} finally {
-			recBusy = false;
+			if (current()) recBusy = false;
 		}
 	}
 	// 처음 한 번만 — effect 로 부르면 recBusy 를 읽어 바뀔 때마다 다시 돌아 요청이 끝없이 나간다
@@ -64,7 +71,7 @@
 		to = p;
 	}
 
-	const send = (body: string, fmt: LetterFmt | null, nick: string | null) => (to ? deliver(() => sendLetter(to!.id, body, fmt, nick)) : Promise.resolve(false));
+	const send = (body: string, fmt: LetterFmt | null, nick: string | null) => (current() && to ? deliver(() => sendLetter(to!.id, body, fmt, nick)) : Promise.resolve(false));
 </script>
 
 <div class="topbar">
@@ -84,7 +91,7 @@
 		nickable
 		placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.`}
 		onsend={send}
-		ondone={() => afterSent('편지를 보냈어요')}
+		ondone={() => { if (current()) afterSent('편지를 보냈어요', account); }}
 	/>
 {:else}
 	<div class="page pick">

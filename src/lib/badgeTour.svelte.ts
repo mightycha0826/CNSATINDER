@@ -1,4 +1,5 @@
 import { autoTourAllowed } from './tour.svelte';
+import { onAccountChange } from './accountScope';
 
 /**
  * CNSA 뱃지 안내 (Phase 84) — CNSA 뱃지를 처음 받으면(새 업적 축하를 닫을 때) 한 번 (lib/ui/CnsaBadgeTour.svelte).
@@ -8,6 +9,7 @@ import { autoTourAllowed } from './tour.svelte';
 const KEY = 'cnsa-tour-v1';
 
 export const BADGE_TOUR = $state({ open: false });
+onAccountChange(() => { BADGE_TOUR.open = false; });
 
 export function badgeTourSeen(): boolean {
 	try {

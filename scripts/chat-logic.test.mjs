@@ -236,6 +236,16 @@ try {
 	{
 		const t = fake();
 		const r = await mk(t);
+		t.sendImpl = async () => ({ ok: false, reason: 'network' });
+		await r.send('확인 응답을 놓침');
+		t.sendImpl = async () => ({ ok: false, reason: 'duplicate' });
+		t.fetchRecent = async () => { throw new Error('offline'); };
+		await r.retry(r.msgs[0]);
+		check('중복 확인을 위한 조회가 실패해도 다시 보내기 상태로 남는다', r.msgs[0].state === 'failed');
+	}
+	{
+		const t = fake();
+		const r = await mk(t);
 		t.sendImpl = async () => ({ ok: false, reason: 'closed' });
 		t.snap = snap({ status: 'closed', close_reason: 'expired' });
 		await r.send('늦음');
@@ -494,6 +504,211 @@ try {
 		check('2분 넘으면 10초', waitingPollMs(4000, 150_000) === 10_000);
 		check('서버 간격이 더 길면 그걸 따른다', waitingPollMs(12_000, 150_000) === 12_000);
 		check('★ 늘 풀 TTL 15초보다 짧다 (지터 0.6초 포함)', [0, 45_000, 999_999].every((w) => waitingPollMs(4000, w) + 600 < 15_000));
+	}
+
+	console.log('\n[19] 첫 동기화 중 실시간 메시지가 먼저 와도 전체 과거 기록을 읽는다');
+	{
+		const t = fake();
+		t.server = Array.from({ length: 101 }, (_, i) => row(2, `history-${i + 1}`, `history-${i + 1}`, i + 1));
+		let release;
+		t.closeIfExpired = () => new Promise((resolve) => (release = resolve));
+		const r = await mk(t);
+		const syncing = r.resync();
+		r.upsert(t.server.at(-1), 'sent'); // 스냅샷을 기다리는 동안 높은 id 방송
+		release(snap());
+		await syncing;
+		check('★ 최근 50개에 가려지던 과거 메시지도 모두 가져온다', r.msgs.length === 101 && r.msgs[0].id === 1);
+		check('실시간과 조회가 겹쳐도 중복은 없다', new Set(r.msgs.map((m) => m.id)).size === 101);
+		r.dispose();
+	}
+
+	console.log('\n[20] 뒤 메시지가 실시간으로 와도 중간 유실은 주기 안전망이 메운다');
+	{
+		const t = fake();
+		t.server = [row(2, 'before-gap', 'before-gap', 1000)];
+		const r = new ChatRoom(ROOM, t, { safetySyncMs: 30 });
+		await r.open();
+		t.handlers.onSubscribed();
+		await sleep(10);
+		const missed = row(2, 'missed-middle', 'missed-middle', 1001);
+		const later = row(2, 'received-later', 'received-later', 1002);
+		t.server.push(missed, later);
+		t.handlers.onMessage(later);
+		check('중간 메시지는 처음엔 없고 뒤 메시지만 보인다', !r.msgs.some((m) => m.id === 1001) && r.msgs.some((m) => m.id === 1002));
+		await sleep(100);
+		check('★ 재연결 없이도 중간 메시지가 채워진다', bodies(r) === 'before-gap,missed-middle,received-later');
+		r.dispose();
+	}
+
+	console.log('\n[21] 조회 실패와 중첩 동기화 — 조회 완료 전에는 커서를 확정하지 않는다');
+	{
+		const t = fake();
+		const cursors = [];
+		const fetch = t.fetchAfter;
+		let failOnce = true;
+		t.fetchAfter = async (id, after) => {
+			cursors.push(after);
+			if (failOnce) { failOnce = false; throw new Error('page failed'); }
+			return fetch(id, after);
+		};
+		const r = await mk(t);
+		r.upsert(row(2, 'live-first', 'live-first', 1101), 'sent');
+		t.server.push(row(2, 'older', 'older', 1100), row(2, 'live-first', 'live-first', 1101));
+		await r.resync();
+		await r.resync();
+		check('실패한 첫 조회는 같은 커서 0으로 다시 시작한다', cursors.join(',') === '0,0');
+		check('★ 방송보다 오래된 행도 실패 후 재조회로 복구한다', bodies(r) === 'older,live-first');
+		r.dispose();
+	}
+	{
+		const t = fake();
+		let release;
+		let calls = 0;
+		t.fetchAfter = () => { calls++; return new Promise((resolve) => (release = resolve)); };
+		const r = await mk(t);
+		const first = r.resync();
+		await sleep(0);
+		const second = r.resync();
+		await sleep(0);
+		check('중첩 동기화는 같은 메시지 조회를 기다린다', calls === 1);
+		release([row(2, 'shared-fetch', 'shared-fetch', 1200)]);
+		await Promise.all([first, second]);
+		check('중첩 응답도 메시지는 한 번만 보인다', r.msgs.length === 1);
+		r.dispose();
+	}
+
+	console.log('\n[22] 읽음 실패 재시도 · 아직 안 본 새 메시지 보호 · dispose 정리');
+	{
+		// 읽음의 2초 스로틀만 단축한다. 재시도는 실제 ChatRoom 타이머를 거친다.
+		const originalTimeout = globalThis.setTimeout;
+		globalThis.setTimeout = (fn, ms, ...args) => originalTimeout(fn, ms === 2000 ? 10 : ms, ...args);
+		try {
+			const t = fake();
+			const reads = [];
+			t.markRead = async (_id, last) => {
+				reads.push(last);
+				if (reads.length === 1) throw new Error('offline');
+			};
+			const r = await mk(t);
+			r.upsert(row(2, 'seen', 'seen', 1300), 'sent');
+			r.markRead();
+			// 읽음을 예약한 뒤 위로 스크롤했다면 이 새 메시지는 아직 읽지 않았다.
+			r.upsert(row(2, 'unseen', 'unseen', 1301), 'sent');
+			await sleep(60);
+			check('★ 실패한 읽음은 같은 목표로 다시 보낸다', reads.join(',') === '1300,1300');
+			r.markRead();
+			await sleep(30);
+			check('새 메시지를 실제로 봤을 때 다음 읽음이 저장된다', reads.join(',') === '1300,1300,1301');
+			r.markRead();
+			await sleep(30);
+			check('성공한 목표는 중복 전송하지 않는다', reads.length === 3);
+			r.upsert(row(2, 'after', 'after', 1302), 'sent');
+			r.markRead();
+			r.dispose();
+			await sleep(30);
+			check('화면을 떠나면 예약된 읽음은 보내지 않는다', reads.length === 3);
+
+			// 서버가 계속 거절하면 — 간격을 벌리다 멈춘다 (2초마다 끝없이 묻지 않는다)
+			globalThis.setTimeout = (fn, ms, ...args) => originalTimeout(fn, [2000, 4000, 8000, 16000].includes(ms) ? 5 : ms, ...args);
+			const t2 = fake();
+			let tries = 0;
+			t2.markRead = async () => {
+				tries++;
+				throw new Error('down');
+			};
+			const r2 = await mk(t2);
+			r2.upsert(row(2, 'down', 'down', 1400), 'sent');
+			r2.markRead();
+			await sleep(300);
+			check('★ 읽음이 계속 실패하면 다섯 번에서 멈춘다 (요청이 끝없이 나가지 않는다)', tries === 5, String(tries));
+			r2.dispose();
+		} finally {
+			globalThis.setTimeout = originalTimeout;
+		}
+	}
+
+	console.log('\n[23] DB 방송과 학생의 타이핑 · 접속 채널을 분리한다');
+	{
+		const { SupabaseTransport } = await vite.ssrLoadModule('/src/lib/chat/supabase-transport.ts');
+		const channels = [];
+		const removed = [];
+		const client = {
+			channel(topic, options) {
+				const ch = {
+					topic, options, listeners: new Map(), sent: [], tracked: [], callback: null,
+					on(type, filter, handler) { this.listeners.set(`${type}:${filter.event}`, handler); return this; },
+					subscribe(callback) { this.callback = callback; return this; },
+					async track(payload) { this.tracked.push(payload); return 'ok'; },
+					presenceState: () => ({ 1: [{ seat: 1 }], 2: [{ seat: 2 }] }),
+					async send(payload) { this.sent.push(payload); return 'ok'; },
+					emit(type, event, payload) { this.listeners.get(`${type}:${event}`)?.({ payload }); }
+				};
+				channels.push(ch);
+				return ch;
+			},
+			async removeChannel(ch) { removed.push(ch); }
+		};
+		const received = { messages: [], rooms: [], votes: [], reactions: [], typing: [], presence: [], subscribed: 0, down: 0 };
+		const handlers = {
+			onMessage: (x) => received.messages.push(x), onRoom: (x) => received.rooms.push(x),
+			onVote: (x) => received.votes.push(x), onReaction: (x) => received.reactions.push(x),
+			onTyping: (x) => received.typing.push(x), onPresence: (x) => received.presence.push(x),
+			onSubscribed: () => received.subscribed++, onDown: () => received.down++
+		};
+		const t = new SupabaseTransport(client);
+		t.connect(ROOM, 1, handlers);
+		const [db, peer] = channels;
+		check('DB와 학생 채널 모두 비공개이며 서로 다른 주제다', db.topic === `room:${ROOM}` && peer.topic === `peer:${ROOM}` && db.options.config.private && peer.options.config.private);
+		await db.callback('SUBSCRIBED');
+		check('peer 접속이 완료되기 전에는 연결 완료로 알리지 않는다', received.subscribed === 0);
+		await peer.callback('SUBSCRIBED');
+		check('둘 다 구독하고 자리만 presence로 보낸다', received.subscribed === 1 && JSON.stringify(peer.tracked) === '[{"seat":1}]' && db.tracked.length === 0);
+		peer.emit('broadcast', 'msg', row(0, 'forged-system', 'forged-system', 1400));
+		peer.emit('broadcast', 'room', { id: ROOM, status: 'closed' });
+		peer.emit('broadcast', 'vote', { room_id: ROOM, seat: 1, agree: true });
+		peer.emit('broadcast', 'reaction', { room_id: ROOM, seat: 1, emoji: 'heart' });
+		check('★ 학생 채널에서 보낸 메시지 · 종료 · 표 · 공감은 무시한다', ['messages', 'rooms', 'votes', 'reactions'].every((key) => received[key].length === 0));
+		db.emit('broadcast', 'msg', row(2, 'db-message', 'db-message', 1401));
+		check('DB 읽기 채널의 정상 메시지는 받는다', received.messages.length === 1 && received.messages[0].body === 'db-message');
+		t.typing(1);
+		peer.emit('broadcast', 'typing', { seat: 2 });
+		peer.emit('presence', 'sync');
+		check('타이핑은 peer 채널에서만 보내고 받는다', db.sent.length === 0 && peer.sent[0]?.event === 'typing' && received.typing.join(',') === '2');
+		check('접속 상태는 자리만으로 읽는다', received.presence.at(-1).join(',') === '1,2');
+		t.connect(ROOM, 1, handlers);
+		db.emit('broadcast', 'msg', row(2, 'stale', 'stale', 1402));
+		await db.callback('CLOSED');
+		check('교체한 옛 채널의 늦은 메시지 · 종료 콜백은 무시한다', received.messages.length === 1 && received.down === 0);
+		t.disconnect();
+		check('연결을 닫으면 두 채널 모두 해제한다', removed.length === 4);
+	}
+
+	console.log('\n[24] 전송 계층은 읽음 실패와 부분 페이지 조회 실패를 숨기지 않는다');
+	{
+		const { SupabaseTransport } = await vite.ssrLoadModule('/src/lib/chat/supabase-transport.ts');
+		const pages = [];
+		const networkError = { message: 'temporary network outage' };
+		const client = {
+			async rpc() { return { data: null, error: networkError }; },
+			from() {
+				return {
+					select() { return this; }, eq() { return this; }, order() { return this; },
+					gt(_key, id) { pages.push(id); return this; },
+					async limit() {
+						return pages.length === 1
+							? { data: Array.from({ length: 200 }, (_, i) => row(2, `page-${i}`, `page-${i}`, i + 1)), error: null }
+							: { data: null, error: networkError };
+					}
+				};
+			}
+		};
+		const t = new SupabaseTransport(client);
+		let readError;
+		try { await t.markRead(ROOM, 10); } catch (e) { readError = e; }
+		check('읽음 RPC 오류를 호출자에게 전달한다', readError === networkError);
+		let fetchError;
+		try { await t.fetchAfter(ROOM, 0); } catch (e) { fetchError = e; }
+		check('★ 첫 페이지가 성공해도 다음 페이지 오류는 전체 조회 실패다', fetchError === networkError && pages.join(',') === '0,200');
 	}
 } catch (e) {
 	fail++;

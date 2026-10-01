@@ -1,5 +1,5 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 // 학생 앱 시트(Sheet · ReportPicker · BackButton) — 대화방 미리보기에서 열고 닫고 신고까지 (편지 시트는 letters 스위트)
 const SP = OUT, PORT = 5196, TAG = process.env.TAG ?? 'after';
@@ -45,8 +45,8 @@ try {
 
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
 } finally {
-	await browser.close(); vite.kill();
-	try { execSync("pkill -f 'vite dev --port 5196'"); } catch {}
+	await browser.close(); stopProcess(vite);
+
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

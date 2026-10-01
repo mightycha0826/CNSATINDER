@@ -1,5 +1,5 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium, webkit } from 'playwright-core';
 // 줄바꿈 · 폭 (Phase 46) — 폭 280 ~ 520 의 모든 화면에서 글이 낱말 중간에서 끊기거나, 칸 밖으로 넘치거나, 잘리지 않는지.
 // 280 = 폭 360 폰 + 안드로이드 큰 글꼴(약 130%) — 기기 글꼴을 키우면 웹 화면의 폭이 그만큼 좁아진다.
@@ -279,7 +279,7 @@ try {
 } catch (e) { fail++; console.error(e); }
 finally {
 	await browser.close();
-	try { process.kill(-vite.pid); } catch { try { vite.kill(); } catch {} }
+	stopProcess(vite);
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

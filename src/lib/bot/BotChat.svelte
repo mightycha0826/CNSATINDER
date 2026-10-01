@@ -21,7 +21,8 @@
 	import { scrollBehavior } from '$lib/motion';
 	import { focustrap } from '$lib/focustrap';
 	import { backClose } from '$lib/overlay.svelte';
-	import { botApi, type BotApi, type BotStart, type Line as ApiLine } from './api';
+	import { botApi, type BotApi, type BotStart } from './api';
+	import { snapshotTurn, type ChatLine as Line } from './conversation';
 	import { GOODBYES, GREETINGS, NUDGES, NUDGE_AFTER_MS, REPLY_AFTER_MS, pick, rand, splitReply, typeMs } from './persona';
 
 	let {
@@ -46,7 +47,6 @@
 	// 저절로 뜨는 창 — 안드로이드 뒤로가기로 닫힌다 (창 하나 = 기록 한 칸, lib/overlay.svelte.ts)
 	backClose(() => onclose(), { auto: true });
 
-	type Line = { id: number; who: 'me' | 'bot' | 'sys'; text: string };
 	const NOTICE = '지금은 찾는 사람이 없어서 대화 봇이 먼저 왔어요. 사람을 찾으면 바로 연결해 드릴게요';
 
 	let lines = $state<Line[]>([]);
@@ -63,6 +63,8 @@
 	/** 봇이 답한(또는 답하는 중인) 내 말 (id 까지) */
 	let answeredUpTo = 0;
 	let busy = false;
+	/** 자동 재시도는 한 번만 — 연결 실패 후에는 사용자가 다시 보내야 한다. */
+	let retryPaused = false;
 	let alive = true;
 	let replyTimer: ReturnType<typeof setTimeout> | undefined;
 	let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -147,6 +149,7 @@
 		if (!text || phase !== 'live') return;
 		if (text.length > 500) return toast('500자까지 보낼 수 있어요');
 		draft = '';
+		retryPaused = false;
 		clearTimeout(nudgeTimer);
 		say('me', text);
 		inputEl?.focus();
@@ -158,7 +161,7 @@
 
 	/** 내가 말을 멈추면 답한다 — 이어서 치는 중이면 조금 더 기다린다 */
 	function scheduleReply() {
-		if (busy || phase !== 'live') return;
+		if (!alive || busy || retryPaused || phase !== 'live') return;
 		clearTimeout(replyTimer);
 		replyTimer = setTimeout(() => void reply(), rand(...REPLY_AFTER_MS) * speed);
 	}
@@ -166,65 +169,71 @@
 		if (unanswered()) scheduleReply();
 	}
 
-	const history = (): ApiLine[] =>
-		lines.filter((l) => l.who !== 'sys').map((l) => ({ role: l.who === 'me' ? 'user' : 'assistant', content: l.text }));
-
-	async function reply(retried = false) {
+	async function reply() {
 		if (busy || phase !== 'live' || !alive || !unanswered()) return;
 		busy = true;
-		const batch = lines.filter((l) => l.who === 'me' && l.id > answeredUpTo);
-		const upTo = batch.at(-1)!.id;
-		readUpTo = Math.max(readUpTo, upTo);
-		await sleep(rand(400, 1200)); // 읽고 잠깐 생각
-		if (!alive || phase !== 'live') return;
-		typing = true;
-		void scrollDown();
-		const t0 = Date.now();
-		const r = await api.turn(chat.id, history());
-		if (!alive || phase !== 'live') return;
-
-		switch (r.status) {
-			case 'ok':
-				answeredUpTo = upTo;
-				await botSays(splitReply(r.reply), Date.now() - t0);
-				if (r.turns >= r.max_turns) {
-					await botSays(pick(GOODBYES));
-					end('대화 봇이 나갔어요');
-				}
-				break;
-			case 'blocked': {
-				// 규칙 필터(신상정보 · 금칙어)에 막힘 — 봇에게 가지 않았다. 말풍선을 거두고 글을 입력창에 돌려준다
+		try {
+			await sleep(rand(400, 1200)); // 읽고 잠깐 생각
+			if (!alive || phase !== 'live') return;
+			const { batch, upTo, history } = snapshotTurn(lines, answeredUpTo);
+			readUpTo = Math.max(readUpTo, upTo);
+			typing = true;
+			void scrollDown();
+			const t0 = Date.now();
+			let r = await api.turn(chat.id, history).catch(() => ({ status: 'network' as const }));
+			if (!alive || phase !== 'live') return;
+			if (r.status === 'network' || r.status === 'ai_unavailable') {
 				typing = false;
-				const ids = new Set(batch.map((l) => l.id));
-				lines = lines.filter((l) => !ids.has(l.id));
-				if (!draft) draft = batch.map((l) => l.text).join('\n');
-				toast(errMsg(r.code));
-				break;
+				await sleep(3000);
+				if (!alive || phase !== 'live') return;
+				typing = true;
+				// 새 메시지를 끼워 넣지 않고 같은 요청을 한 번만 다시 보낸다.
+				r = await api.turn(chat.id, history).catch(() => ({ status: 'network' as const }));
+				if (!alive || phase !== 'live') return;
 			}
-			case 'turns':
-				await botSays(pick(GOODBYES), Date.now() - t0);
-				end('대화 봇이 나갔어요');
-				break;
-			case 'expired':
-				end('대화 봇과 이야기할 시간이 끝났어요');
-				break;
-			case 'ai_unavailable':
-			case 'network':
-				typing = false;
-				if (!retried) {
-					await sleep(3000);
-					busy = false;
-					return reply(true);
+
+			switch (r.status) {
+				case 'ok':
+					answeredUpTo = upTo;
+					await botSays(splitReply(r.reply), Date.now() - t0);
+					if (r.turns >= r.max_turns) {
+						await botSays(pick(GOODBYES));
+						end('대화 봇이 나갔어요');
+					}
+					break;
+				case 'blocked': {
+					// 규칙 필터(신상정보 · 금칙어)에 막힘 — 봇에게 가지 않았다. 말풍선을 거두고 글을 입력창에 돌려준다
+					typing = false;
+					const ids = new Set(batch.map((l) => l.id));
+					lines = lines.filter((l) => !ids.has(l.id));
+					if (!draft) draft = batch.map((l) => l.text).join('\n');
+					toast(errMsg(r.code));
+					break;
 				}
-				if (r.status === 'ai_unavailable') end('대화 봇이 지금은 답할 수 없어요');
-				else toast('연결을 확인해 주세요 · 다시 보내면 봇이 답해요');
-				break;
-			default:
-				end('지금은 대화 봇을 쓸 수 없어요');
+				case 'turns':
+					await botSays(pick(GOODBYES), Date.now() - t0);
+					end('대화 봇이 나갔어요');
+					break;
+				case 'expired':
+					end('대화 봇과 이야기할 시간이 끝났어요');
+					break;
+				case 'ai_unavailable':
+				case 'network':
+					typing = false;
+					if (r.status === 'ai_unavailable') end('대화 봇이 지금은 답할 수 없어요');
+					else {
+						retryPaused = true;
+						toast('연결을 확인해 주세요 · 다시 보내면 봇이 답해요');
+					}
+					break;
+				default:
+					end('지금은 대화 봇을 쓸 수 없어요');
+			}
+		} finally {
+			typing = false;
+			busy = false;
+			if (alive && phase === 'live' && unanswered()) scheduleReply();
 		}
-		typing = false;
-		busy = false;
-		if (phase === 'live' && unanswered()) scheduleReply();
 	}
 
 	// ── 그리기 ──

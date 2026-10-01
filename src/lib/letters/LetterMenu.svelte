@@ -9,12 +9,18 @@
 	 * recipient = 내가 이름으로 받은 쪽(모르는 사람이 나를 찾아 보냄) — 버리면 그 사람은 다시 못 보낸다.
 	 */
 	import Sheet from '$lib/ui/Sheet.svelte';
+	import { onDestroy } from 'svelte';
 	import ReportPicker from '$lib/ui/ReportPicker.svelte';
 	import type { ReportReason } from '$lib/chat/types';
 	import { navigateFromOverlay } from '$lib/overlay.svelte';
 	import { errMsg, toast } from '$lib/state.svelte';
 	import { blockThread, closeThread, josa, reportThread, stampDate, type Box, type MailItem } from './api';
 	import { BOX } from './mailbox.svelte';
+	import { accountIsCurrent, accountToken } from '$lib/accountScope';
+	const account = accountToken();
+	let alive = true;
+	onDestroy(() => (alive = false));
+	const current = () => alive && accountIsCurrent(account);
 
 	let {
 		thread,
@@ -47,14 +53,15 @@
 	const who = $derived(title || '이 사람');
 
 	async function act(fn: () => Promise<unknown>, done: string) {
-		if (acting) return;
+		if (acting || !current()) return;
 		acting = true;
 		try {
 			await fn();
+			if (!current()) return;
 			toast(done);
 			ondone();
 		} catch (e) {
-			toast(errMsg(e));
+			if (current()) toast(errMsg(e));
 		} finally {
 			acting = false;
 		}

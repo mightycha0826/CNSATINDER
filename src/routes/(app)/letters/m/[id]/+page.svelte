@@ -27,6 +27,8 @@
 	import { envWidth, play } from '$lib/letters/stage';
 	import * as haptic from '$lib/haptics';
 	import { S, errMsg, toast } from '$lib/state.svelte';
+	import { accountIsCurrent, accountToken } from '$lib/accountScope';
+	const account = accountToken();
 
 	const id = $derived(Number(page.params.id));
 	let letter = $state<Letter | null>(null);
@@ -60,9 +62,11 @@
 
 	$effect(() => {
 		const target = id;
+		let cancelled = false;
 		void (async () => {
 			try {
 				const r = await openLetter(target);
+				if (cancelled || !accountIsCurrent(account)) return;
 				if (r.status !== 'ok') {
 					gone = true;
 					return;
@@ -101,9 +105,10 @@
 							)
 						: play([[0, () => (phase = 'read')]]);
 			} catch (e) {
-				toast(errMsg(e));
+				if (!cancelled && accountIsCurrent(account)) toast(errMsg(e));
 			}
 		})();
+		return () => { cancelled = true; stop(); };
 	});
 
 	// ── 우체통에서 나오기 (Phase 77) — 편지 쓰기의 aim() 을 거꾸로: 책상 가운데(봉투 자리)에서 투입구까지의 거리 · 크기를 재서
@@ -168,10 +173,12 @@
 					body: l.body ?? '',
 					fmt: l.fmt
 				});
+				if (!accountIsCurrent(account)) return;
 				story = { id: l.id, file };
 				drawing = false;
 			}
 			const r = await shareImage(file);
+			if (!accountIsCurrent(account)) return;
 			if (r === 'again') toast('스토리 그림이 준비됐어요 · 한 번 더 누르면 공유 창이 열려요');
 			else if (r === 'saved') toast('스토리 그림을 저장했어요 · 인스타그램에서 스토리로 올려 보세요');
 		} catch {

@@ -1,3 +1,5 @@
+import { onAccountChange } from './accountScope';
+
 /**
  * 처음 사용법 안내 (튜토리얼, Phase 44) — 처음 홈에 왔을 때 한 단계씩 (lib/ui/Tour.svelte). 건너뛰거나 끝까지 보면 이 기기에 "봤음".
  * 설정 › 앱 › "사용법 다시 보기"로 언제든 다시 (replayTour → 홈으로 가면 처음부터).
@@ -6,6 +8,7 @@
 const KEY = 'tour-v1';
 
 export const TOUR = $state({ replay: false });
+onAccountChange(() => { TOUR.replay = false; });
 
 export function tourSeen(): boolean {
 	try {

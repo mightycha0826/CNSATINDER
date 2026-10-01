@@ -1,7 +1,7 @@
 import { ROOT, CHROME, OUT, answerDialogs } from './_env.mjs';
 import http from 'node:http';
 import { createHmac } from 'node:crypto';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 const SP = OUT;
 const ROLE = process.env.ROLE ?? 'admin';
@@ -94,8 +94,8 @@ try {
 	await page.screenshot({ path: `${SP}/admin-inquiries-${ROLE}.png`, fullPage: true });
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
 } finally {
-	await browser.close(); vite.kill(); sb.close();
-	try { execSync("pkill -f 'node_modules/.bin/vite dev --port 5198'"); } catch {}
+	await browser.close(); stopProcess(vite); sb.close();
+
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

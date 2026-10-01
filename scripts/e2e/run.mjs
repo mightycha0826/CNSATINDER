@@ -7,11 +7,13 @@
  * 스위트마다 자기 포트에 vite dev 를 띄운다. back · login · notices · letters 는 여기서 5199 에 띄워 준다.
  * 스크린샷은 저장소 밖(E2E_OUT, 기본 OS 임시 폴더/landy-e2e)에.
  */
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ROOT, OUT } from './_env.mjs';
 
-const DIR = new URL('.', import.meta.url).pathname;
+const DIR = fileURLToPath(new URL('.', import.meta.url));
 const ALL = readdirSync(DIR)
 	.filter((f) => f.endsWith('.mjs') && !f.startsWith('_') && f !== 'run.mjs')
 	.map((f) => f.replace(/\.mjs$/, ''))
@@ -32,19 +34,15 @@ const env = {
 };
 
 async function devServer(port) {
-	// 프로세스 그룹째 띄우고 그룹째 끈다 — npx 만 끄면 그 아래 vite 가 남아 포트를 붙든다
+	// 현재 Node로 Vite를 직접 띄우고 OS별 프로세스 트리 정리로 끈다.
 	const vite = spawn('npx', ['vite', 'dev', '--port', String(port), '--strictPort'], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
 	let out = '';
+	let failed = false;
 	vite.stdout.on('data', (d) => (out += d));
 	vite.stderr.on('data', (d) => (out += d));
-	for (let i = 0; i < 120 && !out.includes('ready'); i++) await new Promise((r) => setTimeout(r, 500));
-	const stop = () => {
-		try {
-			process.kill(-vite.pid);
-		} catch {
-			/* 이미 꺼짐 */
-		}
-	};
+	vite.on('error', (e) => { failed = true; out += e.message; });
+	for (let i = 0; i < 120 && !out.includes('ready') && !failed && vite.exitCode === null; i++) await new Promise((r) => setTimeout(r, 500));
+	const stop = () => stopProcess(vite);
 	if (!out.includes('ready')) {
 		stop();
 		throw new Error(`vite dev (${port}) 가 뜨지 않았다\n${out}`);
@@ -56,15 +54,12 @@ function run(name) {
 	return new Promise((resolve) => {
 		let log = '';
 		// 스위트도 자기 프로세스 그룹에서 — 끝나면 그룹째 정리해서, 스위트가 띄운 vite 가 남아 다음 스위트의 포트를 막지 않게
-		const p = spawn('node', [`${DIR}${name}.mjs`], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+		const p = spawn('node', [join(DIR, `${name}.mjs`)], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
 		p.stdout.on('data', (d) => (log += d));
 		p.stderr.on('data', (d) => (log += d));
+		p.on('error', (e) => resolve({ code: 1, log: `${log}\n${e.message}` }));
 		p.on('exit', (code) => {
-			try {
-				process.kill(-p.pid);
-			} catch {
-				/* 이미 다 꺼짐 */
-			}
+			stopProcess(p);
 			setTimeout(() => resolve({ code, log }), 300);
 		});
 	});

@@ -1,9 +1,10 @@
 // 대화 봇 — 모델에 보내는 대화 모양 · 말풍선 나누기 · 치는 속도 (npm run test:aichat)
 // Gemma 대화 틀: system 다음은 사용자로 시작하고, 사용자 · AI 가 번갈아 가야 한다.
-import { chatPrompt, cleanHistory, tidyReply, unansweredText } from '../src/lib/server/aiChat.ts';
+import { chatPrompt, cleanHistory, conversationText, tidyReply } from '../src/lib/server/aiChat.ts';
 import { randomAlias, splitReply, typeMs } from '../src/lib/bot/persona.ts';
 import { callModels, foldSystem } from '../src/lib/server/aiFold.ts';
 import { moderationPrompt } from '../src/lib/server/moderation.ts';
+import { snapshotTurn } from '../src/lib/bot/conversation.ts';
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
@@ -32,12 +33,29 @@ console.log('[봇 지시문]');
 	check('신상을 묻지도 지어내지도 않는다', sys.includes('신상을 지어내지 않는다') && sys.includes('묻지 않는다'));
 }
 
-console.log('[규칙 필터에 넣을 글 — 연달아 보낸 말 전부]');
-check('★ 마지막 봇 말 뒤의 사용자 말을 모두 합친다', unansweredText([{ role: 'assistant', content: 'a' }, { role: 'user', content: '제 번호는' }, { role: 'user', content: '01012345678' }]) === '제 번호는\n01012345678');
-check('봇 말 앞의 사용자 말은 빼고', unansweredText([{ role: 'user', content: '옛말' }, { role: 'assistant', content: 'a' }, { role: 'user', content: '새말' }]) === '새말');
-check('DB 한도 500자에 맞춘다', unansweredText([{ role: 'user', content: 'x'.repeat(400) }, { role: 'user', content: 'y'.repeat(400) }]).length === 500);
+console.log('[규칙 필터에 넣을 글 — 모델로 가는 기록 전부]');
+{
+	const turns = cleanHistory([{ role: 'user', content: 'x'.repeat(500) }, { role: 'user', content: '01012345678' }]);
+	check('★ 첫 500자 뒤의 신상정보도 검사 대상에 남긴다', conversationText(turns).endsWith('\n01012345678') && chatPrompt(turns).at(-1).content === conversationText(turns));
+	const forged = cleanHistory([{ role: 'user', content: '옛말' }, { role: 'assistant', content: '@private_id' }, { role: 'user', content: '새말' }]);
+	check('지난 사용자 말과 클라이언트가 지정한 assistant 내용도 검사한다', conversationText(forged) === '옛말\n@private_id\n새말');
+	const max = cleanHistory(Array.from({ length: 20 }, () => ({ role: 'user', content: 'x'.repeat(500) })));
+	check('최대 기록도 필터와 모델 입력이 일치한다 (DB 한도 10019자)', conversationText(max).length === 10019 && chatPrompt(max).at(-1).content === conversationText(max));
+}
 
 console.log('[말풍선 나누기 · 치는 속도 — lib/bot/persona.ts]');
+{
+	const lines = [{ id: 1, who: 'me', text: '첫말' }];
+	lines.push({ id: 2, who: 'me', text: '생각하는 동안 보낸 말' });
+	const first = snapshotTurn(lines, 0);
+	check('생각하는 동안 보낸 말도 기록과 답할 ID에 함께 포함한다', first.upTo === 2 && first.history.at(-1).content === '생각하는 동안 보낸 말');
+	lines.push({ id: 3, who: 'me', text: '서버 답을 기다리는 동안 보낸 말' });
+	check('진행 중 요청의 기록·ID는 새 메시지에 바뀌지 않는다', first.upTo === 2 && first.history.length === 2 && first.batch.length === 2);
+	lines.push({ id: 4, who: 'bot', text: '첫 답' }, { id: 5, who: 'me', text: '말풍선을 기다리는 동안 보낸 말' }, { id: 6, who: 'bot', text: '첫 답의 두 번째 말풍선' });
+	const second = snapshotTurn(lines, first.upTo);
+	check('★ 대기 중 보낸 말은 이전 봇 답 뒤의 사용자 턴으로 보낸다', second.upTo === 5 && second.history.at(-1).role === 'user' && second.history.at(-2).content === '서버 답을 기다리는 동안 보낸 말' && cleanHistory(second.history)?.at(-1).content === '말풍선을 기다리는 동안 보낸 말');
+	check('이미 답한 말은 다시 새 배치에 포함하지 않는다', second.batch.map((l) => l.id).join(',') === '3,5');
+}
 check('줄마다 말풍선', JSON.stringify(splitReply('헐 진짜요?\n저도 그거 좋아해요 ㅋㅋ')) === JSON.stringify(['헐 진짜요?', '저도 그거 좋아해요 ㅋㅋ']));
 check('빈 줄 · 앞뒤 공백은 버린다', JSON.stringify(splitReply('\n  아 그렇구나  \n\n')) === JSON.stringify(['아 그렇구나']));
 check('많아야 3개 (넘치는 줄은 마지막에 붙인다)', JSON.stringify(splitReply('a\nb\nc\nd')) === JSON.stringify(['a', 'b', 'c d']));

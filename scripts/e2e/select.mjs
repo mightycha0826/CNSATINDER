@@ -1,6 +1,6 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
 import http from 'node:http';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 // 드래그 복사 — 학생 앱은 사람이 쓴 글·입력칸만 선택되고, 버튼·안내·제목은 선택되지 않는다
 const PORT = 5193;
@@ -59,6 +59,6 @@ try {
 	await page.locator('body.admin').waitFor();
 	check('운영자 화면은 선택 가능 (이메일·ID 복사)', (await page.evaluate(() => getComputedStyle(document.body).userSelect)) !== 'none');
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
-} finally { await browser.close(); vite.kill(); try { execSync("pkill -f 'vite dev --port 5193'"); } catch {} }
+} finally { await browser.close(); stopProcess(vite);  }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

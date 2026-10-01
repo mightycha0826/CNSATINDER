@@ -553,6 +553,7 @@ declare
 begin
   if public.my_seat(p_room) is null then raise exception 'not_member'; end if;
   select * into cfg from public.app_settings where id;
+  perform private.room_clock(p_room);
   select * into r from public.rooms where id = p_room for update;
 
   if r.status = 'pending' and now() >= r.expires_at then
@@ -656,6 +657,7 @@ returns jsonb language plpgsql security definer set search_path = public as $fn$
 declare r public.rooms%rowtype;
 begin
   if public.my_seat(p_room) is null then raise exception 'not_member'; end if;
+  perform private.room_clock(p_room);
   select * into r from public.rooms where id = p_room for update;
   if r.status <> 'closed' and now() >= r.expires_at then
     perform public.close_room(p_room, case when r.status = 'pending' then 'no_show' else 'expired' end);
@@ -690,7 +692,7 @@ returns int language plpgsql security definer set search_path = public, private 
 declare n int := 0; v record;
 begin
   for v in select r.id from public.rooms r
-            where r.status = 'active' and not r.pinned and r.paused_left is null and r.expires_at > now()
+            where r.status = 'active' and not r.pinned and r.paused_left is null
               and exists (select 1 from public.room_members m
                            where m.room_id = r.id and (m.viewing_until is null or m.viewing_until <= now()))
             limit 500
@@ -825,7 +827,7 @@ begin
       join public.room_members rm on rm.room_id = r.id
      where rm.user_id = me and rm.open and r.status <> 'closed' and v_now >= r.expires_at
   loop
-    perform public.close_room(v_exp.id, case when v_exp.status = 'pending' then 'no_show' else 'expired' end);
+    perform public.close_if_expired(v_exp.id);
   end loop;
 
   select rm.room_id into v_room
@@ -3801,7 +3803,8 @@ begin
   if not cfg.ai_chat then return jsonb_build_object('status', 'off'); end if;
   if now() >= c.expires_at then return jsonb_build_object('status', 'expired'); end if;
   if c.turns >= cfg.ai_chat_max_turns then return jsonb_build_object('status', 'turns'); end if;
-  if char_length(btrim(coalesce(p_text, ''))) not between 1 and 500 then return jsonb_build_object('status', 'bad_text'); end if;
+  -- 서버가 사용자 턴 최대 20개(각 500자)를 줄바꿈으로 합쳐 모두 검사한다.
+  if char_length(btrim(coalesce(p_text, ''))) not between 1 and 10019 then return jsonb_build_object('status', 'bad_text'); end if;
   v := private.rule_violation(p_text);
   if v is not null then return jsonb_build_object('status', 'blocked', 'code', v); end if;
   update private.ai_chats set turns = turns + 1 where id = p_chat;
@@ -3891,11 +3894,9 @@ declare v_csv text; v_last bigint; v_n int;
 begin
   if private.require_staff(p_staff) <> 'admin' then raise exception 'admin_only'; end if;
   if p_from is null or p_to is null or p_to <= p_from then raise exception 'bad_range'; end if;
-  -- 첫 조각을 받을 때 한 번 기록 (이어 받는 조각마다 남기면 기록이 어지럽다)
-  if coalesce(p_after, 0) = 0 then
-    insert into private.audit_log (staff_id, action, detail)
-    values (p_staff, 'export_messages', jsonb_build_object('from', p_from, 'to', p_to));
-  end if;
+  -- 모든 조각을 기록한다. 임의 커서로 시작한 내보내기도 열람 기록을 우회할 수 없다.
+  insert into private.audit_log (staff_id, action, detail)
+  values (p_staff, 'export_messages', jsonb_build_object('from', p_from, 'to', p_to, 'after', coalesce(p_after, 0)));
 
   with x as (
     select m.id, m.room_id, r.status, m.sender_seat,
@@ -4054,6 +4055,9 @@ create table if not exists private.dm_msgs (
 );
 create index if not exists dm_msgs_thread on private.dm_msgs (thread_id, id);
 alter table private.dm_msgs enable row level security;
+-- 차단/수신 거부도 발신자에게는 정상 발송으로 보인다. 전달되지 않은 편지는 수신자에게만 숨긴다.
+alter table private.dm_threads add column if not exists recipient_refused boolean not null default false;
+alter table private.dm_msgs add column if not exists delivered boolean not null default true;
 
 -- 규칙 필터 (신상정보 · 금칙어) — 채팅 · 편지와 같은 함수
 drop trigger if exists dm_msgs_rule_check on private.dm_msgs;
@@ -4083,6 +4087,9 @@ create or replace function private.dm_can_write(p_user uuid)
 returns text language plpgsql security definer set search_path = public, private stable as $fn$
 declare p public.profiles%rowtype;
 begin
+  if not coalesce((select is_open from public.app_settings where id), false) or private.in_maintenance() then
+    return 'service_closed';
+  end if;
   -- 익명편지 잠금 (Phase 44) — 가입한 학생이 적을 때는 누가 보냈는지 쉽게 짐작되므로 아무도 쓰지 못한다
   if private.letters_locked() then return 'letters_locked'; end if;
   select * into p from public.profiles where id = p_user;
@@ -4101,7 +4108,7 @@ returns int language sql security definer set search_path = '' stable as $fn$
   select count(*)::int from private.dm_msgs m
    where m.thread_id = p_thread and m.from_sender = p_from_sender
      and m.id > coalesce((select max(o.id) from private.dm_msgs o
-                           where o.thread_id = p_thread and o.from_sender <> p_from_sender), 0);
+                           where o.thread_id = p_thread and o.from_sender <> p_from_sender and o.delivered), 0);
 $fn$;
 revoke all on function private.dm_streak(bigint, boolean) from public, anon, authenticated;
 
@@ -4121,10 +4128,8 @@ begin
                    (select private.email_student_no(u.email) from auth.users u where u.id = p.id) as no
               from public.profiles p
               cross join lateral private.person(p.id) n
-             where p.id <> me and p.letters_open and p.onboarded and p.status = 'active'
-               and (p.suspended_until is null or p.suspended_until <= now())
+             where p.id <> me and p.letters_open and p.onboarded
                and n.name is not null and position(q in n.name) > 0
-               and not private.blocked_between(me, p.id)
              order by (n.name = q) desc, n.grade nulls last, n.name
              limit 10) x), '[]'::jsonb);
 end
@@ -4285,6 +4290,10 @@ begin
   if role is null then return jsonb_build_object('status', 'not_found'); end if;
   other := case when role = 'sender' then t.recipient_id else t.sender_id end;
   insert into public.blocks (blocker_id, blocked_id) values (me, other) on conflict do nothing;
+  -- 편지에서 차단해도 같은 두 사람의 이미 열린 랜덤채팅을 즉시 끝낸다.
+  perform public.close_room(a.room_id, 'blocked')
+    from public.room_members a join public.room_members b on b.room_id = a.room_id
+   where a.user_id = me and b.user_id = other and a.open and b.open;
   perform private.dm_leave(p_thread, role);
   return jsonb_build_object('status', 'ok');
 end
@@ -4336,6 +4345,9 @@ begin
   perform private.dm_copy_evidence(v_report, p_thread);
   -- 신고하면 차단 + 끝내고 내 목록에서 지운다 (증거는 위에서 복사해 뒀다)
   insert into public.blocks (blocker_id, blocked_id) values (me, other) on conflict do nothing;
+  perform public.close_room(a.room_id, 'reported')
+    from public.room_members a join public.room_members b on b.room_id = a.room_id
+   where a.user_id = me and b.user_id = other and a.open and b.open;
   perform private.dm_leave(p_thread, role);
 
   -- 자동 정지 — 편지 신고와 같이 센다
@@ -4398,11 +4410,12 @@ returns jsonb language plpgsql security definer set search_path = public, privat
 declare m private.dm_msgs%rowtype; t private.dm_threads%rowtype; v_to uuid; v_subs jsonb;
 begin
   select * into m from private.dm_msgs where id = p_msg;
-  if not found or m.status <> 'visible' or not m.is_letter then return jsonb_build_object('skip', 'no_message'); end if;
+  if not found or m.status <> 'visible' or not m.is_letter or not m.delivered then return jsonb_build_object('skip', 'no_message'); end if;
   select * into t from private.dm_threads where id = m.thread_id;
   if private.dm_writer(m, t) is distinct from p_actor then return jsonb_build_object('skip', 'not_author'); end if;
   if m.created_at < now() - interval '2 minutes' then return jsonb_build_object('skip', 'stale'); end if;
   if t.status <> 'open' then return jsonb_build_object('skip', 'closed'); end if;
+  if private.blocked_between(t.sender_id, t.recipient_id) then return jsonb_build_object('skip', 'blocked'); end if;
   insert into private.dm_push_log (msg_id) values (p_msg) on conflict do nothing;
   if not found then return jsonb_build_object('skip', 'already'); end if;
   v_to := private.dm_reader(m, t);
@@ -4457,6 +4470,7 @@ drop function if exists public.dm_send(uuid, text, jsonb);   -- Phase 35: 서명
 create or replace function public.dm_send(p_to uuid, p_body text, p_fmt jsonb default null, p_nick text default null)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare me uuid := auth.uid(); v text; t private.dm_threads%rowtype; b jsonb; p public.profiles%rowtype; mid bigint;
+        v_delivery boolean;
         v_body text := btrim(coalesce(p_body, ''));
         v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
         v_nick text := private.dm_nick(p_nick);
@@ -4473,14 +4487,14 @@ begin
   if private.dm_nick_bad(v_nick) then return jsonb_build_object('status', 'bad_nick'); end if;
 
   select * into p from public.profiles where id = p_to;
-  if not found or not p.letters_open or not p.onboarded or p.status <> 'active'
-     or coalesce(p.suspended_until > now(), false) or private.blocked_between(me, p_to) then
-    return jsonb_build_object('status', 'not_available');   -- 왜 안 되는지(차단 · 받기 끔)는 알려 주지 않는다
-  end if;
-  -- 받는 사람이 끝낸 적이 있으면 그 사람에게는 다시 못 보낸다
-  if exists (select 1 from private.dm_threads where sender_id = me and recipient_id = p_to and closed_by = 'recipient') then
+  if not found or not p.letters_open or not p.onboarded then
     return jsonb_build_object('status', 'not_available');
   end if;
+  -- 차단 · 수신 거부 · 정지는 계정별 전송 응답으로 익명 상대를 찾는 단서가 되지 않는다.
+  -- 발신자 편지는 똑같이 저장하고 한도를 적용하되, 수신자에게 전달하지 않는다.
+  v_delivery := p.status = 'active' and not coalesce(p.suspended_until > now(), false)
+    and not private.blocked_between(me, p_to)
+    and not exists (select 1 from private.dm_threads where sender_id = me and recipient_id = p_to and recipient_refused);
 
   select * into t from private.dm_threads where sender_id = me and recipient_id = p_to and status = 'open' for update;
   if found then
@@ -4496,8 +4510,8 @@ begin
     insert into private.dm_threads (sender_id, recipient_id, sender_alias)
     values (me, p_to, private.letter_alias_candidate()) returning * into t;
   end if;
-  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter, from_nick)
-  values (t.id, true, v_body, v_fmt, true, v_nick) returning id into mid;
+  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter, from_nick, delivered)
+  values (t.id, true, v_body, v_fmt, true, v_nick, v_delivery) returning id into mid;
   update private.dm_threads set last_at = now(), sender_read = mid where id = t.id;
   return jsonb_build_object('status', 'ok', 'thread_id', t.id, 'msg_id', mid);
 end
@@ -4519,6 +4533,9 @@ alter table private.dm_threads add column if not exists recipient_hidden boolean
 -- 이미 끝낸 편지는 끝낸 사람 목록에서 지운다 (Phase 25 전에 끝낸 것)
 update private.dm_threads set sender_hidden = true    where closed_by = 'sender'    and not sender_hidden;
 update private.dm_threads set recipient_hidden = true where closed_by = 'recipient' and not recipient_hidden;
+-- 이미 수신자가 버린 줄기도 거부를 보존한다. 발신자가 먼저 버렸어도 별도 사실로 남는다.
+update private.dm_threads set recipient_refused = true
+ where not recipient_refused and (closed_by = 'recipient' or (recipient_hidden and status <> 'open'));
 
 -- 끝내고(열려 있으면) 내 목록에서 지운다 — 나가기 · 차단 · 신고 공통
 create or replace function private.dm_leave(p_thread bigint, p_role text)
@@ -4526,6 +4543,7 @@ returns void language sql security definer set search_path = '' as $fn$
   update private.dm_threads
      set status    = case when status = 'open' then 'closed' else status end,
          closed_by = case when status = 'open' then p_role else closed_by end,
+         recipient_refused = recipient_refused or p_role = 'recipient',
          sender_hidden    = sender_hidden or p_role = 'sender',
          recipient_hidden = recipient_hidden or p_role = 'recipient'
    where id = p_thread;
@@ -4559,6 +4577,7 @@ drop function if exists public.dm_letter(bigint, text, jsonb);
 create or replace function public.dm_letter(p_thread bigint, p_body text, p_fmt jsonb default null, p_nick text default null)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare me uuid := auth.uid(); v text; role text; t private.dm_threads%rowtype; b jsonb; mid bigint;
+        v_other uuid; v_delivery boolean;
         v_body text := btrim(coalesce(p_body, ''));
         v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
         v_nick text := private.dm_nick(p_nick);
@@ -4574,7 +4593,12 @@ begin
   if v_fmt is not null and (v_body <> p_body or not private.letter_fmt_ok(v_fmt, v_body)) then
     return jsonb_build_object('status', 'bad_text');
   end if;
-  if private.blocked_between(t.sender_id, t.recipient_id) then return jsonb_build_object('status', 'closed'); end if;
+  v_other := case when role = 'sender' then t.recipient_id else t.sender_id end;
+  v_delivery := not private.blocked_between(t.sender_id, t.recipient_id)
+    and not exists (select 1 from public.profiles p where p.id = v_other
+                     and (p.status <> 'active' or coalesce(p.suspended_until > now(), false)))
+    and not exists (select 1 from private.dm_threads x
+                     where x.sender_id = me and x.recipient_id = v_other and x.recipient_refused);
   if role <> 'sender' then v_nick := null; end if;
   if private.dm_nick_bad(v_nick) then return jsonb_build_object('status', 'bad_nick'); end if;
   if private.dm_streak(p_thread, role = 'sender') >= 3 then return jsonb_build_object('status', 'wait_reply'); end if;
@@ -4582,8 +4606,8 @@ begin
   if not (b->>'ok')::boolean then
     return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (b->>'retry_after_ms')::int);
   end if;
-  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter, from_nick)
-  values (p_thread, role = 'sender', v_body, v_fmt, true, v_nick) returning id into mid;
+  insert into private.dm_msgs (thread_id, from_sender, body, fmt, is_letter, from_nick, delivered)
+  values (p_thread, role = 'sender', v_body, v_fmt, true, v_nick, v_delivery) returning id into mid;
   if role = 'sender' then update private.dm_threads set last_at = now(), sender_read = mid where id = p_thread;
   else update private.dm_threads set last_at = now(), recipient_read = mid where id = p_thread; end if;
   return jsonb_build_object('status', 'ok', 'thread_id', p_thread, 'msg_id', mid);
@@ -4691,7 +4715,7 @@ begin
     if r.paused_left is not null then
       update public.rooms set expires_at = now() + r.paused_left, paused_left = null, paused_since = null where id = p_room;
     end if;
-  elsif r.paused_left is null and r.expires_at > now() then
+  elsif r.paused_left is null then
     -- 먼저 떠난 쪽이 마지막으로 보고 있던 때부터 멈춘다 (앱이 갑자기 꺼져도 90초 넘게는 흐르지 않게)
     v_stop := least(now(), greatest(v_stop, now() - interval '90 seconds', r.armed_at));
     v_left := r.expires_at - v_stop;
@@ -4708,6 +4732,8 @@ create or replace function public.room_view(p_room uuid, p_on boolean default tr
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 begin
   if public.my_seat(p_room) is null then raise exception 'not_member'; end if;
+  -- 돌아온 사람의 새 viewing_until 로 이전 이탈 시각을 덮기 전에 먼저 남은 시간을 보존한다.
+  perform private.room_clock(p_room);
   update public.room_members
      set viewing_until = case when p_on then now() + interval '45 seconds' else now() end
    where room_id = p_room and user_id = auth.uid();
@@ -5335,9 +5361,9 @@ begin
   v_from := case when new.from_sender then t.sender_id else t.recipient_id end;
   v_to   := case when new.from_sender then t.recipient_id else t.sender_id end;
   perform private.bump(v_from, 'letters_sent');
-  perform private.bump(v_to, 'letters_got');
+  if new.delivered then perform private.bump(v_to, 'letters_got'); end if;
   if new.fmt is not null then perform private.bump(v_from, 'deco'); end if;
-  if exists (select 1 from private.dm_msgs o where o.thread_id = new.thread_id and o.id < new.id
+  if new.delivered and exists (select 1 from private.dm_msgs o where o.thread_id = new.thread_id and o.id < new.id
                and o.is_letter and o.from_sender <> new.from_sender) then
     perform private.bump(v_to, 'replies_got');
   end if;
@@ -5524,7 +5550,7 @@ begin
       'letters_sent', (select count(*) from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
                         where m.is_letter and ((m.from_sender and t.sender_id = u.id) or (not m.from_sender and t.recipient_id = u.id))),
       'letters_got',  (select count(*) from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
-                        where m.is_letter and ((m.from_sender and t.recipient_id = u.id) or (not m.from_sender and t.sender_id = u.id))),
+                        where m.is_letter and m.delivered and ((m.from_sender and t.recipient_id = u.id) or (not m.from_sender and t.sender_id = u.id))),
       'deco',    (select count(*) from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
                    where m.is_letter and m.fmt is not null
                      and ((m.from_sender and t.sender_id = u.id) or (not m.from_sender and t.recipient_id = u.id)))
@@ -5607,7 +5633,7 @@ create or replace function public.dm_unread()
 returns int language sql security definer set search_path = public, private stable as $fn$
   select count(*)::int
     from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
-   where m.is_letter and m.status = 'visible' and m.opened_at is null and t.status <> 'removed'
+   where m.is_letter and m.delivered and m.status = 'visible' and m.opened_at is null and t.status <> 'removed'
      and ((m.from_sender and t.recipient_id = auth.uid() and not t.recipient_hidden)
        or (not m.from_sender and t.sender_id = auth.uid() and not t.sender_hidden));
 $fn$;
@@ -5626,6 +5652,7 @@ begin
   if private.dm_reader(m, t) = me then v_reader := true;
   elsif private.dm_writer(m, t) = me then v_reader := false;
   else return jsonb_build_object('status', 'not_found'); end if;
+  if v_reader and not m.delivered then return jsonb_build_object('status', 'not_found'); end if;
   v_hidden := case when t.sender_id = me then t.sender_hidden else t.recipient_hidden end;
   if v_hidden then return jsonb_build_object('status', 'not_found'); end if;
   -- 내가 지운 편지 (Phase 69)
@@ -5656,13 +5683,15 @@ begin
     'to_grade',  case when m.from_sender and not v_reader then (select grade from private.person(t.recipient_id)) end,
     'to_gender', case when not m.from_sender then
                    (select o.from_gender from private.dm_msgs o where o.thread_id = t.id and o.from_sender order by o.id desc limit 1) end,
-    'is_reply', exists (select 1 from private.dm_msgs o where o.thread_id = t.id and o.id < m.id and o.is_letter and o.from_sender <> m.from_sender),
+    'is_reply', exists (select 1 from private.dm_msgs o where o.thread_id = t.id and o.id < m.id and o.is_letter and o.from_sender <> m.from_sender
+                        and (o.delivered or private.dm_writer(o, t) = me)),
     'opened', m.opened_at is not null,
     'first_open', v_first,           -- 방금 처음 열었다 (봉투 여는 연출은 이때만)
-    'replied', exists (select 1 from private.dm_msgs o where o.thread_id = t.id and o.id > m.id and o.is_letter and o.from_sender <> m.from_sender),
+    'replied', exists (select 1 from private.dm_msgs o where o.thread_id = t.id and o.id > m.id and o.is_letter and o.from_sender <> m.from_sender
+                       and (o.delivered or private.dm_writer(o, t) = me)),
     'thread_status', t.status, 'closed_by', t.closed_by,
     -- 답장은 받은 편지에서만, 열린 편지 줄기에서, 답 없이 3통이면 상대 차례
-    'can_reply', v_reader and t.status = 'open' and not private.blocked_between(t.sender_id, t.recipient_id),
+    'can_reply', v_reader and t.status = 'open',
     'wait_reply', t.status = 'open' and private.dm_streak(t.id, t.sender_id = me) >= 3,
     'server_now', now());
 end
@@ -5677,7 +5706,7 @@ declare me uuid := auth.uid(); m private.dm_msgs%rowtype; t private.dm_threads%r
 begin
   if me is null then raise exception 'unauthenticated'; end if;
   select * into m from private.dm_msgs where id = p_msg;
-  if not found or not m.is_letter then return jsonb_build_object('status', 'not_found'); end if;
+  if not found or not m.is_letter or not m.delivered then return jsonb_build_object('status', 'not_found'); end if;
   select * into t from private.dm_threads where id = m.thread_id;
   if private.dm_reader(m, t) is distinct from me then return jsonb_build_object('status', 'not_found'); end if;
   return public.dm_letter(m.thread_id, p_body, p_fmt, p_nick);
@@ -6204,7 +6233,8 @@ alter table private.dm_folder_items enable row level security;
 -- 이 편지가 나에게 받은 편지인지 보낸 편지인지 (내가 버린 줄기 · 내가 지운 편지(Phase 69)면 null)
 create or replace function private.dm_box_of(m private.dm_msgs, t private.dm_threads, p_me uuid)
 returns text language sql stable set search_path = '' as $fn$
-  select case when exists (select 1 from private.dm_hidden_msgs h where h.owner_id = p_me and h.msg_id = m.id) then null
+  select case when not m.delivered and private.dm_reader(m, t) = p_me then null
+              when exists (select 1 from private.dm_hidden_msgs h where h.owner_id = p_me and h.msg_id = m.id) then null
               when (m.from_sender and t.recipient_id = p_me and not t.recipient_hidden)
                 or (not m.from_sender and t.sender_id = p_me and not t.sender_hidden) then 'received'
               when (m.from_sender and t.sender_id = p_me and not t.sender_hidden)
@@ -6262,14 +6292,14 @@ begin
                (select o.from_nick from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender and o.id <= m.id order by o.id desc limit 1) end as my_nick,
              m.opened_at is not null as opened,
              exists (select 1 from private.dm_msgs o where o.thread_id = m.thread_id and o.id < m.id
-                      and o.is_letter and o.from_sender <> m.from_sender) as is_reply,
+                      and o.is_letter and o.from_sender <> m.from_sender and (o.delivered or private.dm_writer(o, t) = me)) as is_reply,
              -- 보낸 편지: 이름으로 보낸 편지면 받는 사람 이름 · 학년, 답장이면 "익명의 ○학생"
              case when b.bx = 'sent' and m.from_sender then (select name from private.person(t.recipient_id)) end as to_name,
              case when b.bx = 'sent' and m.from_sender then (select grade from private.person(t.recipient_id)) end as to_grade,
              case when b.bx = 'sent' and not m.from_sender then
                (select o.from_gender from private.dm_msgs o where o.thread_id = m.thread_id and o.from_sender order by o.id desc limit 1) end as to_gender,
              case when b.bx = 'sent' then exists (select 1 from private.dm_msgs o where o.thread_id = m.thread_id and o.id > m.id
-                      and o.is_letter and o.from_sender <> m.from_sender) end as replied
+                      and o.is_letter and o.from_sender <> m.from_sender and (o.delivered or private.dm_writer(o, t) = me)) end as replied
         from private.dm_msgs m
         join private.dm_threads t on t.id = m.thread_id
         cross join lateral (select private.dm_box_of(m, t, me) as bx) b
@@ -6671,6 +6701,9 @@ declare me uuid := auth.uid();
 begin
   if me is null or p_topic is null then return false; end if;
   if p_topic ~ '^room:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+    return not p_write and exists (select 1 from public.room_members where room_id = substr(p_topic, 6)::uuid and user_id = me);
+  end if;
+  if p_topic ~ '^peer:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
     return exists (select 1 from public.room_members where room_id = substr(p_topic, 6)::uuid and user_id = me);
   end if;
   if p_write then return false; end if;
@@ -6815,8 +6848,12 @@ revoke all on function private.badge_apply(uuid, text, uuid[], boolean) from pub
 -- 운영자: 줄 수 있는 뱃지 (분류 · 가진 사람 수)
 create or replace function public.admin_badges(p_staff uuid)
 returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
+declare v_role text;
 begin
-  perform private.require_staff(p_staff);
+  v_role := private.require_perm(p_staff, 'any');
+  if not (private.staff_can(v_role, 'moderate') or private.staff_can(v_role, 'identity')) then
+    raise exception 'no_permission';
+  end if;
   return coalesce((
     select jsonb_agg(jsonb_build_object('code', d.code, 'title', d.title, 'description', d.description, 'icon', d.icon,
                                         'category', d.category,
@@ -7027,12 +7064,11 @@ begin
                    (select private.email_student_no(u.email) from auth.users u where u.id = p.id) as no
               from public.profiles p
               cross join lateral private.person(p.id) n
-             where p.id <> me and p.letters_open and p.letters_recommend and p.onboarded and p.status = 'active'
-               and (p.suspended_until is null or p.suspended_until <= now())
+             where p.id <> me and p.letters_open and p.letters_recommend and p.onboarded
                and n.name is not null
-               and not private.blocked_between(me, p.id)
+               -- 한 번 내가 보낸 대상은 종료/차단과 무관하게 계속 제외해 결과 변화로 신원을 찾지 못하게 한다.
                and not exists (select 1 from private.dm_threads t
-                                where t.sender_id = me and t.recipient_id = p.id and (t.status = 'open' or t.closed_by = 'recipient'))
+                                where t.sender_id = me and t.recipient_id = p.id)
              order by random()
              limit 5) x), '[]'::jsonb);
 end

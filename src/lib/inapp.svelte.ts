@@ -1,5 +1,6 @@
 import { untrack } from 'svelte';
 import { PREFS } from './prefs.svelte';
+import { onAccountChange } from './accountScope';
 
 /**
  * 앱 안 알림 (Phase 35) — 앱을 보고 있을 때 새 메시지 · 편지 · 공지가 오면 화면 위에서 내려오는 띠 (카카오톡 · 인스타처럼).
@@ -24,6 +25,11 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 let seq = 0;
 /** 방금 보여 준 알림 — 같은 알림이 두 곳(실시간 · 푸시)에서 거의 동시에 와도 한 번만 */
 const recent = new Map<string, number>();
+
+onAccountChange(() => {
+	dismissInApp();
+	recent.clear();
+});
 
 export function notifyInApp(n: Omit<InApp, 'n'>, dedupeKey = '') {
 	untrack(() => {

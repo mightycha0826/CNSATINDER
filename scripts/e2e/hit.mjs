@@ -1,5 +1,5 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 // 누름 영역 (docs/UX-GUIDELINES.md G1) — 화면마다 보이는 모든 누를 것이 가운데 44×44 를 자기 것으로 갖는지.
 // 가운데와 ±21px 네 점을 elementFromPoint 로 찍어 그 요소(또는 자손)가 잡혀야 통과. 360 · 390 폭 두 가지.
@@ -144,7 +144,7 @@ try {
 } catch (e) { fail++; console.error(e); }
 finally {
 	await browser.close();
-	try { process.kill(-vite.pid); } catch { try { vite.kill(); } catch {} }
+	stopProcess(vite);
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -37,6 +37,10 @@ jobs:
         run: npm run test:admin
       - name: 알림(toast)
         run: npm run test:toast
+      - name: 계정 전환 · 개인정보 캐시
+        run: npm run test:account
+      - name: 화면 테스트 프로세스 실행 · 종료
+        run: npm run test:uiprocess
       - name: 기기 판별
         run: npm run test:platform
       - name: 웹 푸시 서명

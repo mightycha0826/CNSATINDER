@@ -11,6 +11,7 @@
 	 * 삭제 (Phase 69): 선택한 편지를 확인 시트를 거쳐 지운다 — 내 편지함에서만 (상대의 편지 · 편지 줄기는 그대로, 되돌릴 수 없다).
 	 */
 	import BackButton from '$lib/ui/BackButton.svelte';
+	import { onDestroy } from 'svelte';
 	import MailStack from '$lib/letters/MailStack.svelte';
 	import FolderPicker from '$lib/letters/FolderPicker.svelte';
 	import SelectBar from '$lib/letters/SelectBar.svelte';
@@ -20,6 +21,11 @@
 	import { deleteLetters, folderError, type MailItem } from '$lib/letters/api';
 	import { backClose, historySettled } from '$lib/overlay.svelte';
 	import { errMsg, toast } from '$lib/state.svelte';
+	import { accountIsCurrent, accountToken } from '$lib/accountScope';
+	const account = accountToken();
+	let alive = true;
+	onDestroy(() => (alive = false));
+	const current = () => alive && accountIsCurrent(account);
 
 	$effect(() => refreshMailbox());
 
@@ -39,9 +45,11 @@
 		picked = picked.includes(it.id) ? picked.filter((x) => x !== it.id) : [...picked, it.id];
 	}
 	async function done(name: string) {
+		if (!current()) return;
 		const ids = picked;
 		picking = false;
 		await historySettled(); // 폴더 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
+		if (!current()) return;
 		stopSelect();
 		filed(ids);
 		toast(name ? `'${name}' 폴더에 ${ids.length}통을 넣었어요` : '폴더에 넣었어요');
@@ -51,20 +59,22 @@
 	let confirming = $state(false);
 	let deleting = $state(false);
 	async function remove() {
-		if (deleting) return;
+		if (deleting || !current()) return;
 		const ids = picked;
 		deleting = true;
 		try {
 			const r = await deleteLetters(ids);
+			if (!current()) return;
 			const err = folderError(r);
 			if (err) return toast(err);
 			confirming = false;
 			await historySettled(); // 확인 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
+			if (!current()) return;
 			stopSelect();
 			filed(ids);
 			toast(`편지 ${r.status === 'ok' ? r.moved : ids.length}통을 삭제했어요`);
 		} catch (e) {
-			toast(errMsg(e));
+			if (current()) toast(errMsg(e));
 		} finally {
 			deleting = false;
 		}

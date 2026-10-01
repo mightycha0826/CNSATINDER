@@ -31,13 +31,16 @@ export const botApi: BotApi = {
 		try {
 			const { data } = await supabase.auth.getSession();
 			const token = data.session?.access_token;
-			if (!token) return { status: 'network' };
+			if (!token) return { status: 'not_found' };
 			const res = await fetch('/api/ai-chat', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
 				body: JSON.stringify({ chat_id: chatId, messages: lines.slice(-HISTORY) })
 			});
 			const body = (await res.json().catch(() => null)) as TurnResult | null;
+			// 요청 모양·인증 오류는 같은 기록을 다시 보내도 해결되지 않는다.
+			if (res.status === 400) return { status: 'bad_text' };
+			if (res.status === 401 || res.status === 403) return { status: 'not_found' };
 			return body?.status ? body : { status: 'network' };
 		} catch {
 			return { status: 'network' };

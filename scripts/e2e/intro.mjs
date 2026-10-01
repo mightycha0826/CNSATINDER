@@ -1,5 +1,5 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 const SP = OUT, PORT = 5194;
 const env = { ...process.env, PUBLIC_SUPABASE_URL: 'https://fake-proj.supabase.co', PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_testtesttesttesttest' };
@@ -33,6 +33,6 @@ try {
 	await page.screenshot({ path: `${SP}/intro-pending.png` });
 	check('입장 대기(메시지 없음)에도 카드', (await page.locator('.intro h2').innerText()).length > 0 && (await page.locator('.bubble').count()) === 0);
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
-} finally { await browser.close(); vite.kill(); try { execSync("pkill -f 'vite dev --port 5194'"); } catch {} }
+} finally { await browser.close(); stopProcess(vite);  }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

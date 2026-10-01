@@ -23,6 +23,7 @@
 		void attempt;
 		let r: ChatRoom | null = null;
 		let cancelled = false;
+		room = null;
 		loading = true;
 		failed = false;
 		(async () => {
@@ -52,4 +53,11 @@
 	});
 </script>
 
-<ChatView {room} {loading} matched={!!page.state.matched} onretry={failed ? () => attempt++ : undefined} />
+{#key page.params.id}
+	<ChatView
+		room={room?.roomId === page.params.id ? room : null}
+		loading={loading || (!!room && room.roomId !== page.params.id)}
+		matched={!!page.state.matched}
+		onretry={failed ? () => attempt++ : undefined}
+	/>
+{/key}

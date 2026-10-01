@@ -81,7 +81,7 @@ export type SendResult =
 	| { status: 'ok'; thread_id: number; msg_id: number }
 	| { status: 'rate_limited'; retry_after_ms: number }
 	| { status: 'wait_reply'; thread_id?: number }
-	| { status: 'not_available' | 'restricted' | 'no_name' | 'bad_text' | 'bad_nick' | 'closed' | 'not_found' | 'letters_locked' };
+	| { status: 'not_available' | 'restricted' | 'no_name' | 'bad_text' | 'bad_nick' | 'closed' | 'not_found' | 'letters_locked' | 'service_closed' };
 
 // ── 이름표 ──
 export const genderWord = (g: Gender | null | undefined) => (g === 'm' ? '남학생' : g === 'f' ? '여학생' : '학생');
@@ -121,7 +121,7 @@ export const stampDate = (iso: string) => {
 export const paperDate = (iso: string) => new Date(iso).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
 // ── 읽기 ──
-/** 두 글자 이상. 받기를 끈 사람 · 차단한 사이는 나오지 않는다 */
+/** 두 글자 이상. 공개 수신 설정만 반영하고, 익명 상대 차단으로 검색 결과가 달라지지 않는다. */
 export const searchPeople = (q: string) => rpc<DmPerson[]>('dm_search', { p_q: q });
 /** 찾기 화면 아래 추천 5명 (Phase 84 — 무작위. 추천을 끈 사람 · 이미 편지를 보내고 있는 사람은 빼고) */
 export const recommendPeople = () => rpc<DmPerson[]>('dm_recommend');
@@ -229,6 +229,8 @@ export function sendError(r: SendResult): string | null {
 			return '끝난 편지예요';
 		case 'letters_locked':
 			return '익명편지는 가입한 학생이 모이면 열려요';
+		case 'service_closed':
+			return '지금은 편지 쓰기가 쉬고 있어요. 잠시 뒤 다시 확인해 주세요';
 		default:
 			return '편지를 찾을 수 없어요';
 	}

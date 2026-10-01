@@ -1,6 +1,6 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
 import http from 'node:http';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 // /api/push 에 { reaction_message_id } — 토큰 확인 → reaction_push_payload → 받는 기기로 암호화 발송
 const PORT = 5195, SB = 'http://127.0.0.1:54398', PUSH = 'http://127.0.0.1:54397';
 const b64u = (b) => Buffer.from(b).toString('base64url');
@@ -41,6 +41,6 @@ try {
 	const before = rpcCalls.length;
 	await post({ message_id: 7 });
 	check('기존 채팅 메시지 알림 경로는 그대로 (push_payload)', rpcCalls.slice(before).some((x) => x[0] === 'push_payload'));
-} finally { vite.kill(); try { execSync("pkill -f 'vite dev --port 5195'"); } catch {} }
+} finally { stopProcess(vite);  }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

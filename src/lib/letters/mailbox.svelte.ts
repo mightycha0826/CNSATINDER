@@ -1,5 +1,6 @@
 import { fetchMailbox, type Box, type Folder, type MailItem } from './api';
 import { refreshUnread } from './unread.svelte';
+import { accountIsCurrent, accountToken, currentAccountId, onAccountChange } from '../accountScope';
 
 /**
  * 편지함 목록 (Phase 35) — 편지함 첫 화면(/letters)과 보관함(/letters/archive)이 같이 쓴다.
@@ -48,16 +49,35 @@ export function takeKnock(): Knock | null {
 	return h;
 }
 
+const requests: Record<Box, number> = { received: 0, sent: 0 };
+onAccountChange(() => {
+	BOX.received = [];
+	BOX.sent = [];
+	BOX.folders = [];
+	BOX.loaded = { received: false, sent: false };
+	BOX.more = { received: false, sent: false };
+	requests.received++;
+	requests.sent++;
+	ANNOUNCED.clear();
+	POSTED.pending = false;
+	KNOCK.at = 0;
+	KNOCK.hand = null;
+});
+
 export async function loadBox(box: Box) {
+	if (!currentAccountId()) return;
+	const token = accountToken();
+	const sequence = ++requests[box];
 	try {
 		const r = await fetchMailbox(box);
+		if (!accountIsCurrent(token) || sequence !== requests[box]) return;
 		BOX[box] = r.letters;
 		BOX.more[box] = r.letters.length === PAGE;
 		if (r.folders) BOX.folders = r.folders;
 	} catch {
 		/* 다음 번에 — 기억해 둔 목록을 그대로 보여 준다 */
 	} finally {
-		BOX.loaded[box] = true;
+		if (accountIsCurrent(token) && sequence === requests[box]) BOX.loaded[box] = true;
 	}
 }
 
@@ -75,10 +95,15 @@ export function pollMailbox() {
 }
 
 export async function loadMore(box: Box) {
+	if (!currentAccountId()) return;
+	const token = accountToken();
+	const sequence = requests[box];
 	const last = BOX[box].at(-1);
 	if (!last) return;
 	const r = (await fetchMailbox(box, last.id).catch(() => null))?.letters ?? [];
-	BOX[box] = [...BOX[box], ...r];
+	if (!accountIsCurrent(token) || sequence !== requests[box]) return;
+	const existing = new Set(BOX[box].map((item) => item.id));
+	BOX[box] = [...BOX[box], ...r.filter((item) => !existing.has(item.id))];
 	BOX.more[box] = r.length === PAGE;
 }
 

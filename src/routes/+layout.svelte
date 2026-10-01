@@ -89,11 +89,13 @@
 	$effect(() => {
 		if (isAdmin) return;
 		return listenServiceWorker({
-			push: (n) =>
+			push: (n) => {
+				if (!S.session) return;
 				notifyInApp(
 					{ key: n.tag, title: n.title, body: n.body, url: viaMailbox(n.url), kind: n.kind === 'other' ? 'notice' : n.kind },
 					`${n.tag}|${n.body.slice(0, 60)}`
-				),
+				);
+			},
 			open: (url) => void navigateFromOverlay(viaMailbox(url))
 		});
 	});
@@ -208,7 +210,9 @@
 		<span class="wordmark">Landy</span>
 	</div>
 {:else}
-	{@render children()}
+	{#key S.accountVersion}
+		{@render children()}
+	{/key}
 {/if}
 
 {#if !isAdmin}

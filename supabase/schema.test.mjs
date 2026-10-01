@@ -2350,7 +2350,7 @@ console.log('\n[68] ★ 대화 백업 (CSV) — 관리자만, 기록 남김, 계
 	const p1 = await svc('admin_export_messages', adm, from, to, 0, 2);
 	const p2 = await svc('admin_export_messages', adm, from, to, Number(p1.last_id), 2);
 	check('조각으로 나눠 받기 (이어 받는 조각은 겹치지 않음)', p1.count === 2 && p2.count >= 1 && Number(p2.csv.split(',')[0]) > Number(p1.last_id));
-	check('이어 받는 조각은 기록을 또 남기지 않는다', (await one(`select count(*)::int n from private.audit_log where action = 'export_messages'`)).n === logs0 + 2);
+	check('★ 이어 받는 조각도 열람 기록을 남긴다', (await one(`select count(*)::int n from private.audit_log where action = 'export_messages'`)).n === logs0 + 3);
 	const none = await svc('admin_export_messages', adm, new Date(Date.now() - 7200_000).toISOString(), new Date(Date.now() - 3600_000 - 1000).toISOString(), 0, 10);
 	check('기간 밖이면 빈 결과', none.count === 0 && none.csv === '');
 }
@@ -2491,13 +2491,16 @@ console.log('\n[71] ★ 이름 편지 — 학생을 찾아 익명으로 보내�
 
 	console.log('  [끝내기 · 차단 · 신고]');
 	check('받는 사람이 끝내기', (await rpcAs(E, 'dm_close', t2.thread_id)).status === 'ok' && (await rpcAs(A, 'dm_letter', t2.thread_id, '왜')).status === 'closed');
-	check('★ 받는 사람이 끝내면 그 사람에게 새 편지도 못 보낸다', (await rpcAs(A, 'dm_send', E, '다시')).status === 'not_available');
+	const refused = await rpcAs(A, 'dm_send', E, '다시');
+	check('★ 수신 거부는 발신 응답으로 드러나지 않고 실제 전달을 막는다', refused.status === 'ok'
+		&& (await one('select delivered from private.dm_msgs where id = $1', [refused.msg_id])).delivered === false
+		&& (await rpcAs(E, 'dm_open', refused.msg_id)).status === 'not_found');
 	const rep = await rpcAs(B, 'dm_report', s1.thread_id, 'harassment', '누군지 모를 사람이 계속');
 	check('신고', rep.status === 'ok');
 	const lr = await one(`select * from private.letter_reports where target_type = 'dm' and letter_id = $1`, [s1.thread_id]);
 	check('★ 신고 대상 = 보낸 사람 (운영진만 안다) · 대화 전문이 증거로', lr.reported_id === A && lr.reporter_id === B && (await cnt('select count(*)::int n from private.letter_report_evidence where report_id = $1', [lr.id])) === 5);
-	check('신고하면 차단 · 끝남 · 검색에서도 서로 안 보인다', (await cnt('select count(*)::int n from public.blocks where blocker_id = $1 and blocked_id = $2', [B, A])) === 1
-		&& (await rpcAs(A, 'dm_thread', s1.thread_id)).thread_status === 'closed' && (await rpcAs(A, 'dm_search', '박받음')).length === 0);
+	check('★ 신고하면 차단 · 끝남, 이름 검색은 차단 전후 동일 (신원 오라클 방지)', (await cnt('select count(*)::int n from public.blocks where blocker_id = $1 and blocked_id = $2', [B, A])) === 1
+		&& (await rpcAs(A, 'dm_thread', s1.thread_id)).thread_status === 'closed' && (await rpcAs(A, 'dm_search', '박받음')).some((p) => p.id === B));
 	check('같은 편지는 두 번 신고하지 않는다', (await rpcAs(B, 'dm_report', s1.thread_id, 'spam', '')).status === 'already');
 	const det = await svc('admin_letter_report', lr.id);
 	check('운영자 신고 상세에 편지 줄기 상태', det.target.thread_status === 'closed' && det.evidence[0].kind === 'dm_sender');
@@ -2583,7 +2586,10 @@ console.log('\n[73] 이름 편지 — 나가면 내 목록에서 지우기 (Phas
 	const bList = (await rpcAs(B, 'dm_inbox')).threads;
 	check('받는 쪽: 새 편지는 새 가명 (같은 사람인지 모름)', bList.length === 2 && bList[0].title !== bList[1].title, JSON.stringify(bList));
 	check('받는 사람도 끝난 편지에서 나가면 사라진다', (await rpcAs(B, 'dm_close', t1.thread_id)).status === 'ok' && !(await ids(B)).includes(t1.thread_id) && (await ids(B)).includes(t2.thread_id));
-	check('★ 받는 사람이 나가도 "다시 못 보냄" 규칙은 그대로', (await rpcAs(B, 'dm_close', t2.thread_id)).status === 'ok' && (await rpcAs(A, 'dm_send', B, '또')).status === 'not_available');
+	await rpcAs(B, 'dm_close', t2.thread_id);
+	const refused = await rpcAs(A, 'dm_send', B, '또');
+	check('★ 받는 사람이 나가면 이후 편지는 응답으로 구별되지 않고 수신되지 않는다', refused.status === 'ok'
+		&& (await rpcAs(B, 'dm_open', refused.msg_id)).status === 'not_found');
 	check('보낸 쪽엔 "끝남"으로 남는다 (받는 사람이 끝냄)', (await rpcAs(A, 'dm_inbox')).threads.find((t) => t.id === t2.thread_id)?.status === 'closed');
 	const t3 = await rpcAs(A, 'dm_send', C, '셋에게');
 	check('차단하면 내 목록에서 사라진다', (await rpcAs(C, 'dm_block', t3.thread_id)).status === 'ok' && !(await ids(C)).includes(t3.thread_id));
@@ -3090,7 +3096,10 @@ console.log('\n[79] 익명편지 리뉴얼 — 편지함 · 봉투 열기 · 편
 	console.log('  [끝내기 · 숨김 · 알림]');
 	await rpcAs(B, 'dm_close', s2.thread_id);
 	// 끝내기(나가기)는 끝낸 사람 편지함에서 그 편지를 치운다 (Phase 25) — 끝낸 뒤엔 어느 쪽도 이어 쓸 수 없다
-	check('끝낸 편지에는 답장할 수 없다', (await rpcAs(B, 'dm_reply_to', s2.msg_id, 'x')).status !== 'ok' && (await rpcAs(X, 'dm_send', B, '다시')).status === 'not_available');
+	check('끝낸 편지에는 답장할 수 없다', (await rpcAs(B, 'dm_reply_to', s2.msg_id, 'x')).status !== 'ok');
+	const refused = await rpcAs(X, 'dm_send', B, '다시');
+	check('수신 거부 이후 새 편지는 수신자에게 전달하지 않는다', refused.status === 'ok'
+		&& (await rpcAs(B, 'dm_open', refused.msg_id)).status === 'not_found');
 	check('끝낸 사람 편지함에서 사라진다', !(await box(B, 'received')).some((x) => x.thread_id === s2.thread_id));
 	await db.query('update private.dm_threads set recipient_hidden = true where id = $1', [s2.thread_id]);
 	check('나간 편지는 편지함에서도 · 열 수도 없다', !(await box(B, 'received')).some((x) => x.thread_id === s2.thread_id) && (await rpcAs(B, 'dm_open', s2.msg_id)).status === 'not_found');
@@ -3594,9 +3603,9 @@ console.log('\n[91] 실시간 전달 = DB 방송 · 비공개 채널 (Phase 55)'
 		}
 	};
 	const canRead = async (uid, topic) => (await rtAs(uid, topic, `select count(*)::int n from realtime.messages`))[0].n > 0;
-	const canSend = async (uid, topic) => {
+	const canSend = async (uid, topic, event = 'typing') => {
 		try {
-			await rtAs(uid, topic, `insert into realtime.messages (topic, extension, event, payload) values ('${topic}', 'broadcast', 'typing', '{}')`);
+			await rtAs(uid, topic, `insert into realtime.messages (topic, extension, event, payload) values ('${topic}', 'broadcast', '${event}', '{}')`);
 			return true;
 		} catch (e) {
 			if (!/row-level security/.test(e.message)) throw e;
@@ -3604,8 +3613,11 @@ console.log('\n[91] 실시간 전달 = DB 방송 · 비공개 채널 (Phase 55)'
 		}
 	};
 	const outsider = await person('m', 'f');
-	check('★ 방 사람은 방 채널을 듣고 · 입력 중 표시를 보낸다', (await canRead(A, `room:${r}`)) && (await canSend(B, `room:${r}`)));
+	check('★ 방 사람은 DB 채널을 읽기만 한다 (서버 이벤트 위조 금지)', (await canRead(A, `room:${r}`)) && !(await canSend(B, `room:${r}`)));
+	for (const event of ['msg', 'room', 'vote', 'reaction']) check(`★ 학생은 서버 ${event} 방송을 위조할 수 없다`, !(await canSend(B, `room:${r}`, event)));
+	check('★ 입력 중 · 접속 표시는 분리한 peer 채널로만 보낸다', await canSend(B, `peer:${r}`));
 	check('★ 다른 사람은 그 방 채널을 못 듣고 못 보낸다', !(await canRead(outsider, `room:${r}`)) && !(await canSend(outsider, `room:${r}`)));
+	check('★ 다른 사람은 peer 채널도 못 듣고 못 보낸다', !(await canRead(outsider, `peer:${r}`)) && !(await canSend(outsider, `peer:${r}`)));
 	check('★ 대화 목록 채널은 나만 (남의 것 못 들음)', (await canRead(A, `inbox:${A}`)) && !(await canRead(A, `inbox:${B}`)));
 	check('★ 목록 · 가입 인원 채널엔 아무도 못 보낸다', !(await canSend(A, `inbox:${A}`)) && !(await canSend(A, 'signups')));
 	check('가입 인원 채널은 누구나 듣는다', await canRead(outsider, 'signups'));
@@ -3912,6 +3924,126 @@ console.log('\n[96] CNSA 뱃지 — 기본 뱃지 열림 · 5칸 · 랜덤채팅
 	check('남의 사진은 읽을 수 없다 (운영진은 운영 서버의 서명 주소로만)', vis.length === 1 && vis[0] === `${S1}/upload001.jpg`, vis.join());
 	await rowsAs(S1, `delete from storage.objects where name = $1`, [`${S1}/upload001.jpg`]);
 	check('내 사진은 지울 수 있다', !(await one(`select 1 x from storage.objects where name = $1`, [`${S1}/upload001.jpg`])));
+}
+
+console.log('\n[97] 코드 리뷰 회귀 — 익명성 · 차단 · 점검 · 시계 · 감사 · 권한');
+{
+	await db.exec('update public.app_settings set is_open = true, maintenance = false, maintenance_at = null, letters_gate = false');
+	let no = 41000;
+	const named = async (name) => {
+		const n = ++no;
+		await db.query('insert into private.student_roster (student_no, grade, name) values ($1, 1, $2)', [n, name]);
+		const id = await signUp(`${n}@cnsa.hs.kr`, true);
+		await db.query("update public.profiles set gender = 'm', want = 'any', onboarded = true where id = $1", [id]);
+		return id;
+	};
+	const A = await named('ReviewAlpha'), B = await named('ReviewBeta'), C = await named('ReviewGamma');
+	const directory = async (u) => (await rpcAs(u, 'dm_search', 'Review')).map(({ id, name, no }) => ({ id, name, no }));
+	const before = await directory(B);
+	const original = await rpcAs(A, 'dm_send', B, 'original');
+	// 동일 계정 사이의 반대 방향(내가 실명으로 시작한 줄기)도 차단 여부를 probing하는 통로가 되지 않아야 한다.
+	const known = await rpcAs(B, 'dm_send', A, 'known person');
+	const knownReply = await rpcAs(A, 'dm_reply_to', known.msg_id, 'known reply');
+	const known0 = await rpcAs(B, 'dm_open', knownReply.msg_id);
+	await db.query('update public.profiles set letters_recommend = false');
+	await db.query('update public.profiles set letters_recommend = true where id = any($1)', [[A, C]]);
+	const recommended = async (u) => (await rpcAs(u, 'dm_recommend')).map((p) => p.id).sort();
+	const rec0 = await recommended(B);
+	await rpcAs(B, 'dm_block', original.thread_id);
+	check('★ 익명 상대 차단 전후 이름 · 학번 · 계정 검색 결과가 같다', JSON.stringify(await directory(B)) === JSON.stringify(before));
+	check('★ 익명 상대 차단 전후 추천 후보도 같다', JSON.stringify(await recommended(B)) === JSON.stringify(rec0));
+	const known1 = await rpcAs(B, 'dm_open', knownReply.msg_id);
+	const probe = await rpcAs(B, 'dm_reply_to', knownReply.msg_id, 'probe reply');
+	check('★ 이미 실명으로 주고받던 다른 줄기의 답장 상태/응답도 차단을 드러내지 않는다', known0.can_reply === true && known1.can_reply === true
+		&& probe.status === 'ok' && (await rpcAs(A, 'dm_open', probe.msg_id)).status === 'not_found');
+	const got0 = (await one('select counts from private.user_stats where user_id = $1', [B])).counts;
+	const unread0 = await rpcAs(B, 'dm_unread');
+	const blind = await rpcAs(A, 'dm_send', B, 'quiet one');
+	const normal = await rpcAs(C, 'dm_send', B, 'normal one');
+	check('★ 차단된 대상도 정상 대상과 같은 발신 결과 (신원 추측 불가)', blind.status === 'ok' && normal.status === 'ok');
+	const sent = await rpcAs(A, 'dm_open', blind.msg_id);
+	check('★ 발신자 편지 · 읽음 · 줄기 상태는 정상, 차단/전달 표식 없음', sent.status === 'ok' && sent.body === 'quiet one'
+		&& sent.role === 'sent' && sent.thread_status === 'open' && sent.opened === false
+		&& !JSON.stringify(sent).includes('delivered') && !JSON.stringify(sent).includes('recipient_refused'));
+	check('★ 수신자 편지함 · 직접 열기에는 차단된 편지가 없다', !(await rpcAs(B, 'dm_mailbox', 'received')).letters.some((m) => m.id === blind.msg_id)
+		&& (await rpcAs(B, 'dm_open', blind.msg_id)).status === 'not_found');
+	check('★ 차단된 편지는 안 읽은 수 · 수신 업적 · 푸시를 늘리지 않는다', (await rpcAs(B, 'dm_unread')) === unread0 + 1
+		&& Number((await one('select counts from private.user_stats where user_id = $1', [B])).counts.letters_got) === Number(got0.letters_got) + 1
+		&& (await svc('dm_push_payload', blind.msg_id, A)).skip === 'no_message');
+	const folder = await rpcAs(A, 'dm_folder_put', [blind.msg_id], null, 'Quiet sent');
+	check('★ 발신자는 차단된 편지도 정상적으로 보관 · 열기 · 삭제 가능', folder.moved === 1
+		&& (await rpcAs(A, 'dm_mailbox', 'sent', null, folder.folder.id)).letters.some((m) => m.id === blind.msg_id)
+		&& (await rpcAs(A, 'dm_letter_delete', [blind.msg_id])).moved === 1);
+	check('★ 수신자는 차단된 편지 답장 · 폴더 보관도 못 한다', (await rpcAs(B, 'dm_reply_to', blind.msg_id, 'x')).status === 'not_found'
+		&& (await rpcAs(B, 'dm_folder_put', [blind.msg_id], null, 'No delivery')).moved === 0);
+	for (const u of [A, C]) {
+		await rpcAs(u, 'dm_send', B, 'two');
+		await rpcAs(u, 'dm_send', B, 'three');
+	}
+	check('★ 차단 여부와 무관하게 답 없이 3통 한도도 동일', (await rpcAs(A, 'dm_send', B, 'four')).status === 'wait_reply'
+		&& (await rpcAs(C, 'dm_send', B, 'four')).status === 'wait_reply');
+	await db.query("update public.profiles set status = 'suspended' where id = $1", [A]);
+	check('★ 신고 정지로도 검색/추천에서 익명 발신자 계정이 사라지지 않는다', JSON.stringify(await directory(B)) === JSON.stringify(before)
+		&& JSON.stringify(await recommended(B)) === JSON.stringify(rec0));
+	await db.query("update public.profiles set status = 'active' where id = $1", [A]);
+
+	const F = await named('ReviewFirst'), G = await named('ReviewLast');
+	const first = await rpcAs(F, 'dm_send', G, 'first');
+	await rpcAs(F, 'dm_close', first.thread_id);
+	await rpcAs(G, 'dm_close', first.thread_id);
+	check('★ 발신자가 먼저 종료해도 수신 거부는 독립적으로 남는다', (await one('select recipient_refused from private.dm_threads where id = $1', [first.thread_id])).recipient_refused === true);
+	const retry = await rpcAs(F, 'dm_send', G, 'retry');
+	check('★ 종료 순서와 무관하게 새 편지 응답은 정상, 실제 수신은 거부', retry.status === 'ok'
+		&& (await rpcAs(G, 'dm_open', retry.msg_id)).status === 'not_found');
+
+	const makeRoom = async (u, v) => (await one('select private.dev_open_room($1, $2, 10) as id', [
+		(await one('select email from auth.users where id = $1', [u])).email,
+		(await one('select email from auth.users where id = $1', [v])).email])).id;
+	const chat = await makeRoom(A, B);
+	await rpcAs(B, 'dm_block', original.thread_id);
+	check('★ 편지에서 차단하면 기존 랜덤채팅도 즉시 닫힌다', (await one('select status, close_reason from public.rooms where id = $1', [chat])).close_reason === 'blocked');
+	await expectError('★ 차단된 기존 채팅에 메시지는 저장되지 않는다', () => rowsAs(A,
+		"insert into public.messages (room_id, sender_seat, body, client_msg_id) values ($1, 1, 'blocked', gen_random_uuid())", [chat]), 'row-level security');
+	const H = await named('ReviewReport'), I = await named('ReviewOther');
+	const reportedLetter = await rpcAs(H, 'dm_send', I, 'report');
+	const reportedChat = await makeRoom(H, I);
+	await rpcAs(I, 'dm_report', reportedLetter.thread_id, 'spam', '');
+	check('★ 편지 신고도 기존 랜덤채팅을 즉시 닫는다', (await one('select close_reason from public.rooms where id = $1', [reportedChat])).close_reason === 'reported');
+
+	for (const patch of ["is_open = false", "is_open = true, maintenance = true", "maintenance = false, maintenance_at = now() - interval '1 minute'"]) {
+		await db.exec(`update public.app_settings set ${patch}`);
+		check('★ 서비스 중단 · 즉시/예약 점검은 새 편지와 답장 모두 차단', (await rpcAs(H, 'dm_send', F, 'closed')).status === 'service_closed'
+			&& (await rpcAs(B, 'dm_reply_to', normal.msg_id, 'closed reply')).status === 'service_closed');
+	}
+	await db.exec('update public.app_settings set is_open = true, maintenance = false, maintenance_at = null');
+	for (const action of ['sweep', 'close', 'return', 'match']) {
+		const r = await makeRoom(F, G);
+		await db.query("update public.rooms set armed_at = now() - interval '5 minutes', expires_at = now() - interval '10 seconds' where id = $1", [r]);
+		await db.query("update public.room_members set viewing_until = now() - interval '20 seconds' where room_id = $1", [r]);
+		if (action === 'sweep') await db.exec('select public.sweep_rooms()');
+		if (action === 'close') await rpcAs(F, 'close_if_expired', r);
+		if (action === 'return') await rpcAs(F, 'room_view', r, true);
+		if (action === 'match') await rpcAs(F, 'request_match');
+		const snap = await rpcAs(F, 'room_snapshot', r);
+		check(`★ 마지막 접속 TTL이 마감 전에 끝났으면 남은 시간을 보존 (${action})`, snap.status === 'active' && snap.paused);
+	}
+
+	const identityOnly = await named('ReviewStaff');
+	await db.query("insert into private.staff(user_id, role) values ($1, 'beta')", [identityOnly]);
+	await db.exec("delete from private.role_perms where role = 'beta'; insert into private.role_perms(role, perm) values ('beta', 'identity')");
+	check('★ identity만 가진 역할도 뱃지 요청 화면의 카탈로그를 볼 수 있다', (await svc('admin_badges', identityOnly)).some((d) => d.code === 'cnsa_student')
+		&& Array.isArray(await svc('admin_badge_requests', identityOnly, true)));
+	await db.exec("delete from private.role_perms where role = 'beta'");
+	await expectError('★ moderate · identity 둘 다 없으면 뱃지 카탈로그 거부', () => svc('admin_badges', identityOnly), 'no_permission');
+	const adm = (await one("select user_id from private.staff where role = 'admin' limit 1")).user_id;
+	const logs = Number((await one("select count(*) n from private.audit_log where action = 'export_messages'")).n);
+	await svc('admin_export_messages', adm, new Date(Date.now() - 3600_000).toISOString(), new Date(Date.now() + 3600_000).toISOString(), 1, 1);
+	check('★ 첫 요청이 임의 양수 커서여도 내보내기를 기록한다', Number((await one("select count(*) n from private.audit_log where action = 'export_messages'")).n) === logs + 1);
+
+	await db.exec('update public.app_settings set ai_chat = true, ai_chat_daily_cap = 100000, ai_chat_per_user = 50');
+	const ai2 = await rpcAs(F, 'ai_chat_start');
+	check('★ 여러 사용자 턴 전체의 금지 정보를 AI 대화 DB가 검사', (await svc('ai_chat_turn', ai2.id, F, 'a'.repeat(500) + '\n01012345678')).status === 'blocked');
+	check('AI 검사 입력은 합친 20개 턴 상한까지만', (await svc('ai_chat_turn', ai2.id, F, 'a'.repeat(10020))).status === 'bad_text');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

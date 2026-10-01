@@ -39,7 +39,7 @@ export interface ChatTransport {
 	disconnect(): void;
 	/** replyTo = 답장 대상 메시지 id (같은 방) */
 	send(roomId: string, seat: 1 | 2, body: string, clientMsgId: string, replyTo?: number | null): Promise<SendResult>;
-	/** id > afterId 인 메시지를 오름차순으로 전부 */
+	/** id > afterId 인 메시지를 오름차순으로 전부. 일부 페이지라도 실패하면 예외를 던진다. */
 	fetchAfter(roomId: string, afterId: number): Promise<MsgRow[]>;
 	/** 가장 최근 n 개 (커밋 순서 역전 보정용) */
 	fetchRecent(roomId: string, n: number): Promise<MsgRow[]>;
@@ -58,6 +58,7 @@ export interface ChatTransport {
 	/** 신고 — 대화 사본 저장 + 자동 차단 + 방 종료. 닫힌 방에서도 동작한다. */
 	report(roomId: string, reason: ReportReason, note: string): Promise<{ status: 'ok' | 'already'; snap: RoomSnap }>;
 	block(roomId: string): Promise<RoomSnap>;
+	/** 서버가 읽음을 저장한 뒤 완료한다. 실패하면 예외를 던져 같은 목표를 재시도하게 한다. */
 	markRead(roomId: string, lastId: number): Promise<void>;
 	/** 메시지에 공감 — emoji = null 이면 취소. 대화 중에만 된다. */
 	react(roomId: string, messageId: number, emoji: ReactionKey | null): Promise<ReactResult>;

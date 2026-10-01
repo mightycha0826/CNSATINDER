@@ -1,7 +1,7 @@
 import { ROOT, CHROME, OUT, answerDialogs } from './_env.mjs';
 import http from 'node:http';
 import { createHmac } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 
 /** 운영자 화면 — AI 자동 감지 신고 · 검열봇/AI 대화 설정 · 금칙어 (가짜 Supabase RPC + 서명 쿠키) */
@@ -195,7 +195,7 @@ try {
 } catch (e) { fail++; console.error(e); }
 finally {
 	await browser.close();
-	try { process.kill(-vite.pid); } catch {}
+	stopProcess(vite);
 	sb.close();
 }
 console.log(`\n${pass} passed, ${fail} failed`);

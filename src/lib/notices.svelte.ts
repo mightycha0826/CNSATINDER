@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { accountIsCurrent, accountToken, currentAccountId, onAccountChange } from './accountScope';
 
 /**
  * 공지사항 — 하트(알림) 아이콘의 빨간 점 · 알림 화면 · /notices 화면이 같이 쓴다.
@@ -23,15 +24,28 @@ export const unreadPersonal = () => NOTICES.personal.filter((n) => !n.read).leng
 /** 마지막으로 불러온 시각 — 탭을 오갈 때마다 새로 부르지 않게 */
 let lastLoad = 0;
 const FRESH_MS = 60_000;
+let request = 0;
+
+onAccountChange(() => {
+	NOTICES.list = [];
+	NOTICES.personal = [];
+	NOTICES.lastSeen = 0;
+	NOTICES.loaded = false;
+	lastLoad = 0;
+	request++;
+});
 
 /** force = 공지 화면처럼 지금 꼭 최신이어야 할 때 */
 export async function loadNotices(force = false) {
+	if (!currentAccountId()) return;
 	if (!force && NOTICES.loaded && Date.now() - lastLoad < FRESH_MS) return;
-	lastLoad = Date.now();
+	const token = accountToken();
+	const sequence = ++request;
 	const { data, error } = await supabase.rpc('my_notices');
 	const d = data as { notices?: Notice[]; last_seen?: number; personal?: PersonalNotice[] } | null;
 	// 모양이 다르면(아직 schema.sql 을 반영하지 않은 DB 등) 조용히 넘어간다 — 하트만 점 없이 보인다
-	if (error || !Array.isArray(d?.notices)) return;
+	if (!accountIsCurrent(token) || sequence !== request || error || !Array.isArray(d?.notices)) return;
+	lastLoad = Date.now();
 	NOTICES.list = d.notices.map((n) => ({ ...n, id: Number(n.id) }));
 	NOTICES.personal = (d.personal ?? []).map((n) => ({ ...n, id: Number(n.id) }));
 	NOTICES.lastSeen = Number(d.last_seen);

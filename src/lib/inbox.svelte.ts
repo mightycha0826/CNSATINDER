@@ -2,6 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { S } from './state.svelte';
 import { whileVisible } from './visible';
+import { accountIsCurrent, accountToken, currentAccountId, onAccountChange } from './accountScope';
 
 /** my_rooms() 의 한 줄. ★ uuid 는 room_id 뿐. */
 export type InboxRoom = {
@@ -46,6 +47,10 @@ export class Inbox {
 	skew = $state(0);
 	/** 마지막으로 불러온 서버 시각 (ms) — 멈춘 방의 남은 시간 계산용 */
 	serverAt = $state(0);
+	/** 평가 대상이 바뀌었을 때만 증가한다. 메시지·읽음 폴링은 평가 큐를 다시 열지 않는다. */
+	roomRevision = $state(0);
+	#signature = '';
+	#request = 0;
 
 	#ch: RealtimeChannel | null = null;
 	#topic = '';
@@ -58,6 +63,23 @@ export class Inbox {
 	/** 새 메시지 · 새로 연결된 대화 */
 	onNew: ((r: InboxRoom) => void) | null = null;
 
+	constructor() {
+		onAccountChange(() => this.#reset());
+	}
+
+	#reset() {
+		this.#request++;
+		this.rooms = [];
+		this.loaded = false;
+		this.skew = this.serverAt = 0;
+		this.#seen = null;
+		this.#signature = '';
+		this.roomRevision++;
+		if (this.#debounce) clearTimeout(this.#debounce);
+		this.#debounce = null;
+		this.#unsubscribe();
+	}
+
 	start() {
 		if (this.#running++ > 0) return; // 이미 켜져 있다
 		this.#stopped = false;
@@ -69,6 +91,7 @@ export class Inbox {
 		if (--this.#running > 0) return;
 		this.#running = 0;
 		this.#stopped = true;
+		this.#request++;
 		this.#stopPoll?.();
 		this.#stopPoll = null;
 		if (this.#debounce) clearTimeout(this.#debounce);
@@ -76,12 +99,20 @@ export class Inbox {
 	}
 
 	async load() {
+		if (!currentAccountId()) return;
+		const token = accountToken();
+		const request = ++this.#request;
 		const { data, error } = await supabase.rpc('my_rooms');
-		if (this.#stopped || error || !data) return;
+		if (!accountIsCurrent(token) || request !== this.#request || this.#stopped || error || !data) return;
 		const res = data as { rooms: InboxRoom[]; server_now: string };
 		this.skew = Date.parse(res.server_now) - Date.now();
 		this.serverAt = Date.parse(res.server_now);
 		this.#announce(res.rooms);
+		const signature = JSON.stringify(res.rooms.map((r) => [r.room_id, r.status, !!r.pinned]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))));
+		if (signature !== this.#signature) {
+			this.#signature = signature;
+			this.roomRevision++;
+		}
 		this.rooms = res.rooms;
 		this.loaded = true;
 		this.#listen(res.rooms.length > 0);
@@ -111,9 +142,10 @@ export class Inbox {
 		this.#unsubscribe();
 		if (!topic) return;
 		this.#topic = topic;
+		const token = accountToken();
 		this.#ch = supabase
 			.channel(topic, { config: { private: true } })
-			.on('broadcast', { event: 'changed' }, () => this.#soon())
+			.on('broadcast', { event: 'changed' }, () => { if (accountIsCurrent(token)) this.#soon(); })
 			.subscribe();
 	}
 

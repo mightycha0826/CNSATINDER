@@ -1,7 +1,7 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
 import http from 'node:http';
 import { createHmac } from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 
 const SP = OUT;
@@ -114,7 +114,7 @@ try {
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
 } finally {
 	await browser.close();
-	vite.kill();
+	stopProcess(vite);
 	sb.close();
 }
 console.log(`\n${pass} passed, ${fail} failed`);

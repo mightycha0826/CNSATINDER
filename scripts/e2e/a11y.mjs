@@ -1,5 +1,5 @@
 import { ROOT, CHROME, OUT } from './_env.mjs';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, stopProcess } from './_process.mjs';
 import { chromium } from 'playwright-core';
 // 동작 줄이기 · 화면 낭독기 — /dev/chat 미리보기
 const SP = OUT, PORT = 5191;
@@ -63,6 +63,6 @@ try {
 	await rp.screenshot({ path: `${SP}/a11y-reduced.png` });
 	check('페이지 오류 없음', errs.length === 0, errs.join(' | '));
 } catch (e) { fail++; console.error(e); }
-finally { await browser.close(); vite.kill(); }
+finally { await browser.close(); stopProcess(vite); }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

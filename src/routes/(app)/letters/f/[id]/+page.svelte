@@ -16,6 +16,8 @@
 	import { FOLDER_MAX, deleteFolder, deleteLetters, fetchFolder, folderError, renameFolder, takeFromFolder, type Box, type MailItem } from '$lib/letters/api';
 	import { backClose, historySettled, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { errMsg, toast } from '$lib/state.svelte';
+	import { accountIsCurrent, accountToken } from '$lib/accountScope';
+	const account = accountToken();
 
 	const id = $derived(Number(page.params.id));
 	let name = $state('');
@@ -47,6 +49,7 @@
 		kind = 'all';
 		try {
 			const r = await fetchFolder(id);
+			if (!accountIsCurrent(account)) return;
 			if (!r.folder) {
 				gone = true;
 				return;
@@ -71,6 +74,7 @@
 		if (!last || busy) return;
 		busy = true;
 		const r = await fetchFolder(id, last.id).catch(() => null);
+		if (!accountIsCurrent(account)) return;
 		if (r) {
 			items = [...items, ...r.letters];
 			more = r.letters.length === PAGE;
@@ -100,6 +104,7 @@
 		const ids = picked;
 		try {
 			const r = await takeFromFolder(ids);
+			if (!accountIsCurrent(account)) return;
 			const err = folderError(r);
 			if (err) return toast(err);
 			stopSelect();
@@ -113,6 +118,7 @@
 		const ids = picked;
 		moving = false;
 		await historySettled(); // 폴더 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
+		if (!accountIsCurrent(account)) return;
 		stopSelect();
 		leave(ids);
 		toast(to ? `'${to}' 폴더로 ${ids.length}통을 옮겼어요` : '옮겼어요');
@@ -127,10 +133,12 @@
 		deleting = true;
 		try {
 			const r = await deleteLetters(ids);
+			if (!accountIsCurrent(account)) return;
 			const err = folderError(r);
 			if (err) return toast(err);
 			confirming = false;
 			await historySettled(); // 확인 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
+			if (!accountIsCurrent(account)) return;
 			stopSelect();
 			leave(ids);
 			toast(`편지 ${r.status === 'ok' ? r.moved : ids.length}통을 삭제했어요`);
@@ -151,6 +159,7 @@
 		acting = true;
 		try {
 			const r = await renameFolder(id, nm);
+			if (!accountIsCurrent(account)) return;
 			const err = folderError(r);
 			if (err) return toast(err);
 			name = nm;
@@ -169,6 +178,7 @@
 		acting = true;
 		try {
 			const r = await deleteFolder(id);
+			if (!accountIsCurrent(account)) return;
 			const err = folderError(r);
 			if (err) return toast(err);
 			BOX.folders = BOX.folders.filter((x) => x.id !== id);

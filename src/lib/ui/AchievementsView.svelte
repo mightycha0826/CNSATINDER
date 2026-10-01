@@ -229,11 +229,15 @@
 		display: flex;
 		align-items: baseline;
 		justify-content: space-between;
+		/* 좁은 화면(폭 280)에서는 안내가 아랫줄로 — 제목이 두 줄로 꺾이지 않게 */
+		flex-wrap: wrap;
+		gap: 2px 10px;
 		margin-bottom: 12px;
 	}
 	.feat-head h2 {
 		margin: 0;
 		font-size: 15px;
+		white-space: nowrap;
 	}
 	.feat-head h2 small {
 		margin-left: 4px;
