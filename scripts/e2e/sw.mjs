@@ -168,7 +168,7 @@ try {
 		for (let i = 0; i < d.length; i += 4) { if (d[i + 3] === 0) clear++; else if (d[i + 3] === 255) solid++; if (d[i + 3] > 0 && (d[i] < 250 || d[i + 1] < 250 || d[i + 2] < 250)) colored++; }
 		return { clear, solid, colored };
 	});
-	check('★ 배지 = 흰 로고 + 투명 바탕 (컬러 사각형이면 안드로이드에서 흰 네모)', badge.clear > 96 * 96 * 0.3 && badge.solid > 96 * 96 * 0.3 && badge.colored === 0, JSON.stringify(badge));
+	check('★ 배지 = 흰 로고 + 투명 바탕 (컬러 사각형이면 안드로이드에서 흰 네모)', badge.clear > 96 * 96 * 0.3 && badge.solid > 96 * 96 * 0.2 && badge.colored === 0, JSON.stringify(badge));
 	const meta = await page.evaluate(async () => {
 		const r = await navigator.serviceWorker.ready;
 		r.active.postMessage({ type: 'standalone' });

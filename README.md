@@ -240,7 +240,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `node scripts/import-roster.mjs <csv> [--dry-run]` | 학번-이름 명렬표를 DB 에 반영 (관리자 화면의 이메일 확인 옆 이름 표시용) |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
 | `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 24묶음 — `scripts/e2e/`. `hit`(누름 영역 44px) · `ux`(흐름이 말없이 끊기지 않는지)는 UX 가이드라인 검사. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `landy-e2e/` |
-| `node scripts/generate-badge.mjs` | 알림 배지(`static/badge-96.png`) 재생성 — 앱 아이콘의 흰 로고만 남기고 바탕은 투명 (안드로이드는 배지의 투명도만 써서 컬러 아이콘이면 흰 네모가 된다) |
+| `node scripts/generate-badge.mjs` | 알림 배지(`static/badge-96.png`) 재생성 — 앱 아이콘의 로고(보라)만 남기고 흰 바탕은 투명 (안드로이드는 배지의 투명도만 써서 컬러 아이콘이면 흰 네모가 된다) |
 | `node scripts/generate-crest.mjs` | 교표(`static/school-crest.png`) 재생성 — 원본 `branding/school-crest-source.jpg` 의 가장자리에서 이어진 흰 바탕만 투명하게 (교복 프로필, Phase 60) |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.*`(png/webp/jpg 아무거나) (헤드리스 Chrome 사용) |
 
@@ -851,4 +851,11 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       검열 대기열(`mod_enqueue` · `mod_claim` · `mod_verdict`)은 채팅 · 이름 편지만. 운영자 통계 "24시간 편지"와 사용자 상세 "쓴 편지"는 이름 편지 수로 (예전엔 늘 0).
       `app_settings.letter_max_len` · `comment_max_len` 은 캐시된 옛 앱이 아직 고르므로 남김 (`ponytail:` 표시 — 새 앱이 다 퍼진 뒤 지운다).
       `schema.sql` 7319 → 6520줄, 스키마 테스트 [45]~[52] · [59] 삭제 · [58] 은 `letter_fmt_ok` 를 바로 검사 (1196 → 1073). 옛 스키마 위에 새 스키마를 얹는 경로도 PGlite 로 확인 (1073 통과). 실DB 반영 2026-10-02 (phase85_drop_public_letters_part1~2 — 표가 비어 있지 않으면 멈추는 안전장치와 함께, 반영 뒤 함수 7개 본문 해시 대조).
+- [x] **Phase 86 — 새 로고 · 기본 테마 보라** (DB 변경 없음) — 앱 아이콘을 새 로고(흰 바탕 위 연보라 꽃잎 L)로: `branding/icon-source.png` 교체,
+      `static/` 아이콘 5종 · 알림 배지 재생성. 마스커블은 로고를 68% 로 줄여 둘레를 흰 바탕으로 (`generate-icons.mjs` 의 scale),
+      배지는 흰색 대신 "색이 있는 곳"을 남긴다 (`generate-badge.mjs`). 봉투 우표 · 소인의 도형은 학교 로고라 그대로.
+      기본 테마: 다홍(주황 → 핑크)을 지우고 로고의 연보라 → 보라로 — `app.css` 의 `--g-*`(#dc9cfb · #b96cf5 · #9a52eb), 채운 면
+      `--accent-fill` · 말풍선(#b56cf3 → #a35bee → #8c46e2, 흰 글씨 대비는 예전 다홍과 같은 수준), 글자색 `--accent`(라이트 #8b3fd9 5.2:1 · 다크 #c79bff),
+      작은 흰 글씨 면 `--accent-fill-deep`(4.7:1 넘게), 빛 번짐 · 버튼 빛 · 우체통(`--post-*`, 다크는 한 단계 어둡게) · 책상 소품 · 연결 화면 하트 · 스토리 그림.
+      테마 목록의 첫 칸 id 는 `sunset` → `landy` (기본은 저장하지 않으므로 고른 적 없는 기기는 그대로 새 기본). 다른 색(보라 · 파랑 · 초록 · 인스타)은 그대로.
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

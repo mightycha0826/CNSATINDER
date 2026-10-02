@@ -43,7 +43,7 @@
 	const special = $derived(SPECIAL_BADGES.has(code));
 	const Pin = $derived(PIN_BADGES[code] as (typeof PIN_BADGES)[string] | undefined);
 	const tierName = $derived(Pin && tier > 0 ? 'CNSA' : special && tier > 0 ? '특별' : TIER_NAME[tier]);
-	const enamel = $derived(ENAMEL[code] ?? '#fb5c68');
+	const enamel = $derived(ENAMEL[code] ?? '#b96cf5');
 	const uid = $props.id();
 </script>
 

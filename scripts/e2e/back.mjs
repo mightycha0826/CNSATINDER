@@ -188,7 +188,7 @@ try {
 	await page.goto(`${BASE}/settings`); await page.locator('.swatch.on').waitFor({ timeout: 8000 });
 	await swatch('기본').click(); await page.waitForTimeout(200);
 	check('기본으로 되돌리면 저장값도 지운다', (await fill()) === before && (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === null);
-	check('기본으로 되돌리면 앱 색도 원래대로 (주황 → 핑크)', (await tok()).every((v) => !v.includes('#3b8af6')) && (await tok())[0].includes('#f2603f'), JSON.stringify(await tok()));
+	check('기본으로 되돌리면 앱 색도 원래대로 (연보라 → 보라)', (await tok()).every((v) => !v.includes('#3b8af6')) && (await tok())[0].includes('#b56cf3'), JSON.stringify(await tok()));
 
 	console.log('[설정 · 글자 크기 · 이 기기 설정 (Phase 43)]');
 	const prefs = () => page.evaluate(() => localStorage.getItem('prefs-v1'));

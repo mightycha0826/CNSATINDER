@@ -20,7 +20,7 @@ type ThemeColor = {
 
 export const THEME_COLORS: ThemeColor[] = [
 	// 파랑만 한 가지 색, 나머지는 서로 겹치지 않는 두세 가지 색 그라데이션
-	{ id: 'sunset', label: '기본', stops: ['#f2603f', '#ee4360', '#d92868'], accent: null }, // 주황 → 핑크
+	{ id: 'landy', label: '기본', stops: ['#b56cf3', '#a35bee', '#8c46e2'], accent: null }, // 로고의 연보라 → 보라 (예전 기본은 다홍 — 주황 → 핑크)
 	{ id: 'purple', label: '보라', stops: ['#7059f5', '#9b57e6', '#c04fd8'], accent: '#8b5cf6' }, // 보라 → 자주
 	{ id: 'ocean', label: '파랑', stops: ['#3b8af6', '#3b8af6', '#3b8af6'], accent: '#3b8af6' }, // 단색
 	// Phase 40: 한 톤 연하게 (예전 #3aa757 → #0e8f9c 는 너무 짙었다). 흰 글씨가 올라가는 면은 --accent-fill-deep 이 한 번 더 눌러 준다

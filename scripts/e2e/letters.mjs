@@ -548,7 +548,7 @@ try {
 		};
 		const lum = (rgb) => { const [r, g, b] = rgb.match(/\d+/g).map(Number); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 		const L = await look('light'), D = await look('dark');
-		check('라이트 모드 우체통은 그대로 — 앱 아이콘 그라디언트', L.c.join('|') === 'rgb(255, 122, 80)|rgb(251, 92, 104)|rgb(240, 57, 110)', L.c.join('|'));
+		check('라이트 모드 우체통은 그대로 — 앱 아이콘 그라디언트', L.c.join('|') === 'rgb(220, 156, 251)|rgb(185, 108, 245)|rgb(154, 82, 235)', L.c.join('|'));
 		check('★ 다크 모드 우체통은 라이트보다 어둡다 (세 색 모두)', D.c.length === 3 && D.c.every((x, i) => lum(x) < lum(L.c[i]) - 15), D.c.join('|'));
 		check('페이지 오류 없음 (다크 우체통)', L.errs.length + D.errs.length === 0, [...L.errs, ...D.errs].join(' / '));
 	}

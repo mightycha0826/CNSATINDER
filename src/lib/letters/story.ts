@@ -31,8 +31,8 @@ const INK = '#2b2620';
 const EDGE = '#efe4cf';
 const RULE = 'rgba(147, 59, 69, 0.2)';
 const MARGIN = 'rgba(207, 47, 90, 0.38)';
-const BRAND = ['#ff7a50', '#fb5c68', '#f0396e'];
-const TAPE = ['#f2603f', '#ee4360', '#d92868'];
+const BRAND = ['#dc9cfb', '#b96cf5', '#9a52eb'];
+const TAPE = ['#b56cf3', '#a35bee', '#8c46e2'];
 const SIZE_MUL: Record<string, number> = { sm: 0.85, lg: 1.25, xl: 1.6 };
 
 type StoryLetter = {

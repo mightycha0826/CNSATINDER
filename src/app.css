@@ -36,24 +36,24 @@
 	--text: #16100e;
 	/* 보조 글자 — 바탕 · 입력칸 위에서 4.5:1 넘게 (WCAG AA) */
 	--text-2: #736a65;
-	/* 아이콘에서 뽑은 색 (왼쪽 위 주황 → 오른쪽 아래 핑크) */
-	--g-orange: #ff7a50;
-	--g-coral: #fb5c68;
-	--g-pink: #f0396e;
+	/* 로고에서 뽑은 색 (연보라 → 보라). 이름은 예전 그대로 — 주황 · 코랄 · 핑크 자리에 밝은 끝 · 가운데 · 짙은 끝 */
+	--g-orange: #dc9cfb;
+	--g-coral: #b96cf5;
+	--g-pink: #9a52eb;
 	/* 로고·장식용 전체 그라디언트 — 아이콘과 같은 대각선 방향 */
 	--brand: linear-gradient(45deg, var(--g-orange), var(--g-coral) 50%, var(--g-pink));
-	/* 흰 글씨가 올라가는 면 — 가장 밝은 주황은 살짝 죽여서 글씨가 읽히게 */
-	--accent-fill: linear-gradient(110deg, #f2603f, #ee4360 55%, #d92868);
+	/* 흰 글씨가 올라가는 면 — 가장 밝은 연보라는 빼고 한 단계 짙게 (글씨가 읽히게) */
+	--accent-fill: linear-gradient(110deg, #b56cf3, #a35bee 55%, #8c46e2);
 	/* 글자·링크·아이콘용 단색 — 밝은 바탕 위 4.5:1 넘게 */
-	--accent: #cf2f5a;
-	/* 내 말풍선 — 화면 위(주황)에서 아래(핑크)로. 인스타 DM 처럼 말풍선 위치에 따라 색이 변한다 */
-	--bubble-fill: linear-gradient(180deg, #f2603f, #ee4360 55%, #d92868);
+	--accent: #8b3fd9;
+	/* 내 말풍선 — 화면 위(연보라)에서 아래(보라)로. 인스타 DM 처럼 말풍선 위치에 따라 색이 변한다 */
+	--bubble-fill: linear-gradient(180deg, #b56cf3, #a35bee 55%, #8c46e2);
 	/* 위 그라디언트의 세 점 — 대화 화면이 그라디언트 위아래를 끝 색으로 늘려 쓴다 (ChatView) */
-	--bubble-a: #f2603f;
-	--bubble-b: #ee4360;
-	--bubble-c: #d92868;
+	--bubble-a: #b56cf3;
+	--bubble-b: #a35bee;
+	--bubble-c: #8c46e2;
 	/* 작은 흰 글씨(배지 · 칩 · 스티커)가 올라가는 면 — 흰 글씨와 4.7:1 넘게 (큰 글씨 버튼은 --accent-fill 그대로) */
-	--accent-fill-deep: linear-gradient(110deg, #cf4128, #d23356 55%, #b91f55);
+	--accent-fill-deep: linear-gradient(110deg, #8f48e0, #843ed8 55%, #7634c6);
 	--on-accent: #ffffff;
 	--danger: #cf2d3d;
 	/* 설정식 묶음 목록 — 옅은 바탕 위 흰 카드 */
@@ -71,11 +71,11 @@
 	--env-shade: #eadcc4;
 	--env-ink: #3b2f24;
 	--env-line: rgb(59 47 36 / 0.18);
-	--desk: radial-gradient(120% 60% at 10% 0%, rgb(255 122 80 / 0.14), transparent 60%),
-		radial-gradient(90% 50% at 100% 30%, rgb(240 57 110 / 0.12), transparent 60%);
+	--desk: radial-gradient(120% 60% at 10% 0%, rgb(196 120 250 / 0.14), transparent 60%),
+		radial-gradient(90% 50% at 100% 30%, rgb(154 82 235 / 0.12), transparent 60%);
 	/* 편지함 장면 (Phase 73 · 75) — 벽(우체통이 걸린 곳)은 앱 바탕 그대로에 브랜드색 빛 번짐(--ambient, 테마마다 따라 바뀐다) ·
 	   나무 책상 판자는 물건이라 다크 모드에서도 그대로 */
-	--wall: var(--ambient), linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 93%, #f3b49c));
+	--wall: var(--ambient), linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 93%, #d9b8f5));
 	/* 책상 (Phase 76) — 우체통과 결이 맞게 밝은 단풍나무: 옅은 결 · 위에서 비치는 빛. 앞 모서리 · 벽 쪽 그늘 · 물건 그림자는 같은 따뜻한 색 */
 	--wood: radial-gradient(90% 260px at 45% 0%, rgb(255 255 255 / 0.35), transparent 70%),
 		repeating-linear-gradient(91deg, rgb(255 255 255 / 0.12) 0 2px, transparent 2px 13px),
@@ -88,22 +88,22 @@
 	/* 판자 아래쪽 색 — 책상 위에 붙는 띠(편지 쓰기의 보내기 줄)의 바탕 */
 	--wood-base: #e3b690;
 	/* 우체통 (Phase 75 · 81) — 앱 아이콘과 같은 브랜드 그라디언트 · 위쪽 빛 · 브랜드색 빛 그림자. 다크 모드에서는 한 단계 어둡게 */
-	--post-a: #ff7a50;
-	--post-b: #fb5c68;
-	--post-c: #f0396e;
+	--post-a: #dc9cfb;
+	--post-b: #b96cf5;
+	--post-c: #9a52eb;
 	--post-sheen: 0.28;
-	--post-glow: drop-shadow(0 14px 18px rgb(240 57 110 / 0.28)) drop-shadow(0 3px 5px rgb(150 30 60 / 0.18));
+	--post-glow: drop-shadow(0 14px 18px rgb(154 82 235 / 0.28)) drop-shadow(0 3px 5px rgb(80 30 150 / 0.18));
 	--hand: 'Nanum Pen Script', var(--sans);
 	/* 탭 첫 화면 위쪽의 빛 번짐 */
-	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.16), transparent 70%),
-		radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.13), transparent 70%);
+	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(196 120 250 / 0.16), transparent 70%),
+		radial-gradient(80% 34% at 100% 6%, rgb(154 82 235 / 0.13), transparent 70%);
 	/* 유리 (머리글 · 탭바) */
 	--glass: color-mix(in srgb, var(--bg) 74%, transparent);
 	--glass-line: color-mix(in srgb, var(--line) 70%, transparent);
 	/* 그림자 — 1: 카드, 2: 떠 있는 것(탭바 · 시트), glow: 브랜드 버튼 빛 */
 	--shadow-1: 0 1px 2px rgb(40 20 10 / 0.05), 0 6px 18px -8px rgb(40 20 10 / 0.12);
 	--shadow-2: 0 2px 6px rgb(40 20 10 / 0.06), 0 18px 40px -14px rgb(40 20 10 / 0.28);
-	--glow: 0 10px 28px -8px rgb(238 67 96 / 0.55);
+	--glow: 0 10px 28px -8px rgb(163 91 238 / 0.55);
 
 	/* 글자 크기 (Phase 43, 설정 › 화면) — 대화 말풍선 · 편지 글씨. 편지지 줄 간격(--rule-h)도 같이 바뀌어 글줄이 늘 줄 위에 앉는다 */
 	--chat-fs: 15px;
@@ -155,7 +155,7 @@
 		--line: #2c2629;
 		--text: #f6f1ef;
 		--text-2: #a39995;
-		--accent: #ff7a7f;
+		--accent: #c79bff;
 		--group-bg: #0c0a0b;
 		--cell: #19161a;
 		--cell-line: #2e282b;
@@ -176,13 +176,13 @@
 		--wood-ink: #f3dcc6;
 		--wood-base: #825c42;
 		/* 우체통 — 어두운 화면에서 튀지 않게 한 단계 어둡게 · 빛 그림자도 낮게 (Phase 81) */
-		--post-a: #d65a36;
-		--post-b: #cc4252;
-		--post-c: #bb2a59;
+		--post-a: #b07ae0;
+		--post-b: #9659d6;
+		--post-c: #7a41c2;
 		--post-sheen: 0.14;
 		--post-glow: drop-shadow(0 14px 18px rgb(0 0 0 / 0.45)) drop-shadow(0 3px 5px rgb(0 0 0 / 0.35));
-		--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.13), transparent 70%),
-			radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.12), transparent 70%);
+		--ambient: radial-gradient(90% 38% at 0% 0%, rgb(196 120 250 / 0.13), transparent 70%),
+			radial-gradient(80% 34% at 100% 6%, rgb(154 82 235 / 0.12), transparent 70%);
 		--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -8px rgb(0 0 0 / 0.6);
 		--shadow-2: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 40px -14px rgb(0 0 0 / 0.8);
 		--statusbar-under: transparent;
@@ -196,7 +196,7 @@
 	--line: #2c2629;
 	--text: #f6f1ef;
 	--text-2: #a39995;
-	--accent: #ff7a7f;
+	--accent: #c79bff;
 	--group-bg: #0c0a0b;
 	--cell: #19161a;
 	--cell-line: #2e282b;
@@ -217,13 +217,13 @@
 	--wood-ink: #f3dcc6;
 	--wood-base: #825c42;
 	/* 우체통 — 어두운 화면에서 튀지 않게 한 단계 어둡게 · 빛 그림자도 낮게 (Phase 81) */
-	--post-a: #d65a36;
-	--post-b: #cc4252;
-	--post-c: #bb2a59;
+	--post-a: #b07ae0;
+	--post-b: #9659d6;
+	--post-c: #7a41c2;
 	--post-sheen: 0.14;
 	--post-glow: drop-shadow(0 14px 18px rgb(0 0 0 / 0.45)) drop-shadow(0 3px 5px rgb(0 0 0 / 0.35));
-	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(255 122 80 / 0.13), transparent 70%),
-		radial-gradient(80% 34% at 100% 6%, rgb(240 57 110 / 0.12), transparent 70%);
+	--ambient: radial-gradient(90% 38% at 0% 0%, rgb(196 120 250 / 0.13), transparent 70%),
+		radial-gradient(80% 34% at 100% 6%, rgb(154 82 235 / 0.12), transparent 70%);
 	--shadow-1: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 18px -8px rgb(0 0 0 / 0.6);
 	--shadow-2: 0 2px 6px rgb(0 0 0 / 0.4), 0 18px 40px -14px rgb(0 0 0 / 0.8);
 	--statusbar-under: transparent;

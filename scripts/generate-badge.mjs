@@ -9,8 +9,8 @@ import { CHROME, ROOT } from './e2e/_env.mjs';
  *   node scripts/generate-badge.mjs
  *
  * 안드로이드는 배지 이미지의 "투명도만" 쓰고 색은 버린다 → 꽉 찬 컬러 아이콘(icon-192.png)을 주면 흰 사각형이 된다.
- * 그래서 앱 아이콘(static/icon-512.png)에서 흰 로고 부분만 남기고 나머지(그라디언트 바탕)는 투명하게 만든다.
- * 흰색에 가까울수록(가장 어두운 채널이 밝을수록) 불투명 — 가장자리 부드러움도 그대로 살아난다. 로고만 잘라 배지를 채운다.
+ * 그래서 앱 아이콘(static/icon-512.png)에서 로고(보라)만 남기고 흰 바탕은 투명하게 만든다.
+ * 색이 있을수록(가장 밝은 채널과 가장 어두운 채널의 차이가 클수록) 불투명 — 가장자리 부드러움도 그대로 살아난다. 로고만 잘라 배지를 채운다.
  */
 const SIZE = 96;
 const src = `data:image/png;base64,${readFileSync(join(ROOT, 'static', 'icon-512.png')).toString('base64')}`;
@@ -23,7 +23,7 @@ try {
 			const img = new Image();
 			img.src = src;
 			await img.decode();
-			// 1) 원본 크기에서 흰 로고만 남긴다
+			// 1) 원본 크기에서 로고만 남긴다
 			const N = img.naturalWidth;
 			const a = document.createElement('canvas');
 			a.width = a.height = N;
@@ -33,8 +33,8 @@ try {
 			const p = d.data;
 			let x0 = N, y0 = N, x1 = 0, y1 = 0;
 			for (let i = 0; i < p.length; i += 4) {
-				const lo = Math.min(p[i], p[i + 1], p[i + 2]); // 바탕(주황~핑크)은 파랑 채널이 낮다, 로고(흰색)는 모두 높다
-				const al = Math.max(0, Math.min(1, (lo - 150) / (235 - 150)));
+				const chroma = Math.max(p[i], p[i + 1], p[i + 2]) - Math.min(p[i], p[i + 1], p[i + 2]); // 바탕(흰색)은 0, 로고(연보라~보라)는 가장 밝은 곳도 45 넘게
+				const al = Math.max(0, Math.min(1, (chroma - 6) / 30));
 				p[i] = p[i + 1] = p[i + 2] = 255;
 				p[i + 3] = Math.round(al * 255);
 				if (al > 0.5) {
