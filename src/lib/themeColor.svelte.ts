@@ -4,7 +4,7 @@
  *   --g-orange/--g-coral/--g-pink(→ --brand), --accent-fill, --accent, --bubble-fill
  * 이 기기에만 저장한다 (localStorage). 상대 화면에는 영향이 없고, 서버에도 보내지 않는다.
  * 흰 글씨가 올라가므로 아주 밝은 색은 넣지 않는다 (인스타의 노랑처럼 밝은 끝은 fill 의 가장자리에만).
- * 없어진 색(예전의 '베리' · '회색')을 저장해 둔 기기는 기본 색으로 돌아간다.
+ * 없어진 색(예전의 '베리' · '회색' · '보라')을 저장해 둔 기기는 기본 색으로 돌아간다.
  * 예전 이름이 "채팅 색상"이라 저장 키는 그대로 둔다 (이미 고른 색이 유지되게).
  */
 type ThemeColor = {
@@ -21,7 +21,6 @@ type ThemeColor = {
 export const THEME_COLORS: ThemeColor[] = [
 	// 파랑만 한 가지 색, 나머지는 서로 겹치지 않는 두세 가지 색 그라데이션
 	{ id: 'landy', label: '기본', stops: ['#b56cf3', '#a35bee', '#8c46e2'], accent: null }, // 로고의 연보라 → 보라 (예전 기본은 다홍 — 주황 → 핑크)
-	{ id: 'purple', label: '보라', stops: ['#7059f5', '#9b57e6', '#c04fd8'], accent: '#8b5cf6' }, // 보라 → 자주
 	{ id: 'ocean', label: '파랑', stops: ['#3b8af6', '#3b8af6', '#3b8af6'], accent: '#3b8af6' }, // 단색
 	// Phase 40: 한 톤 연하게 (예전 #3aa757 → #0e8f9c 는 너무 짙었다). 흰 글씨가 올라가는 면은 --accent-fill-deep 이 한 번 더 눌러 준다
 	{ id: 'mint', label: '초록', stops: ['#5fd08a', '#34c3a0', '#33b7c2'], accent: '#22b38e' }, // 연두 → 청록

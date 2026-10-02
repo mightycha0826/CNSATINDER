@@ -151,10 +151,10 @@ try {
 	check('★ 켜면 내 프로필에 저장 (allow_rematch = true) · 스위치 켜짐', JSON.stringify(patches.at(-1)) === '{"allow_rematch":true}' && (await rematch.isChecked()), JSON.stringify(patches));
 	await rematch.click(); await page.waitForTimeout(400);
 	check('다시 끄면 false 로 저장', JSON.stringify(patches.at(-1)) === '{"allow_rematch":false}' && !(await rematch.isChecked()));
-	check('색 후보 5개 — 파랑만 단색, 나머지는 그라데이션', await page.evaluate(() => {
+	check('색 후보 4개 — 파랑만 단색, 나머지는 그라데이션', await page.evaluate(() => {
 		const dots = [...document.querySelectorAll('.swatch')].map((l) => ({ n: l.querySelector('input').getAttribute('aria-label'), bg: getComputedStyle(l.querySelector('.dot')).backgroundImage }));
 		const cols = (bg) => new Set(bg.match(/rgb\([^)]*\)/g)).size;
-		return dots.length === 5 && dots.every((d) => (d.n === '파랑' ? cols(d.bg) === 1 : cols(d.bg) >= 2));
+		return dots.length === 4 && dots.every((d) => (d.n === '파랑' ? cols(d.bg) === 1 : cols(d.bg) >= 2));
 	}));
 	const pwRow = page.getByRole('button', { name: /^비밀번호 (바꾸기|만들기)$/ });
 	await pwRow.click(); await page.waitForTimeout(150);

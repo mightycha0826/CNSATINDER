@@ -9,7 +9,7 @@
 <script lang="ts">
 	/**
 	 * 우체통 (Phase 71 · 72 · 73 · 74 · 75 · 79) — 벽에 걸린 우편함을 정면에서 본 2D 네모. 앱의 얼굴 그대로 (docs · app.css 토큰):
-	 * 앱 아이콘과 같은 브랜드 그라디언트(주황 → 코랄 → 핑크, 대각선) · 큰 둥근 모서리 · 흰 봉투 문양(로고처럼 흰 모양) ·
+	 * 연한 붉은 그라디언트(테마와 상관없이 늘 붉다 — app.css --post-*, 대각선) · 큰 둥근 모서리 · 흰 봉투 문양(로고처럼 흰 모양) ·
 	 * 반투명 흰 테 안의 투입구 · 브랜드색 빛 그림자(--glow 처럼). 알림 숫자 · "+✉" 는 앱의 흰 알약.
 	 *   count — 안에 든(안 읽은) 편지 수: 오른쪽 위에 빨간 점(Phase 79 — 전엔 숫자 · 투입구에 봉투 끝이 삐죽 나왔다).
 	 *   drop — 바뀔 때마다 봉투 한 통이 위에서 떨어져 투입구로 쏙 → 통이 출렁 → 위에 "+✉" · 빨간 점이 톡 (편지가 왔다). dropN 은 몇 통인지.
@@ -143,7 +143,7 @@
 <span class="postbox" bind:this={box}>
 	<svg viewBox="0 0 300 210" aria-hidden="true">
 		<defs>
-			<!-- 앱 아이콘과 같은 브랜드 그라디언트 (왼쪽 위 주황 → 오른쪽 아래 핑크) -->
+			<!-- 연한 붉은 그라디언트 (app.css --post-a/b/c — 테마 색을 따르지 않는다) -->
 			<linearGradient id="{uid}-brand" x1="0" y1="0" x2="1" y2="1">
 				<stop offset="0" style:stop-color="var(--post-a)" />
 				<stop offset="0.5" style:stop-color="var(--post-b)" />
