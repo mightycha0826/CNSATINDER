@@ -214,18 +214,18 @@
 		<span class="wood" aria-hidden="true">
 			<!-- 책상 위 물건들 (Phase 58) — 서류 더미를 피해 가장자리에. 위에서 내려다본 모습, 책상 비율(--k)대로 커지고 작아진다 -->
 			<span class="props">
-				<!-- 책상 위 물건 (Phase 58 · 76) — 우체통과 같은 결: 납작하고 부드러운 그림 · 브랜드색(연보라 → 보라) · 크림 -->
+				<!-- 책상 위 물건 (Phase 58 · 76) — 우체통과 같은 결: 납작하고 부드러운 그림 · 우체통과 같은 붉은 계열(주황 → 코랄 → 핑크 — 테마 색을 따르지 않는다) · 크림 -->
 				<svg class="prop defs" viewBox="0 0 1 1" aria-hidden="true">
 					<defs>
 						<linearGradient id="desk-brand" x1="0" y1="0" x2="1" y2="1">
-							<stop offset="0" stop-color="#dc9cfb" />
-							<stop offset=".5" stop-color="#b96cf5" />
-							<stop offset="1" stop-color="#9a52eb" />
+							<stop offset="0" stop-color="#ff7a50" />
+							<stop offset=".5" stop-color="#fb5c68" />
+							<stop offset="1" stop-color="#f0396e" />
 						</linearGradient>
 						<linearGradient id="desk-brand-x" x1="0" y1="0" x2="1" y2="0">
-							<stop offset="0" stop-color="#dc9cfb" />
-							<stop offset=".5" stop-color="#b96cf5" />
-							<stop offset="1" stop-color="#9a52eb" />
+							<stop offset="0" stop-color="#ff7a50" />
+							<stop offset=".5" stop-color="#fb5c68" />
+							<stop offset="1" stop-color="#f0396e" />
 						</linearGradient>
 						<radialGradient id="desk-knob" cx="38%" cy="32%" r="72%">
 							<stop offset="0" stop-color="#fff" />
@@ -237,7 +237,7 @@
 				<svg class="prop note" viewBox="0 0 64 64">
 					<rect x="2" y="2" width="60" height="60" rx="6" fill="#ffe3b8" />
 					<path d="M11 17h36M11 27h29" stroke="#f0b27a" stroke-width="2.6" stroke-linecap="round" />
-					<path d="M42 48c-3.4-2.5-6.6-5-6.6-8a3.3 3.3 0 0 1 6.6-1.3 3.3 3.3 0 0 1 6.6 1.3c0 3-3.2 5.5-6.6 8z" fill="#b96cf5" />
+					<path d="M42 48c-3.4-2.5-6.6-5-6.6-8a3.3 3.3 0 0 1 6.6-1.3 3.3 3.3 0 0 1 6.6 1.3c0 3-3.2 5.5-6.6 8z" fill="#fb5c68" />
 				</svg>
 				<!-- 컵 자국 -->
 				<svg class="prop ring" viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="rgb(230 110 90 / .2)" stroke-width="3" stroke-dasharray="120 14 30 8" /></svg>
@@ -271,7 +271,7 @@
 					<rect x="2" y="34" width="56" height="11" rx="5.5" fill="url(#desk-brand-x)" transform="rotate(-8 30 40)" />
 					<circle cx="72" cy="24" r="21" fill="url(#desk-brand)" />
 					<circle cx="72" cy="24" r="15" fill="url(#desk-knob)" />
-					<path d="M72 30c-3.4-2.4-6-4.4-6-6.8a3 3 0 0 1 6-.9 3 3 0 0 1 6 .9c0 2.4-2.6 4.4-6 6.8z" fill="#b96cf5" />
+					<path d="M72 30c-3.4-2.4-6-4.4-6-6.8a3 3 0 0 1 6-.9 3 3 0 0 1 6 .9c0 2.4-2.6 4.4-6 6.8z" fill="#fb5c68" />
 				</svg>
 				<!-- 종이 클립 -->
 				<svg class="prop clip c1" viewBox="0 0 14 40"><path d="M4 30V8a3.5 3.5 0 0 1 7 0v24a5.5 5.5 0 0 1-11 0V10" fill="none" stroke="#f7a6a0" stroke-width="2" stroke-linecap="round" /></svg>
