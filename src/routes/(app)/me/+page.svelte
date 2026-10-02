@@ -7,6 +7,7 @@
 	import {
 		featuredError,
 		featuredOf,
+		FAME,
 		fetchMyAchievements,
 		placedFeatured,
 		progressText,
@@ -32,11 +33,15 @@
 	// ── 명성 (Phase 31) — 대표 업적 3개 · 모은 업적 수. 이름 카드의 "업적 n/m" 을 누르면 업적 전체 ──
 	// 대표 업적은 교복 깃에 단 배지 (Phase 60). 배지를 누르면 어떻게 얻는지 · 등급 기준 · 대표에서 내리기
 	// (Phase 44 — 업적 화면에서 누를 때와 같은 BadgeDetail). 배지를 꾹 눌러 다른 칸으로 끌어 옮긴다 (Phase 69)
-	let fame = $state<MyAchievements | null>(null);
+	// 교복은 바로 그리고 배지는 오는 대로 단다 — 다시 열 때는 지난번 것을 먼저 보여 준다 (FAME.last)
+	let fame = $state<MyAchievements | null>(FAME.last);
 	$effect(() => {
 		fetchMyAchievements()
 			.then((d) => (fame = d))
 			.catch(() => {});
+	});
+	$effect(() => {
+		if (fame) FAME.last = fame; // 대표 업적을 바꾼 것도 기억
 	});
 	const earned = $derived(fame?.items.filter((a) => a.tier > 0).length ?? 0);
 	let medal = $state<Achievement | null>(null);
@@ -174,14 +179,15 @@
 		</section>
 	{/if}
 
-	{#if fame}
+	<!-- 업적을 읽는 동안에도 교복은 보인다 — 빈 칸 표시(emptyHref)만 읽은 뒤에 -->
+	{#if S.profile}
 		<!-- 교복 — 대표 업적은 깃의 배지, 빈 칸은 업적 화면으로 (Phase 60) -->
 		<section class="dress">
 			<Uniform
 				neck={S.profile?.gender === 'f' ? 'ribbon' : 'tie'}
-				badges={fame.featured}
+				badges={fame?.featured ?? []}
 				slots={slotsOf(fame)}
-				emptyHref="/me/achievements"
+				emptyHref={fame ? '/me/achievements' : undefined}
 				allHref="/me/achievements"
 				onpick={(b) => (medal = fame?.items.find((a) => a.code === b.code) ?? null)}
 				onplace={place}

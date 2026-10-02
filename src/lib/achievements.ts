@@ -1,4 +1,5 @@
 import { rpc } from './rpc';
+import { onAccountChange } from './accountScope';
 
 /**
  * 업적 (Phase 31) — 동 · 은 · 금 메달. 업적 정의(이름 · 기준)는 DB 가 유일한 출처라 여기엔 타입과 RPC · 표시용 도움 함수만.
@@ -68,8 +69,12 @@ export const CATEGORIES: { k: Category | 'all'; label: string }[] = [
 export async function fetchMyAchievements(): Promise<MyAchievements> {
 	const r = await rpc<MyAchievements | null>('my_achievements');
 	if (!r?.items) throw new Error('no_achievements');
+	FAME.last = r;
 	return r;
 }
+/** 마지막으로 읽은 내 업적 — 프로필을 다시 열 때 교복의 배지가 바로 보이게 (그 뒤 새로 읽어 맞춘다) */
+export const FAME = { last: null as MyAchievements | null };
+onAccountChange(() => (FAME.last = null));
 /** 새로 딴 업적 — Phase 31 전 DB 면 빈 목록 */
 export const fetchNewAchievements = () =>
 	rpc<BadgeLite[] | null>('new_achievements').then((r) => r ?? [], () => [] as BadgeLite[]);
