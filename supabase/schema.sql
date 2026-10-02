@@ -1149,7 +1149,7 @@ returns jsonb language sql security definer set search_path = public, private st
     'restricted_users',(select count(*) from public.profiles
                          where status <> 'active' or suspended_until > now()),
     'rooms_24h',       (select count(*) from public.rooms where created_at > now() - interval '24 hours'),
-    'letters_24h',     (select count(*) from public.letters where created_at > now() - interval '24 hours'),
+    'letters_24h',     (select count(*) from private.dm_msgs where is_letter and created_at > now() - interval '24 hours'),
     'is_open',         (select is_open from public.app_settings where id));
 $fn$;
 
@@ -1736,167 +1736,30 @@ $do$;
 
 
 -- ════════════════════════════════════════════════════════════════════
---  Phase 10 — 익명편지
+--  Phase 10 — 익명편지 (옛 공개 게시판)
 --
---  채팅과 다른 두 번째 기능: 누구나 스크롤하며 읽는 공개 익명 게시판 + 댓글·대댓글(2단계).
---  공개 게시판은 "아무도 답을 안 한다"가 가장 큰 실패 모드라, 매칭으로 편지마다
---  "지정 답장자" 1명을 붙인다. 두 사람을 짝짓는 채팅 매칭과 달리 여기는
---  "답장하고 싶은 사람" 을 "아직 아무도 맡지 않은 편지" 에 배정하는 큐 소비 구조다.
---
---  ★ 익명성 — 채팅과 경계가 다르다
---    · 본문은 원래 전교생 공개용이다. 그래서 letters / letter_comments 는 누구나 읽는다.
---    · 대신 본문과 계정을 잇는 통로를 없앤다: 두 테이블에는 식별 컬럼이 없고
---      (author_no = 그 편지 안에서만 의미 있는 번호), 실제 user_id 는 letter_participants 에만
---      있으며 그 테이블은 자기 행만 읽힌다 (room_members 와 같은 급소).
---    · 이름은 "편지 1개 × 계정 1개" 마다 새로 뽑는다. 한 편지 안에서는 같은 이름(OP 표시 가능),
---      다른 편지에서는 완전히 다른 이름. 계정 고정 닉네임(profiles.nickname)은 절대 쓰지 않는다 —
---      전교생이 보는 게시판에서 이름이 고정되면 활동이 쌓여 신원이 특정된다.
---    · 편지 이름은 "형용사 + 공백 + 명사" (예: 푸른 우표). 채팅 닉네임엔 공백이 없으므로
---      두 이름 공간이 절대 겹치지 않는다 → 편지 이름을 보고 채팅 상대를 떠올릴 일이 없다.
---  ★ 쓰기는 전부 RPC 로만. letters / letter_comments 에는 insert 정책이 없다.
---  ★ 차단(blocks)은 채팅과 공유, 재배정 쿨다운(letter_reply_cooldown)은 편지 전용.
+--  공개 게시판 · 댓글 · 답장 배정은 Phase 85 에서 걷어냈다 (학생 화면은 Phase 23 부터 이름 편지 — private.dm_*).
+--  여기 남은 것은 이름 편지가 같이 쓰는 것뿐: 편지 한도(letter_bucket_take) · 익명 이름(letter_alias_candidate) ·
+--  차단 확인(blocked_between) · 서식 검사(letter_fmt_ok) · 신고 표(private.letter_reports) · 운영자 신고 RPC.
 -- ════════════════════════════════════════════════════════════════════
 
+-- ponytail: letter_max_len · comment_max_len 은 이제 아무도 쓰지 않지만 캐시된 옛 앱(PWA)이 설정을 읽을 때 같이 고른다 — 새 앱이 다 퍼진 뒤 열과 제약을 지운다
 alter table public.app_settings add column if not exists letter_max_len              int  not null default 500;
 alter table public.app_settings add column if not exists comment_max_len             int  not null default 300;
 alter table public.app_settings add column if not exists letter_burst                real not null default 3;
 alter table public.app_settings add column if not exists letter_refill_per_sec       real not null default 0.0000347;  -- 하루에 3통 분량이 채워진다
 alter table public.app_settings add column if not exists comment_burst               real not null default 10;
 alter table public.app_settings add column if not exists comment_refill_per_sec      real not null default 0.5;
-alter table public.app_settings add column if not exists letter_task_burst           real not null default 6;
-alter table public.app_settings add column if not exists letter_task_refill_sec      real not null default 10;
-alter table public.app_settings add column if not exists letter_reply_cooldown_days  int  not null default 7;
-alter table public.app_settings add column if not exists letter_reply_deadline_hours int  not null default 48;
-alter table public.app_settings add column if not exists letter_feed_page_size       int  not null default 20;
 alter table public.app_settings add column if not exists letter_auto_suspend_reports int  not null default 3;
 alter table public.app_settings drop constraint if exists app_settings_letter_lens;
 alter table public.app_settings add  constraint app_settings_letter_lens
   check (letter_max_len between 20 and 1000 and comment_max_len between 10 and 500);
 
--- 토큰 버킷 3종 (편지 쓰기 · 댓글 · 답장할 편지 받기)
+-- 토큰 버킷 2종 (새 편지 · 이어 쓰기)
 alter table public.user_presence add column if not exists letter_tokens  real        not null default 3;
 alter table public.user_presence add column if not exists letter_at      timestamptz not null default now();
 alter table public.user_presence add column if not exists comment_tokens real        not null default 10;
 alter table public.user_presence add column if not exists comment_at     timestamptz not null default now();
-alter table public.user_presence add column if not exists task_tokens    real        not null default 6;
-alter table public.user_presence add column if not exists task_at        timestamptz not null default now();
-
-
--- ── 30. 편지 · 참여자 · 댓글 ────────────────────────────────────────
-create table if not exists public.letters (
-  id                          bigint generated always as identity primary key,
-  body                        text not null check (char_length(btrim(body)) between 1 and 1000),
-  status                      text not null default 'open' check (status in ('open','removed')),
-  reply_status                text not null default 'unassigned'
-                              check (reply_status in ('unassigned','assigned','replied')),
-  designated_reply_comment_id bigint,
-  created_at                  timestamptz not null default now()
-);
--- ★ 식별 컬럼이 없다. 작성자는 letter_participants 의 participant_no = 1.
--- 서식(굵게·형광펜 등)은 본문과 따로 — {"m": [[시작, 끝, 종류]...], "a": [[줄, 정렬]...]} (private.letter_fmt_ok)
-alter table public.letters add column if not exists fmt jsonb;
-create index if not exists letters_feed  on public.letters (id desc) where status = 'open';
-create index if not exists letters_queue on public.letters (created_at) where status = 'open' and reply_status <> 'replied';
-
-create table if not exists public.letter_participants (
-  letter_id      bigint   not null references public.letters(id) on delete cascade,
-  participant_no smallint not null,          -- 1 = 작성자, 이후 처음 말한 순서
-  user_id        uuid     not null references public.profiles(id) on delete cascade,
-  alias          text     not null,
-  is_author      boolean  not null default false,
-  created_at     timestamptz not null default now(),
-  primary key (letter_id, participant_no),
-  unique (letter_id, user_id),
-  unique (letter_id, alias)
-);
-create index if not exists letter_participants_user on public.letter_participants (user_id);
-
-create table if not exists public.letter_comments (
-  id                bigint generated always as identity primary key,
-  letter_id         bigint   not null references public.letters(id) on delete cascade,
-  parent_comment_id bigint   references public.letter_comments(id) on delete cascade,  -- null = 최상위
-  author_no         smallint not null,
-  body              text     not null check (char_length(btrim(body)) between 1 and 500),
-  status            text     not null default 'visible' check (status in ('visible','removed')),
-  client_comment_id uuid     not null,
-  created_at        timestamptz not null default now(),
-  foreign key (letter_id, author_no) references public.letter_participants (letter_id, participant_no)
-);
--- ★ 식별 컬럼이 없다. author_no 는 그 편지 안에서만 의미 있는 번호.
-create unique index if not exists letter_comments_dedupe on public.letter_comments (letter_id, client_comment_id);
-create index        if not exists letter_comments_thread on public.letter_comments (letter_id, id);
-
-do $do$
-begin
-  alter table public.letters add constraint letters_designated_reply_fk
-    foreign key (designated_reply_comment_id) references public.letter_comments(id) on delete set null;
-exception when duplicate_object then null;
-end
-$do$;
-
--- 매칭 큐가 만든 "답장 숙제". 편지 1개에 답장자 1명 (PK = letter_id).
-create table if not exists public.letter_reply_assignments (
-  letter_id    bigint primary key references public.letters(id) on delete cascade,
-  reader_id    uuid   not null references public.profiles(id) on delete cascade,
-  assigned_at  timestamptz not null default now(),
-  expires_at   timestamptz not null,
-  fulfilled_at timestamptz,
-  comment_id   bigint references public.letter_comments(id) on delete set null
-);
-create index if not exists letter_assign_reader on public.letter_reply_assignments (reader_id) where fulfilled_at is null;
-
--- 편지 전용 재배정 쿨다운 — 채팅의 pair_history 와 모양은 같지만 완전히 따로 쓴다
-create table if not exists public.letter_reply_cooldown (
-  user_lo          uuid not null references public.profiles(id) on delete cascade,
-  user_hi          uuid not null references public.profiles(id) on delete cascade,
-  last_assigned_at timestamptz not null default now(),
-  times            int not null default 1,
-  primary key (user_lo, user_hi),
-  check (user_lo < user_hi)
-);
-
--- ── 31. RLS — 본문은 공개, 신원 연결 고리는 자기 행만 ────────────────
-alter table public.letters enable row level security;
-drop policy if exists "letters: public read" on public.letters;
-create policy "letters: public read" on public.letters
-  for select to authenticated using (status = 'open');
-revoke all on public.letters from anon, authenticated;
-grant select on public.letters to authenticated;
-
-alter table public.letter_comments enable row level security;
-drop policy if exists "letter_comments: public read" on public.letter_comments;
-create policy "letter_comments: public read" on public.letter_comments
-  for select to authenticated using (status = 'visible');
-revoke all on public.letter_comments from anon, authenticated;
-grant select on public.letter_comments to authenticated;
-
-alter table public.letter_participants enable row level security;
-drop policy if exists "letter_participants: self read only" on public.letter_participants;
-create policy "letter_participants: self read only" on public.letter_participants
-  for select to authenticated using (user_id = (select auth.uid()));
--- ★ 편지 쪽 급소. "같은 편지 참여자 전부 읽기"로 바꾸는 순간 공개 글과 계정이 이어진다.
-revoke all on public.letter_participants from anon, authenticated;
-grant select on public.letter_participants to authenticated;
-
-alter table public.letter_reply_assignments enable row level security;
-drop policy if exists "letter_assign: self read" on public.letter_reply_assignments;
-create policy "letter_assign: self read" on public.letter_reply_assignments
-  for select to authenticated using (reader_id = (select auth.uid()));
-revoke all on public.letter_reply_assignments from anon, authenticated;
-grant select on public.letter_reply_assignments to authenticated;
-
-alter table public.letter_reply_cooldown enable row level security;
-revoke all on public.letter_reply_cooldown from anon, authenticated;   -- 정책 0개
-
--- 하트 — 누가 눌렀는지는 private 에만 둔다. 화면에는 개수와 "내가 눌렀는지"만 간다 (작성자도 누가 눌렀는지 모른다).
-create table if not exists private.letter_likes (
-  letter_id  bigint not null references public.letters(id) on delete cascade,
-  user_id    uuid   not null references public.profiles(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  primary key (letter_id, user_id)
-);
-create index if not exists letter_likes_user on private.letter_likes (user_id);
-alter table private.letter_likes enable row level security;
 
 
 -- ── 32. 헬퍼 ────────────────────────────────────────────────────────
@@ -1912,35 +1775,7 @@ returns text language sql volatile as $fn$
                 '벚꽃','낙엽','모래','시계','책갈피','풍선','기차','정류장','골목','담벼락'])[floor(random()*30)::int + 1];
 $fn$;
 
--- 이 편지에서 이 계정의 이름·번호. 이미 있으면 그대로(멱등), 없으면 새로 뽑는다.
--- 편지 행을 잠가 번호 계산을 직렬화한다 (ack_room 의 for update 와 같은 방식).
-create or replace function private.assign_letter_alias(p_letter bigint, p_user uuid, p_is_author boolean)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare v public.letter_participants%rowtype; v_no smallint; v_alias text; i int := 0;
-begin
-  select * into v from public.letter_participants where letter_id = p_letter and user_id = p_user;
-  if found then return jsonb_build_object('no', v.participant_no, 'alias', v.alias); end if;
-
-  perform 1 from public.letters where id = p_letter for update;
-  select * into v from public.letter_participants where letter_id = p_letter and user_id = p_user;
-  if found then return jsonb_build_object('no', v.participant_no, 'alias', v.alias); end if;
-
-  select coalesce(max(participant_no), 0) + 1 into v_no from public.letter_participants where letter_id = p_letter;
-  loop
-    i := i + 1;
-    v_alias := private.letter_alias_candidate();
-    if i > 8 then v_alias := v_alias || ' ' || (floor(random() * 90) + 10)::int::text; end if;
-    exit when not exists (select 1 from public.letter_participants where letter_id = p_letter and alias = v_alias);
-    if i > 40 then raise exception 'alias_exhausted'; end if;
-  end loop;
-
-  insert into public.letter_participants (letter_id, participant_no, user_id, alias, is_author)
-  values (p_letter, v_no, p_user, v_alias, p_is_author);
-  return jsonb_build_object('no', v_no, 'alias', v_alias);
-end
-$fn$;
-
--- 편지 쪽 토큰 버킷 3종. msg_rate_limit / match_bucket_take 와 같은 O(1) 행 잠금 방식.
+-- 편지 쪽 토큰 버킷 2종. msg_rate_limit / match_bucket_take 와 같은 O(1) 행 잠금 방식.
 create or replace function private.letter_bucket_take(p_user uuid, p_kind text)
 returns jsonb language plpgsql security definer set search_path = public, private as $fn$
 declare cfg public.app_settings%rowtype; v_tokens real; v_burst real; v_rate real;
@@ -1954,10 +1789,6 @@ begin
     v_burst := cfg.comment_burst; v_rate := cfg.comment_refill_per_sec;
     select least(v_burst, comment_tokens + extract(epoch from (now() - comment_at)) * v_rate)
       into v_tokens from public.user_presence where user_id = p_user for update;
-  elsif p_kind = 'task' then
-    v_burst := cfg.letter_task_burst; v_rate := 1.0 / cfg.letter_task_refill_sec;
-    select least(v_burst, task_tokens + extract(epoch from (now() - task_at)) * v_rate)
-      into v_tokens from public.user_presence where user_id = p_user for update;
   else
     raise exception 'invalid_bucket';
   end if;
@@ -1967,29 +1798,10 @@ begin
   end if;
   if p_kind = 'letter' then
     update public.user_presence set letter_tokens = v_tokens - 1, letter_at = now() where user_id = p_user;
-  elsif p_kind = 'comment' then
-    update public.user_presence set comment_tokens = v_tokens - 1, comment_at = now() where user_id = p_user;
   else
-    update public.user_presence set task_tokens = v_tokens - 1, task_at = now() where user_id = p_user;
+    update public.user_presence set comment_tokens = v_tokens - 1, comment_at = now() where user_id = p_user;
   end if;
   return jsonb_build_object('ok', true);
-end
-$fn$;
-
--- 편지를 쓰고 읽을 자격 — request_match 와 같은 게이트
-create or replace function private.letter_eligible(p_user uuid)
-returns text language plpgsql security definer set search_path = public, private stable as $fn$
-declare cfg public.app_settings%rowtype; m public.profiles%rowtype;
-begin
-  if p_user is null then raise exception 'unauthenticated'; end if;
-  select * into cfg from public.app_settings where id;
-  if not cfg.is_open or private.in_maintenance() then return 'service_closed'; end if; -- 서버 점검 중(Phase 52 · 예약 53)에도
-  select * into m from public.profiles where id = p_user;
-  if not found or not m.verified or not m.onboarded or m.status <> 'active'
-     or (m.suspended_until is not null and m.suspended_until > now()) then
-    return 'not_eligible';
-  end if;
-  return null;
 end
 $fn$;
 
@@ -2000,111 +1812,9 @@ returns boolean language sql security definer set search_path = public stable as
                   where (blocker_id = a and blocked_id = b) or (blocker_id = b and blocked_id = a));
 $fn$;
 
--- 편지 작성자 (participant_no = 1)
-create or replace function private.letter_author(p_letter bigint)
-returns uuid language sql security definer set search_path = public stable as $fn$
-  select user_id from public.letter_participants where letter_id = p_letter and participant_no = 1;
-$fn$;
-
--- 피드에 보여도 되는 편지인가: 열려 있고, 작성자가 정상이고, 나와 차단 관계가 없다
-create or replace function private.letter_visible_to(p_letter bigint, p_user uuid)
-returns boolean language sql security definer set search_path = public, private stable as $fn$
-  select exists (
-    select 1 from public.letters l
-      join public.letter_participants a on a.letter_id = l.id and a.participant_no = 1
-      join public.profiles p on p.id = a.user_id
-     where l.id = p_letter and l.status = 'open'
-       and p.status = 'active' and (p.suspended_until is null or p.suspended_until <= now())
-       and not private.blocked_between(a.user_id, p_user));
-$fn$;
-
-revoke all on function private.letter_alias_candidate(), private.assign_letter_alias(bigint, uuid, boolean),
-                       private.letter_bucket_take(uuid, text), private.letter_eligible(uuid),
-                       private.blocked_between(uuid, uuid), private.letter_author(bigint),
-                       private.letter_visible_to(bigint, uuid)
+revoke all on function private.letter_alias_candidate(), private.letter_bucket_take(uuid, text),
+                       private.blocked_between(uuid, uuid)
   from public, anon, authenticated;
-
-
--- ── 33. 읽기 RPC ────────────────────────────────────────────────────
--- 피드 한 페이지. ★ uuid 는 없다. 이름은 편지마다 새로 뽑은 것.
-create or replace function public.letter_feed(p_cursor bigint default null, p_limit int default null)
-returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare me uuid := auth.uid(); cfg public.app_settings%rowtype; v jsonb;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  select * into cfg from public.app_settings where id;
-  select coalesce(jsonb_agg(x order by x.id desc), '[]'::jsonb) into v from (
-    select l.id, left(l.body, 280) as body, l.fmt, char_length(l.body) > 280 as truncated,
-           a.alias as author_alias, a.user_id = me as is_mine, l.reply_status, l.created_at,
-           (select count(*) from private.letter_likes k where k.letter_id = l.id)::int as like_count,
-           exists (select 1 from private.letter_likes k where k.letter_id = l.id and k.user_id = me) as liked,
-           (select count(*) from public.letter_comments c
-             where c.letter_id = l.id and c.status = 'visible')::int as comment_count,
-           exists (select 1 from public.letter_reply_assignments r
-                    where r.letter_id = l.id and r.reader_id = me and r.fulfilled_at is null) as assigned_to_me
-      from public.letters l
-      join public.letter_participants a on a.letter_id = l.id and a.participant_no = 1
-      join public.profiles p on p.id = a.user_id
-     where l.status = 'open'
-       and (p_cursor is null or l.id < p_cursor)
-       and p.status = 'active' and (p.suspended_until is null or p.suspended_until <= now())
-       and not private.blocked_between(a.user_id, me)
-     order by l.id desc
-     limit least(coalesce(p_limit, cfg.letter_feed_page_size), 50)
-  ) x;
-  return jsonb_build_object('letters', v, 'server_now', now());
-end
-$fn$;
-
--- 편지 하나 + 댓글 전부(평면 목록, 클라가 한 단계만 묶는다).
--- 차단 관계인 사람의 댓글은 내용을 가리고, 지워진 댓글은 답글이 있을 때만 자리를 남긴다.
-create or replace function public.letter_detail(p_letter bigint)
-returns jsonb language plpgsql security definer set search_path = public, private stable as $fn$
-declare me uuid := auth.uid(); l public.letters%rowtype; v_author public.letter_participants%rowtype;
-        v_mine public.letter_participants%rowtype; v_comments jsonb; v_task public.letter_reply_assignments%rowtype;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  if not private.letter_visible_to(p_letter, me) then
-    return jsonb_build_object('letter', null, 'server_now', now());
-  end if;
-  select * into l from public.letters where id = p_letter;
-  select * into v_author from public.letter_participants where letter_id = p_letter and participant_no = 1;
-  select * into v_mine from public.letter_participants where letter_id = p_letter and user_id = me;
-  select * into v_task from public.letter_reply_assignments where letter_id = p_letter;
-
-  select coalesce(jsonb_agg(jsonb_build_object(
-           'id', c.id,
-           'parent_id', c.parent_comment_id,
-           'author_alias', case when c.status = 'removed' then null else pp.alias end,
-           'is_op', c.author_no = 1,
-           'is_mine', pp.user_id = me,
-           'is_designated', c.id = l.designated_reply_comment_id,
-           'hidden', case when c.status = 'removed' then 'removed'
-                          when private.blocked_between(pp.user_id, me) then 'blocked' end,
-           'body', case when c.status = 'removed' or private.blocked_between(pp.user_id, me)
-                        then null else c.body end,
-           'created_at', c.created_at) order by c.id), '[]'::jsonb)
-    into v_comments
-    from public.letter_comments c
-    join public.letter_participants pp on pp.letter_id = c.letter_id and pp.participant_no = c.author_no
-   where c.letter_id = p_letter
-     and (c.status = 'visible'
-          or exists (select 1 from public.letter_comments k
-                      where k.parent_comment_id = c.id and k.status = 'visible'));
-
-  return jsonb_build_object(
-    'letter', jsonb_build_object(
-      'id', l.id, 'body', l.body, 'fmt', l.fmt, 'author_alias', v_author.alias, 'is_mine', v_author.user_id = me,
-      'reply_status', l.reply_status, 'created_at', l.created_at,
-      'like_count', (select count(*) from private.letter_likes k where k.letter_id = l.id),
-      'liked', exists (select 1 from private.letter_likes k where k.letter_id = l.id and k.user_id = me),
-      'assigned_to_me', v_task.reader_id = me and v_task.fulfilled_at is null,
-      'task_expires_at', case when v_task.reader_id = me then v_task.expires_at end),
-    'comments', v_comments,
-    'my_alias', v_mine.alias,
-    'server_now', now());
-end
-$fn$;
 
 
 -- ── 34. 쓰기 RPC ────────────────────────────────────────────────────
@@ -2149,201 +1859,6 @@ end
 $fn$;
 revoke all on function private.letter_fmt_ok(jsonb, text) from public, anon, authenticated;
 
--- 서식이 생기며 인자가 늘었다 — 옛 한 인자 버전을 지워 두 버전이 헷갈리지 않게
-drop function if exists public.post_letter(text);
-create or replace function public.post_letter(p_body text, p_fmt jsonb default null)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); cfg public.app_settings%rowtype; v_gate text; v_b jsonb;
-        v_body text := btrim(coalesce(p_body, '')); v_id bigint; v_alias jsonb;
-        v_fmt jsonb := case when p_fmt is null or p_fmt = '{}'::jsonb or jsonb_typeof(p_fmt) = 'null' then null else p_fmt end;
-begin
-  v_gate := private.letter_eligible(me);
-  if v_gate is not null then
-    select * into cfg from public.app_settings where id;
-    return jsonb_build_object('status', v_gate, 'notice', cfg.notice);
-  end if;
-  select * into cfg from public.app_settings where id;
-  if char_length(v_body) = 0 then raise exception 'empty_body'; end if;
-  if char_length(v_body) > cfg.letter_max_len then raise exception 'too_long'; end if;
-  -- 서식 위치는 본문 기준이라, 앞뒤 공백이 잘려 나가면 어긋난다 — 클라가 미리 잘라서 보낸다
-  if v_fmt is not null and (v_body <> p_body or not private.letter_fmt_ok(v_fmt, v_body)) then
-    raise exception 'bad_format';
-  end if;
-
-  v_b := private.letter_bucket_take(me, 'letter');
-  if not (v_b->>'ok')::boolean then
-    return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (v_b->>'retry_after_ms')::bigint);
-  end if;
-
-  insert into public.letters (body, fmt) values (v_body, v_fmt) returning id into v_id;
-  v_alias := private.assign_letter_alias(v_id, me, true);
-  return jsonb_build_object('status', 'ok', 'letter_id', v_id, 'alias', v_alias->>'alias');
-end
-$fn$;
-
--- 댓글 · 대댓글. p_parent 가 있으면 대댓글이며, 그 부모는 반드시 최상위 댓글이어야 한다 (2단계).
--- 지정 답장자가 쓴 첫 최상위 댓글이 곧 "답장" — 편지 상태를 replied 로 바꾸고 쿨다운을 남긴다.
-create or replace function public.post_comment(p_letter bigint, p_parent bigint, p_body text, p_client_id uuid)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); cfg public.app_settings%rowtype; v_gate text; v_b jsonb;
-        v_body text := btrim(coalesce(p_body, '')); par public.letter_comments%rowtype;
-        v_alias jsonb; v_id bigint; v_task public.letter_reply_assignments%rowtype;
-        v_author uuid; v_designated boolean := false; v_existing bigint;
-begin
-  v_gate := private.letter_eligible(me);
-  if v_gate is not null then return jsonb_build_object('status', v_gate); end if;
-  select * into cfg from public.app_settings where id;
-  if char_length(v_body) = 0 then raise exception 'empty_body'; end if;
-  if char_length(v_body) > cfg.comment_max_len then raise exception 'too_long'; end if;
-  if p_client_id is null then raise exception 'client_id_required'; end if;
-
-  if not private.letter_visible_to(p_letter, me) then return jsonb_build_object('status', 'closed'); end if;
-
-  -- 재전송(타임아웃 뒤 다시 누름) — 이미 들어갔으면 그 댓글을 돌려준다
-  select id into v_existing from public.letter_comments where letter_id = p_letter and client_comment_id = p_client_id;
-  if v_existing is not null then
-    return jsonb_build_object('status', 'duplicate', 'comment_id', v_existing);
-  end if;
-
-  if p_parent is not null then
-    select * into par from public.letter_comments where id = p_parent;
-    if not found or par.letter_id <> p_letter or par.status <> 'visible' then
-      return jsonb_build_object('status', 'parent_missing');
-    end if;
-    if par.parent_comment_id is not null then
-      return jsonb_build_object('status', 'max_depth_exceeded');
-    end if;
-  end if;
-
-  v_b := private.letter_bucket_take(me, 'comment');
-  if not (v_b->>'ok')::boolean then
-    return jsonb_build_object('status', 'rate_limited', 'retry_after_ms', (v_b->>'retry_after_ms')::bigint);
-  end if;
-
-  v_author := private.letter_author(p_letter);
-  v_alias := private.assign_letter_alias(p_letter, me, me = v_author);
-  insert into public.letter_comments (letter_id, parent_comment_id, author_no, body, client_comment_id)
-  values (p_letter, p_parent, (v_alias->>'no')::smallint, v_body, p_client_id)
-  returning id into v_id;
-
-  -- 지정 답장자의 첫 최상위 댓글 → 답장 완료
-  if p_parent is null then
-    select * into v_task from public.letter_reply_assignments
-     where letter_id = p_letter and reader_id = me and fulfilled_at is null for update;
-    if found then
-      update public.letter_reply_assignments set fulfilled_at = now(), comment_id = v_id where letter_id = p_letter;
-      update public.letters set reply_status = 'replied', designated_reply_comment_id = v_id where id = p_letter;
-      insert into public.letter_reply_cooldown (user_lo, user_hi)
-      values (least(me, v_author), greatest(me, v_author))
-      on conflict (user_lo, user_hi) do update
-         set last_assigned_at = now(), times = public.letter_reply_cooldown.times + 1;
-      v_designated := true;
-    end if;
-  end if;
-
-  return jsonb_build_object('status', 'ok', 'comment_id', v_id, 'my_alias', v_alias->>'alias',
-                            'designated', v_designated);
-end
-$fn$;
-
--- 내 글 지우기 (소프트 삭제). 신고 증거는 신고 순간 이미 복사되어 있다.
-create or replace function public.delete_my_letter(p_letter bigint)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-begin
-  if auth.uid() is null then raise exception 'unauthenticated'; end if;
-  if private.letter_author(p_letter) is distinct from auth.uid() then raise exception 'not_owner'; end if;
-  update public.letters set status = 'removed' where id = p_letter;
-  return jsonb_build_object('status', 'ok');
-end
-$fn$;
-
-create or replace function public.delete_my_comment(p_comment bigint)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare c public.letter_comments%rowtype;
-begin
-  if auth.uid() is null then raise exception 'unauthenticated'; end if;
-  select * into c from public.letter_comments where id = p_comment;
-  if not found or not exists (select 1 from public.letter_participants
-                               where letter_id = c.letter_id and participant_no = c.author_no
-                                 and user_id = auth.uid()) then
-    raise exception 'not_owner';
-  end if;
-  update public.letter_comments set status = 'removed' where id = p_comment;
-  return jsonb_build_object('status', 'ok');
-end
-$fn$;
-
-
--- ── 35. 답장할 편지 받기 — 큐 소비 ──────────────────────────────────
--- 채팅 request_match 는 advisory lock 하나로 풀 전체를 직렬화한다 (두 사람을 한 번에 잡아야 하므로).
--- 여기는 밀린 편지 여러 통을 여러 사람이 나눠 가져가는 큐라, 서로 다른 편지만 안 겹치면 동시에
--- 처리해도 된다 → for update skip locked. 쉬는 시간에 30명이 동시에 눌러도 한 줄로 서지 않는다.
-create or replace function public.request_letter_reply_task()
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); cfg public.app_settings%rowtype; v_gate text; v_b jsonb;
-        v_task public.letter_reply_assignments%rowtype; v_letter bigint; v_pool int;
-begin
-  v_gate := private.letter_eligible(me);
-  select * into cfg from public.app_settings where id;
-  if v_gate is not null then return jsonb_build_object('status', v_gate, 'notice', cfg.notice); end if;
-
-  -- ① 이미 맡은 편지가 있으면 그것 (반복 폴링에 안전)
-  select a.* into v_task from public.letter_reply_assignments a
-    join public.letters l on l.id = a.letter_id
-   where a.reader_id = me and a.fulfilled_at is null and a.expires_at > now() and l.status = 'open'
-   limit 1;
-  if found then
-    return jsonb_build_object('status', 'assigned', 'letter_id', v_task.letter_id,
-                              'expires_at', v_task.expires_at, 'server_now', now());
-  end if;
-
-  -- ② 큐에서 한 통. 오래 기다린 편지부터. 마감이 지난 배정은 다시 큐로 돌아온다.
-  select l.id into v_letter
-    from public.letters l
-    join public.letter_participants a on a.letter_id = l.id and a.participant_no = 1
-    join public.profiles p on p.id = a.user_id
-    left join public.letter_reply_assignments r on r.letter_id = l.id
-   where l.status = 'open'
-     and (l.reply_status = 'unassigned'
-          or (l.reply_status = 'assigned' and r.fulfilled_at is null and r.expires_at <= now()
-              and r.reader_id <> me))
-     and a.user_id <> me
-     and p.status = 'active' and (p.suspended_until is null or p.suspended_until <= now())
-     and not private.blocked_between(a.user_id, me)
-     and not exists (select 1 from public.letter_reply_cooldown h
-                      where h.user_lo = least(me, a.user_id) and h.user_hi = greatest(me, a.user_id)
-                        and h.last_assigned_at > now() - make_interval(days => cfg.letter_reply_cooldown_days))
-   order by l.created_at
-   limit 1
-   for update of l skip locked;
-
-  if v_letter is null then
-    select count(*) into v_pool from public.letters l
-      join public.letter_participants a on a.letter_id = l.id and a.participant_no = 1
-     where l.status = 'open' and l.reply_status <> 'replied' and a.user_id <> me;
-    return jsonb_build_object('status', 'waiting', 'reason', case when v_pool = 0 then 'empty' else 'filtered' end,
-                              'poll_ms', cfg.seek_poll_sec * 1000 * 3, 'server_now', now());
-  end if;
-
-  -- ③ 실제로 잡았을 때만 버킷 차감 (match_bucket_take 와 같은 순서)
-  v_b := private.letter_bucket_take(me, 'task');
-  if not (v_b->>'ok')::boolean then
-    return jsonb_build_object('status', 'cooldown', 'retry_after_ms', (v_b->>'retry_after_ms')::bigint);
-  end if;
-
-  insert into public.letter_reply_assignments (letter_id, reader_id, assigned_at, expires_at)
-  values (v_letter, me, now(), now() + make_interval(hours => cfg.letter_reply_deadline_hours))
-  on conflict (letter_id) do update
-     set reader_id = excluded.reader_id, assigned_at = excluded.assigned_at,
-         expires_at = excluded.expires_at, fulfilled_at = null, comment_id = null;
-  update public.letters set reply_status = 'assigned' where id = v_letter;
-
-  return jsonb_build_object('status', 'assigned', 'letter_id', v_letter,
-    'expires_at', now() + make_interval(hours => cfg.letter_reply_deadline_hours), 'server_now', now());
-end
-$fn$;
-
-
 -- ── 36. 신고 · 차단 ─────────────────────────────────────────────────
 -- 채팅 신고(private.reports)는 2인 방 구조에 맞춰 굳어 있어 따로 둔다.
 create table if not exists private.letter_reports (
@@ -2382,186 +1897,6 @@ create table if not exists private.letter_report_evidence (
 );
 alter table private.letter_report_evidence enable row level security;
 
--- 신고 대상의 계정 (편지면 작성자, 댓글이면 댓글 작성자)
-create or replace function private.letter_target_user(p_letter bigint, p_comment bigint)
-returns uuid language sql security definer set search_path = public stable as $fn$
-  select case when p_comment is null then
-           (select user_id from public.letter_participants where letter_id = p_letter and participant_no = 1)
-         else
-           (select pp.user_id from public.letter_comments c
-              join public.letter_participants pp on pp.letter_id = c.letter_id and pp.participant_no = c.author_no
-             where c.id = p_comment and c.letter_id = p_letter)
-         end;
-$fn$;
-revoke all on function private.letter_target_user(bigint, bigint) from public, anon, authenticated;
-
--- 공개 게시판이라 방 구성원 확인이 없다 — 피드를 보는 누구나 신고할 수 있다.
-create or replace function public.report_letter(p_letter bigint, p_comment bigint, p_reason text, p_note text default '')
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); cfg public.app_settings%rowtype; v_target uuid; v_report uuid; v_n int;
-        c public.letter_comments%rowtype;
-begin
-  if me is null then raise exception 'unauthenticated'; end if;
-  if p_reason not in ('harassment','sexual','spam','personal_info','hate','impersonation','other') then
-    raise exception 'invalid_reason';
-  end if;
-  v_target := private.letter_target_user(p_letter, p_comment);
-  if v_target is null then return jsonb_build_object('status', 'not_found'); end if;
-  if v_target = me then return jsonb_build_object('status', 'self'); end if;
-
-  if exists (select 1 from private.letter_reports
-              where reporter_id = me and letter_id = p_letter
-                and comment_id is not distinct from p_comment) then
-    return jsonb_build_object('status', 'already');
-  end if;
-
-  select * into cfg from public.app_settings where id;
-  insert into private.letter_reports (target_type, letter_id, comment_id, reporter_id, reported_id, reason, note)
-  values (case when p_comment is null then 'letter' else 'comment' end,
-          p_letter, p_comment, me, v_target, p_reason, left(coalesce(p_note, ''), 1000))
-  returning id into v_report;
-
-  -- 증거: 편지 본문, (대댓글이면) 부모 댓글, 신고한 댓글 — 신고 순간의 사본
-  insert into private.letter_report_evidence (report_id, ord, kind, alias, body, sent_at)
-  select v_report, 1, 'letter', a.alias, l.body, l.created_at
-    from public.letters l
-    join public.letter_participants a on a.letter_id = l.id and a.participant_no = 1
-   where l.id = p_letter;
-  if p_comment is not null then
-    select * into c from public.letter_comments where id = p_comment;
-    if c.parent_comment_id is not null then
-      insert into private.letter_report_evidence (report_id, ord, kind, alias, body, sent_at)
-      select v_report, 2, 'parent', pp.alias, k.body, k.created_at
-        from public.letter_comments k
-        join public.letter_participants pp on pp.letter_id = k.letter_id and pp.participant_no = k.author_no
-       where k.id = c.parent_comment_id;
-    end if;
-    insert into private.letter_report_evidence (report_id, ord, kind, alias, body, sent_at)
-    select v_report, 3, 'comment', pp.alias, c.body, c.created_at
-      from public.letter_participants pp where pp.letter_id = c.letter_id and pp.participant_no = c.author_no;
-  end if;
-
-  -- 신고하면 자동 차단 (채팅과 같은 blocks)
-  insert into public.blocks (blocker_id, blocked_id) values (me, v_target) on conflict do nothing;
-
-  -- 자동 정지 — 편지 신고만 따로 센다
-  select count(distinct reporter_id) into v_n from private.letter_reports
-   where reported_id = v_target and status <> 'dismissed' and created_at > now() - interval '30 days';
-  if v_n >= cfg.letter_auto_suspend_reports then
-    update public.profiles set status = 'suspended' where id = v_target and status = 'active';
-    if found then
-      insert into private.audit_log (staff_id, action, target_user, report_id, detail)
-      values (null, 'auto_suspend_letters', v_target, v_report, jsonb_build_object('distinct_reporters', v_n));
-      perform public.close_room(rm.room_id, 'admin')
-         from public.room_members rm where rm.user_id = v_target and rm.open;
-    end if;
-  end if;
-  return jsonb_build_object('status', 'ok');
-end
-$fn$;
-
--- 차단: blocks 에 넣기만 한다. 공개 글 자체는 그대로 두고, 내 화면과 답장 배정에서만 빠진다.
-create or replace function public.block_letter_author(p_letter bigint, p_comment bigint default null)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare v_target uuid;
-begin
-  if auth.uid() is null then raise exception 'unauthenticated'; end if;
-  v_target := private.letter_target_user(p_letter, p_comment);
-  if v_target is null then return jsonb_build_object('status', 'not_found'); end if;
-  if v_target = auth.uid() then return jsonb_build_object('status', 'self'); end if;
-  insert into public.blocks (blocker_id, blocked_id) values (auth.uid(), v_target) on conflict do nothing;
-  return jsonb_build_object('status', 'ok');
-end
-$fn$;
-
--- 하트 누르기·취소 — 토글이 아니라 "이 상태로" 맞춘다 (연타·재전송해도 결과가 같다)
-create or replace function public.set_letter_like(p_letter bigint, p_like boolean)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare me uuid := auth.uid(); v_gate text;
-begin
-  v_gate := private.letter_eligible(me);
-  if v_gate is not null then return jsonb_build_object('status', v_gate); end if;
-  if not private.letter_visible_to(p_letter, me) then return jsonb_build_object('status', 'closed'); end if;
-  if coalesce(p_like, false) then
-    insert into private.letter_likes (letter_id, user_id) values (p_letter, me) on conflict do nothing;
-  else
-    delete from private.letter_likes where letter_id = p_letter and user_id = me;
-  end if;
-  return jsonb_build_object('status', 'ok', 'liked', coalesce(p_like, false),
-    'like_count', (select count(*) from private.letter_likes where letter_id = p_letter)::int);
-end
-$fn$;
-
-revoke all on function public.letter_feed(bigint, int), public.letter_detail(bigint), public.post_letter(text, jsonb),
-                       public.post_comment(bigint, bigint, text, uuid), public.delete_my_letter(bigint),
-                       public.delete_my_comment(bigint), public.request_letter_reply_task(),
-                       public.report_letter(bigint, bigint, text, text), public.block_letter_author(bigint, bigint),
-                       public.set_letter_like(bigint, boolean)
-  from public, anon;
-grant execute on function public.letter_feed(bigint, int), public.letter_detail(bigint), public.post_letter(text, jsonb),
-                          public.post_comment(bigint, bigint, text, uuid), public.delete_my_letter(bigint),
-                          public.delete_my_comment(bigint), public.request_letter_reply_task(),
-                          public.report_letter(bigint, bigint, text, text), public.block_letter_author(bigint, bigint),
-                          public.set_letter_like(bigint, boolean)
-  to authenticated;
-
-
--- ── 37. 편지 알림 ───────────────────────────────────────────────────
--- 새 댓글이 달리면 댓글 쓴 앱이 /api/push 에 comment_id 만 알린다. 받을 사람·문구는 여기서 정한다.
---   최상위 댓글 → 편지 작성자 / 대댓글 → 부모 댓글 작성자 / 지정 답장 → 편지 작성자 ("답장이 도착")
---   새 편지·답장 배정에는 알림이 없다 (전교생 브로드캐스트는 스팸, 배정은 앱 안에서 바로 보인다)
-create table if not exists private.letter_push_log (
-  comment_id bigint primary key,
-  created_at timestamptz not null default now()
-);
-alter table private.letter_push_log enable row level security;
-
-create or replace function public.letter_notify(p_comment bigint, p_actor uuid)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare c public.letter_comments%rowtype; l public.letters%rowtype; v_actor public.letter_participants%rowtype;
-        v_to uuid; v_subs jsonb; v_title text;
-begin
-  select * into c from public.letter_comments where id = p_comment;
-  if not found or c.status <> 'visible' then return jsonb_build_object('skip', 'no_comment'); end if;
-  select * into v_actor from public.letter_participants where letter_id = c.letter_id and participant_no = c.author_no;
-  if v_actor.user_id is distinct from p_actor then return jsonb_build_object('skip', 'not_author'); end if;
-  if c.created_at < now() - interval '2 minutes' then return jsonb_build_object('skip', 'stale'); end if;
-  select * into l from public.letters where id = c.letter_id;
-  if l.status <> 'open' then return jsonb_build_object('skip', 'closed'); end if;
-
-  insert into private.letter_push_log (comment_id) values (p_comment) on conflict do nothing;
-  if not found then return jsonb_build_object('skip', 'already'); end if;
-
-  if c.parent_comment_id is null then
-    v_to := private.letter_author(c.letter_id);
-    v_title := case when l.designated_reply_comment_id = c.id then '편지에 답장이 도착했어요'
-                    else '내 편지에 새 댓글' end;
-  else
-    select pp.user_id into v_to from public.letter_comments k
-      join public.letter_participants pp on pp.letter_id = k.letter_id and pp.participant_no = k.author_no
-     where k.id = c.parent_comment_id;
-    v_title := '내 댓글에 답글';
-  end if;
-
-  if v_to is null or v_to = p_actor then return jsonb_build_object('skip', 'self'); end if;
-  if private.blocked_between(v_to, p_actor) then return jsonb_build_object('skip', 'blocked'); end if;
-  v_subs := private.push_target(v_to);
-  if v_subs ? 'skip' then return v_subs; end if;
-  v_subs := v_subs -> 'subs';
-
-  -- ★ uuid 없음. 이름은 이 편지 안에서만 쓰는 임시 이름.
-  return jsonb_build_object(
-    'title', v_title,
-    'body',  v_actor.alias || ': ' || left(c.body, 100),
-    'url',   '/letters/' || c.letter_id,
-    'tag',   'letter-' || c.letter_id,
-    'subs',  v_subs);
-end
-$fn$;
-revoke all on function public.letter_notify(bigint, uuid) from public, anon, authenticated;
-grant execute on function public.letter_notify(bigint, uuid) to service_role;
-
-
 -- ── 38. 운영자 RPC (편지) — service_role 전용 ───────────────────────
 create or replace function public.admin_list_letter_reports(p_status text default 'open', p_limit int default 100)
 returns jsonb language sql security definer set search_path = public, private stable as $fn$
@@ -2594,11 +1929,7 @@ begin
                     'ord', e.ord, 'kind', e.kind, 'alias', e.alias, 'body', e.body, 'sent_at', e.sent_at)
                     order by e.ord), '[]'::jsonb)
                    from private.letter_report_evidence e where e.report_id = p_id),
-    'target', case when r.target_type = 'dm' then
-                jsonb_build_object('thread_status', (select status from private.dm_threads where id = r.letter_id))
-              else jsonb_build_object(
-                'letter_status', (select status from public.letters where id = r.letter_id),
-                'comment_status', (select status from public.letter_comments where id = r.comment_id)) end,
+    'target', jsonb_build_object('thread_status', (select status from private.dm_threads where id = r.letter_id)),
     'reported', (select jsonb_build_object('status', p.status, 'strikes', p.strikes,
                         'suspended_until', p.suspended_until, 'created_at', p.created_at)
                    from public.profiles p where p.id = r.reported_id),
@@ -2625,29 +1956,13 @@ begin
 end
 $fn$;
 
--- 운영진 삭제 (소프트). p_comment 가 null 이면 편지 자체를 내린다.
-create or replace function public.admin_remove_letter_content(p_letter bigint, p_comment bigint, p_staff uuid, p_report uuid)
-returns void language plpgsql security definer set search_path = public, private as $fn$
-begin
-  perform private.require_staff(p_staff);
-  if p_comment is null then
-    update public.letters set status = 'removed' where id = p_letter;
-  else
-    update public.letter_comments set status = 'removed' where id = p_comment and letter_id = p_letter;
-  end if;
-  insert into private.audit_log (staff_id, action, report_id, detail)
-  values (p_staff, case when p_comment is null then 'remove_letter' else 'remove_comment' end, p_report,
-          jsonb_build_object('letter_id', p_letter, 'comment_id', p_comment));
-end
-$fn$;
-
 
 do $do$
 declare f text;
 begin
   foreach f in array array[
     'admin_list_letter_reports(text, int)', 'admin_letter_report(uuid)',
-    'admin_set_letter_report(uuid, text, text, uuid)', 'admin_remove_letter_content(bigint, bigint, uuid, uuid)',
+    'admin_set_letter_report(uuid, text, text, uuid)',
     'admin_stats()']
   loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
@@ -2656,7 +1971,7 @@ begin
 end
 $do$;
 
--- 편지 신고 증거 보존 기간 · 알림 기록 정리
+-- 편지 신고 증거 보존 기간 (옛 알림 기록 정리 작업은 지운다)
 do $do$
 begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
@@ -2665,8 +1980,6 @@ begin
     perform cron.schedule('simbun-purge-letter-reports', '57 4 * * *',
       $q$delete from private.letter_reports where status in ('actioned','dismissed')
           and created_at < now() - interval '180 days'$q$);
-    perform cron.schedule('simbun-purge-letter-push', '7 5 * * *',
-      $q$delete from private.letter_push_log where created_at < now() - interval '1 day'$q$);
   end if;
 end
 $do$;
@@ -2811,11 +2124,9 @@ begin
     'counts', jsonb_build_object(
       'rooms', (select count(*) from public.room_members where user_id = p_user),
       'open_rooms', (select count(*) from public.room_members where user_id = p_user and open),
-      'letters', (select count(*) from public.letter_participants where user_id = p_user and is_author),
-      'comments', (select count(*) from public.letter_comments c
-                     join public.letter_participants lp
-                       on lp.letter_id = c.letter_id and lp.participant_no = c.author_no
-                    where lp.user_id = p_user),
+      -- 쓴 편지 (이름 편지 · 답장)
+      'letters', (select count(*) from private.dm_msgs m join private.dm_threads t on t.id = m.thread_id
+                   where m.is_letter and ((m.from_sender and t.sender_id = p_user) or (not m.from_sender and t.recipient_id = p_user))),
       'reports_filed', (select count(*) from private.reports where reporter_id = p_user)
                      + (select count(*) from private.letter_reports where reporter_id = p_user),
       'reports_dismissed', (select count(*) from private.reports where reporter_id = p_user and status = 'dismissed')
@@ -2914,65 +2225,13 @@ begin
 end
 $fn$;
 
--- 편지 한 통의 작성자·참여자 확인 (관리자) — 기록 남김. 내려간 글·댓글도 보인다.
-create or replace function public.admin_letter_post(p_letter bigint, p_staff uuid)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-declare l public.letters%rowtype;
-begin
-  perform private.require_staff(p_staff, true);
-  select * into l from public.letters where id = p_letter;
-  if not found then return null; end if;
-  insert into private.audit_log (staff_id, action, detail)
-  values (p_staff, 'view_letter_authors', jsonb_build_object('letter', p_letter));
-  return jsonb_build_object(
-    'letter', jsonb_build_object('id', l.id, 'body', l.body, 'fmt', l.fmt, 'status', l.status,
-               'reply_status', l.reply_status, 'created_at', l.created_at,
-               'like_count', (select count(*) from private.letter_likes k where k.letter_id = l.id)),
-    'participants', (select coalesce(jsonb_agg(jsonb_build_object(
-                        'no', lp.participant_no, 'alias', lp.alias, 'is_author', lp.is_author,
-                        'user_id', lp.user_id, 'nickname', p.nickname, 'status', p.status) order by lp.participant_no), '[]'::jsonb)
-                       from public.letter_participants lp join public.profiles p on p.id = lp.user_id
-                      where lp.letter_id = p_letter),
-    'reader', (select jsonb_build_object('user_id', a.reader_id, 'expires_at', a.expires_at,
-                        'fulfilled_at', a.fulfilled_at,
-                        'nickname', (select nickname from public.profiles where id = a.reader_id))
-                 from public.letter_reply_assignments a where a.letter_id = p_letter),
-    'comments', (select coalesce(jsonb_agg(jsonb_build_object(
-                    'id', c.id, 'parent_id', c.parent_comment_id, 'author_no', c.author_no,
-                    'body', c.body, 'status', c.status, 'created_at', c.created_at) order by c.id), '[]'::jsonb)
-                   from public.letter_comments c where c.letter_id = p_letter));
-end
-$fn$;
-
--- 한 사람이 쓴 편지·댓글 (관리자) — 기록 남김
-create or replace function public.admin_user_letters(p_user uuid, p_staff uuid)
-returns jsonb language plpgsql security definer set search_path = public, private as $fn$
-begin
-  perform private.require_staff(p_staff, true);
-  insert into private.audit_log (staff_id, action, target_user, detail)
-  values (p_staff, 'view_user_letters', p_user, '{}'::jsonb);
-  return (select coalesce(jsonb_agg(x order by x.created_at desc), '[]'::jsonb) from (
-    select l.id as letter_id, lp.alias, lp.is_author, l.status, l.created_at,
-           left(l.body, 80) as preview,
-           (select count(*) from public.letter_comments c
-             where c.letter_id = l.id and c.author_no = lp.participant_no) as my_comments
-      from public.letter_participants lp
-      join public.letters l on l.id = lp.letter_id
-     where lp.user_id = p_user
-     order by l.created_at desc
-     limit 200
-  ) x);
-end
-$fn$;
-
 do $do$
 declare f text;
 begin
   foreach f in array array[
     'admin_sanction(uuid, text, int, uuid, uuid, text)', 'admin_log_identity_view(uuid, uuid[], uuid)',
     'admin_find_users(text, text, uuid, int)', 'admin_user(uuid, uuid)', 'admin_user_rooms(uuid, uuid)',
-    'admin_rooms(text, uuid, int)', 'admin_room(uuid, uuid)', 'admin_letter_post(bigint, uuid)',
-    'admin_user_letters(uuid, uuid)']
+    'admin_rooms(text, uuid, int)', 'admin_room(uuid, uuid)']
   loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
     execute format('grant execute on function public.%s to service_role', f);
@@ -3482,12 +2741,6 @@ revoke all on function public.content_rule_check() from public, anon, authentica
 drop trigger if exists messages_rule_check on public.messages;
 create trigger messages_rule_check before insert on public.messages
   for each row execute function public.content_rule_check();
-drop trigger if exists letters_rule_check on public.letters;
-create trigger letters_rule_check before insert on public.letters
-  for each row execute function public.content_rule_check();
-drop trigger if exists letter_comments_rule_check on public.letter_comments;
-create trigger letter_comments_rule_check before insert on public.letter_comments
-  for each row execute function public.content_rule_check();
 
 -- ── 2단: AI 검토 대기열 ──
 alter table private.reports        alter column reporter_id drop not null;
@@ -3523,12 +2776,8 @@ begin
   if tg_table_name = 'messages' then
     if new.sender_seat = 0 then return null; end if;
     insert into private.mod_queue (kind, ref_id) values ('message', new.id) on conflict do nothing;
-  elsif tg_table_name = 'letters' then
-    insert into private.mod_queue (kind, ref_id) values ('letter', new.id) on conflict do nothing;
-  elsif tg_table_name = 'dm_msgs' then
-    insert into private.mod_queue (kind, ref_id) values ('dm', new.id) on conflict do nothing;
   else
-    insert into private.mod_queue (kind, ref_id) values ('comment', new.id) on conflict do nothing;
+    insert into private.mod_queue (kind, ref_id) values ('dm', new.id) on conflict do nothing;
   end if;
   return null;
 end
@@ -3537,12 +2786,6 @@ revoke all on function public.mod_enqueue() from public, anon, authenticated;
 
 drop trigger if exists messages_mod_enqueue on public.messages;
 create trigger messages_mod_enqueue after insert on public.messages
-  for each row execute function public.mod_enqueue();
-drop trigger if exists letters_mod_enqueue on public.letters;
-create trigger letters_mod_enqueue after insert on public.letters
-  for each row execute function public.mod_enqueue();
-drop trigger if exists letter_comments_mod_enqueue on public.letter_comments;
-create trigger letter_comments_mod_enqueue after insert on public.letter_comments
   for each row execute function public.mod_enqueue();
 
 -- 오늘 (Workers AI 무료 몫이 초기화되는 UTC 00:00 = 한국 오전 9시 기준)
@@ -3587,9 +2830,8 @@ begin
    where q.status = 'working' and q.claimed_at = now()
      and not case q.kind
        when 'message' then exists (select 1 from public.messages m where m.id = q.ref_id)
-       when 'letter'  then exists (select 1 from public.letters l where l.id = q.ref_id)
        when 'dm'      then exists (select 1 from private.dm_msgs d where d.id = q.ref_id and d.status = 'visible')
-       else exists (select 1 from public.letter_comments c where c.id = q.ref_id) end;
+       else false end;   -- 옛 공개 편지 · 댓글 (Phase 85 에서 걷어냄)
 
   select coalesce(jsonb_agg(jsonb_build_object('id', q.id, 'kind', q.kind, 'text', x.body, 'context', x.ctx)
                             order by q.id), '[]'::jsonb) into v_out
@@ -3603,15 +2845,6 @@ begin
                        where p2.room_id = m.room_id and p2.id < m.id and p2.sender_seat <> 0
                        order by p2.id desc limit 4) p) as ctx
         from public.messages m where q.kind = 'message' and m.id = q.ref_id
-      union all
-      select l.body, '[]'::jsonb from public.letters l where q.kind = 'letter' and l.id = q.ref_id
-      union all
-      select c.body,
-             jsonb_build_array(jsonb_build_object('who', '편지', 'text', left(l.body, 300)))
-             || coalesce((select jsonb_build_array(jsonb_build_object('who', '윗댓글', 'text', left(pc.body, 300)))
-                            from public.letter_comments pc where pc.id = c.parent_comment_id), '[]'::jsonb)
-        from public.letter_comments c join public.letters l on l.id = c.letter_id
-       where q.kind = 'comment' and c.id = q.ref_id
       union all
       -- 이름 편지 (Phase 23) — 앞의 말 4개 (같은 쪽 = 작성자). 서명(Phase 35)이 있으면 본문 앞에 붙여 같이 검사
       select coalesce('[서명: ' || d.from_nick || '] ', '') || d.body,
@@ -3667,55 +2900,7 @@ begin
 end
 $fn$;
 
--- 편지 · 댓글 자동 신고
-create or replace function private.auto_report_letter(p_kind text, p_ref bigint, p_reason text, p_why text)
-returns void language plpgsql security definer set search_path = public, private as $fn$
-declare v_letter bigint; v_comment bigint; v_target uuid; v_report uuid; v_body text; c public.letter_comments%rowtype;
-begin
-  if p_kind = 'letter' then
-    v_letter := p_ref;
-    select body into v_body from public.letters where id = p_ref;
-  else
-    select * into c from public.letter_comments where id = p_ref;
-    if not found then return; end if;
-    v_letter := c.letter_id; v_comment := c.id; v_body := c.body;
-  end if;
-  v_target := private.letter_target_user(v_letter, v_comment);
-  if v_target is null then return; end if;
-
-  select id into v_report from private.letter_reports
-   where source = 'auto' and letter_id = v_letter and comment_id is not distinct from v_comment
-     and status in ('open','reviewing')
-   limit 1;
-  if v_report is not null then return; end if;   -- 글 하나에 자동 신고 하나
-
-  insert into private.letter_reports (target_type, letter_id, comment_id, reporter_id, reported_id, reason, note, source)
-  values (case when v_comment is null then 'letter' else 'comment' end, v_letter, v_comment, null, v_target,
-          p_reason, '[자동 감지] ' || left(coalesce(p_why, ''), 200), 'auto')
-  returning id into v_report;
-
-  -- 증거: 편지 본문, (대댓글이면) 윗댓글, 걸린 댓글 — report_letter 와 같은 모양
-  insert into private.letter_report_evidence (report_id, ord, kind, alias, body, sent_at)
-  select v_report, 1, 'letter', a.alias, l.body, l.created_at
-    from public.letters l
-    join public.letter_participants a on a.letter_id = l.id and a.participant_no = 1
-   where l.id = v_letter;
-  if v_comment is not null then
-    if c.parent_comment_id is not null then
-      insert into private.letter_report_evidence (report_id, ord, kind, alias, body, sent_at)
-      select v_report, 2, 'parent', pp.alias, k.body, k.created_at
-        from public.letter_comments k
-        join public.letter_participants pp on pp.letter_id = k.letter_id and pp.participant_no = k.author_no
-       where k.id = c.parent_comment_id;
-    end if;
-    insert into private.letter_report_evidence (report_id, ord, kind, alias, body, sent_at)
-    select v_report, 3, 'comment', pp.alias, c.body, c.created_at
-      from public.letter_participants pp where pp.letter_id = c.letter_id and pp.participant_no = c.author_no;
-  end if;
-end
-$fn$;
 revoke all on function private.auto_report_message(bigint, text, text) from public, anon, authenticated;
-revoke all on function private.auto_report_letter(text, bigint, text, text) from public, anon, authenticated;
 
 -- AI 판정 결과 (서버 전용). 걸렸으면 자동 신고.
 create or replace function public.mod_verdict(p_id bigint, p_flag boolean, p_category text, p_reason text)
@@ -3733,7 +2918,6 @@ begin
   if coalesce(p_flag, false) then
     if q.kind = 'message' then perform private.auto_report_message(q.ref_id, v_cat, p_reason);
     elsif q.kind = 'dm' then perform private.auto_report_dm(q.ref_id, v_cat, p_reason);
-    else perform private.auto_report_letter(q.kind, q.ref_id, v_cat, p_reason);
     end if;
   end if;
   return jsonb_build_object('status', 'ok', 'flagged', coalesce(p_flag, false));
@@ -3979,7 +3163,6 @@ delete from public.push_subscriptions
 --   · 괴롭힘 막기: 새 편지는 편지 한도(기본 하루 3통) · 한쪽이 답 없이 3개까지 · 받는 사람이 끝내면 그 사람에게 다시 못 보냄
 --     · 규칙 필터(신상정보 · 금칙어) · AI 검토 · 신고(운영진은 보낸 사람을 기록과 함께 확인할 수 있다).
 --   · 표는 전부 private — 학생은 아래 RPC 로만. 보낸 사람의 계정은 받는 사람에게 어떤 응답에도 나오지 않는다.
---   · 예전 공개 편지(letters · letter_comments)는 그대로 남겨 두되 학생 화면에서는 쓰지 않는다.
 -- ════════════════════════════════════════════════════════════════════
 
 -- ── 이름 ──
@@ -5751,10 +4934,7 @@ do $do$
 declare f text;
 begin
   foreach f in array array[
-    'letter_feed(bigint, integer)', 'letter_detail(bigint)', 'post_letter(text, jsonb)',
-    'post_comment(bigint, bigint, text, uuid)', 'set_letter_like(bigint, boolean)', 'request_letter_reply_task()',
-    'delete_my_letter(bigint)', 'delete_my_comment(bigint)', 'block_letter_author(bigint, bigint)',
-    'report_letter(bigint, bigint, text, text)', 'my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb, text)']
+    'my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb, text)']
   loop
     if to_regprocedure('public.' || f) is not null then
       execute format('revoke all on function public.%s from public, anon, authenticated', f);
@@ -6585,11 +5765,6 @@ revoke all on function private.in_maintenance() from public, anon, authenticated
 -- Phase 54 — 점검 (Supabase 성능 진단: 인덱스 없는 외래 키 5개)
 -- 가리키는 행을 지우거나 고칠 때(on delete / 조인) 표 전체를 훑지 않게. 학교 인원 규모에선 당장 느리진 않지만 편지 · 댓글이 쌓일수록 차이가 난다.
 -- ════════════════════════════════════════════════════════════════════
-create index if not exists letter_comments_letter_author on public.letter_comments (letter_id, author_no);
-create index if not exists letter_comments_parent on public.letter_comments (parent_comment_id) where parent_comment_id is not null;
-create index if not exists letter_reply_assignments_comment on public.letter_reply_assignments (comment_id) where comment_id is not null;
-create index if not exists letter_reply_cooldown_hi on public.letter_reply_cooldown (user_hi);
-create index if not exists letters_designated_reply on public.letters (designated_reply_comment_id) where designated_reply_comment_id is not null;
 
 
 -- ════════════════════════════════════════════════════════════════════
@@ -7317,3 +6492,29 @@ begin
   end if;
 end
 $do$;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 85 — 옛 공개 편지 게시판(Phase 10~15) 걷어내기
+--
+--  학생 화면에서 내린 지 오래고(Phase 23) 학생 실행 권한도 거뒀다(Phase 34). 실DB 의 표는 전부 비어 있었다.
+--  정의는 위에서 지웠고, 여기서는 이미 설치된 DB 에 남아 있는 것을 치운다 — 새 DB 에서는 아무 일도 하지 않는다.
+--  남기는 것(이름 편지가 같이 쓴다): private.letter_reports · letter_report_evidence, letter_bucket_take,
+--  letter_alias_candidate, blocked_between, letter_fmt_ok, admin_*_letter_report*.
+-- ════════════════════════════════════════════════════════════════════
+drop function if exists public.letter_feed(bigint, int), public.letter_detail(bigint), public.post_letter(text, jsonb),
+  public.post_comment(bigint, bigint, text, uuid), public.delete_my_letter(bigint), public.delete_my_comment(bigint),
+  public.request_letter_reply_task(), public.report_letter(bigint, bigint, text, text),
+  public.block_letter_author(bigint, bigint), public.set_letter_like(bigint, boolean), public.letter_notify(bigint, uuid),
+  public.admin_remove_letter_content(bigint, bigint, uuid, uuid), public.admin_letter_post(bigint, uuid),
+  public.admin_user_letters(uuid, uuid), private.assign_letter_alias(bigint, uuid, boolean), private.letter_eligible(uuid),
+  private.letter_author(bigint), private.letter_visible_to(bigint, uuid), private.letter_target_user(bigint, bigint),
+  private.auto_report_letter(text, bigint, text, text);
+drop table if exists private.letter_likes, private.letter_push_log, public.letter_reply_assignments,
+  public.letter_reply_cooldown, public.letter_comments, public.letter_participants, public.letters;
+delete from private.mod_queue where kind in ('letter', 'comment');
+alter table public.app_settings
+  drop column if exists letter_task_burst, drop column if exists letter_task_refill_sec,
+  drop column if exists letter_reply_cooldown_days, drop column if exists letter_reply_deadline_hours,
+  drop column if exists letter_feed_page_size;
+alter table public.user_presence drop column if exists task_tokens, drop column if exists task_at;

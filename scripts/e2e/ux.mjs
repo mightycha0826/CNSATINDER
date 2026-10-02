@@ -46,7 +46,6 @@ async function open(opts = {}) {
 		if (p.startsWith('/auth/v1/')) return json({});
 		if (p.endsWith('rpc/my_account')) return json({ has_password: true });
 		if (p.endsWith('rpc/my_rooms')) return json({ rooms: [room(LIVE, '새벽수달'), room(ENDED, '끝난고래'), room(FLAKY, '느린거북')], server_now: iso() });
-		if (p.endsWith('rpc/letter_feed')) return json({ letters: [], server_now: iso() });
 		if (p.endsWith('rpc/my_notices')) return json({ notices: [{ id: 3, title: '세 번째 공지', body: '본문', created_at: iso(-60) }, { id: 2, title: '두 번째 공지', body: '본문', created_at: iso(-3600) }], last_seen: 1 });
 		if (p.endsWith('rpc/mark_notices_seen')) { st.marks.push(body().p_id); return json(body().p_id); }
 		if (p.endsWith('rpc/request_match')) return json({ status: 'waiting', reason: 'empty', poll_ms: 4000 });

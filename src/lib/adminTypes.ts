@@ -1,5 +1,4 @@
 import type { ReactionKey } from './chat/types';
-import type { LetterFmt } from './letters/rich';
 
 export type ReportStatus = 'open' | 'reviewing' | 'actioned' | 'dismissed';
 
@@ -68,7 +67,7 @@ export const REPORT_TABS = [
 ] as const;
 
 // ── 익명편지 신고 (private.letter_reports) ─────────────────────────────
-/** 신고 대상 — 예전 공개 편지 · 댓글, 또는 이름 편지(Phase 23, letter_id = 편지 줄기 id) */
+/** 신고 대상 — 이름 편지(Phase 23, letter_id = 편지 줄기 id). letter · comment 는 걷어낸 옛 공개 편지 (Phase 85) */
 export const TARGET_LABEL: Record<string, string> = { letter: '편지', comment: '댓글', dm: '이름 편지' };
 
 export type LetterReportRow = {
@@ -92,7 +91,6 @@ export type LetterReportRow = {
 
 export type LetterReportDetail = {
 	report: LetterReportRow & { handled_by: string | null; handled_at: string | null; action_note: string | null };
-	/** letter = 편지 본문 / parent = 대댓글이 달린 댓글 / comment = 신고한 댓글 */
 	evidence: {
 		ord: number;
 		kind: 'letter' | 'parent' | 'comment' | 'dm_sender' | 'dm_recipient';
@@ -100,12 +98,8 @@ export type LetterReportDetail = {
 		body: string;
 		sent_at: string;
 	}[];
-	/** 지금 그 글이 아직 떠 있는지 (이름 편지면 thread_status) */
-	target: {
-		letter_status?: 'open' | 'removed' | null;
-		comment_status?: 'visible' | 'removed' | null;
-		thread_status?: 'open' | 'closed' | 'removed' | null;
-	};
+	/** 지금 그 편지 줄기가 아직 떠 있는지 */
+	target: { thread_status?: 'open' | 'closed' | 'removed' | null };
 	reported: { status: string; strikes: number; suspended_until: string | null; created_at: string } | null;
 	history: { id: string; created_at: string; reason: string; status: ReportStatus }[];
 	/** 같은 사람이 채팅에서 받은 신고 수 (교차 확인용) */
@@ -169,7 +163,7 @@ export type UserDetail = {
 	online: boolean;
 	last_seen: string | null;
 	staff_role: StaffRole | null;
-	counts: { rooms: number; open_rooms: number; letters: number; comments: number; reports_filed: number; reports_dismissed: number };
+	counts: { rooms: number; open_rooms: number; letters: number; reports_filed: number; reports_dismissed: number };
 	chat_reports: { id: string; created_at: string; reason: string; status: ReportStatus }[];
 	letter_reports: { id: string; created_at: string; reason: string; status: ReportStatus; target_type: 'letter' | 'comment' | 'dm' }[];
 	history: { action: string; staff_id: string | null; detail: Record<string, unknown>; created_at: string }[];
@@ -186,16 +180,6 @@ export type UserRoomRow = {
 	partner_id: string | null;
 	partner_nickname: string | null;
 	message_count: number;
-};
-
-export type UserLetterRow = {
-	letter_id: number;
-	alias: string;
-	is_author: boolean;
-	status: 'open' | 'removed';
-	created_at: string;
-	preview: string;
-	my_comments: number;
 };
 
 export type RoomRow = {
@@ -233,13 +217,6 @@ export type RoomView = {
 		/** 자리별 공감 { "1": "heart" } — 없으면 null */
 		reactions: Partial<Record<'1' | '2', ReactionKey>> | null;
 	}[];
-};
-
-export type LetterPostView = {
-	letter: { id: number; body: string; fmt: LetterFmt | null; status: 'open' | 'removed'; reply_status: string; created_at: string; like_count: number };
-	participants: { no: number; alias: string; is_author: boolean; user_id: string; nickname: string | null; status: string }[];
-	reader: { user_id: string; expires_at: string; fulfilled_at: string | null; nickname: string | null } | null;
-	comments: { id: number; parent_id: number | null; author_no: number; body: string; status: 'visible' | 'removed'; created_at: string }[];
 };
 
 export const CLOSE_LABEL: Record<string, string> = {

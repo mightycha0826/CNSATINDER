@@ -101,7 +101,7 @@
 				<td class="act">{LABEL[a.action] ?? a.action}</td>
 				<td class="tgt">
 					{#if a.detail?.room}<a href="/admin/rooms/{a.detail.room}">대화 <span class="mono">{shortId(String(a.detail.room))}</span></a>
-					{:else if letterOf(a.detail)}<a href="/admin/posts/{letterOf(a.detail)}">편지 #{letterOf(a.detail)}</a>
+					{:else if letterOf(a.detail)}옛 편지 #{letterOf(a.detail)}
 					{:else if a.target_user}<a class="mono" href="/admin/users/{a.target_user}">{shortId(a.target_user)}</a>
 					{:else if a.report_id}<a href="/admin/{a.action.includes('letter') ? 'letters' : 'reports'}/{a.report_id}">신고 <span class="mono">{shortId(a.report_id)}</span></a>
 					{:else}<span class="muted">—</span>{/if}

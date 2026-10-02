@@ -160,7 +160,7 @@ export const setProfileField = (patch: ProfilePreferences) => updateProfile(patc
 
 
 const SETTINGS_COLS =
-	'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms, letter_max_len, comment_max_len';
+	'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms';
 async function loadSettings() {
 	const token = accountToken();
 	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();

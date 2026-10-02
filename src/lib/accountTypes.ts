@@ -36,8 +36,6 @@ export type Settings = {
 	presence_ttl_sec: number;
 	msg_max_len: number;
 	max_open_rooms: number;
-	letter_max_len: number;
-	comment_max_len: number;
 	/** Phase 19 — DB 에 아직 없으면(패치 전) undefined */
 	ai_moderation?: boolean;
 	ai_chat?: boolean;

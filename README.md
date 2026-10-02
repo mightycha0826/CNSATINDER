@@ -24,7 +24,7 @@
    (명렬표에 없는 학생만 한 번 적는다 — 명렬표 이름은 쓸 수 없음), 검색에는 이름·학년·학번이 나온다 (설정 > 편지 받기 끄면 안 나옴).
    편지 표 `private.dm_threads`/`dm_msgs` 는 RPC 로만 읽히고, 받는 사람에게 보낸 사람은 편지마다 새로 뽑은 익명 이름뿐이다.
    차단·수신 거부·수신자 정지는 이름 검색 및 발신 응답을 바꾸지 않고 실제 전달을 막는다. 발신자의 보낸 편지는 남지만 수신자 편지함·알림·수신 업적에는 들어가지 않는다.
-   옛 공개 편지(`letters`/`letter_comments`)는 DB 에 남아 있지만 화면에서는 내렸다.
+   옛 공개 편지 게시판(Phase 10~15, `letters`/`letter_comments`)은 Phase 85 에서 표 · 함수째 걷어냈다.
 9. **학생끼리의 익명성은 구조로, 관리자 열람은 기록으로.** 관리자(admin)는 대화 내용·편지 작성자·이메일을 볼 수 있지만
    전부 service_role 전용 `admin_*` RPC 를 거치고 `private.audit_log` 에 남는다. 학생 쪽 RPC·RLS 경계(1~8)는 그대로다.
 
@@ -94,7 +94,7 @@ npm run dev
   올리기·내리기는 관리자만 (운영진은 목록만). 운영 설정의 "홈 배너"는 채팅 홈 맨 위 한 줄로 따로 남아 있다.
 - **moderator(운영진)**: 신고 처리, 경고, 7일 이하 정지, 사용자 검색(익명 이름·ID)·상세, 서비스 열고 닫기
 - **admin(관리자)**: 위 전부 + 영구 정지·영구정지 해제, 이메일 열람·이메일 검색, **모든 대화 열람**(`/admin/rooms`),
-  **모든 편지·댓글 작성자 확인**(`/admin/posts/[번호]`), 운영 수치 변경
+  신고된 편지의 보낸 사람 확인, 운영 수치 변경
 - 역할 검사는 서버 라우트(`$lib/server/adminAuth.ts`)와 DB 함수(`private.require_staff`) 양쪽에서 한다.
   (신고 처리·글 내리기·운영 설정까지 전부 — 운영진은 설정 중 서비스 열고 닫기만)
 - 확인창이 있는 조치(제재·이메일 확인·글 내리기·서비스 닫기)는 `$lib/admin/confirm.ts` 의 `confirmed()` 를 쓴다.
@@ -843,5 +843,12 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       박동의 ach_new 옛 DB 분기 삭제. **이제 DB 를 먼저 올리고 앱을 푸시하는 순서가 안전장치 없이 필수다.**
       편지 화면 4곳의 "아직 떠 있나" 검사에서 계정 검사를 뺌 — 계정이 바뀌면 루트 레이아웃이 화면을 통째로 다시 만든다. afterSent 의 계정 인자도 같이.
       한 곳에서만 쓰던 래퍼 setAllowRematch · 쓰이지 않던 isLandy 삭제, 파일 밖에서 안 쓰는 이름 53개의 export 를 뗌.
-      옛 공개 편지(Phase 10~15) 걷어내기는 하지 않음 — 표를 지우는 일이라 따로 승인받고 진행.
+- [x] **Phase 85 — 옛 공개 편지 게시판(Phase 10~15) 걷어내기** — 학생 화면은 Phase 23 부터 이름 편지였고 학생 실행 권한도 Phase 34 에 거뒀다.
+      실DB 의 표 7개(letters · letter_comments · letter_participants · letter_reply_assignments · letter_reply_cooldown · letter_likes · letter_push_log)는 전부 0건이었다.
+      지운 것: 표 7개 · 함수 20개(피드 · 쓰기 · 댓글 · 답장 배정 · 하트 · 알림 · 신고 · 운영자 열람 · 자동 신고) · 규칙/검열 트리거 4개 · 색인 · 알림 기록 정리 작업 ·
+      안 쓰는 설정 열 5개 · 토큰 버킷 열 2개, 운영자 화면 `/admin/posts` 와 사용자 상세의 "편지 · 댓글 보기", 푸시 API 의 `letter_comment_id`.
+      남긴 것(이름 편지가 같이 쓴다): 신고 표 `private.letter_reports` · `letter_report_evidence`, 한도 `letter_bucket_take`(2종), 익명 이름, `blocked_between`, 서식 검사 `letter_fmt_ok`, 운영자 편지 신고 RPC.
+      검열 대기열(`mod_enqueue` · `mod_claim` · `mod_verdict`)은 채팅 · 이름 편지만. 운영자 통계 "24시간 편지"와 사용자 상세 "쓴 편지"는 이름 편지 수로 (예전엔 늘 0).
+      `app_settings.letter_max_len` · `comment_max_len` 은 캐시된 옛 앱이 아직 고르므로 남김 (`ponytail:` 표시 — 새 앱이 다 퍼진 뒤 지운다).
+      `schema.sql` 7319 → 6520줄, 스키마 테스트 [45]~[52] · [59] 삭제 · [58] 은 `letter_fmt_ok` 를 바로 검사 (1196 → 1073). 옛 스키마 위에 새 스키마를 얹는 경로도 PGlite 로 확인 (1073 통과).
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

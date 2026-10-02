@@ -142,13 +142,10 @@ async function as(uid, fn) {
 const rowsAs = async (uid, sql, params = []) => as(uid, async () => (await db.query(sql, params)).rows);
 
 /**
- * 화면에서 더 부르지 않아 Phase 34 에서 학생 실행 권한을 거둔 RPC — 옛 기능 테스트가 함수 자체의 규칙은 계속 확인할 수 있게
+ * 화면에서 더 부르지 않아 Phase 34 에서 학생 실행 권한을 거둔 RPC (옛 공개 편지 것은 Phase 85 에서 함수째 지웠다) — 옛 기능 테스트가 함수 자체의 규칙은 계속 확인할 수 있게
  * 테스트에서만 다시 열어 둔다. 거둔 것은 맨 끝 [80] 에서 스키마를 다시 실행해 확인한다.
  */
-const LEGACY_RPCS = ['letter_feed(bigint, integer)', 'letter_detail(bigint)', 'post_letter(text, jsonb)',
-	'post_comment(bigint, bigint, text, uuid)', 'set_letter_like(bigint, boolean)', 'request_letter_reply_task()',
-	'delete_my_letter(bigint)', 'delete_my_comment(bigint)', 'block_letter_author(bigint, bigint)',
-	'report_letter(bigint, bigint, text, text)', 'my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb, text)'];
+const LEGACY_RPCS = ['my_room()', 'dm_inbox()', 'dm_thread(bigint)', 'dm_letter(bigint, text, jsonb, text)'];
 const openLegacy = async () => {
 	for (const f of LEGACY_RPCS) await db.exec(`grant execute on function public.${f} to authenticated`);
 };
@@ -1377,308 +1374,6 @@ console.log('\n[44] ★ 푸시 발송 판단');
 }
 
 // ════════════════════════════════════════════════════════════════════
-//  Phase 10 — 익명편지
-// ════════════════════════════════════════════════════════════════════
-const postLetter = (uid, body) => rpcAs(uid, 'post_letter', body);
-const postComment = (uid, letter, parent, body) =>
-	rpcAs(uid, 'post_comment', letter, parent, body, crypto.randomUUID());
-const detail = (uid, letter) => rpcAs(uid, 'letter_detail', letter);
-const task = (uid) => rpcAs(uid, 'request_letter_reply_task');
-/** 편지 큐를 비운다 — 시나리오끼리 섞이지 않게 */
-async function resetLetters() {
-	await db.query(`update public.letters set status = 'removed' where status = 'open'`);
-	await db.query(`update public.user_presence set letter_tokens = 3, comment_tokens = 10, task_tokens = 6`);
-}
-
-console.log('\n[45] ★ 익명편지 — 이름 경계');
-{
-	await resetLetters();
-	const w = await person('m', 'f');
-	const r = await person('f', 'm');
-	const a = await postLetter(w, '첫 편지');
-	const b = await postLetter(w, '두 번째 편지');
-	check('편지를 쓰면 작성자 이름이 나온다', a.status === 'ok' && typeof a.alias === 'string');
-	// 이름은 편지마다 새로 뽑는다 — 한 사람이 여러 통을 써도 같은 이름이 이어지지 않는다
-	const many = [a.alias, b.alias];
-	await db.query(`update public.user_presence set letter_tokens = 3, letter_at = now() where user_id = $1`, [w]);
-	for (let i = 0; i < 3; i++) many.push((await postLetter(w, `편지 ${i}`)).alias);
-	check('★ 같은 사람이 쓴 편지 5통의 이름이 하나로 고정되지 않는다', new Set(many).size >= 3, many.join(','));
-	await db.query(`update public.user_presence set letter_tokens = 3 where user_id = $1`, [w]);
-	const nick = (await one('select nickname from public.profiles where id = $1', [w])).nickname;
-	check('★ 편지 이름은 채팅 고유 이름과 절대 겹치지 않는다 (공백 포함 형식)', a.alias !== nick && a.alias.includes(' ') && !nick.includes(' '));
-
-	const c1 = await postComment(w, a.letter_id, null, '작성자 댓글');
-	check('작성자가 자기 편지에 쓰면 작성자 이름 그대로', c1.status === 'ok' && c1.my_alias === a.alias);
-	const c2 = await postComment(r, a.letter_id, null, '다른 사람 댓글');
-	const c3 = await postComment(r, a.letter_id, null, '한 번 더');
-	check('같은 편지 안에서는 같은 사람 = 같은 이름', c2.my_alias === c3.my_alias && c2.my_alias !== a.alias);
-	await postComment(r, b.letter_id, null, '다른 편지');
-	const onLetterB = await cnt('select count(*)::int n from public.letter_participants where letter_id = $1 and user_id = $2', [b.letter_id, r]);
-	check('편지마다 참여자 행이 따로 생긴다', onLetterB === 1);
-
-	const d = await detail(r, a.letter_id);
-	const s = JSON.stringify(d);
-	check('★ 편지 상세에 어떤 사용자 uuid 도 없다', ![w, r].some((u) => s.includes(u)));
-	check('원글쓴이(OP) 표시', d.comments.find((x) => x.id === c1.comment_id)?.is_op === true);
-	check('내 댓글 표시 (is_mine)', d.comments.find((x) => x.id === c2.comment_id)?.is_mine === true);
-	check('내 이름은 쓴 뒤에만 생긴다 — 구경만 하면 없음', (await detail(await person('f', 'm'), a.letter_id)).my_alias === null);
-}
-
-console.log('\n[46] ★ 익명편지 — 공개 읽기, 신원은 막힘');
-{
-	await resetLetters();
-	const w = await person('m', 'f');
-	const stranger = await person('f', 'f');
-	const a = await postLetter(w, '누구나 읽을 수 있는 편지');
-	const feed = await rpcAs(stranger, 'letter_feed', null, null);
-	check('상관없는 사람도 피드에서 읽는다', feed.letters.some((x) => x.id === a.letter_id));
-	check('★ 피드에 uuid 가 없다', !JSON.stringify(feed).includes(w));
-	check('피드: 내 편지 표시는 작성자에게만', feed.letters.find((x) => x.id === a.letter_id).is_mine === false &&
-		(await rpcAs(w, 'letter_feed', null, null)).letters.find((x) => x.id === a.letter_id).is_mine === true);
-	check('본문 테이블은 직접 읽혀도 된다 (원래 공개용)', (await rowsAs(stranger, 'select id, body from public.letters where id = $1', [a.letter_id])).length === 1);
-	check('★ 편지 테이블에 식별 컬럼이 없다',
-		!(await db.query(`select column_name from information_schema.columns where table_schema='public' and table_name in ('letters','letter_comments')`))
-			.rows.some((c) => /user_id|sender_id|author_id/.test(c.column_name)));
-	check('★ 참여자(신원 연결) 테이블은 남의 행이 한 줄도 안 보인다',
-		(await rowsAs(stranger, 'select * from public.letter_participants where letter_id = $1', [a.letter_id])).length === 0);
-	check('자기 행은 보인다', (await rowsAs(w, 'select alias from public.letter_participants where letter_id = $1', [a.letter_id])).length === 1);
-	await expectError('★ 편지를 직접 insert 할 수 없다 (RPC 만)', () => rowsAs(stranger, `insert into public.letters (body) values ('우회')`), 'permission denied');
-	await expectError('★ 댓글을 직접 insert 할 수 없다', () =>
-		rowsAs(stranger, `insert into public.letter_comments (letter_id, author_no, body, client_comment_id) values ($1, 1, 'x', gen_random_uuid())`, [a.letter_id]), 'permission denied');
-	await expectError('★ 재배정 쿨다운 테이블은 누구도 못 읽는다', () => rowsAs(w, 'select * from public.letter_reply_cooldown'), 'permission denied');
-
-	await rpcAs(w, 'delete_my_letter', a.letter_id);
-	check('내 편지를 지우면 피드에서 빠진다', !(await rpcAs(stranger, 'letter_feed', null, null)).letters.some((x) => x.id === a.letter_id));
-	await expectError('남의 편지는 지울 수 없다', async () => {
-		const b = await postLetter(w, '또 하나');
-		await rpcAs(stranger, 'delete_my_letter', b.letter_id);
-	}, 'not_owner');
-}
-
-console.log('\n[47] 익명편지 — 댓글 2단계 제한');
-{
-	await resetLetters();
-	const w = await person('m', 'f');
-	const r = await person('f', 'm');
-	const a = await postLetter(w, '댓글 깊이 테스트');
-	const top = await postComment(r, a.letter_id, null, '최상위');
-	const reply = await postComment(w, a.letter_id, top.comment_id, '대댓글');
-	check('대댓글 가능', reply.status === 'ok');
-	check('★ 대댓글의 대댓글은 거절 (2단계까지)', (await postComment(r, a.letter_id, reply.comment_id, '3단계')).status === 'max_depth_exceeded');
-	const b = await postLetter(w, '다른 편지');
-	check('다른 편지의 댓글을 부모로 지정하면 거절', (await postComment(r, b.letter_id, top.comment_id, '엉뚱한 부모')).status === 'parent_missing');
-	const cid = crypto.randomUUID();
-	const first = await rpcAs(r, 'post_comment', a.letter_id, null, '재전송', cid);
-	const again = await rpcAs(r, 'post_comment', a.letter_id, null, '재전송', cid);
-	check('같은 client id 로 다시 보내면 중복 없이 같은 댓글', again.status === 'duplicate' && again.comment_id === first.comment_id);
-	await db.query('update public.app_settings set comment_max_len = 10');
-	await expectError('글자 수 제한 (운영 설정)', () => postComment(r, a.letter_id, null, '열 글자를 넘는 댓글입니다'), 'too_long');
-	await db.query('update public.app_settings set comment_max_len = 300');
-
-	await rpcAs(r, 'delete_my_comment', top.comment_id);
-	const d = await detail(w, a.letter_id);
-	const gone = d.comments.find((x) => x.id === top.comment_id);
-	check('답글이 달린 댓글을 지우면 자리만 남기고 내용은 가린다', gone?.hidden === 'removed' && gone.body === null && gone.author_alias === null);
-	check('그 아래 대댓글은 그대로', d.comments.some((x) => x.id === reply.comment_id && x.body === '대댓글'));
-}
-
-console.log('\n[48] ★ 익명편지 — 답장할 편지 받기 (큐)');
-{
-	await resetLetters();
-	const w1 = await person('m', 'f');
-	const w2 = await person('m', 'f');
-	const r1 = await person('f', 'm');
-	const r2 = await person('f', 'm');
-	check('편지가 없으면 waiting (empty)', (await task(r1)).status === 'waiting' && (await task(r1)).reason === 'empty');
-	const own = await postLetter(r1, '내 편지');
-	check('★ 내 편지는 나에게 배정되지 않는다', (await task(r1)).status === 'waiting');
-	await rpcAs(r1, 'delete_my_letter', own.letter_id);
-
-	const old = await postLetter(w1, '오래된 편지');
-	await db.query(`update public.letters set created_at = now() - interval '1 hour' where id = $1`, [old.letter_id]);
-	const fresh = await postLetter(w2, '새 편지');
-	const t1 = await task(r1);
-	check('배정된다', t1.status === 'assigned');
-	check('오래 기다린 편지부터', t1.letter_id === old.letter_id);
-	check('다시 눌러도 같은 편지 (반복 폴링 안전)', (await task(r1)).letter_id === old.letter_id);
-	const t2 = await task(r2);
-	check('★ 두 번째 사람은 다른 편지를 받는다 (한 편지에 답장자 1명)', t2.status === 'assigned' && t2.letter_id === fresh.letter_id);
-	check('배정된 편지는 피드에 "내 숙제"로 표시', (await rpcAs(r1, 'letter_feed', null, null)).letters.find((x) => x.id === old.letter_id).assigned_to_me === true);
-	check('다른 사람에겐 숙제 표시가 없다', (await rpcAs(r2, 'letter_feed', null, null)).letters.find((x) => x.id === old.letter_id).assigned_to_me === false);
-
-	// 누군가 먼저 댓글을 달아도 답장 숙제는 가로채지 않는다
-	await postComment(r2, old.letter_id, null, '지나가던 사람');
-	check('★ 지정 답장자가 아닌 사람의 댓글은 "답장 완료"로 치지 않는다',
-		(await one('select reply_status from public.letters where id = $1', [old.letter_id])).reply_status === 'assigned');
-	const reply = await postComment(r1, old.letter_id, null, '진짜 답장');
-	check('지정 답장자의 첫 댓글 = 답장 완료', reply.designated === true &&
-		(await one('select reply_status from public.letters where id = $1', [old.letter_id])).reply_status === 'replied');
-	check('상세에 지정 답장 표시', (await detail(w1, old.letter_id)).comments.find((x) => x.id === reply.comment_id).is_designated === true);
-	check('답장을 마치면 다음 편지를 받을 수 있다', (await task(r1)).status !== 'assigned' || (await task(r1)).letter_id !== old.letter_id);
-
-	// 마감이 지나면 큐로 돌아온다
-	await resetLetters();
-	const lapse = await postLetter(w1, '방치될 편지');
-	const r3 = await person('f', 'm');
-	const r4 = await person('f', 'm');
-	await task(r3);
-	check('맡고 있는 동안에는 다른 사람에게 안 간다', (await task(r4)).status === 'waiting');
-	await db.query(`update public.letter_reply_assignments set expires_at = now() - interval '1 second' where letter_id = $1`, [lapse.letter_id]);
-	const t4 = await task(r4);
-	check('★ 마감이 지나면 다른 사람에게 다시 배정된다', t4.status === 'assigned' && t4.letter_id === lapse.letter_id);
-	check('원래 답장자의 숙제는 사라진다', (await rowsAs(r3, 'select * from public.letter_reply_assignments')).length === 0);
-}
-
-console.log('\n[49] ★ 익명편지 — 차단은 공유, 쿨다운은 따로');
-{
-	await resetLetters();
-	const w = await person('m', 'f');
-	const r = await person('f', 'm');
-	await db.query('insert into public.blocks (blocker_id, blocked_id) values ($1,$2)', [w, r]);
-	const a = await postLetter(w, '차단 테스트');
-	check('★ 채팅에서 차단한 상대에게는 답장 배정이 안 간다', (await task(r)).status === 'waiting');
-	check('★ 차단 관계면 피드에서도 안 보인다', !(await rpcAs(r, 'letter_feed', null, null)).letters.some((x) => x.id === a.letter_id));
-	check('상세도 볼 수 없다', (await detail(r, a.letter_id)).letter === null);
-	check('댓글도 달 수 없다', (await postComment(r, a.letter_id, null, '우회')).status === 'closed');
-
-	await resetLetters();
-	const p = await person('m', 'f');
-	const q = await person('f', 'm');
-	// 편지 쿨다운이 있어도 채팅 매칭은 영향 없음
-	await db.query(`insert into public.letter_reply_cooldown (user_lo, user_hi) values (least($1::uuid,$2::uuid), greatest($1::uuid,$2::uuid))`, [p, q]);
-	await resetPool();
-	await match(p);
-	check('★ 편지 쿨다운은 채팅 매칭을 막지 않는다', (await match(q)).status === 'matched');
-	// 채팅 재매칭 기록이 있어도 편지 배정은 영향 없음
-	await db.query('delete from public.letter_reply_cooldown');
-	await db.query(`insert into public.pair_history (user_lo, user_hi) values (least($1::uuid,$2::uuid), greatest($1::uuid,$2::uuid))
-	                on conflict do nothing`, [p, q]);
-	const b = await postLetter(p, '쿨다운 분리');
-	check('★ 채팅 재매칭 기록은 편지 배정을 막지 않는다', (await task(q)).letter_id === b.letter_id);
-	await postComment(q, b.letter_id, null, '답장');
-	const c = await postLetter(p, '또 편지');
-	check('편지 답장 후엔 같은 사람 편지가 7일간 배정되지 않는다', (await task(q)).status === 'waiting');
-	void c;
-}
-
-console.log('\n[50] 익명편지 — 도배 제한');
-{
-	await resetLetters();
-	const w = await person('m', 'f');
-	// Phase 78 — 한도가 50통이 되어, 남은 한도를 3통으로 두고 본다
-	await db.query('update public.user_presence set letter_tokens = 3, letter_at = now() where user_id = $1', [w]);
-	const got = [];
-	for (let i = 0; i < 4; i++) got.push((await postLetter(w, `편지 ${i}`)).status);
-	check('남은 한도(3통)만큼 쓰면 그다음은 제한', got.slice(0, 3).every((s) => s === 'ok') && got[3] === 'rate_limited');
-	await db.query(`update public.user_presence set letter_at = now() - interval '9 hours' where user_id = $1`, [w]);
-	check('시간이 지나면 다시 쓸 수 있다', (await postLetter(w, '다시')).status === 'ok');
-
-	const r = await person('f', 'm');
-	const a = await postLetter(await person('m', 'f'), '댓글 도배 대상');
-	const cs = [];
-	for (let i = 0; i < 11; i++) cs.push((await postComment(r, a.letter_id, null, `댓글 ${i}`)).status);
-	check('댓글은 연속 10개까지, 11번째는 제한', cs.slice(0, 10).every((s) => s === 'ok') && cs[10] === 'rate_limited');
-
-	await db.query(`update public.profiles set suspended_until = now() + interval '1 day' where id = $1`, [r]);
-	check('정지 중에는 편지를 쓸 수 없다', (await postLetter(r, '정지')).status === 'not_eligible');
-	check('정지 중에는 답장 배정도 못 받는다', (await task(r)).status === 'not_eligible');
-	await db.query('update public.app_settings set is_open = false');
-	check('킬 스위치가 꺼지면 편지도 멈춘다', (await postLetter(w, '닫힘')).status === 'service_closed');
-	await db.query('update public.app_settings set is_open = true');
-}
-
-console.log('\n[51] ★ 익명편지 — 신고 · 자동 차단 · 자동 정지');
-{
-	await resetLetters();
-	const bad = await person('m', 'f');
-	const a = await postLetter(bad, '문제 있는 편지');
-	const v1 = await person('f', 'm');
-	const r1 = await rpcAs(v1, 'report_letter', a.letter_id, null, 'harassment', '불쾌해요');
-	check('편지 신고 (방 구성원이 아니어도 가능)', r1.status === 'ok');
-	check('같은 편지를 두 번 신고할 수는 없다', (await rpcAs(v1, 'report_letter', a.letter_id, null, 'spam', '')).status === 'already');
-	check('★ 신고하면 자동 차단 → 그 편지가 내 피드에서 사라진다',
-		!(await rpcAs(v1, 'letter_feed', null, null)).letters.some((x) => x.id === a.letter_id));
-	check('자기 글은 신고할 수 없다', (await rpcAs(bad, 'report_letter', a.letter_id, null, 'spam', '')).status === 'self');
-
-	const other = await postLetter(await person('m', 'f'), '평범한 편지');
-	const cm = await postComment(bad, other.letter_id, null, '나쁜 댓글');
-	const v2 = await person('f', 'm');
-	const r2 = await rpcAs(v2, 'report_letter', other.letter_id, cm.comment_id, 'hate', '');
-	check('댓글 신고', r2.status === 'ok');
-	const ev = await one(`select count(*)::int n from private.letter_report_evidence e join private.letter_reports r on r.id = e.report_id
-	                       where r.comment_id = $1`, [cm.comment_id]);
-	check('신고 증거: 편지 본문 + 댓글 사본', ev.n === 2);
-	await db.query(`update public.letter_comments set status = 'removed' where id = $1`, [cm.comment_id]);
-	check('★ 댓글이 지워져도 증거는 남는다', (await one(`select count(*)::int n from private.letter_report_evidence e
-		join private.letter_reports r on r.id = e.report_id where r.comment_id = $1`, [cm.comment_id])).n === 2);
-
-	check('신고 2명 — 아직 정지 아님', (await one('select status from public.profiles where id = $1', [bad])).status === 'active');
-	const v3 = await person('f', 'm');
-	await rpcAs(v3, 'report_letter', a.letter_id, null, 'sexual', '');
-	check('★ 서로 다른 3명이 신고하면 자동 정지', (await one('select status from public.profiles where id = $1', [bad])).status === 'suspended');
-	check('정지되면 그 사람 편지는 모두의 피드에서 빠진다',
-		!(await rpcAs(await person('f', 'f'), 'letter_feed', null, null)).letters.some((x) => x.id === a.letter_id));
-	check('★ 편지 신고 카운터는 채팅 신고와 따로 센다',
-		(await cnt('select count(*)::int n from private.reports where reported_id = $1', [bad])) === 0);
-
-	const w = await person('m', 'f');
-	const b = await postLetter(w, '차단만');
-	const x = await person('f', 'm');
-	check('차단만 하기', (await rpcAs(x, 'block_letter_author', b.letter_id, null)).status === 'ok' &&
-		(await detail(x, b.letter_id)).letter === null);
-}
-
-console.log('\n[52] ★ 익명편지 — 알림 · 운영자');
-{
-	await resetLetters();
-	const w = await person('m', 'f');
-	const r = await person('f', 'm');
-	const z = await person('f', 'f');
-	await db.query(`update public.user_presence set online_until = now() - interval '1 second' where user_id in ($1,$2,$3)`, [w, r, z]);
-	await rpcAs(w, 'save_push_subscription', 'https://fcm.googleapis.com/fcm/send/w', 'B' + 'x'.repeat(86), 'a'.repeat(22));
-	await rpcAs(r, 'save_push_subscription', 'https://fcm.googleapis.com/fcm/send/r', 'B' + 'y'.repeat(86), 'b'.repeat(22));
-	const a = await postLetter(w, '알림 테스트');
-	const c = await postComment(r, a.letter_id, null, '댓글이에요');
-	await expectError('★ 학생은 편지 알림 함수를 부를 수 없다', () => rowsAs(r, 'select public.letter_notify(1, $1)', [r]), 'permission denied');
-	check('★ 댓글 작성자가 아니면 알림을 못 보낸다', (await svc('letter_notify', c.comment_id, z)).skip === 'not_author');
-	const n1 = await svc('letter_notify', c.comment_id, r);
-	check('최상위 댓글 → 편지 작성자에게', n1.subs?.[0]?.endpoint === 'https://fcm.googleapis.com/fcm/send/w' && n1.url === `/letters/${a.letter_id}`);
-	check('★ 알림에 uuid 가 없다', ![w, r].some((u) => JSON.stringify({ t: n1.title, b: n1.body, u: n1.url }).includes(u)));
-	check('같은 댓글로 두 번 보내지 않는다', (await svc('letter_notify', c.comment_id, r)).skip === 'already');
-	const rep = await postComment(w, a.letter_id, c.comment_id, '고마워요');
-	const n2 = await svc('letter_notify', rep.comment_id, w);
-	check('대댓글 → 부모 댓글 작성자에게', n2.subs?.[0]?.endpoint === 'https://fcm.googleapis.com/fcm/send/r' && n2.title === '내 댓글에 답글');
-	const self = await postComment(w, a.letter_id, null, '내 편지에 내가');
-	check('내 편지에 내가 쓴 댓글은 알림 없음', (await svc('letter_notify', self.comment_id, w)).skip === 'self');
-
-	const t = await task(z);
-	check('답장 배정 (알림 확인용)', t.status === 'assigned');
-	const d = await postComment(z, t.letter_id, null, '지정 답장');
-	check('지정 답장 → "답장이 도착했어요"', (await svc('letter_notify', d.comment_id, z)).title === '편지에 답장이 도착했어요');
-
-	// 운영자
-	for (const fn of ['admin_list_letter_reports()', `admin_letter_report('00000000-0000-0000-0000-000000000000')`]) {
-		await expectError(`★ 학생 계정으로 ${fn} 호출 불가`, () => rowsAs(r, `select public.${fn}`), 'permission denied');
-	}
-	await rpcAs(r, 'report_letter', a.letter_id, null, 'spam', '광고 같아요');
-	const list = await svc('admin_list_letter_reports', 'open', 100);
-	const item = list.find((x) => x.letter_id === a.letter_id && x.comment_id === null);
-	check('운영자 신고 목록에 편지 신고가 뜬다', !!item && item.preview === '알림 테스트');
-	const full = await svc('admin_letter_report', item.id);
-	check('상세: 증거 + 현재 글 상태', full.evidence.length === 1 && full.target.letter_status === 'open');
-	const staff = await person('m', 'f');
-	await expectError('★ 운영진이 아니면 글을 내릴 수 없다', () => svc('admin_remove_letter_content', a.letter_id, null, staff, item.id), 'not_staff');
-	await expectError('★ 운영진이 아니면 신고를 처리할 수 없다', () => svc('admin_set_letter_report', item.id, 'actioned', '', staff), 'not_staff');
-	await db.query(`insert into private.staff (user_id, role) values ($1, 'moderator')`, [staff]);
-	await svc('admin_remove_letter_content', a.letter_id, null, staff, item.id);
-	check('운영자 삭제 → 피드에서 빠짐', !(await rpcAs(z, 'letter_feed', null, null)).letters.some((x) => x.id === a.letter_id));
-	await svc('admin_set_letter_report', item.id, 'actioned', '삭제함', staff);
-	const log = await svc('admin_audit', 50);
-	check('★ 삭제·처리 모두 활동 기록에 남는다', ['remove_letter', 'letter_report_actioned'].every((x) => log.some((l) => l.action === x)));
-	check('대시보드에 편지 수치', typeof (await svc('admin_stats')).open_letter_reports === 'number');
-}
-
-// ════════════════════════════════════════════════════════════════════
 //  Phase 11 — 관리자 권한 확장
 // ════════════════════════════════════════════════════════════════════
 const audits = async (action, staff) =>
@@ -1693,8 +1388,7 @@ console.log('\n[53] ★ 역할 분리 — 운영진 vs 관리자');
 	const u = await person('m', 'f');
 
 	for (const fn of ['admin_find_users(null, null, null, 10)', `admin_user('${u}', '${u}')`,
-		`admin_rooms('all', '${u}', 10)`, `admin_room('${u}', '${u}')`, `admin_letter_post(1, '${u}')`,
-		`admin_user_letters('${u}', '${u}')`, `admin_user_rooms('${u}', '${u}')`]) {
+		`admin_rooms('all', '${u}', 10)`, `admin_room('${u}', '${u}')`, `admin_user_rooms('${u}', '${u}')`]) {
 		await expectError(`★ 학생 계정으로 ${fn.split('(')[0]} 호출 불가`, () => rowsAs(u, `select public.${fn}`), 'permission denied');
 	}
 	await expectError('★ 운영진 명단에 없으면 service_role 이라도 거절', () => svc('admin_user', u, outsider), 'not_staff');
@@ -1713,8 +1407,7 @@ console.log('\n[53] ★ 역할 분리 — 운영진 vs 관리자');
 
 	await expectError('★ 운영진: 이메일 열람 불가', () => svc('admin_log_identity_view', mod, [u], null), 'admin_only');
 	await expectError('★ 운영진: 이메일 검색 불가', () => svc('admin_find_users', '@cnsa', 'all', mod, 10), 'admin_only');
-	for (const [fn, args] of [['admin_rooms', ['all', mod, 10]], ['admin_room', [u, mod]], ['admin_user_rooms', [u, mod]],
-		['admin_letter_post', [1, mod]], ['admin_user_letters', [u, mod]]]) {
+	for (const [fn, args] of [['admin_rooms', ['all', mod, 10]], ['admin_room', [u, mod]], ['admin_user_rooms', [u, mod]]]) {
 		await expectError(`★ 운영진: ${fn} 불가 (관리자 전용)`, () => svc(fn, ...args), 'admin_only');
 	}
 	check('운영진: 사용자 상세는 볼 수 있다', (await svc('admin_user', u, mod)).profile.id === u);
@@ -1744,7 +1437,7 @@ console.log('\n[54] 사용자 검색 · 상세');
 	check('없는 사용자는 null', (await svc('admin_user', '00000000-0000-0000-0000-000000000000', adm)) === null);
 }
 
-console.log('\n[55] ★ 관리자 열람 — 대화 · 편지 작성자 (전부 기록)');
+console.log('\n[55] ★ 관리자 열람 — 대화 (전부 기록)');
 {
 	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
 	const x = await person('m', 'f');
@@ -1766,23 +1459,6 @@ console.log('\n[55] ★ 관리자 열람 — 대화 · 편지 작성자 (전부 
 	check('누가 어느 자리인지', room.members.find((m) => m.seat === 1).user_id === x);
 	check('★ 대화 열람은 열 때마다 기록된다', (await audits('view_room', adm)) === before + 1);
 
-	await resetLetters();
-	const a = await postLetter(x, '관리자 확인용 편지');
-	const c = await postComment(y, a.letter_id, null, '댓글');
-	await rpcAs(x, 'delete_my_comment', (await postComment(x, a.letter_id, null, '지울 댓글')).comment_id);
-	const post = await svc('admin_letter_post', a.letter_id, adm);
-	check('편지 작성자 확인', post.participants.find((p) => p.is_author).user_id === x);
-	const cy = post.comments.find((z) => z.id === c.comment_id);
-	check('댓글 작성자 확인 (author_no → 계정)', post.participants.find((p) => p.no === cy.author_no).user_id === y);
-	check('지운 댓글도 운영자에게는 보인다', post.comments.some((z) => z.status === 'removed'));
-	check('★ 편지 작성자 확인은 기록된다', (await audits('view_letter_authors', adm)) >= 1);
-	const ul = await svc('admin_user_letters', y, adm);
-	check('한 사람이 쓴 편지·댓글', ul.some((z) => z.letter_id === a.letter_id && !z.is_author && z.my_comments === 1));
-	check('★ 활동 열람도 기록된다', (await audits('view_user_letters', adm)) >= 1);
-
-	// 학생 쪽 경계는 그대로
-	const yd = JSON.stringify(await detail(y, a.letter_id));
-	check('★ 학생 화면에는 여전히 uuid 가 없다', !yd.includes(x) && !yd.includes(y));
 }
 
 console.log('\n[56] ★ 학번-이름 명렬표 — 이메일 확인 옆 이름 표시');
@@ -1866,31 +1542,11 @@ console.log('\n[57] 실시간 현황 — 접속 중 · 매칭 대기 · 대화 �
 
 console.log('\n[58] ★ 편지 서식 — 정해진 종류·색·범위만');
 {
-	await resetLetters();
-	const w = await person('m', 'f');
-	const reader = await person('f', 'm');
-	const refill = () => db.query(`update public.user_presence set letter_tokens = 3 where user_id = $1`, [w]);
-	const post = (body, fmt) => rpcAs(w, 'post_letter', body, fmt === undefined ? null : JSON.stringify(fmt));
-
+	const ok = async (body, f) => (await one('select private.letter_fmt_ok($1::jsonb, $2) a', [f === null ? null : JSON.stringify(f), body])).a;
 	const fmt = { m: [[0, 5, 'b'], [0, 5, 'h:yellow'], [6, 11, 'u'], [6, 11, 's'], [6, 11, 'c:blue'], [6, 11, 'z:lg']], a: [[1, 'center']] };
-	const ok = await post('hello\nworld', fmt);
-	check('서식 있는 편지 올리기', ok.status === 'ok', JSON.stringify(ok));
-	const d = await detail(reader, ok.letter_id);
-	const same = (f) => !!f && JSON.stringify(f.m) === JSON.stringify(fmt.m) && JSON.stringify(f.a) === JSON.stringify(fmt.a);
-	check('상세에 서식이 그대로', same(d.letter.fmt), JSON.stringify(d.letter.fmt));
-	const feedItem = (await rpcAs(reader, 'letter_feed', null, null)).letters.find((x) => x.id === ok.letter_id);
-	check('피드에도 서식', same(feedItem?.fmt), JSON.stringify(feedItem));
-	check('본문은 순수 텍스트 그대로', d.letter.body === 'hello\nworld');
-
-	await refill();
-	const plain = await postLetter(w, '서식 없는 편지');
-	check('서식 없이(옛 방식 한 인자)도 올라간다', plain.status === 'ok' && (await detail(reader, plain.letter_id)).letter.fmt === null);
-	const empty = await post('빈 서식', {});
-	check('빈 서식 {} 는 null 로 저장', empty.status === 'ok' && (await detail(reader, empty.letter_id)).letter.fmt === null);
-
-	await refill();
-	const emoji = await post('😀ab', { m: [[1, 3, 'b']] });
-	check('위치는 글자(code point) 단위 — 이모지도 한 글자', emoji.status === 'ok', JSON.stringify(emoji));
+	check('정해진 종류 · 색 · 크기 · 정렬은 통과', (await ok('hello\nworld', fmt)) === true);
+	check('서식이 없으면(null) 통과', (await ok('서식 없는 편지', null)) === true);
+	check('위치는 글자(code point) 단위 — 이모지도 한 글자', (await ok('😀ab', { m: [[1, 3, 'b']] })) === true);
 
 	const bad = [
 		['모르는 종류', { m: [[0, 1, 'x']] }],
@@ -1909,10 +1565,7 @@ console.log('\n[58] ★ 편지 서식 — 정해진 종류·색·범위만');
 		['서식이 배열', [[0, 1, 'b']]],
 		['범위가 너무 많음', { m: Array.from({ length: 501 }, () => [0, 1, 'b']) }]
 	];
-	for (const [name, f] of bad) await expectError(`★ 거절: ${name}`, () => post('hello\nworld', f), 'bad_format');
-	await expectError('★ 거절: 앞뒤 공백이 잘리면 위치가 어긋나므로', () => post('  hello', { m: [[0, 2, 'b']] }), 'bad_format');
-	check('거절된 시도는 편지 한도를 쓰지 않는다',
-		(await one('select letter_tokens from public.user_presence where user_id = $1', [w])).letter_tokens >= 1);
+	for (const [name, f] of bad) check(`★ 거절: ${name}`, (await ok('hello\nworld', f)) === false);
 }
 
 console.log('\n[60] ★ 운영자 RPC 역할 점검 — DB 에서도 막는다');
@@ -1934,46 +1587,6 @@ console.log('\n[60] ★ 운영자 RPC 역할 점검 — DB 에서도 막는다')
 	const gone = await person('f', 'm');
 	await db.query(`delete from public.profiles where id = $1`, [gone]);
 	await expectError('탈퇴한 계정 제재는 "조치 완료"가 아니라 오류', () => svc('admin_sanction', gone, 'warn', null, adm, null, ''), 'user_not_found');
-}
-
-console.log('\n[59] ★ 편지 하트 — 개수만 공개, 누가 눌렀는지는 비공개');
-{
-	await resetLetters();
-	const w = await person('m', 'f');
-	const x = await person('f', 'm');
-	const y = await person('m', 'f');
-	const like = (uid, letter, on) => rpcAs(uid, 'set_letter_like', letter, on);
-	const a = await postLetter(w, '하트 테스트 편지');
-
-	const r1 = await like(x, a.letter_id, true);
-	check('하트 누르기', r1.status === 'ok' && r1.liked === true && r1.like_count === 1, JSON.stringify(r1));
-	check('다시 눌러도(재전송) 그대로 1', (await like(x, a.letter_id, true)).like_count === 1);
-	check('다른 사람이 누르면 2', (await like(y, a.letter_id, true)).like_count === 2);
-	check('내 편지에도 누를 수 있다', (await like(w, a.letter_id, true)).like_count === 3);
-
-	const dx = await detail(x, a.letter_id);
-	check('상세: 개수 + 내가 눌렀는지', dx.letter.like_count === 3 && dx.letter.liked === true);
-	const fz = (await rpcAs(await person('f', 'm'), 'letter_feed', null, null)).letters.find((l) => l.id === a.letter_id);
-	check('피드: 안 누른 사람에게는 liked=false', fz.like_count === 3 && fz.liked === false);
-	check('★ 피드·상세 어디에도 누른 사람의 uuid 가 없다',
-		![x, y, w].some((id) => JSON.stringify(dx).includes(id) || JSON.stringify(fz).includes(id)));
-
-	const r2 = await like(x, a.letter_id, false);
-	check('하트 취소', r2.liked === false && r2.like_count === 2, JSON.stringify(r2));
-	check('취소를 또 해도 그대로', (await like(x, a.letter_id, false)).like_count === 2);
-
-	await expectError('★ 학생은 하트 표를 직접 못 읽는다', () => rowsAs(x, 'select * from private.letter_likes'), 'permission denied');
-	await expectError('★ 학생은 하트 표에 직접 못 쓴다',
-		() => rowsAs(x, `insert into private.letter_likes (letter_id, user_id) values ($1, $2)`, [a.letter_id, y]), 'permission denied');
-
-	await rpcAs(y, 'block_letter_author', a.letter_id, null);
-	check('차단한 사람의 편지에는 못 누른다', (await like(y, a.letter_id, true)).status === 'closed');
-	const b = await postLetter(x, '지울 편지');
-	await rpcAs(x, 'delete_my_letter', b.letter_id);
-	check('지워진 편지에는 못 누른다', (await like(w, b.letter_id, true)).status === 'closed');
-	const sus = await person('m', 'f');
-	await db.query(`update public.profiles set suspended_until = now() + interval '1 day' where id = $1`, [sus]);
-	check('정지된 계정은 못 누른다', (await like(sus, a.letter_id, true)).status === 'not_eligible');
 }
 
 console.log('\n[61] ★ 공지사항 — 관리자만 올리고, 학생은 어디까지 봤는지 계정에 남는다');
@@ -2165,13 +1778,6 @@ console.log('\n[65] ★ 규칙 필터 — 신상정보 · 금칙어는 보내기
 	check('채팅: 평범한 말은 보내진다', (await ins('안녕하세요')).length === 1);
 	check('막힌 메시지는 남지 않는다', (await one(`select count(*)::int n from public.messages where room_id = $1 and body like '%9876%'`, [r])).n === 0);
 
-	await resetLetters();
-	const w = await person('m', 'f');
-	await expectError('★ 편지: 학번', () => postLetter(w, '10101 누군지 맞혀 봐'), 'personal_info');
-	const l = await postLetter(w, '평범한 편지');
-	check('편지: 평범한 글은 올라간다', l.status === 'ok', JSON.stringify(l));
-	await expectError('★ 댓글: SNS', () => postComment(w, l.letter_id, null, '디엠 말고 insta id 줘'), 'personal_info');
-
 	const adm = await person('f', 'm');
 	await db.query(`insert into private.staff (user_id, role) values ($1, 'admin')`, [adm]);
 	const mod = await person('f', 'm');
@@ -2254,22 +1860,6 @@ console.log('\n[66] ★ AI 검토 대기열 — 켜져 있을 때만 쌓이고, 
 	const sh = await one(`select reason, reported_id from private.reports where room_id = $1 and source = 'auto' and reported_id = $2`, [r, B]);
 	check('★ 위기 신호(self_harm) 자동 신고', sh?.reason === 'self_harm');
 	await expectError('학생은 self_harm 사유로 신고할 수 없다', () => rpcAs(A, 'report_partner', r, 'self_harm', ''), 'invalid_reason');
-
-	// 편지 · 댓글
-	await resetLetters();
-	const w = await person('m', 'f');
-	const l = await postLetter(w, '편지 검토');
-	const c = await postComment(w, l.letter_id, null, '댓글 검토');   // 편지에 댓글은 작성자 · 배정된 답장자만
-	check('댓글이 올라감', c.status === 'ok', JSON.stringify(c));
-	const g5 = await svc('mod_claim', 5);
-	const li = g5.find((x) => x.kind === 'letter'), ci = g5.find((x) => x.kind === 'comment');
-	check('편지 · 댓글도 쌓인다 (댓글 맥락 = 편지)', li?.text === '편지 검토' && ci?.text === '댓글 검토' && ci.context[0].who === '편지');
-	await svc('mod_verdict', ci.id, true, 'spam', '도배');
-	const lr = await one(`select * from private.letter_reports where comment_id = $1 and source = 'auto'`, [c.comment_id]);
-	check('★ 댓글 자동 신고: 댓글 쓴 사람 · 신고자 없음 · 증거', lr?.reported_id === w && lr.reporter_id === null &&
-		(await one(`select count(*)::int n from private.letter_report_evidence where report_id = $1`, [lr.id])).n === 2);
-	check('운영진 편지 신고 목록에 source', (await svc('admin_list_letter_reports', 'open', 100)).find((x) => x.id === lr.id)?.source === 'auto');
-	await svc('mod_verdict', li.id, false, 'none', '');
 
 	const u = await svc('admin_ai_usage');
 	check('운영진 사용량 집계', u.mod_checked_today >= 3 && u.mod_flagged_today >= 3, JSON.stringify(u));
@@ -3123,7 +2713,15 @@ console.log('\n[80] 점검 — 스키마 정리 · 쓰지 않는 RPC 권한 회�
 		const r = await one(`select has_function_privilege('authenticated', 'public.${f}', 'execute') a`);
 		if (r.a) stillOpen.push(f);
 	}
-	check('★ 화면에서 쓰지 않는 학생 RPC 14개 — 학생 실행 권한 없음', LEGACY_RPCS.length === 14 && stillOpen.length === 0, stillOpen.join(', '));
+	check('★ 화면에서 쓰지 않는 학생 RPC 4개 — 학생 실행 권한 없음', LEGACY_RPCS.length === 4 && stillOpen.length === 0, stillOpen.join(', '));
+	const old = await one(`select (select count(*)::int from pg_proc where proname in ('letter_feed', 'letter_detail', 'post_letter', 'post_comment', 'set_letter_like',
+		'request_letter_reply_task', 'delete_my_letter', 'delete_my_comment', 'block_letter_author', 'report_letter', 'letter_notify', 'admin_letter_post',
+		'admin_user_letters', 'admin_remove_letter_content', 'auto_report_letter')) fns,
+		(select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace where c.relkind = 'r' and n.nspname in ('public', 'private')
+			and c.relname in ('letters', 'letter_comments', 'letter_participants', 'letter_reply_assignments', 'letter_reply_cooldown', 'letter_likes', 'letter_push_log')) tables`);
+	check('★ 옛 공개 편지(Phase 10~15)는 함수 · 표째 없다 (Phase 85)', old.fns === 0 && old.tables === 0, JSON.stringify(old));
+	check('이름 편지가 같이 쓰는 것은 남는다 (신고 표 · 한도 · 서식 검사)', (await one(`select to_regclass('private.letter_reports') is not null
+		and to_regprocedure('private.letter_bucket_take(uuid, text)') is not null and to_regprocedure('private.letter_fmt_ok(jsonb, text)') is not null a`)).a === true);
 	check('편지 답장은 dm_reply_to 로만 (dm_letter 직접 호출 불가)', (await one(`select has_function_privilege('authenticated', 'public.dm_reply_to(bigint, text, jsonb, text)', 'execute') a`)).a === true
 		&& (await one(`select has_function_privilege('authenticated', 'public.dm_letter(bigint, text, jsonb, text)', 'execute') a`)).a === false);
 	// dm_reply_to 는 안에서 dm_letter 를 부른다 — 학생이 dm_letter 를 직접 못 불러도 답장은 된다 (definer 권한)

@@ -64,9 +64,9 @@ const RPC = {
 	admin_sanction: (a) => ({ status: 'active', strikes: 1, suspended_until: null }),
 	admin_log_identity_view: () => null,
 	admin_roster_name: (a) => (a.p_email?.startsWith('29999') ? '홍길동' : null),
-	admin_list_letter_reports: () => [{ id: LREP, created_at: t, target_type: 'letter', letter_id: 7, comment_id: null, reason: 'spam', note: '', status: 'open', reported_id: A, reporter_id: B, reported_30d: 1, preview: '광고', reported_status: 'active' }],
-	admin_letter_report: () => ({ report: { id: LREP, created_at: t, target_type: 'letter', letter_id: 7, comment_id: null, reason: 'spam', note: '', status: 'open', reported_id: A, reporter_id: B, handled_by: null, handled_at: null, action_note: null }, evidence: [{ ord: 1, kind: 'letter', alias: '맑은 하늘', body: '광고 편지', sent_at: t }], target: { letter_status: 'open', comment_status: null }, reported: { status: 'active', strikes: 0, suspended_until: null, created_at: t }, history: [], chat_reports: 0, reporter_filed: 1, reporter_dismissed: 0 }),
-	admin_remove_letter_content: () => null,
+	admin_list_letter_reports: () => [{ id: LREP, created_at: t, target_type: 'dm', letter_id: 7, comment_id: null, reason: 'spam', note: '', status: 'open', reported_id: A, reporter_id: B, reported_30d: 1, preview: '광고', reported_status: 'active' }],
+	admin_letter_report: () => ({ report: { id: LREP, created_at: t, target_type: 'dm', letter_id: 7, comment_id: null, reason: 'spam', note: '', status: 'open', reported_id: A, reporter_id: B, handled_by: null, handled_at: null, action_note: null }, evidence: [{ ord: 1, kind: 'dm_sender', alias: '맑은 하늘', body: '광고 편지', sent_at: t }], target: { thread_status: 'open' }, reported: { status: 'active', strikes: 0, suspended_until: null, created_at: t }, history: [], chat_reports: 0, reporter_filed: 1, reporter_dismissed: 0 }),
+	admin_remove_dm: () => null,
 	admin_set_letter_report: () => null,
 	admin_find_users: () => [user(A, '푸른고래'), user(B, '작은별')],
 	admin_student_labels: () => ({ [A]: '29999 홍길동', [B]: '19998' }),
@@ -96,7 +96,6 @@ const RPC = {
 	},
 	personal_notice_push: () => ({ skip: 'no_devices' }),
 	admin_user_rooms: () => [],
-	admin_user_letters: () => [{ letter_id: 7, alias: '맑은 하늘', is_author: true, status: 'open', created_at: t, preview: '광고 편지', my_comments: 0 }],
 	admin_get_settings: () => ({ is_open: true, notice: '', room_minutes: 5, extend_minutes: 10, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 5, letters_gate: true, letters_gate_min: 100, maintenance: MAINT_ON, maintenance_msg: '', maintenance_until: null, maintenance_at: MAINT_AT }),
 	admin_update_settings: (a) => {
 		if (a.p_patch && 'maintenance' in a.p_patch) MAINT_ON = a.p_patch.maintenance; // Phase 52
@@ -115,7 +114,6 @@ const RPC = {
 		if (a.p_room === BOOM) throw { status: 500, body: { message: 'boom' } };
 		return { room: { id: ROOM, status: 'active', round: 1, created_at: t, armed_at: t, expires_at: t, closed_at: null, close_reason: null, live: true }, members: [], messages: [] };
 	},
-	admin_letter_post: () => ({ letter: { id: 7, body: '광고 편지', fmt: null, status: 'open', reply_status: 'assigned', created_at: t, like_count: 2 }, participants: [], reader: null, comments: [] })
 };
 
 const sb = http.createServer((req, res) => {
@@ -191,7 +189,7 @@ const dialogs = (page, answer) => answerDialogs(page, answer);
 try {
 	console.log('\n[1] 모든 화면이 열린다 (관리자)');
 	const { page } = await session();
-	for (const p of ['/admin', '/admin/live', '/admin/letters', '/admin/users', `/admin/users/${A}`, `/admin/reports/${REP}`, `/admin/letters/${LREP}`, '/admin/rooms', `/admin/rooms/${ROOM}`, '/admin/posts/7', '/admin/settings', '/admin/audit']) {
+	for (const p of ['/admin', '/admin/live', '/admin/letters', '/admin/users', `/admin/users/${A}`, `/admin/reports/${REP}`, `/admin/letters/${LREP}`, '/admin/rooms', `/admin/rooms/${ROOM}`, '/admin/settings', '/admin/audit']) {
 		const r = await page.go(p);
 		check(`${p} → 200`, r.status() === 200, String(r.status()));
 	}
@@ -239,23 +237,11 @@ try {
 	got = since();
 	await page.getByRole('button', { name: '편지 내리기' }).click();
 	await page.waitForTimeout(600);
-	check('★ 내리기 취소 → 안 내림', !got().includes('admin_remove_letter_content'), got().join());
+	check('★ 내리기 취소 → 안 내림', !got().includes('admin_remove_dm'), got().join());
 	answer = true;
 	await page.getByRole('button', { name: '편지 내리기' }).click();
 	await page.waitForTimeout(800);
-	check('내리기 수락 → 내림', calls.some((c) => c[0] === 'admin_remove_letter_content'));
-
-	console.log('\n[5] 사용자 상세 — 편지·댓글 보기 확인창');
-	await page.go(`/admin/users/${A}`);
-	answer = false;
-	got = since();
-	await page.getByRole('button', { name: '편지 · 댓글 보기' }).click();
-	await page.waitForTimeout(600);
-	check('★ 취소 → 편지 활동 조회 안 함', !got().includes('admin_user_letters'));
-	answer = true;
-	await page.getByRole('button', { name: '편지 · 댓글 보기' }).click();
-	await page.getByText('#7 광고 편지').waitFor({ timeout: 5000 }).catch(() => {});
-	check('수락 → 편지 목록', await page.getByText('#7 광고 편지').isVisible());
+	check('내리기 수락 → 내림', calls.some((c) => c[0] === 'admin_remove_dm'));
 
 	console.log('\n[6] 운영 설정');
 	await page.go('/admin/settings');
@@ -311,7 +297,7 @@ try {
 	const audit = (await page.locator('tbody').innerText()).replace(/\s+/g, ' ');
 	check('JSON 없음', !/[{}"]/.test(audit.replace(/"[^"]*"/g, '')), audit);
 	check('명렬표 반영 · 1학년 373명', audit.includes('명렬표 반영') && audit.includes('1학년 373명'), audit);
-	check('편지 내림 → 편지 #7 링크', (await page.locator('a[href="/admin/posts/7"]').count()) === 1);
+	check('편지 내림 → 옛 편지 #7 (화면은 걷어냄)', audit.includes('옛 편지 #7'), audit);
 	check('설정 변경 → "서비스 닫기"', audit.includes('서비스 닫기'), audit);
 	check('학번·이름 열람 표시', audit.includes('2명 학번·이름'), audit);
 

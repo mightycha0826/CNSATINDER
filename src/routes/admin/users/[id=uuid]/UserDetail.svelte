@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { can } from '$lib/adminRoles';
 	import { enhance } from '$app/forms';
-	import { ACTION_LABEL, CLOSE_LABEL, REASON_LABEL, STATUS_LABEL, fmtTime, type UserLetterRow, TARGET_LABEL } from '$lib/adminTypes';
+	import { ACTION_LABEL, CLOSE_LABEL, REASON_LABEL, STATUS_LABEL, fmtTime, TARGET_LABEL } from '$lib/adminTypes';
 	import AccountStatus from '$lib/admin/AccountStatus.svelte';
 	import { ROLE_LABEL } from '$lib/adminRoles';
 	import FormMsg from '$lib/admin/FormMsg.svelte';
@@ -32,7 +32,6 @@
 	// 액션 결과는 다음 액션을 하면 사라지므로 따로 들고 있는다
 	let email = $state<string | null>(null);
 	let name = $state<string | null>(null);
-	let letters = $state<UserLetterRow[] | null>(null);
 	$effect(() => {
 		// 이전 사용자에게 보낸 열람 요청이 늦게 끝나도 현재 사용자에게 붙이지 않는다.
 		if (!form || !('userId' in form) || form.userId !== p.id) return;
@@ -40,13 +39,11 @@
 			email = form.email;
 			name = 'name' in form ? (form.name ?? null) : null;
 		}
-		if (form && 'letters' in form && form.letters) letters = form.letters;
 	});
 
 	const GENDER: Record<string, string> = { m: '남', f: '여', x: '밝히지 않음', any: '상관없음' };
 
 	const askIdentity = confirmed(() => '이 계정의 학교 이메일을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
-	const askLetters = confirmed(() => '이 계정이 쓴 편지·댓글을 확인합니다. 열람 기록이 남습니다. 계속할까요?');
 
 	// 개인 공지 (Phase 35)
 	let pnKind = $state<'message' | 'warning'>('message');
@@ -175,42 +172,6 @@
 				{/if}
 			</section>
 
-			<section>
-				<h2 class="a-h2">편지 · 댓글</h2>
-				{#if letters}
-					{#if letters.length === 0}
-						<p class="a-warn">쓴 편지·댓글 없음</p>
-					{:else}
-						<table class="a-table">
-							<thead>
-								<tr><th>편지</th><th>이 편지에서의 이름</th><th>역할</th><th class="r">댓글</th></tr>
-							</thead>
-							<tbody>
-								{#each letters as l (l.letter_id)}
-									<tr>
-										<td class="clip">
-											<a href="/admin/posts/{l.letter_id}">#{l.letter_id} {l.preview}</a>
-											{#if l.status === 'removed'}<span class="pill red">내려짐</span>{/if}
-										</td>
-										<td>{l.alias}</td>
-										<td>{l.is_author ? '작성자' : '댓글'}</td>
-										<td class="r num">{l.my_comments}</td>
-									</tr>
-								{/each}
-							</tbody>
-						</table>
-					{/if}
-				{:else}
-					<div class="a-card">
-						<p class="a-hint" style="margin-top:0">
-							편지 {d.counts.letters}통 · 댓글 {d.counts.comments}개. 어떤 글인지 보려면 열람 기록이 남습니다.
-						</p>
-						<form method="POST" action="?/letters" use:enhance={askLetters}>
-							<button class="btn-ghost sm">편지 · 댓글 보기</button>
-						</form>
-					</div>
-				{/if}
-			</section>
 		{/if}
 	</div>
 
@@ -222,8 +183,8 @@
 				<dd class="num" class:danger={p.strikes > 0}>{p.strikes}회</dd>
 				<dt>대화</dt>
 				<dd class="num">{d.counts.rooms}개 (진행 중 {d.counts.open_rooms})</dd>
-				<dt>편지 / 댓글</dt>
-				<dd class="num">{d.counts.letters} / {d.counts.comments}</dd>
+				<dt>쓴 편지</dt>
+				<dd class="num">{d.counts.letters}통</dd>
 				<dt>낸 신고</dt>
 				<dd class="num">{d.counts.reports_filed}건</dd>
 				<dt>기각된 신고</dt>

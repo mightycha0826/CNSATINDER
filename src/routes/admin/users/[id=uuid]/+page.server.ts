@@ -1,7 +1,7 @@
 import { error, fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
 import { friendly, guard, isAdmin, revealIdentity, runSanction, studentLabels } from '$lib/server/adminAuth';
-import type { PersonalNoticeRow, UserBadgeRow, UserDetail, UserLetterRow, UserRoomRow } from '$lib/adminTypes';
+import type { PersonalNoticeRow, UserBadgeRow, UserDetail, UserRoomRow } from '$lib/adminTypes';
 import { notifyPersonalNotice } from '$lib/server/pushSend';
 import { badgeCode, noticeError, noticeInput } from '$lib/server/adminForms';
 import type { Actions, PageServerLoad } from './$types';
@@ -35,15 +35,6 @@ export const actions: Actions = {
 		await detail(params.id, locals.staff!.id);
 		const [who] = await revealIdentity(locals, [params.id], null);
 		return { userId: params.id, email: who.email ?? '(탈퇴)', name: who.name };
-	},
-
-	letters: async ({ params, locals }) => {
-		if (!isAdmin(locals)) return fail(403, { error: '편지 활동은 관리자만 확인 가능' });
-		const letters = await adminRpc<UserLetterRow[]>('admin_user_letters', {
-			p_user: params.id,
-			p_staff: locals.staff!.id
-		});
-		return { userId: params.id, letters };
 	},
 
 	// 개인 공지 (Phase 35) — 이 학생에게만 (경고 · 개인 연락). 학생 앱의 공지 · 알림(하트)에 뜨고 푸시도 간다. 운영진 누구나, 기록에 남는다

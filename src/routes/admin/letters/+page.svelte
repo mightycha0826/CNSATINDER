@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { can } from '$lib/adminRoles';
 	import { REASON_LABEL, REPORT_TABS, STATUS_LABEL, fmtTime, shortId, TARGET_LABEL } from '$lib/adminTypes';
 
 	let { data } = $props();
@@ -13,13 +12,6 @@
 	<div class="a-stat"><b class="num">{data.stats.open_reports}</b><span>미처리 채팅 신고</span></div>
 	<div class="a-stat"><b class="num">{data.stats.restricted_users}</b><span>이용 제한 계정</span></div>
 </section>
-
-{#if can(data.staff, 'identity')}
-	<form class="find" method="GET" action="/admin/posts">
-		<input class="field" name="n" placeholder="편지 번호 또는 편지 주소 (/letters/123)" autocomplete="off" />
-		<button class="btn-ghost a-sm">작성자 확인</button>
-	</form>
-{/if}
 
 <nav class="a-tabs">
 	{#each REPORT_TABS as t (t.v)}
@@ -69,16 +61,6 @@
 {/if}
 
 <style>
-	.find {
-		display: flex;
-		gap: 6px;
-		margin-bottom: 16px;
-		max-width: 480px;
-	}
-	.find .a-sm {
-		height: auto;
-		flex-shrink: 0;
-	}
 	@media (max-width: 720px) {
 		th:nth-child(5),
 		td:nth-child(5),

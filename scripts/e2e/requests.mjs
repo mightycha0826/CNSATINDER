@@ -30,7 +30,6 @@ await page.route('https://fake-proj.supabase.co/**', async (route) => {
 	if (p.startsWith('/auth/v1/')) return json({});
 	if (p.endsWith('rpc/my_account')) return json({ has_password: true });
 	if (p.endsWith('rpc/my_rooms')) return json({ rooms: [{ room_id: ROOM, status: 'active', my_seat: 1, partner_alias: '새벽수달', expires_at: iso(600), round: 1, joined: true, partner_online: true, last_body: '안녕', last_seat: 2, last_at: iso(), unread: 0 }], server_now: iso() });
-	if (p.endsWith('rpc/letter_feed')) return json({ letters: [], server_now: iso() });
 	if (p.endsWith('rpc/my_notices')) return json({ notices: [], last_seen: 0 });
 	if (p.endsWith('rpc/request_match')) return json({ status: 'waiting', reason: 'empty', poll_ms: 4000 });
 	const snap = { room_id: ROOM, status: 'active', my_seat: 1, my_alias: '말랑복숭아', partner_alias: '새벽수달', expires_at: iso(3600), round: 1, max_rounds: 0, extend_minutes: 10, vote_window_sec: 90, my_vote: null, partner_vote: null, partner_joined: true, partner_online: true, their_read_id: null, close_reason: null, server_now: iso() };

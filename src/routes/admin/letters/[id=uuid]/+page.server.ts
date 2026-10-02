@@ -15,22 +15,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 export const actions: Actions = {
 	...reportActions('letter'),
 
-	/** 신고된 글 내리기 (소프트 삭제) — 편지 신고면 편지 전체, 댓글 신고면 그 댓글만, 이름 편지면 그 줄기 전체 */
+	/** 신고된 편지 내리기 (소프트 삭제) — 그 편지 줄기 전체 */
 	remove: async ({ params, locals }) => {
 		const { report: r } = await detail(params.id);
 		const staff = locals.staff!.id;
-		if (r.target_type === 'dm') {
-			await adminRpc('admin_remove_dm', { p_thread: r.letter_id, p_staff: staff, p_report: r.id });
-			if (r.status !== 'actioned') await setReportStatus('letter', r.id, 'actioned', '편지 내림', staff);
-			return { done: '편지 내림' };
-		}
-		await adminRpc('admin_remove_letter_content', {
-			p_letter: r.letter_id,
-			p_comment: r.comment_id,
-			p_staff: staff,
-			p_report: r.id
-		});
-		if (r.status !== 'actioned') await setReportStatus('letter', r.id, 'actioned', '글 내림', staff);
-		return { done: r.comment_id ? '댓글 내림' : '편지 내림' };
+		await adminRpc('admin_remove_dm', { p_thread: r.letter_id, p_staff: staff, p_report: r.id });
+		if (r.status !== 'actioned') await setReportStatus('letter', r.id, 'actioned', '편지 내림', staff);
+		return { done: '편지 내림' };
 	}
 };

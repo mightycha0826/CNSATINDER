@@ -16,8 +16,8 @@ const B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ROOM = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const t = new Date().toISOString();
 const labelCalls = [];
-let letterDelay = 0;
-let letterRequests = 0;
+let identityDelay = 0;
+let identityRequests = 0;
 
 const RPC = {
 	admin_staff_role: () => ROLE,
@@ -30,16 +30,14 @@ const RPC = {
 	admin_find_users: () => [A, B].map((id, i) => ({ id, nickname: ['푸른고래', '작은별'][i], status: 'active', suspended_until: null, strikes: 0, verified: true, onboarded: true, created_at: t, online: false, last_seen: null, staff_role: null, reports_received: 0 })),
 	admin_user: (a) => ({ profile: { id: a.p_user, nickname: a.p_user === A ? '푸른고래' : '작은별', bio: '', interests: [], mbti: null, gender: 'm', want: 'f', status: 'active', suspended_until: null, strikes: 0, verified: true, onboarded: true, created_at: t }, online: false, last_seen: null, staff_role: null, counts: { rooms: 1, open_rooms: 1, letters: 1, comments: 0, reports_filed: 0, reports_dismissed: 0 }, chat_reports: [], letter_reports: [], history: [] }),
 	admin_user_rooms: (a) => [{ id: ROOM, status: 'active', created_at: t, closed_at: null, close_reason: null, live: true, alias: '여우', partner_id: a.p_user === A ? B : A, partner_nickname: a.p_user === A ? '작은별' : '푸른고래', message_count: 2 }],
-	admin_log_identity_view: () => null,
-	admin_roster_name: () => '조회한 실명',
-	admin_user_letters: async () => {
-		letterRequests++;
-		if (letterDelay) await new Promise((r) => setTimeout(r, letterDelay));
-		return [{ letter_id: 7, alias: '사용자A의 편지이름', is_author: true, status: 'open', created_at: t, preview: '사용자A의 편지내용', my_comments: 0 }];
+	admin_log_identity_view: async () => {
+		identityRequests++;
+		if (identityDelay) await new Promise((r) => setTimeout(r, identityDelay));
+		return null;
 	},
+	admin_roster_name: () => '조회한 실명',
 	admin_rooms: () => [{ id: ROOM, status: 'active', created_at: t, closed_at: null, close_reason: null, round: 1, live: true, members: [{ seat: 1, user_id: A, nickname: '푸른고래' }, { seat: 2, user_id: B, nickname: '작은별' }], message_count: 2 }],
 	admin_room: () => ({ room: { id: ROOM, status: 'active', round: 1, created_at: t, armed_at: t, expires_at: t, closed_at: null, close_reason: null, live: true }, members: [{ seat: 1, user_id: A, open: true, alias: '여우', nickname: '푸른고래', status: 'active' }, { seat: 2, user_id: B, open: true, alias: '곰', nickname: '작은별', status: 'active' }], messages: [] }),
-	admin_letter_post: () => ({ letter: { id: 7, body: '안녕', status: 'open', reply_status: 'assigned', created_at: t }, participants: [{ no: 1, alias: '맑은 하늘', is_author: true, user_id: A, nickname: '푸른고래', status: 'active' }, { no: 2, alias: '고요한 숲', is_author: false, user_id: B, nickname: '작은별', status: 'active' }], reader: { user_id: B, expires_at: t, fulfilled_at: null, nickname: '작은별' }, comments: [{ id: 1, parent_id: null, author_no: 2, body: '반가워', status: 'visible', created_at: t }] })
 };
 
 const sb = http.createServer((req, res) => {
@@ -77,8 +75,7 @@ try {
 		['users', '/admin/users', ['푸른고래(29999 홍길동)', '작은별(19998)']],
 		['user', `/admin/users/${A}`, ['푸른고래(29999 홍길동)', '작은별(19998)']],
 		['rooms', '/admin/rooms', ['푸른고래(29999 홍길동)', '작은별(19998)']],
-		['room', `/admin/rooms/${ROOM}`, ['푸른고래(29999 홍길동) →', '작은별(19998) →']],
-		['post', '/admin/posts/7', ['푸른고래(29999 홍길동) →', '작은별(19998) →']]
+		['room', `/admin/rooms/${ROOM}`, ['푸른고래(29999 홍길동) →', '작은별(19998) →']]
 	];
 	console.log(`\n[${ROLE}]`);
 	for (const [name, path, want] of pages) {
@@ -103,24 +100,22 @@ try {
 		await answerDialogs(page, () => true);
 		await page.getByRole('button', { name: '이메일 확인', exact: true }).click();
 		await page.locator('.email').waitFor();
-		await page.getByRole('button', { name: '편지 · 댓글 보기', exact: true }).click();
-		await page.getByText('사용자A의 편지이름', { exact: true }).waitFor();
 		await page.locator('.pn input[name=title]').fill('사용자A 공지초안');
 		await page.locator(`a[href="/admin/users/${B}"]`).click();
 		await page.waitForURL(`**/admin/users/${B}`);
-		check('★ 사용자 전환 시 이전 이메일·편지·공지초안을 비운다', await page.locator('.email').count() === 0 && await page.getByText('사용자A의 편지이름', { exact: true }).count() === 0 && await page.locator('.pn input[name=title]').inputValue() === '');
+		check('★ 사용자 전환 시 이전 이메일·공지초안을 비운다', await page.locator('.email').count() === 0 && await page.locator('.pn input[name=title]').inputValue() === '');
 
 		await page.locator(`a[href="/admin/users/${A}"]`).click();
 		await page.waitForURL(`**/admin/users/${A}`);
-		letterDelay = 1000;
-		const before = letterRequests;
-		await page.getByRole('button', { name: '편지 · 댓글 보기', exact: true }).click();
-		for (let i = 0; i < 30 && letterRequests === before; i++) await new Promise((r) => setTimeout(r, 20));
-		if (letterRequests === before) throw new Error('편지 열람 요청이 시작되지 않았다');
+		identityDelay = 1000;
+		const before = identityRequests;
+		await page.getByRole('button', { name: '이메일 확인', exact: true }).click();
+		for (let i = 0; i < 30 && identityRequests === before; i++) await new Promise((r) => setTimeout(r, 20));
+		if (identityRequests === before) throw new Error('이메일 열람 요청이 시작되지 않았다');
 		await page.locator(`a[href="/admin/users/${B}"]`).click();
 		await page.waitForURL(`**/admin/users/${B}`);
 		await page.waitForTimeout(1300);
-		check('★ 이전 사용자 열람의 늦은 결과도 현재 사용자에게 붙이지 않는다', await page.getByText('사용자A의 편지이름', { exact: true }).count() === 0 && await page.getByRole('button', { name: '편지 · 댓글 보기', exact: true }).count() === 1);
+		check('★ 이전 사용자 열람의 늦은 결과도 현재 사용자에게 붙이지 않는다', await page.locator('.email').count() === 0 && await page.getByRole('button', { name: '이메일 확인', exact: true }).count() === 1);
 	}
 } finally {
 	await browser.close();

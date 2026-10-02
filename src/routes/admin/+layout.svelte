@@ -81,9 +81,7 @@
 	const active = (href: string) =>
 		href === '/admin'
 			? page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/reports')
-			: href === '/admin/letters'
-				? page.url.pathname.startsWith(href) || page.url.pathname.startsWith('/admin/posts')
-				: page.url.pathname.startsWith(href);
+			: page.url.pathname.startsWith(href);
 
 	// 고친 칸 표시 (Phase 48) — 폼 안의 값을 바꾸면 그 줄(label · .row)에 표시, 폼에는 data-dirty(저장 단추가 눈에 띄게).
 	// 저장이 성공하면 lib/admin/confirm.ts(ack)가 지운다

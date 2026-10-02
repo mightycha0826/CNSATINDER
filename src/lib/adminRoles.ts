@@ -60,7 +60,7 @@ export function activityOf(path: string | null): string {
 	if (!path) return '';
 	const p = path.replace(/\/__data\.json$/, '');
 	if (p.startsWith('/admin/reports') || p === '/admin') return '채팅 신고 보는 중';
-	if (p.startsWith('/admin/letters') || p.startsWith('/admin/posts')) return '편지 신고 보는 중';
+	if (p.startsWith('/admin/letters')) return '편지 신고 보는 중';
 	if (p.startsWith('/admin/users/')) return '사용자 살펴보는 중';
 	if (p.startsWith('/admin/users')) return '사용자 찾는 중';
 	if (p.startsWith('/admin/badges')) return '뱃지 주는 중';

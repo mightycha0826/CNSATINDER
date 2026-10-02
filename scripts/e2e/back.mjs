@@ -38,7 +38,6 @@ try {
 		if (u.pathname.startsWith('/auth/v1/')) return json({});
 		if (u.pathname === '/rest/v1/rpc/my_account') return json({ has_password: true });
 		if (u.pathname === '/rest/v1/rpc/my_rooms') return json({ rooms: [], server_now: new Date().toISOString() });
-		if (u.pathname === '/rest/v1/rpc/letter_feed') return json({ letters: [], server_now: new Date().toISOString() });
 		if (u.pathname === '/rest/v1/rpc/my_notices') return json({ notices, last_seen: lastSeen });
 		if (u.pathname === '/rest/v1/rpc/mark_notices_seen') { const p = req.postDataJSON().p_id; marks.push(p); lastSeen = Math.max(lastSeen, p); return json(lastSeen); }
 		if (u.pathname === '/rest/v1/profiles') {
