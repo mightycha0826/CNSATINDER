@@ -108,7 +108,7 @@ async function openApp(browser, w, opts = {}) {
 		if (rpc === 'dm_open') return json(open(w, a.p_msg));
 		if (rpc === 'dm_search') {
 			const q = String(a.p_q ?? '');
-			return json(q.length >= 2 && '박받음'.includes(q) ? [{ id: 'u-b', name: '박받음', grade: 2, no: 20314, checked: true, badges: [{ code: 'fun', title: '이야기꾼', icon: '🎉', tier: 3 }, { code: 'club_beatus', title: '동아리 Beatus 뱃지', icon: '💻', tier: 3 }] }, { id: 'u-c', name: '박받음', grade: 2, no: 20522, checked: true, badges: [] }] : []);
+			return json(q.length >= 2 && '박받음'.includes(q) ? [{ id: 'u-b', name: '박받음', grade: 2, no: 20314, checked: true, badges: [{ code: 'fun', title: '이야기꾼', icon: '🎉', tier: 3 }, { code: 'club_beatus', title: 'Beatus', icon: '💻', tier: 3 }] }, { id: 'u-c', name: '박받음', grade: 2, no: 20522, checked: true, badges: [] }] : []);
 		}
 		// 추천 5명 (Phase 84) — 가짜로 둘
 		if (rpc === 'dm_recommend') return json([
@@ -564,8 +564,8 @@ try {
 			items: [
 				def('fun', '이야기꾼', 'manner', 3, { granted: false }),
 				def('cnsa_student', 'CNSA 뱃지', 'cnsa', 3),
-				def('msmsp_gold', 'MSMSP 우수 금뱃지', 'cnsa', 0),
-				def('club_beatus', '동아리 Beatus 뱃지', 'cnsa', 0),
+				def('msmsp_gold', 'MSMP 우수 금뱃지', 'cnsa', 0),
+				def('club_beatus', 'Beatus', 'cnsa', 0),
 				def('club_geukjakso', '극작소', 'cnsa', 0)
 			],
 			featured: [{ code: 'fun', title: '이야기꾼', icon: '', tier: 3 }], chosen: [], slots: 3, golds: 1, chat: { fun: true, cnsa_student: false }
@@ -577,7 +577,7 @@ try {
 		await p11.route('https://fake-proj.supabase.co/rest/v1/rpc/badge_request_submit', (rt) => {
 			const a = rt.request().postDataJSON();
 			w11.calls.push(['badge_request_submit', a]);
-			reqs.unshift({ id: 1, kind: a.p_kind, code: a.p_code, title: 'MSMSP 우수 금뱃지', members: 0, status: 'pending', staff_note: null, created_at: new Date().toISOString(), decided_at: null });
+			reqs.unshift({ id: 1, kind: a.p_kind, code: a.p_code, title: 'MSMP 우수 금뱃지', members: 0, status: 'pending', staff_note: null, created_at: new Date().toISOString(), decided_at: null });
 			return rt.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"ok","id":1}' });
 		});
 
@@ -622,7 +622,7 @@ try {
 		await p11.getByRole('link', { name: '뱃지 제출하기' }).click(); await p11.waitForURL('**/me/achievements/submit');
 		await p11.locator('.pick').first().waitFor();
 		const picks = await p11.locator('.picks .pick').allInnerTexts();
-		check('★ 내 뱃지 인증 — 고를 수 있는 뱃지는 동아리 · 기본 CNSA 뱃지 · 가진 것 빼고', picks.length === 1 && picks[0].includes('MSMSP'), JSON.stringify(picks));
+		check('★ 내 뱃지 인증 — 고를 수 있는 뱃지는 동아리 · 기본 CNSA 뱃지 · 가진 것 빼고', picks.length === 1 && picks[0].includes('MSMP'), JSON.stringify(picks));
 		const sendBtn = p11.getByRole('button', { name: '운영진에게 보내기' });
 		await p11.locator('.picks .pick').first().click();
 		check('사진이 없으면 보낼 수 없다', await sendBtn.isDisabled());

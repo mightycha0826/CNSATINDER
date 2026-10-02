@@ -3312,10 +3312,10 @@ console.log('\n[94] CNSA 뱃지 셋 · 운영자 뱃지 화면 — 여러 명에
 	const adm = (await one(`select user_id from private.staff where role = 'admin' order by created_at desc limit 1`)).user_id;
 	const cat = await rpcAs(X, 'achievement_catalog');
 	const pick = (c) => cat.find((d) => d.code === c);
-	check('★ 카탈로그에 CNSA 뱃지 · MSMSP 우수 금뱃지 · 동아리 Beatus 뱃지 — CNSA 분류 · 운영진이 준다',
+	check('★ 카탈로그에 CNSA 뱃지 · MSMP 우수 금뱃지 · Beatus — CNSA 분류 · 운영진이 준다',
 		['cnsa_student', 'msmsp_gold', 'club_beatus'].every((c) => pick(c)?.category === 'cnsa' && pick(c).granted === true)
-		&& pick('cnsa_student').title === 'CNSA 뱃지' && pick('msmsp_gold').title === 'MSMSP 우수 금뱃지' && pick('club_beatus').description === 'IT 동아리 Beatus의 뱃지');
-	check('CNSA 탭 순서: CNSA · MSMSP · Beatus · 극작소', cat.filter((d) => d.category === 'cnsa').map((d) => d.code).join() === 'cnsa_student,msmsp_gold,club_beatus,club_geukjakso');
+		&& pick('cnsa_student').title === 'CNSA 뱃지' && pick('msmsp_gold').title === 'MSMP 우수 금뱃지' && pick('club_beatus').description === 'IT 동아리 Beatus의 뱃지');
+	check('CNSA 탭 순서: CNSA · MSMP · Beatus · 극작소', cat.filter((d) => d.category === 'cnsa').map((d) => d.code).join() === 'cnsa_student,msmsp_gold,club_beatus,club_geukjakso');
 
 	const list = await svc('admin_badges', mod);
 	check('★ 뱃지 목록: 줄 수 있는 것만 (베타 테스터 + CNSA 넷) · 가진 사람 수', list.map((b) => b.code).join() === 'beta,cnsa_student,msmsp_gold,club_beatus,club_geukjakso'
@@ -3479,7 +3479,7 @@ console.log('\n[96] CNSA 뱃지 — 기본 뱃지 열림 · 5칸 · 랜덤채팅
 	check('★ 앱에 없는 뱃지 추가 요청', r3.status === 'ok');
 	check('★ 기다리는 요청은 3개까지', (await sub(S1, 'new', null, '하나 더', '', [], ph(S1))).status === 'too_many');
 	const mine = await rpcAs(S1, 'my_badge_requests');
-	check('내가 보낸 요청 — 상태 · 뱃지 이름 · 부원 수 (사진 경로는 안 준다)', mine.length === 3 && mine[1].title === '동아리 Beatus 뱃지' && mine[1].members === 3 && mine.every((m) => m.status === 'pending' && !('photos' in m)), JSON.stringify(mine));
+	check('내가 보낸 요청 — 상태 · 뱃지 이름 · 부원 수 (사진 경로는 안 준다)', mine.length === 3 && mine[1].title === 'Beatus' && mine[1].members === 3 && mine.every((m) => m.status === 'pending' && !('photos' in m)), JSON.stringify(mine));
 	const cancel = await rpcAs(S1, 'badge_request_cancel', r3.id);
 	check('★ 기다리는 요청 거두기 — 지울 사진 경로를 돌려준다', cancel.status === 'ok' && cancel.photos[0] === `${S1}/new000001.jpg`, JSON.stringify(cancel));
 	check('남의 요청 · 끝난 요청은 거둘 수 없다', (await rpcAs(U, 'badge_request_cancel', r1.id)).status === 'not_found' && (await rpcAs(S1, 'badge_request_cancel', r3.id)).status === 'not_found');
@@ -3498,7 +3498,7 @@ console.log('\n[96] CNSA 뱃지 — 기본 뱃지 열림 · 5칸 · 랜덤채팅
 	check('★ 승인 — 뱃지를 주고 사진 경로를 돌려준다 · 요청에서는 비운다', d1.status === 'approved' && d1.given === 1 && (await has(S1, 'msmsp_gold')) && d1.photos[0] === `${S1}/proof0001.jpg`
 		&& (await one('select photos from private.badge_requests where id = $1', [r1.id])).photos.length === 0, JSON.stringify(d1));
 	const note = await one(`select title, body from private.personal_notices where id = $1`, [d1.notice]);
-	check('결과는 개인 공지로 (운영진 메모 포함)', note.title === '뱃지 요청을 승인했어요' && note.body.includes('MSMSP 우수 금뱃지') && note.body.includes('확인했어요'), JSON.stringify(note));
+	check('결과는 개인 공지로 (운영진 메모 포함)', note.title === '뱃지 요청을 승인했어요' && note.body.includes('MSMP 우수 금뱃지') && note.body.includes('확인했어요'), JSON.stringify(note));
 	await expectError('한 번 결정한 요청은 다시 못 한다', () => svc('admin_badge_request_decide', adm, r1.id, false, '', null), 'already_decided');
 	const d2 = await svc('admin_badge_request_decide', adm, r2.id, true, '', null);
 	check('★ 동아리 승인 — 기장 + 부원 모두에게 · 못 찾은 학번을 돌려준다', d2.given === 3 && (await has(S1, 'club_beatus')) && (await has(n1, 'club_beatus')) && (await has(n2, 'club_beatus'))

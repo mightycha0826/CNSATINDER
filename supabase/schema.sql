@@ -5975,15 +5975,15 @@ on conflict (code) do update
 
 -- ════════════════════════════════════════════════════════════════════
 -- Phase 71 — CNSA 뱃지 셋 더 · 운영자 뱃지 화면 (뱃지마다 여러 학생에게 한 번에 주고 거두기)
---   · CNSA 뱃지(충남삼성고 학생) · MSMSP 우수 금뱃지 · 동아리 Beatus — 실제 핀 그림은 src/lib/ui/pins
+--   · CNSA 뱃지(충남삼성고 학생) · MSMP 우수 금뱃지 · 동아리 Beatus — 실제 핀 그림은 src/lib/ui/pins
 --   · 지금까지는 학생 한 명씩 상세 화면에 들어가 주고 거뒀다. 운영자 화면 "뱃지"에서 뱃지를 고르고
 --     찾은 학생 여럿 · 학번 목록(관리자) · 학교 인증한 학생 모두에게 한 번에 주고, 가진 사람 여럿을 한 번에 거둔다.
 --     바뀐 학생마다 grant_badge / revoke_badge 기록 (detail.bulk)
 -- ════════════════════════════════════════════════════════════════════
 insert into private.achievement_defs (code, title, description, icon, category, stat, unit, bronze, silver, gold, lower_better, sort, granted) values
   ('cnsa_student', 'CNSA 뱃지',          '충남삼성고 학생임을 증명하는 뱃지', '🏫', 'cnsa', 'cnsa_student', '', 1, 1, 1, false, 55, true),
-  ('msmsp_gold',   'MSMSP 우수 금뱃지',  'MSMP 우수자에게 수여하는 뱃지',     '🥇', 'cnsa', 'msmsp_gold',   '', 1, 1, 1, false, 56, true),
-  ('club_beatus',  '동아리 Beatus 뱃지', 'IT 동아리 Beatus의 뱃지',           '💻', 'cnsa', 'club_beatus',  '', 1, 1, 1, false, 58, true)
+  ('msmsp_gold',   'MSMP 우수 금뱃지',  'MSMP 우수자에게 수여하는 뱃지',     '🥇', 'cnsa', 'msmsp_gold',   '', 1, 1, 1, false, 56, true),
+  ('club_beatus',  'Beatus', 'IT 동아리 Beatus의 뱃지',           '💻', 'cnsa', 'club_beatus',  '', 1, 1, 1, false, 58, true)
 on conflict (code) do update
   set title = excluded.title, description = excluded.description, icon = excluded.icon, category = excluded.category,
       stat = excluded.stat, unit = excluded.unit, bronze = excluded.bronze, silver = excluded.silver, gold = excluded.gold,

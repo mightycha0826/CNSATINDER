@@ -26,7 +26,7 @@ let STAFF_LIST = [
 const BADGES = [
 	{ code: 'beta', title: '베타 테스터', description: '출시 전 베타 테스트에 함께한 사람', icon: '🧪', category: 'special' },
 	{ code: 'cnsa_student', title: 'CNSA 뱃지', description: '충남삼성고 학생임을 증명하는 뱃지', icon: '🏫', category: 'cnsa' },
-	{ code: 'club_beatus', title: '동아리 Beatus 뱃지', description: 'IT 동아리 Beatus의 뱃지', icon: '💻', category: 'cnsa' }
+	{ code: 'club_beatus', title: 'Beatus', description: 'IT 동아리 Beatus의 뱃지', icon: '💻', category: 'cnsa' }
 ];
 const HOLDERS = { club_beatus: [A] }; // Phase 71 — 뱃지마다 가진 학생
 // Phase 84 — 학생이 보낸 뱃지 요청 (사진 · 학번 · 이름 — 관리자만)
@@ -489,7 +489,7 @@ try {
 		const r = await bp.go('/admin/badges');
 		check('/admin/badges → 200 · 사이드바 "뱃지"', r.status() === 200 && (await bp.locator('.side nav a[href="/admin/badges"]').getAttribute('aria-current')) === 'page');
 		const list = (await bp.locator('nav.list').innerText()).replace(/\s+/g, ' ');
-		check('★ 분류(특별 · CNSA)별 뱃지 · 가진 사람 수', list.includes('특별') && list.includes('CNSA') && list.includes('동아리 Beatus 뱃지 1명') && list.includes('베타 테스터 0명'), list);
+		check('★ 분류(특별 · CNSA)별 뱃지 · 가진 사람 수', list.includes('특별') && list.includes('CNSA') && list.includes('Beatus 1명') && list.includes('베타 테스터 0명'), list);
 		await bp.locator('nav.list a', { hasText: 'Beatus' }).click(); await bp.waitForURL('**/admin/badges?code=club_beatus'); await bp.waitForTimeout(300);
 		check('고른 뱃지 — 핀 그림 · 설명 · 가진 학생 (학번 이름은 관리자에게만)', (await bp.locator('section.head .pin-art').count()) === 1 && (await bp.locator('section.head').innerText()).includes('IT 동아리 Beatus의 뱃지')
 			&& (await bp.locator('tbody', { hasText: '푸른고래' }).innerText()).includes('29999 홍길동'));

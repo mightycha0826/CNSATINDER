@@ -48,17 +48,17 @@ try {
 	check('★ 분류 탭에 CNSA', (await page.locator('.cats button').allInnerTexts()).at(-1) === 'CNSA');
 	check('분류 탭: 편지만', (await page.locator('.grid .card').count()) === 2);
 	await page.getByRole('button', { name: 'CNSA', exact: true }).click();
-	check('★ CNSA 탭: 뱃지 넷 (CNSA · MSMSP · Beatus · 극작소) — 동그란 메달 대신 핀 그림', (await page.locator('.grid .card').count()) === 4
+	check('★ CNSA 탭: 뱃지 넷 (CNSA · MSMP · Beatus · 극작소) — 동그란 메달 대신 핀 그림', (await page.locator('.grid .card').count()) === 4
 		&& (await page.locator('.card .pin-art').count()) === 4 && (await page.locator('.card .medal.pin .rim').count()) === 0
-		&& (await page.locator('.card [aria-label="CNSA 뱃지 CNSA"]').count()) === 1 && (await page.locator('.card [aria-label="MSMSP 우수 금뱃지 CNSA"]').count()) === 1
-		&& (await page.locator('.card.locked [aria-label="동아리 Beatus 뱃지 잠김"]').count()) === 1);
+		&& (await page.locator('.card [aria-label="CNSA 뱃지 CNSA"]').count()) === 1 && (await page.locator('.card [aria-label="MSMP 우수 금뱃지 CNSA"]').count()) === 1
+		&& (await page.locator('.card.locked [aria-label="Beatus 잠김"]').count()) === 1);
 	check('Beatus 핀 — 위 · 아래 글자 · B', (await page.locator('.card', { hasText: 'Beatus' }).locator('textPath').allTextContents()).join('|') === 'CNSA IT CLUB|BEATUS');
 	await page.screenshot({ path: `${SP}/ach-1b-cnsa.png`, fullPage: true });
 	await page.locator('.card', { hasText: '극작소' }).click(); await page.waitForTimeout(300);
 	check('★ 극작소 자세히 — "동아리 부원에게 주는 CNSA 뱃지"', (await page.locator('.detail').innerText()).includes('동아리 부원에게 주는 CNSA 뱃지'));
 	await page.keyboard.press('Escape'); await page.waitForTimeout(400);
-	await page.locator('.card', { hasText: 'MSMSP' }).click(); await page.waitForTimeout(300);
-	check('MSMSP 자세히 — 동아리가 아니면 "운영진이 주는 CNSA 뱃지"', (await page.locator('.detail').innerText()).includes('운영진이 주는 CNSA 뱃지'));
+	await page.locator('.card', { hasText: 'MSMP' }).click(); await page.waitForTimeout(300);
+	check('MSMP 자세히 — 동아리가 아니면 "운영진이 주는 CNSA 뱃지"', (await page.locator('.detail').innerText()).includes('운영진이 주는 CNSA 뱃지'));
 	await page.keyboard.press('Escape'); await page.waitForTimeout(400);
 	await page.getByRole('button', { name: '전체', exact: true }).click();
 
