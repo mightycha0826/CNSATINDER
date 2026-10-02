@@ -862,6 +862,19 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       그 색을 골라 둔 기기는 기본으로. 우체통은 테마 색과 상관없이 연한 붉은색(`--post-a/b/c` #ff9e94 → #f8807f → #ec6470, 다크는 한 단계 어둡게) · 붉은 빛 그림자.
       서비스워커 캐시 v11 — 아이콘은 주소가 그대로라 옛 로고가 캐시에서 나오던 것 (SHELL 의 그림을 바꾸면 버전을 올린다).
 - [x] **Phase 88 — 뱃지 이름 · 코드 정리** — "MSMSP 우수 금뱃지" → "MSMP 우수 금뱃지"(코드 `msmsp_gold` → `msmp_gold`, 핀 그림 `MsmpGold.svelte`), "동아리 Beatus 뱃지" → "Beatus".
-      코드를 바꾸며 가진 학생 · 뱃지 요청 · 대표 업적 · 랜덤채팅 숨김 설정을 새 코드로 옮기고 옛 정의를 지운다 (`schema.sql` 맨 끝, 여러 번 실행해도 같다).
+      코드를 바꾸며 가진 학생 · 뱃지 요청 · 대표 업적 · 랜덤채팅 숨김 설정을 새 코드로 옮기고 옛 정의를 지운다 (`schema.sql` Phase 88, 여러 번 실행해도 같다).
+
+## 2026-10-02 보안 수정 배포
+
+로컬 코드와 테스트를 수정한 상태다. 운영 반영은 다음 순서로 진행한다.
+
+1. Phase 88까지 설치된 기존 Supabase DB의 SQL Editor에서 `supabase/migrations/20261002_security_hardening.sql`을 실행한다. 전체 `schema.sql`을 기존 DB에 다시 실행할 필요는 없다. 새 DB는 전체 스키마로 설치한다. 마이그레이션은 트랜잭션이며 재실행할 수 있다.
+2. `npm ci`, `npm run check`, `npm test`, `npm run build`로 확인하고 `npx wrangler deploy --dry-run`으로 Worker 번들을 검사한다. `npm audit`도 확인한다.
+3. 기존 Cloudflare Secret인 `SUPABASE_URL`과 `SUPABASE_SERVICE_ROLE_KEY`를 유지하고 Worker를 배포한다. `PUBLIC_SUPABASE_URL`이 있으면 같은 Supabase 프로젝트를 가리켜야 한다. 새 비밀 값은 필요 없다. `wrangler.jsonc`의 15분 간격 Cron Trigger도 함께 반영한다.
+4. Cloudflare 예약 작업 실행 기록에서 성공 여부를 확인한다. 배포 어댑터는 앱 Worker를 비공개 빌드 폴더에 보존하고, 최종 진입점에 `fetch`와 사진 정리 `scheduled`를 함께 넣는다. 정리 대상 경로와 service_role 키를 정적 assets에 넣지 않는다.
+
+사진은 계정당 저장 중 12장(장당 5MiB), 최근 24시간 업로드 15장까지다. 신청 취소·심사 시 삭제를 즉시 시도하고, 실패한 작업은 경로를 보존해 재시도한다. 미제출 사진은 1시간 후 정리 대상이 되며, 기존 미연결 사진도 마이그레이션 후 정리된다. 계정 삭제 시에도 사진 삭제 예약은 남는다. 예약 작업은 한 번에 최대 100장을 처리하므로 장애·대기열이 있으면 삭제가 지연될 수 있다.
+
+검증은 합성 계정과 로컬 DB로 수행한다. 운영 Storage API와 실제 PostgreSQL 동시 연결은 별도 검증 대상이다. 실제 학생의 계정·사진·대화를 시험에 사용하지 않는다.
       실DB 반영 (phase88_rename_badge_code_msmp_gold — 가진 학생 19 · 대표 4 · 숨김 설정 2 그대로 옮겨짐). 활동 기록의 옛 코드는 고치지 않는다. 스키마 테스트 [98] (1077).
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험

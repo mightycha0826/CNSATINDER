@@ -51,8 +51,15 @@ export const actions: Actions = {
 			if (msg.includes('request_not_found')) return fail(400, { error: '거둔 요청' });
 			return friendly(e);
 		}
-		// 사진 지우기 · 알림은 실패해도 결정은 이미 됐다
-		if (r.photos?.length) await supabaseAdmin().storage.from(BUCKET).remove(r.photos).catch(() => null);
+		// 결정과 삭제 예약은 DB에서 함께 저장됐다. 즉시 삭제 실패는 예약 작업이 재시도한다.
+		if (r.photos?.length) {
+			try {
+				const { error } = await supabaseAdmin().storage.from(BUCKET).remove(r.photos);
+				if (error) console.error('[badge-photos] 사진 삭제 실패 · 예약 작업에서 재시도');
+			} catch {
+				console.error('[badge-photos] 사진 삭제 실패 · 예약 작업에서 재시도');
+			}
+		}
 		await notifyPersonalNotice(r.notice, platform);
 		if (!ok) return { done: '반려했어요 · 학생에게 알렸어요' };
 		return {

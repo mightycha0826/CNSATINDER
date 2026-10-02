@@ -187,8 +187,18 @@ Supabase 보안 점검기(Security Advisor).
 검증은 PGlite 안에서 수행했고, 실DB에는 2026-10-02 에 한 번 쓰는 마이그레이션으로 앱 배포 직전에 적용했습니다 (적용 뒤 함수 본문 해시를 파일과 대조). 실제 Supabase Realtime 네트워크 및 동시 트랜잭션은 이 로컬 테스트의 검증 범위에 포함되지 않습니다.
 
 ## 스스로 확인하는 방법
+
+### 2026-10-02 보안 수정 (로컬 검증 · 운영 반영 전)
+
+- AI 대화의 매 턴에서 제재·정지 상태를 재검사한다. 대화 생성과 검토 작업의 전역 일일 예산을 트랜잭션 잠금으로 직렬화한다. 검토 재시도도 사용량에 포함한다.
+- 뱃지 사진은 Storage INSERT 트리거에서 계정 상태·저장 중 12장·최근 24시간 업로드 15장 제한을 검사한다. 삭제로 일일 제한을 우회할 수 없고, 실제 업로드한 미연결 사진만 신청에 연결한다.
+- 취소·심사·계정 삭제 시 사진 삭제 작업을 DB에 함께 기록한다. 즉시 삭제 실패 시에도 경로가 남고, 15분 간격 Worker 예약 작업이 Storage API로 재시도한다. 미제출 사진은 1시간 후 정리 대상이 된다.
+- `npm audit`의 개발 도구 경고를 포함해 0건으로 갱신했다. SvelteKit의 cookie 0.6 의존성만 0.7.2로 교체하는 override를 사용한다. SvelteKit이 자체 수정 버전을 포함하면 override를 제거할 수 있다.
+- 배포 순서와 기존 DB용 마이그레이션은 README의 「2026-10-02 보안 수정 배포」에 있다. PGlite의 단일 연결 시험은 실제 PostgreSQL 동시 연결·운영 Storage 네트워크를 재현하지 않는다.
+
 ```bash
 npm run test:schema   # RLS · 권한 · 함수 호출자 확인 (Supabase 기본 권한 위에서)
+npm run test:security # 제재 · 사진 총량 · 삭제 장애/재시도 · 마이그레이션 · 예약 작업
 npm run test:push     # 푸시 암호화 · VAPID · 보낼 수 있는 주소
 npm run test:aichat   # AI 프롬프트 모양 · 검열 구분선
 npm run test:ui -- security   # CSP · 헤더 · 틀(iframe) 막기

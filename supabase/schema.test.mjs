@@ -3461,7 +3461,14 @@ console.log('\n[96] CNSA 뱃지 — 기본 뱃지 열림 · 5칸 · 랜덤채팅
 	console.log('  [뱃지 제출]');
 	const S1 = await named('기장');
 	const ph = (u, k = 'aaaaaaaa1') => [`${u}/${k}.jpg`];
-	const sub = (u, kind, code, title, note, nos, photos) => rpcAs(u, 'badge_request_submit', kind, code, title, note, nos, photos);
+	const sub = async (u, kind, code, title, note, nos, photos) => {
+		// 제출 경로는 실제 업로드 객체를 가리켜야 한다. 입력 검증용 fixture는 관리자 역할로 만든다.
+		for (const path of photos) if (path.startsWith(`${u}/`)) {
+			await db.query(`insert into storage.objects (bucket_id, name)
+				select 'badge-proofs', $1 where not exists (select 1 from storage.objects where bucket_id = 'badge-proofs' and name = $1)`, [path]);
+		}
+		return rpcAs(u, 'badge_request_submit', kind, code, title, note, nos, photos);
+	};
 	check('★ 남의 폴더 사진 · 사진 없음은 bad_input', (await sub(S1, 'proof', 'msmp_gold', null, '', [], ph(U))).status === 'bad_input' && (await sub(S1, 'proof', 'msmp_gold', null, '', [], [])).status === 'bad_input');
 	check('★ 동아리 뱃지는 기장 제출로만 (not_club)', (await sub(S1, 'proof', 'club_beatus', null, '', [], ph(S1))).status === 'not_club');
 	check('기본 CNSA 뱃지는 제출하지 않는다 (금 뱃지로 열린다)', (await sub(S1, 'proof', 'cnsa_student', null, '', [], ph(S1))).status === 'bad_input');
@@ -3519,7 +3526,7 @@ console.log('\n[96] CNSA 뱃지 — 기본 뱃지 열림 · 5칸 · 랜덤채팅
 	await expectError('★ 남의 폴더에는 못 올린다', () => rowsAs(S1, `insert into storage.objects (bucket_id, name) values ('badge-proofs', $1)`, [`${U}/upload002.jpg`]), 'row-level security');
 	await db.query(`insert into storage.objects (bucket_id, name) values ('badge-proofs', $1)`, [`${U}/other0001.jpg`]);
 	const vis = (await rowsAs(S1, `select name from storage.objects where bucket_id = 'badge-proofs'`)).map((r) => r.name);
-	check('남의 사진은 읽을 수 없다 (운영진은 운영 서버의 서명 주소로만)', vis.length === 1 && vis[0] === `${S1}/upload001.jpg`, vis.join());
+	check('남의 사진은 읽을 수 없다 (운영진은 운영 서버의 서명 주소로만)', vis.includes(`${S1}/upload001.jpg`) && vis.every((p) => p.startsWith(`${S1}/`)), vis.join());
 	await rowsAs(S1, `delete from storage.objects where name = $1`, [`${S1}/upload001.jpg`]);
 	check('내 사진은 지울 수 있다', !(await one(`select 1 x from storage.objects where name = $1`, [`${S1}/upload001.jpg`])));
 }

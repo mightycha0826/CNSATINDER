@@ -22,7 +22,7 @@ export type MyBadgeRequest = {
 	created_at: string;
 	decided_at: string | null;
 };
-type SubmitStatus = 'ok' | 'bad_input' | 'not_club' | 'already' | 'too_many' | 'rate';
+type SubmitStatus = 'ok' | 'bad_input' | 'not_club' | 'already' | 'too_many' | 'rate' | 'restricted';
 
 export const BUCKET = 'badge-proofs';
 export const MAX_PHOTOS = 3;
@@ -35,7 +35,8 @@ export const SUBMIT_ERROR: Record<Exclude<SubmitStatus, 'ok'>, string> = {
 	not_club: '동아리 뱃지는 기장이 "동아리 기장 제출"로 보내요',
 	already: '이미 가진 뱃지예요',
 	too_many: '확인을 기다리는 요청이 3개예요 · 결과가 나오면 다시 보내 주세요',
-	rate: '오늘은 요청을 더 보낼 수 없어요 · 내일 다시 보내 주세요'
+	rate: '오늘은 요청을 더 보낼 수 없어요 · 내일 다시 보내 주세요',
+	restricted: '이용이 제한된 계정은 요청을 보낼 수 없어요'
 };
 
 /** 사진 줄이기 — 긴 변 1600 · JPEG. 못 읽는 형식이면 원본(사진 형식 · 5MB 아래일 때만) */
@@ -79,10 +80,15 @@ async function upload(uid: string, blobs: Blob[]): Promise<string[]> {
 	}
 }
 
-/** 내 사진 지우기 (요청이 안 됐거나 거뒀을 때) — 실패해도 조용히 */
+/** 즉시 삭제를 시도한다. 실패한 경로는 DB 원장에 남아 예약 작업이 재시도한다. */
 async function removePhotos(paths: string[]) {
 	if (!paths.length) return;
-	await supabase.storage.from(BUCKET).remove(paths).catch(() => null);
+	try {
+		const { error } = await supabase.storage.from(BUCKET).remove(paths);
+		if (error) console.warn('사진 삭제를 예약 작업에서 다시 시도합니다.');
+	} catch {
+		console.warn('사진 삭제를 예약 작업에서 다시 시도합니다.');
+	}
 }
 
 type SubmitInput = { kind: RequestKind; code: string | null; title: string | null; note: string; nos: number[]; photos: Blob[] };
@@ -109,7 +115,7 @@ export async function submitBadgeRequest(uid: string, v: SubmitInput): Promise<S
 
 export const myBadgeRequests = () => rpc<MyBadgeRequest[]>('my_badge_requests');
 
-/** 기다리는 요청 거두기 — 사진도 지운다 */
+/** 요청을 거둔다. 사진 삭제는 DB에 함께 예약되며 즉시 삭제 실패 시 재시도된다. */
 export async function cancelBadgeRequest(id: number): Promise<boolean> {
 	const r = await rpc<{ status: 'ok' | 'not_found'; photos?: string[] }>('badge_request_cancel', { p_id: id });
 	if (r.status === 'ok') await removePhotos(r.photos ?? []);

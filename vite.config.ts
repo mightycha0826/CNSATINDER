@@ -1,6 +1,25 @@
 import cloudflareAdapter from '@sveltejs/adapter-cloudflare';
+import type { Adapter } from '@sveltejs/kit';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { readFileSync, writeFileSync } from 'node:fs';
+
+function adapterWithPhotoCleanup(): Adapter {
+	const adapter = cloudflareAdapter({ platformProxy: { remoteBindings: process.env.CF_REMOTE === '1' } });
+	return {
+		...adapter,
+		async adapt(builder) {
+			await adapter.adapt(builder);
+			const worker = `${builder.getBuildDirectory('cloudflare')}/_worker.js`;
+			// 같은 깊이의 빌드 폴더로 옮겨 생성된 상대 import를 유지한다. 정적 assets에는 넣지 않는다.
+			builder.copy(worker, `${builder.getBuildDirectory('cloudflare-tmp')}/app-worker.js`);
+			const wrapper = readFileSync('scripts/cloudflare-worker.mjs', 'utf8')
+				.replace("'../.svelte-kit/cloudflare-tmp/app-worker.js'", "'../cloudflare-tmp/app-worker.js'")
+				.replace("'../src/lib/server/badgePhotoCleanup.ts'", "'../../src/lib/server/badgePhotoCleanup.ts'");
+			writeFileSync(worker, wrapper);
+		}
+	};
+}
 
 // adapter-cloudflare 고정 — 운영자 대시보드(/admin)가 서버 라우트를 쓰므로
 // adapter-static 분기를 두지 않는다. 학생 앱 화면은 루트 +layout.ts 에서 ssr=false.
@@ -13,7 +32,7 @@ export default defineConfig(({ command }) => ({
 			},
 			// 개발 서버에서는 원격 바인딩(Workers AI)을 붙이지 않는다 — 붙이면 Cloudflare 로그인 없이는 모든 요청이 500.
 			// AI 는 AI_FAKE=1 로 가짜 답을 쓰거나, 로그인한 뒤 CF_REMOTE=1 로 진짜를 붙인다 (lib/server/ai.ts)
-			adapter: cloudflareAdapter({ platformProxy: { remoteBindings: process.env.CF_REMOTE === '1' } }),
+			adapter: adapterWithPhotoCleanup(),
 			/**
 			 * 콘텐츠 보안 정책 — 페이지가 불러오고 연결할 수 있는 곳을 우리 사이트와 Supabase 로만 묶는다.
 			 * 스크립트는 SvelteKit 이 붙이는 nonce 로만 (외부 스크립트·주입된 인라인 스크립트는 실행 안 됨),

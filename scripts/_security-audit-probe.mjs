@@ -1,12 +1,13 @@
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
 
 /**
- * schema.sql 을 진짜 PostgreSQL(PGlite, WASM)에 올려 돌리는 테스트.
+ * 보안 회귀 테스트: 합성 계정 · PGlite · SDK 장애만 사용한다.
  * Supabase 프로젝트를 건드리지 않고 스키마·트리거·권한을 검증한다.
  *
- *   npm run test:schema
+ *   npm run test:security
  *
  * ⚠️ PGlite 는 단일 커넥션이라 동시 트랜잭션을 재현할 수 없다.
  *    매칭 advisory lock / 연장 투표 경쟁은 `supabase start`(로컬 Docker Postgres)에서 따로 검증한다.
@@ -162,13 +163,44 @@ try {
   const afterBan = (await one("select public.ai_chat_turn($1,$2,'Hello friend') as r", [chat.id,uid])).r;
   await db.exec('reset role');
   console.log('AI_AFTER_BAN', JSON.stringify({newChat:deniedStart.status,existingTurn:afterBan.status}));
-  await as(uid, () => db.query("insert into storage.objects (bucket_id,name) select 'badge-proofs', $1 || '/unattached' || i || '.jpg' from generate_series(1,25) i", [uid]));
-  console.log('STORAGE_AFTER_BAN', JSON.stringify({objects:Number((await one("select count(*) as n from storage.objects where owner=$1",[uid])).n),requests:Number((await one("select count(*) as n from private.badge_requests where user_id=$1",[uid])).n)}));
+  assert.equal(deniedStart.status, 'restricted');
+  assert.equal(afterBan.status, 'restricted');
+  await assert.rejects(as(uid, () => db.query("insert into storage.objects (bucket_id,name) values ('badge-proofs',$1)", [uid+'/banned001.jpg'])), /badge_photo_restricted/);
+  const turn = async () => (await one("select public.ai_chat_turn($1,$2,'Hello friend') as r", [chat.id,uid])).r;
+  await db.query("update public.profiles set status='active', suspended_until=now()+interval '1 day' where id=$1", [uid]);
+  assert.equal((await turn()).status, 'restricted');
+  await assert.rejects(as(uid, () => db.query("insert into storage.objects (bucket_id,name) values ('badge-proofs',$1)", [uid+'/unattached1.jpg'])), /badge_photo_restricted/);
+  await db.query('update public.profiles set suspended_until=null where id=$1', [uid]);
+  assert.equal((await turn()).status, 'ok');
+  await db.exec('update public.app_settings set is_open=false where id');
+  assert.equal((await turn()).status, 'off');
+  await db.exec('update public.app_settings set is_open=true where id');
+
+  const quota = await signUp('security-quota@cnsa.hs.kr', true);
+  const upload = (id, name) => as(id, () => db.query("insert into storage.objects(bucket_id,name) values('badge-proofs',$1)",[id+'/'+name+'.jpg']));
+  for (let i=0;i<12;i++) await upload(quota, 'upload00'+i);
+  await assert.rejects(upload(quota,'overflow1'), /badge_photo_storage_limit/);
+  await as(quota, () => db.query('delete from storage.objects where owner=$1',[quota]));
+  for (let i=12;i<15;i++) await upload(quota, 'upload00'+i);
+  await as(quota, () => db.query('delete from storage.objects where owner=$1',[quota]));
+  await assert.rejects(upload(quota,'overflow2'), /badge_photo_daily_limit/);
+  // 한 INSERT의 여러 행에도 제한이 적용되고, 거절되면 객체와 원장이 함께 롤백된다.
+  const bulk = await signUp('security-bulk@cnsa.hs.kr', true);
+  await assert.rejects(as(bulk, () => db.query("insert into storage.objects(bucket_id,name) select 'badge-proofs',$1||'/bulk0000'||i||'.jpg' from generate_series(1,13) i",[bulk])), /badge_photo_storage_limit/);
+  assert.equal(Number((await one('select count(*) n from private.badge_photos where user_id=$1',[bulk])).n),0);
+  console.log('PASS account sanctions, storage live/daily quotas, bulk rollback');
 
   const other = await signUp('security-audit2@cnsa.hs.kr', true);
   const path = other + '/proof0001.jpg';
   await as(other, () => db.query("insert into storage.objects(bucket_id,name) values('badge-proofs',$1)",[path]));
   const request = (await as(other, () => one("select public.badge_request_submit('new',null,'audit badge','',array[]::int[],array[$1]::text[]) as r",[path]))).r;
+  assert.equal(request.status,'ok');
+  const submit = paths => as(other, () => one("select public.badge_request_submit('new',null,'audit badge','',array[]::int[],$1::text[]) as r",[paths]));
+  assert.equal((await submit([path])).r.status,'bad_input');
+  assert.equal((await submit([other+'/missing01.jpg'])).r.status,'bad_input');
+  await db.query("update public.profiles set status='banned' where id=$1",[other]);
+  assert.equal((await submit([path])).r.status,'restricted');
+  await db.query("update public.profiles set status='active' where id=$1",[other]);
   globalThis.auditFixture = {
     rpc: async (fn,args) => (await as(other, () => one('select public.' + fn + '($1) as r',[args.p_id]))).r,
     remove: async () => ({data:null,error:{message:'simulated storage outage'}})
@@ -183,5 +215,66 @@ try {
   const success = await cancelBadgeRequest(request.id);
   const row = await one('select status,cardinality(photos) as tracked from private.badge_requests where id=$1',[request.id]);
   const stored = !!(await one('select 1 as ok from storage.objects where name=$1',[path]));
-  console.log('PHOTO_DELETE_FAILURE', JSON.stringify({reportedSuccess:success,requestStatus:row.status,trackedPaths:row.tracked,stillStored:stored,retryResult:await cancelBadgeRequest(request.id)}));
+  assert.equal(success,true);
+  assert.equal(row.status,'canceled');
+  assert.equal(stored,true);
+  assert.ok((await one('select delete_after from private.badge_photos where path=$1',[path])).delete_after);
+
+  const {cleanupBadgePhotos} = await import(dataUrl(stripTypeScriptTypes(readFileSync(new URL('../src/lib/server/badgePhotoCleanup.ts',import.meta.url),'utf8'))));
+  let completeCalls=0;
+  const worker = {
+    rpc: async (name,args) => {
+      await db.exec('set role service_role');
+      try {
+        if(name==='admin_badge_photo_claim') return {data:(await one('select public.admin_badge_photo_claim() r')).r,error:null};
+        completeCalls++;
+        await db.query('select public.admin_badge_photo_complete($1,$2)',[args.p_paths,args.p_lease]);
+        return {data:null,error:null};
+      } finally { await db.exec('reset role'); }
+    },
+    storage:{from:()=>({remove:async()=>({data:null,error:{message:'outage'}})})}
+  };
+  await assert.rejects(cleanupBadgePhotos(worker),/사진 삭제 실패/);
+  assert.equal(completeCalls,0);
+  assert.ok((await one('select lease from private.badge_photos where path=$1',[path])).lease);
+  await db.query("update private.badge_photos set lease_until=now()-interval '1 second' where path=$1",[path]);
+  worker.storage.from = () => ({remove:async paths => {
+    await db.query("delete from storage.objects where bucket_id='badge-proofs' and name=any($1::text[])",[paths]);
+    return {data:[],error:null};
+  }});
+  assert.equal(await cleanupBadgePhotos(worker),1);
+  assert.ok((await one('select deleted_at from private.badge_photos where path=$1',[path])).deleted_at);
+  assert.equal(await one('select 1 x from storage.objects where name=$1',[path]),undefined);
+  assert.equal(await cleanupBadgePhotos(worker),0);
+
+  // 제출하지 않은 사진은 기한 뒤 정리하고, 대기 중인 신청 사진은 지키는지 확인한다.
+  const orphan = other+'/orphan001.jpg';
+  await upload(other,'orphan001');
+  const keep = other+'/pending01.jpg';
+  await upload(other,'pending01');
+  assert.equal((await submit([keep])).r.status,'ok');
+  await db.query("update private.badge_photos set delete_after=now()-interval '1 hour' where path=any($1::text[])",[[orphan,keep]]);
+  assert.equal(await cleanupBadgePhotos(worker),1);
+  assert.ok(await one('select 1 x from storage.objects where name=$1',[keep]));
+  assert.equal(await one('select 1 x from storage.objects where name=$1',[orphan]),undefined);
+  await assert.rejects(as(other,()=>db.query('select public.admin_badge_photo_claim()')),/permission denied/);
+  await assert.rejects(as(other,()=>db.query('select * from private.badge_photos')),/permission denied/);
+  console.log('PASS photo ownership, durable deletion failure/retry, orphan cleanup, pending photo protection, service permissions');
+  // 기존 DB에서의 업그레이드: 예전 정책이 허용하던 임의 파일명도 정리 원장에 복구한다.
+  await db.exec('drop trigger badge_photo_insert on storage.objects');
+  const legacy = other+'/old arbitrary filename.jpg';
+  await db.query("insert into storage.objects(bucket_id,name) values('badge-proofs',$1)",[legacy]);
+  const migration = readFileSync(new URL('../supabase/migrations/20261002_security_hardening.sql',import.meta.url),'utf8');
+  const functions = () => db.query("select proname,prosrc from pg_proc join pg_namespace on pg_namespace.oid=pronamespace where nspname='public' and proname=any($1::text[]) order by proname",[['mod_claim','ai_chat_start','ai_chat_turn','badge_request_submit','admin_ai_usage']]);
+  const expectedFunctions = (await functions()).rows;
+  await db.query('update private.badge_photos set delete_after=null where path=$1',[keep]);
+  await db.exec(migration);
+  await db.exec(migration);
+  assert.deepEqual((await functions()).rows,expectedFunctions);
+  assert.ok((await one('select delete_after from private.badge_photos where path=$1',[legacy])).delete_after);
+  assert.equal((await one('select delete_after from private.badge_photos where path=$1',[keep])).delete_after,null);
+  await db.query("update public.profiles set status='banned' where id=$1",[uid]);
+  await assert.rejects(upload(uid,'badagain1'),/badge_photo_restricted/);
+  console.log('PASS idempotent deployment migration, existing photo backfill, source/migration parity');
+  console.log('Security regressions passed');
 } finally { delete globalThis.auditFixture; await db.close(); }
