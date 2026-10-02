@@ -1,4 +1,4 @@
-import type { Line } from './api';
+import type { BotApi, Line, TurnResult } from './api';
 
 export type ChatLine = { id: number; who: 'me' | 'bot' | 'sys'; text: string };
 
@@ -11,4 +11,28 @@ export function snapshotTurn(lines: ChatLine[], answeredUpTo: number) {
 	const previous = lines.filter((l) => l.who === 'bot' || (l.who === 'me' && l.id <= answeredUpTo));
 	const history: Line[] = [...previous, ...batch].map((l) => ({ role: l.who === 'me' ? 'user' : 'assistant', content: l.text }));
 	return { batch, upTo: batch.at(-1)?.id ?? answeredUpTo, history };
+}
+
+/** 같은 기록을 한 번만 재시도한다. 창을 닫거나 시간이 끝나면 다음 요청을 보내지 않는다. */
+export async function requestTurn(
+	api: BotApi,
+	chatId: string,
+	history: Line[],
+	options: {
+		isActive(): boolean;
+		wait(): Promise<void>;
+		onRetry(waiting: boolean): void;
+	}
+): Promise<TurnResult | null> {
+	const request = () => api.turn(chatId, history).catch((): TurnResult => ({ status: 'network' }));
+	let result = await request();
+	if (!options.isActive()) return null;
+	if (result.status === 'network' || result.status === 'ai_unavailable') {
+		options.onRetry(true);
+		await options.wait();
+		if (!options.isActive()) return null;
+		options.onRetry(false);
+		result = await request();
+	}
+	return options.isActive() ? result : null;
 }

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { readFileSync } from 'node:fs';
+import { readScriptEnv } from './lib/env.mjs';
 
 /**
  * 진단: SUBSCRIBED 신호 이후 메시지가 실제로 전달되기 시작하기까지 몇 초 걸리는가.
@@ -8,12 +8,7 @@ import { readFileSync } from 'node:fs';
  *
  *   node scripts/realtime-warmup.mjs
  */
-const env = Object.fromEntries(
-	readFileSync(new URL('../.env', import.meta.url), 'utf8')
-		.split(/\r?\n/)
-		.filter((l) => /^[A-Z_]+=/.test(l))
-		.map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()])
-);
+const env = readScriptEnv();
 const URL_ = env.PUBLIC_SUPABASE_URL;
 const PUB = env.PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.PUBLIC_SUPABASE_ANON_KEY;
 const admin = createClient(URL_, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });

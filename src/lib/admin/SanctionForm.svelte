@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { confirmed } from './confirm';
+	import { ADMIN_MAX_SUSPEND_DAYS, MOD_MAX_SUSPEND_DAYS } from '$lib/adminRoles';
 
 	/**
 	 * 제재 폼 — 신고 상세(채팅·편지)와 사용자 상세에서 같이 쓴다.
@@ -22,11 +23,10 @@
 		restricted?: boolean;
 	} = $props();
 
-	const MOD_MAX = 7;
 	const ACTIONS = $derived(
 		[
 			{ v: 'warn', label: '경고' },
-			{ v: 'suspend', label: isAdmin ? '기간 정지' : `기간 정지 (최대 ${MOD_MAX}일)` },
+			{ v: 'suspend', label: isAdmin ? '기간 정지' : `기간 정지 (최대 ${MOD_MAX_SUSPEND_DAYS}일)` },
 			{ v: 'ban', label: '영구 정지', admin: true },
 			{ v: 'reinstate', label: '정지 풀기 (제한 해제)', admin: banned, hide: targets.length < 2 && !restricted && !banned }
 		].filter((a) => (isAdmin || !a.admin) && !a.hide)
@@ -60,7 +60,7 @@
 	</select>
 	{#if action === 'suspend'}
 		<label class="days">
-			<input class="field num" type="number" name="days" min="1" max={isAdmin ? 365 : MOD_MAX} bind:value={days} /> 일
+			<input class="field num" type="number" name="days" min="1" max={isAdmin ? ADMIN_MAX_SUSPEND_DAYS : MOD_MAX_SUSPEND_DAYS} bind:value={days} /> 일
 		</label>
 	{/if}
 	<textarea class="field ta" name="note" rows="2" placeholder="조치 사유 (기록용)" bind:value={note}></textarea>

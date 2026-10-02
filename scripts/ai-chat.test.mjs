@@ -4,7 +4,7 @@ import { chatPrompt, cleanHistory, conversationText, tidyReply } from '../src/li
 import { randomAlias, splitReply, typeMs } from '../src/lib/bot/persona.ts';
 import { callModels, foldSystem } from '../src/lib/server/aiFold.ts';
 import { moderationPrompt } from '../src/lib/server/moderation.ts';
-import { snapshotTurn } from '../src/lib/bot/conversation.ts';
+import { requestTurn, snapshotTurn } from '../src/lib/bot/conversation.ts';
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
@@ -64,6 +64,33 @@ check('치는 시간: 짧아도 0.9초, 길어도 6초, 길수록 오래', typeM
 {
 	const names = new Set(Array.from({ length: 200 }, () => randomAlias('말랑복숭아')));
 	check('봇 이름은 서버 익명 이름과 같은 모양 · 내 이름과 겹치지 않는다', !names.has('말랑복숭아') && [...names].every((n) => /^[가-힣]{4,5}$/.test(n)), [...names].slice(0, 5).join(','));
+}
+
+console.log('[봇 요청 재시도 — 같은 기록을 한 번만 · 닫으면 중단]');
+{
+	const history = [{ role: 'user', content: '안녕' }];
+	const calls = [];
+	const waiting = [];
+	const api = { turn: async (_id, lines) => {
+		calls.push(lines);
+		return calls.length === 1 ? { status: 'network' } : { status: 'ok', reply: '반가워', turns: 1, max_turns: 5 };
+	} };
+	const result = await requestTurn(api, 'chat', history, { isActive: () => true, wait: async () => {}, onRetry: (value) => waiting.push(value) });
+	check('★ 실패 뒤 같은 기록으로 한 번만 다시 보낸다', result.status === 'ok' && calls.length === 2 && calls.every((lines) => lines === history));
+	check('재시도 대기 동안만 입력 중 표시를 내린다', waiting.join(',') === 'true,false');
+	calls.length = 0;
+	api.turn = async (_id, lines) => { calls.push(lines); throw new Error('offline'); };
+	const failure = await requestTurn(api, 'chat', history, { isActive: () => true, wait: async () => {}, onRetry: () => {} });
+	check('연속 네트워크 예외도 두 요청에서 멈춘다', failure.status === 'network' && calls.length === 2);
+	calls.length = 0;
+	let active = true;
+	const closed = await requestTurn(api, 'chat', history, { isActive: () => active, wait: async () => { active = false; }, onRetry: () => {} });
+	check('★ 재시도를 기다리다 닫으면 새 요청을 보내지 않는다', closed === null && calls.length === 1);
+	calls.length = 0;
+	active = true;
+	api.turn = async (_id, lines) => { calls.push(lines); active = false; return { status: 'ok', reply: '늦은 답', turns: 1, max_turns: 5 }; };
+	const stale = await requestTurn(api, 'chat', history, { isActive: () => active, wait: async () => {}, onRetry: () => {} });
+	check('닫힌 뒤 온 성공 응답도 버린다', stale === null && calls.length === 1);
 }
 
 console.log('[system 을 못 받는 모델에 다시 보낼 때]');

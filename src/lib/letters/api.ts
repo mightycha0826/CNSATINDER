@@ -1,4 +1,3 @@
-import { supabase } from '../supabase';
 import { rpc } from '../rpc';
 import { requestModeration } from '../moderation';
 import { notifyDm } from '../push';
@@ -199,12 +198,6 @@ export const closeThread = (id: number) => rpc<{ status: string }>('dm_close', {
 export const blockThread = (id: number) => rpc<{ status: string }>('dm_block', { p_thread: id });
 export const reportThread = (id: number, reason: string, note: string) =>
 	rpc<{ status: string }>('dm_report', { p_thread: id, p_reason: reason, p_note: note });
-
-/** 편지 받기 (설정) — 끄면 검색에 나오지 않고 새 편지를 받지 않는다 */
-export async function setLettersOpen(on: boolean, uid: string) {
-	const { error } = await supabase.from('profiles').update({ letters_open: on }).eq('id', uid);
-	if (error) throw error;
-}
 
 /** 상태 코드 → 사용자 문구 (ok 는 null) */
 export function sendError(r: SendResult): string | null {

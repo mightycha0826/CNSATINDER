@@ -4,63 +4,11 @@ import { rpc } from './rpc';
 import { disablePush, syncPush } from './push';
 import { accountIsCurrent, accountToken, changeAccount } from './accountScope';
 import { toasts } from './toast.svelte';
+import type { Profile, Settings } from './accountTypes';
+import { readWithFallback } from './schemaCompatibility';
 
-/** 내 프로필. 상대에게는 nickname·bio·interests·mbti 만 partner_profile() 을 거쳐 보인다 (성별·선호·상태는 안 보인다). */
-export type Profile = {
-	id: string;
-	/** 계정의 고유 익명 이름 — 가입할 때 서버가 정하고 바꿀 수 없다 */
-	nickname: string | null;
-	bio: string;
-	interests: string[];
-	mbti: string | null;
-	gender: 'm' | 'f' | 'x';
-	want: 'm' | 'f' | 'any';
-	status: 'active' | 'suspended' | 'banned';
-	suspended_until: string | null;
-	verified: boolean;
-	onboarded: boolean;
-	/** 만났던 사람도 다시 만나기 (설정) — 둘 다 켰을 때만 최근 상대와 다시 매칭 (Phase 21) */
-	allow_rematch?: boolean;
-	/** 편지 받기 (설정) — 끄면 검색에 나오지 않고 새 편지를 받지 않는다 (Phase 23) */
-	letters_open?: boolean;
-	/** 매너 온도 (Phase 30) — 서버만 바꾼다 */
-	manner_temp?: number;
-	/** 편지 쓰기 찾기 화면의 추천에 나오기 (설정, Phase 84 — 기본 켜짐) */
-	letters_recommend?: boolean;
-	/** 편지 찾기 · 추천에 보이는 내 뱃지 순서 — 내 순서 / 무작위 (Phase 84) */
-	letter_badge_order?: 'mine' | 'random';
-};
-
-export type Settings = {
-	is_open: boolean;
-	notice: string;
-	room_minutes: number;
-	extend_minutes: number;
-	vote_window_sec: number;
-	join_grace_sec: number;
-	max_rounds: number;
-	heartbeat_sec: number;
-	presence_ttl_sec: number;
-	msg_max_len: number;
-	max_open_rooms: number;
-	letter_max_len: number;
-	comment_max_len: number;
-	/** Phase 19 — DB 에 아직 없으면(패치 전) undefined */
-	ai_moderation?: boolean;
-	ai_chat?: boolean;
-	ai_chat_per_user?: number;
-	/** Phase 44 — 익명편지 잠금: 켜져 있으면 가입한 학생이 letters_gate_min 명이 될 때까지 편지가 잠긴다 (lib/letters/gate.svelte.ts) */
-	letters_gate?: boolean;
-	letters_gate_min?: number;
-	/** Phase 52 — 서버 점검 */
-	maintenance?: boolean;
-	maintenance_msg?: string;
-	maintenance_until?: string | null;
-	/** Phase 53 — 점검 예약 (이 시각부터 저절로 점검 중) */
-	maintenance_at?: string | null;
-	/** Phase 84 — 뱃지 사진을 받는 인스타그램 계정 (비어 있으면 "준비 중") */
-	badge_instagram?: string | null;
-};
+export type { Profile, Settings } from './accountTypes';
+export { errMsg } from './errors';
 
 export const S = $state({
 	booted: false,
@@ -108,51 +56,6 @@ export const UI = $state({
 // ── 토스트 ────────────────────────────────────────────────────────────
 // 의존성 없는 별도 모듈로 분리 (브라우저 모드로 직접 테스트하기 위해). 기존 import 경로는 그대로 쓴다.
 export { toast, toasts } from './toast.svelte';
-
-// ── 에러 한국어 매핑 ──────────────────────────────────────────────────
-export function errMsg(e: unknown): string {
-	const m = String((e as { message?: string })?.message ?? e ?? '');
-	// Supabase Auth 는 트리거 예외를 'Database error saving new user' 로 감싸서 돌려준다
-	if (m.includes('school_email_required') || m.includes('Database error saving new user'))
-		return '학교 이메일(@cnsa.hs.kr)로만 가입할 수 있어요';
-	// IP 단위 한도 — 학교 와이파이에서는 본인이 아니라 학교 전체가 몰린 것이다
-	if (m.includes('Request rate limit reached'))
-		return '지금 들어오는 사람이 많아요. 몇 초 뒤에 다시 눌러 주세요';
-	if (m.includes('Email rate limit') || m.includes('over_email_send_rate_limit'))
-		return '메일 요청이 너무 잦아요. 1분 뒤에 다시 받아 주세요';
-	if (m.includes('rate limit')) return '요청이 많아요. 잠시 후 다시 시도해 주세요';
-	// 비밀번호 로그인 — 계정이 없는지 비밀번호가 틀렸는지는 구분해 주지 않는다 (가입 여부 탐색 방지)
-	if (m.includes('Invalid login credentials')) return '이메일 또는 비밀번호가 맞지 않아요';
-	if (m.includes('Email not confirmed')) return '아직 인증을 마치지 않은 계정입니다. "처음이에요 · 가입하기"로 인증해 주세요';
-	if (m.includes('Password should') || m.includes('weak_password'))
-		return '비밀번호는 8자 이상, 영문과 숫자를 섞어 주세요';
-	if (m.includes('same_password') || m.includes('should be different'))
-		return '지금 쓰는 비밀번호와 달라야 해요';
-	// 프로필 검사 (update_my_profile)
-	if (m.includes('personal_info')) return '학번·전화번호·SNS 아이디처럼 나를 알 수 있는 정보는 적을 수 없어요';
-	if (m.includes('bio_too_long')) return '소개는 60자까지 쓸 수 있어요';
-	if (m.includes('too_many_interests')) return '관심사는 5개까지 담을 수 있어요';
-	if (m.includes('interest_too_long')) return '관심사 하나는 12자까지 담을 수 있어요';
-	if (m.includes('invalid_mbti')) return 'MBTI 를 다시 확인해 주세요';
-	// 검열 1단 (규칙 필터) — personal_info 는 위에서
-	if (m.includes('blocked_word')) return '보낼 수 없는 표현이 있어요. 다른 말로 바꿔 주세요';
-	// 익명편지
-	if (m.includes('too_long')) return '글자 수 초과';
-	if (m.includes('bad_format')) return '서식을 저장하지 못했어요. 다시 올려 주세요';
-	if (m.includes('empty_body')) return '내용을 적어 주세요';
-	if (m.includes('not_owner')) return '내가 쓴 글만 지울 수 있어요';
-	// 이름 편지 (Phase 23)
-	if (m.includes('name_in_roster')) return '학교 명단에 있는 이름이에요. 학교 이메일로 가입했는지 확인해 주세요';
-	if (m.includes('bad_name')) return '이름은 한글 또는 영문 2~20자로 적어 주세요';
-	if (m.includes('Token has expired') || m.includes('expired'))
-		return '인증 코드 유효 시간 만료. 다시 받아 주세요';
-	if (m.includes('Invalid token') || m.includes('invalid'))
-		return '인증 코드가 올바르지 않아요';
-	if (m.includes('Failed to fetch') || m.includes('NetworkError'))
-		return '네트워크를 확인해 주세요';
-	if (m.includes('unauthenticated')) return '로그인이 필요해요';
-	return m || '알 수 없는 오류';
-}
 
 // ── 부팅 ──────────────────────────────────────────────────────────────
 let ticker: ReturnType<typeof setInterval> | null = null;
@@ -238,34 +141,30 @@ export async function loadProfile() {
 	// ★ select('*') 를 쓰지 않는다. 항상 명시 컬럼.
 	const cols = 'id, nickname, bio, interests, mbti, gender, want, status, suspended_until, verified, onboarded';
 	const read = (c: string) => supabase.from('profiles').select(c).eq('id', uid).maybeSingle();
-	let { data, error } = await read(`${cols}, allow_rematch, letters_open, manner_temp, letters_recommend, letter_badge_order`);
 	// Phase 21 · 23 · 30 · 84 를 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
-	if (error) ({ data, error } = await read(`${cols}, allow_rematch, letters_open, manner_temp`));
-	if (error) ({ data, error } = await read(`${cols}, allow_rematch, letters_open`));
-	if (error) ({ data, error } = await read(`${cols}, allow_rematch`));
-	if (error) ({ data } = await read(cols));
+	const { data } = await readWithFallback(read, cols, [
+		'allow_rematch', 'letters_open', 'manner_temp', 'letters_recommend, letter_badge_order'
+	]);
 	if (accountIsCurrent(token)) S.profile = (data as unknown as Profile) ?? null;
 }
 
-/** 내 프로필 한 칸 바꾸기 (설정 스위치 — 편지 추천 · 뱃지 순서, Phase 84) */
-export async function setProfileField(patch: Pick<Profile, 'letters_recommend'> | Pick<Profile, 'letter_badge_order'>) {
-	const { error } = await supabase
-		.from('profiles')
-		.update(patch)
-		.eq('id', S.session?.user.id ?? '');
+type ProfilePreferences = Partial<Pick<Profile, 'want' | 'allow_rematch' | 'letters_open' | 'letters_recommend' | 'letter_badge_order'>>;
+
+/** 본인 행만 수정하고 같은 계정으로 남아 있을 때 프로필을 다시 읽는다. */
+async function updateProfile(patch: ProfilePreferences | Pick<Profile, 'gender' | 'want' | 'onboarded'>) {
+	const uid = S.session?.user.id;
+	if (!uid) throw new Error('unauthenticated');
+	const token = accountToken();
+	const { error } = await supabase.from('profiles').update(patch).eq('id', uid);
 	if (error) throw error;
-	await loadProfile();
+	if (accountIsCurrent(token)) await loadProfile();
 }
 
+/** 설정 스위치와 매칭 선호 — 상태·인증 여부 같은 서버 전용 열은 받지 않는다. */
+export const setProfileField = (patch: ProfilePreferences) => updateProfile(patch);
+
 /** 만났던 사람도 다시 만나기 (설정 화면 스위치) */
-export async function setAllowRematch(on: boolean) {
-	const { error } = await supabase
-		.from('profiles')
-		.update({ allow_rematch: on })
-		.eq('id', S.session?.user.id ?? '');
-	if (error) throw error;
-	await loadProfile();
-}
+export const setAllowRematch = (on: boolean) => setProfileField({ allow_rematch: on });
 
 const SETTINGS_COLS =
 	'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms, letter_max_len, comment_max_len';
@@ -274,13 +173,10 @@ async function loadSettings() {
 	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();
 	const AI = 'ai_moderation, ai_chat, ai_chat_per_user';
 	const MAINT = 'maintenance, maintenance_msg, maintenance_until';
-	let { data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}, maintenance_at, badge_instagram`);
 	// 뱃지 인스타(84) · 점검 예약(53) · 서버 점검(52) · 편지 잠금(44) · AI 설정(19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
-	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}, maintenance_at`));
-	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}`));
-	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min`));
-	if (error) ({ data, error } = await read(`${SETTINGS_COLS}, ${AI}`));
-	if (error) ({ data } = await read(SETTINGS_COLS));
+	const { data } = await readWithFallback(read, SETTINGS_COLS, [
+		AI, 'letters_gate, letters_gate_min', MAINT, 'maintenance_at', 'badge_instagram'
+	]);
 	if (!accountIsCurrent(token)) return;
 	S.settings = (data as unknown as Settings) ?? null;
 	// 예약 시각이 지났으면 점검 중 (Phase 53 — DB 의 private.in_maintenance 와 같은 규칙)
@@ -502,10 +398,5 @@ export async function saveProfile(bio: string, interests: string[], mbti: string
 
 // ── 온보딩 ────────────────────────────────────────────────────────────
 export async function saveOnboarding(gender: 'm' | 'f', want: 'm' | 'f' | 'any') {
-	const { error } = await supabase
-		.from('profiles')
-		.update({ gender, want, onboarded: true })
-		.eq('id', S.session?.user.id ?? '');
-	if (error) throw error;
-	await loadProfile();
+	await updateProfile({ gender, want, onboarded: true });
 }

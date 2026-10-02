@@ -37,14 +37,12 @@
 		setAllowRematch,
 		setPassword,
 		setProfileField,
-		loadProfile,
 		signOut,
 		toast,
 		verifyCurrentPassword,
 		verifyOtpForMe
 	} from '$lib/state.svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
-	import { setLettersOpen } from '$lib/letters/api';
 	import Chevron from '$lib/ui/Chevron.svelte';
 	import { LEGAL, LEGAL_IDS } from '$lib/legal';
 	import PasswordFields from '$lib/ui/PasswordFields.svelte';
@@ -236,8 +234,7 @@
 		if (lettersBusy || !S.session) return;
 		lettersBusy = true;
 		try {
-			await setLettersOpen(on, S.session.user.id);
-			await loadProfile();
+			await setProfileField({ letters_open: on });
 			toast(on ? '이름으로 찾아서 편지를 보낼 수 있어요' : '이제 검색에 나오지 않고 새 편지를 받지 않아요');
 		} catch (err) {
 			toast(errMsg(err));

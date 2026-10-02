@@ -2,7 +2,8 @@ import { error, fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
 import { friendly, guard, isAdmin, revealIdentity, runSanction, studentLabels } from '$lib/server/adminAuth';
 import type { PersonalNoticeRow, UserBadgeRow, UserDetail, UserLetterRow, UserRoomRow } from '$lib/adminTypes';
-import { deliver, type PushNote } from '$lib/server/pushSend';
+import { notifyPersonalNotice } from '$lib/server/pushSend';
+import { badgeCode, noticeError, noticeInput } from '$lib/server/adminForms';
 import type { Actions, PageServerLoad } from './$types';
 
 async function detail(id: string, staff: string) {
@@ -49,20 +50,17 @@ export const actions: Actions = {
 	notify: async ({ params, request, locals, platform }) => {
 		const f = await request.formData();
 		const kind = f.get('kind') === 'warning' ? 'warning' : 'message';
-		const title = String(f.get('title') ?? '').trim();
-		const body = String(f.get('body') ?? '').trim();
-		if (!title) return fail(400, { error: '제목을 적어 주세요' });
-		if (title.length > 80) return fail(400, { error: '제목은 80자까지' });
-		if (body.length > 2000) return fail(400, { error: '내용은 2000자까지' });
+		const input = noticeInput(f);
+		const invalid = noticeError(input);
+		if (invalid) return fail(400, { error: invalid });
 		let id: number;
 		try {
-			id = await adminRpc<number>('admin_send_personal_notice', { p_staff: locals.staff!.id, p_user: params.id, p_kind: kind, p_title: title, p_body: body });
+			id = await adminRpc<number>('admin_send_personal_notice', { p_staff: locals.staff!.id, p_user: params.id, p_kind: kind, p_title: input.title, p_body: input.body });
 		} catch (e) {
 			return friendly(e);
 		}
 		// 알림은 실패해도 공지는 이미 갔다 — 기다리지 않는다
-		const p = await adminRpc<{ skip: string } | Omit<PushNote, 'kind'>>('personal_notice_push', { p_id: id }).catch(() => ({ skip: 'error' }));
-		if (!('skip' in p)) await deliver({ ...p, kind: 'notice' }, platform).catch(() => null);
+		await notifyPersonalNotice(id, platform);
 		return { done: kind === 'warning' ? '경고 공지를 보냈어요' : '개인 공지를 보냈어요' };
 	},
 
@@ -87,9 +85,9 @@ export const actions: Actions = {
 	// 특별 업적 주기 · 거두기 (Phase 44) — 운영진 누구나, 기록에 남는다
 	badge: async ({ params, request, locals }) => {
 		const f = await request.formData();
-		const code = String(f.get('code') ?? '');
+		const code = badgeCode(f);
 		const on = f.get('on') === 'true';
-		if (!/^[a-z_]{1,40}$/.test(code)) return fail(400, { error: '잘못된 업적' });
+		if (!code) return fail(400, { error: '잘못된 업적' });
 		try {
 			await adminRpc('admin_set_badge', { p_staff: locals.staff!.id, p_user: params.id, p_code: code, p_on: on });
 		} catch (e) {

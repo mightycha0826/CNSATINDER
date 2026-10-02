@@ -1,7 +1,7 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import { adminRpc, emailOf, rosterNameOf } from './supabaseAdmin';
 import type { Identity } from '$lib/adminTypes';
-import { can, canSee, homeOf, type Perm } from '$lib/adminRoles';
+import { ADMIN_MAX_SUSPEND_DAYS, MOD_MAX_SUSPEND_DAYS, can, canSee, homeOf, type Perm } from '$lib/adminRoles';
 
 /**
  * 운영진(moderator) / 관리자(admin) 권한 — Phase 11
@@ -9,7 +9,7 @@ import { can, canSee, homeOf, type Perm } from '$lib/adminRoles';
  * 같은 규칙을 DB 함수(private.require_staff, admin_sanction)도 한 번 더 검사한다.
  * 여기서 막는 건 화면·메시지를 위해서고, 진짜 경계는 DB 쪽이다.
  */
-export const MOD_MAX_SUSPEND_DAYS = 7;
+export { MOD_MAX_SUSPEND_DAYS } from '$lib/adminRoles';
 
 /** 학생 신원(이메일 · 학번 이름 · 전체 대화 · 편지 활동)을 볼 권한 — Phase 51 부터 역할별 권한 표(identity)를 따른다 */
 export const isAdmin = (locals: App.Locals) => can(locals.staff, 'identity');
@@ -101,7 +101,7 @@ export function friendly(e: unknown) {
 export async function runSanction(locals: App.Locals, user: string, f: FormData, report: string | null) {
 	const action = String(f.get('action'));
 	if (!['warn', 'suspend', 'ban', 'reinstate'].includes(action)) return fail(400, { error: '잘못된 조치' });
-	const max = locals.staff?.role === 'admin' ? 365 : MOD_MAX_SUSPEND_DAYS; // 긴 정지는 관리자 역할만 (DB 도 같은 규칙)
+	const max = locals.staff?.role === 'admin' ? ADMIN_MAX_SUSPEND_DAYS : MOD_MAX_SUSPEND_DAYS;
 	const days = action === 'suspend' ? Math.max(1, Math.min(max, Number(f.get('days')) || 0)) : null;
 	try {
 		await adminRpc('admin_sanction', {

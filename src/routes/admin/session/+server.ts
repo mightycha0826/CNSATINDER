@@ -1,6 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { clearSession, issueSession } from '$lib/server/adminSession';
 import { adminRpc, supabaseAdmin } from '$lib/server/supabaseAdmin';
+import { jsonObject } from '$lib/server/request';
 import type { RequestHandler } from './$types';
 
 /**
@@ -12,8 +13,7 @@ import type { RequestHandler } from './$types';
  * JSON POST 는 CORS preflight 가 필요하므로 다른 사이트에서 대신 보낼 수 없다.
  */
 export const POST: RequestHandler = async ({ request, cookies, url }) => {
-	const body = (await request.json().catch(() => null)) as { token?: string } | null;
-	const token = body?.token;
+	const token = (await jsonObject(request)).token;
 	if (!token || typeof token !== 'string') error(400, '토큰이 없습니다');
 
 	const { data, error: e } = await supabaseAdmin().auth.getUser(token);

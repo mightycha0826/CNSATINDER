@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
 import { allowed, friendly } from '$lib/server/adminAuth';
+import { noticeError, noticeInput } from '$lib/server/adminForms';
 import type { NoticeRow } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -15,14 +16,11 @@ export const load: PageServerLoad = async ({ locals }) => ({
 export const actions: Actions = {
 	post: async ({ request, locals }) => {
 		if (!allowed(locals, 'notice')) return fail(403, { error: '공지를 올릴 권한이 없어요' });
-		const f = await request.formData();
-		const title = String(f.get('title') ?? '').trim();
-		const body = String(f.get('body') ?? '').trim();
-		if (!title) return fail(400, { error: '제목을 적어 주세요', title, body });
-		if (title.length > 80) return fail(400, { error: '제목은 80자까지', title, body });
-		if (body.length > 2000) return fail(400, { error: '내용은 2000자까지', title, body });
+		const input = noticeInput(await request.formData());
+		const invalid = noticeError(input);
+		if (invalid) return fail(400, { error: invalid, ...input });
 		try {
-			await adminRpc('admin_post_notice', { p_staff: locals.staff!.id, p_title: title, p_body: body });
+			await adminRpc('admin_post_notice', { p_staff: locals.staff!.id, p_title: input.title, p_body: input.body });
 		} catch (e) {
 			return friendly(e);
 		}

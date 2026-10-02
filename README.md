@@ -194,7 +194,12 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 
 | 위치 | 내용 |
 |---|---|
-| `src/lib/state.svelte.ts` | 학생 앱 전역 상태 · 로그인 · 접속 신호 · 에러 문구 |
+| `src/lib/state.svelte.ts` | 학생 앱 전역 상태 · 로그인 · 접속 신호 · 본인 프로필 저장 |
+| `src/lib/accountTypes.ts` · `errors.ts` · `schemaCompatibility.ts` | 계정·설정 타입 / 오류 안내 / 구형 DB의 선택 열 조회 호환성. 기존 `state.svelte.ts`의 타입·오류 import도 유지 |
+| `src/lib/chat/message-ledger.svelte.ts` | 낙관적 메시지·서버 응답·실시간 방송의 병합과 전송 상태. 방 구독·타이머는 `room.svelte.ts`에서 관리 |
+| `src/lib/letters/mailbox.svelte.ts` · `folder.svelte.ts` · `selection.svelte.ts` | 편지함 캐시 / 폴더 조회·더보기·오류 / 선택·폴더 이동·삭제 완료 순서. 늦은 응답은 계정·화면 수명으로 걸러 냄 |
+| `src/lib/server/adminForms.ts` · `adminSettings.ts` · `request.ts` · `moderationBatch.ts` | 운영 폼·점검 설정 / API 본문·토큰 파싱 / 검열 배치. 권한·감사 기록·RPC 호출은 기존 서버 경계에서 유지 |
+| `scripts/lib/env.mjs` | 운영 스크립트 공용 설정 읽기. 실제 서비스에 접근하는 스크립트는 `npm test`에 포함하지 않음 |
 | `src/lib/ui/` | 학생 앱 공용 화면 조각 — `Sheet`(아래 시트) · `ReportPicker`(신고 사유) · `BackButton` · `TopbarMe`(공지 종 + 설정 톱니) · `Avatar` · `PasswordFields` |
 | `src/lib/notices.svelte.ts` | 공지사항 목록 · 안 본 공지(빨간 점) · 본 것으로 저장 |
 | `src/lib/pollSeeker.svelte.ts` | "찾는 중" 폴링 상태 기계 — 채팅 `Seeker` 가 물려받는다 |
@@ -217,6 +222,12 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 |---|---|
 | `npm run dev` | 개발 서버 |
 | `npm run check` | 타입 검사 |
+| `npm test` | 단위 테스트 전부 + DB 스키마 검증. 실제 Supabase·운영 계정·비밀키 없이 실행 |
+| `npm run test:unit` | DB 스키마를 제외한 단위·상태·서버 회귀 검사 |
+| `npm run test:core` | 선택 열 호환 조회·오류 안내·운영 스크립트 설정 파싱 |
+| `npm run test:account` | 계정 전환·늦은 응답·개인정보 캐시·프로필 저장 수명 |
+| `npm run test:letters` | 편지함·폴더의 조회 경쟁·실패 재시도·선택 완료 순서 |
+| `npm run test:server` | 운영 폼·한국 시각 점검 예약·검열 배치·관리자 인증과 공지 동작 |
 | `npm run test:schema` | PGlite 로 스키마·트리거·RLS 검증 (Supabase 불필요) |
 | `npm run test:chat` | 채팅 클라이언트 로직 — 가짜 전송 계층으로 경쟁 상황 재현 |
 | `npm run test:e2e` | 실서버 Realtime E2E. 일회용 계정 3개 생성→검증→삭제. 서버 키가 앱과 **같은 프로젝트**여야 실행됨 |
@@ -228,7 +239,7 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
 | `node scripts/vapid-keys.mjs` | 푸시 알림용 VAPID 키를 만들어 `.env` 에 추가 (이미 있으면 그대로) |
 | `node scripts/import-roster.mjs <csv> [--dry-run]` | 학번-이름 명렬표를 DB 에 반영 (관리자 화면의 이메일 확인 옆 이름 표시용) |
 | `npm run test:admin` | 운영자 세션 쿠키 — 위조·변조·만료·키 교체가 거부되는지 |
-| `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 23묶음 — `scripts/e2e/`. `hit`(누름 영역 44px) · `ux`(흐름이 말없이 끊기지 않는지)는 UX 가이드라인 검사. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `landy-e2e/` |
+| `npm run test:ui [-- 이름…]` | 화면(브라우저) 테스트 24묶음 — `scripts/e2e/`. `hit`(누름 영역 44px) · `ux`(흐름이 말없이 끊기지 않는지)는 UX 가이드라인 검사. 가짜 Supabase·`/dev` 미리보기로 돌아 계정 불필요. 이름을 주면 그것만 (`-- react sheet`). 스크린샷은 OS 임시 폴더 `landy-e2e/` |
 | `node scripts/generate-badge.mjs` | 알림 배지(`static/badge-96.png`) 재생성 — 앱 아이콘의 흰 로고만 남기고 바탕은 투명 (안드로이드는 배지의 투명도만 써서 컬러 아이콘이면 흰 네모가 된다) |
 | `node scripts/generate-crest.mjs` | 교표(`static/school-crest.png`) 재생성 — 원본 `branding/school-crest-source.jpg` 의 가장자리에서 이어진 흰 바탕만 투명하게 (교복 프로필, Phase 60) |
 | `node scripts/generate-icons.mjs` | PWA 아이콘 재생성 — 원본은 `branding/icon-source.*`(png/webp/jpg 아무거나) (헤드리스 Chrome 사용) |

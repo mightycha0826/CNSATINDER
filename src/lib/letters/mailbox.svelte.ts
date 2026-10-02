@@ -1,6 +1,7 @@
 import { fetchMailbox, type Box, type Folder, type MailItem } from './api';
 import { refreshUnread } from './unread.svelte';
 import { accountIsCurrent, accountToken, currentAccountId, onAccountChange } from '../accountScope';
+import { errMsg } from '../errors';
 
 /**
  * 편지함 목록 (Phase 35) — 편지함 첫 화면(/letters)과 보관함(/letters/archive)이 같이 쓴다.
@@ -14,6 +15,9 @@ export const BOX = $state({
 	sent: [] as MailItem[],
 	loaded: { received: false, sent: false } as Record<Box, boolean>,
 	more: { received: false, sent: false } as Record<Box, boolean>,
+	busy: { received: false, sent: false } as Record<Box, boolean>,
+	loading: { received: false, sent: false } as Record<Box, boolean>,
+	error: { received: null, sent: null } as Record<Box, string | null>,
 	/** 내 편지 폴더 (Phase 47) — 편지함 첫 쪽과 같이 온다. 폴더에 넣은 편지는 received · sent 에 없다 */
 	folders: [] as Folder[]
 });
@@ -50,12 +54,18 @@ export function takeKnock(): Knock | null {
 }
 
 const requests: Record<Box, number> = { received: 0, sent: 0 };
+const failedMore: Record<Box, boolean> = { received: false, sent: false };
 onAccountChange(() => {
 	BOX.received = [];
 	BOX.sent = [];
 	BOX.folders = [];
 	BOX.loaded = { received: false, sent: false };
 	BOX.more = { received: false, sent: false };
+	BOX.busy = { received: false, sent: false };
+	BOX.loading = { received: false, sent: false };
+	BOX.error = { received: null, sent: null };
+	failedMore.received = false;
+	failedMore.sent = false;
 	requests.received++;
 	requests.sent++;
 	ANNOUNCED.clear();
@@ -68,16 +78,26 @@ export async function loadBox(box: Box) {
 	if (!currentAccountId()) return;
 	const token = accountToken();
 	const sequence = ++requests[box];
+	BOX.busy[box] = false;
+	BOX.loading[box] = true;
+	BOX.error[box] = null;
 	try {
 		const r = await fetchMailbox(box);
 		if (!accountIsCurrent(token) || sequence !== requests[box]) return;
 		BOX[box] = r.letters;
 		BOX.more[box] = r.letters.length === PAGE;
+		failedMore[box] = false;
 		if (r.folders) BOX.folders = r.folders;
-	} catch {
-		/* 다음 번에 — 기억해 둔 목록을 그대로 보여 준다 */
+	} catch (error) {
+		if (accountIsCurrent(token) && sequence === requests[box]) {
+			BOX.error[box] = errMsg(error);
+			failedMore[box] = false;
+		}
 	} finally {
-		if (accountIsCurrent(token) && sequence === requests[box]) BOX.loaded[box] = true;
+		if (accountIsCurrent(token) && sequence === requests[box]) {
+			BOX.loaded[box] = true;
+			BOX.loading[box] = false;
+		}
 	}
 }
 
@@ -95,17 +115,32 @@ export function pollMailbox() {
 }
 
 export async function loadMore(box: Box) {
-	if (!currentAccountId()) return;
+	if (!currentAccountId() || BOX.busy[box] || BOX.loading[box]) return;
 	const token = accountToken();
 	const sequence = requests[box];
 	const last = BOX[box].at(-1);
 	if (!last) return;
-	const r = (await fetchMailbox(box, last.id).catch(() => null))?.letters ?? [];
-	if (!accountIsCurrent(token) || sequence !== requests[box]) return;
-	const existing = new Set(BOX[box].map((item) => item.id));
-	BOX[box] = [...BOX[box], ...r.filter((item) => !existing.has(item.id))];
-	BOX.more[box] = r.length === PAGE;
+	BOX.busy[box] = true;
+	BOX.error[box] = null;
+	try {
+		const { letters } = await fetchMailbox(box, last.id);
+		if (!accountIsCurrent(token) || sequence !== requests[box]) return;
+		const existing = new Set(BOX[box].map((item) => item.id));
+		BOX[box] = [...BOX[box], ...letters.filter((item) => !existing.has(item.id))];
+		BOX.more[box] = letters.length === PAGE;
+		failedMore[box] = false;
+	} catch (error) {
+		if (accountIsCurrent(token) && sequence === requests[box]) {
+			BOX.error[box] = errMsg(error);
+			failedMore[box] = true;
+		}
+	} finally {
+		if (accountIsCurrent(token) && sequence === requests[box]) BOX.busy[box] = false;
+	}
 }
+
+/** 실패한 요청부터 다시 시도한다 — 더보기 실패는 이미 불러온 쪽을 유지한다. */
+export const retryBox = (box: Box) => (failedMore[box] ? loadMore(box) : loadBox(box));
 
 /** 버리기 · 차단 · 신고로 편지 줄기를 지웠을 때 — 목록에서 바로 빼고 새로 읽는다 */
 export function dropThread(threadId: number) {

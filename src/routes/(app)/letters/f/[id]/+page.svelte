@@ -6,148 +6,77 @@
 	 * ⋯ → 이름 바꾸기 · 폴더 지우기(편지는 보관함으로).
 	 */
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import MoreButton from '$lib/ui/MoreButton.svelte';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import MailStack from '$lib/letters/MailStack.svelte';
 	import FolderPicker from '$lib/letters/FolderPicker.svelte';
 	import SelectBar from '$lib/letters/SelectBar.svelte';
-	import { BOX, PAGE, refreshMailbox } from '$lib/letters/mailbox.svelte';
-	import { FOLDER_MAX, deleteFolder, deleteLetters, fetchFolder, folderError, renameFolder, takeFromFolder, type Box, type MailItem } from '$lib/letters/api';
-	import { backClose, historySettled, navigateFromOverlay } from '$lib/overlay.svelte';
+	import DeleteLettersSheet from '$lib/letters/DeleteLettersSheet.svelte';
+	import { MailSelection } from '$lib/letters/selection.svelte';
+	import { FolderMailbox } from '$lib/letters/folder.svelte';
+	import { BOX, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import { FOLDER_MAX, deleteFolder, folderError, renameFolder, takeFromFolder, type Box } from '$lib/letters/api';
+	import { navigateFromOverlay } from '$lib/overlay.svelte';
 	import { errMsg, toast } from '$lib/state.svelte';
-	import { accountIsCurrent, accountToken } from '$lib/accountScope';
-	const account = accountToken();
 
 	const id = $derived(Number(page.params.id));
-	let name = $state('');
-	let items = $state<MailItem[]>([]);
-	let loaded = $state(false);
-	let gone = $state(false);
-	let more = $state(false);
-	let busy = $state(false);
+	const folder = new FolderMailbox();
+	const selection = new MailSelection(leave);
 
 	// 받은 · 보낸 편지 수 (폴더 전체 — 아직 안 불러온 쪽까지) · 나눠 보기
-	let counts = $state({ received: 0, sent: 0 });
 	let kind = $state<'all' | Box>('all');
-	const mixed = $derived(counts.received > 0 && counts.sent > 0);
+	const mixed = $derived(folder.counts.received > 0 && folder.counts.sent > 0);
 	const view = $derived(mixed ? kind : 'all');
-	const shown = $derived(view === 'all' ? items : items.filter((x) => x.box === view));
+	const shown = $derived(view === 'all' ? folder.items : folder.items.filter((x) => x.box === view));
 	const KINDS = [
 		['all', '전체'],
 		['received', '받은 편지'],
 		['sent', '보낸 편지']
 	] as const;
-	const countOf = (k: 'all' | Box) => (k === 'all' ? counts.received + counts.sent : counts[k]);
-	/** 목록에서 빠진 편지 — 수도 같이 줄인다 */
-	function drop(out: (x: MailItem) => boolean) {
-		for (const x of items) if (out(x)) counts[x.box === 'sent' ? 'sent' : 'received']--;
-		items = items.filter((x) => !out(x));
-	}
-
-	async function load() {
-		kind = 'all';
-		try {
-			const r = await fetchFolder(id);
-			if (!accountIsCurrent(account)) return;
-			if (!r.folder) {
-				gone = true;
-				return;
-			}
-			name = r.folder.name;
-			items = r.letters;
-			more = r.letters.length === PAGE;
-			const n = (b: Box) => r.letters.filter((x) => x.box === b).length;
-			counts = { received: r.folder.received ?? n('received'), sent: r.folder.sent ?? n('sent') };
-		} catch (e) {
-			toast(errMsg(e));
-		} finally {
-			loaded = true;
-		}
-	}
+	const countOf = (k: 'all' | Box) => (k === 'all' ? folder.counts.received + folder.counts.sent : folder.counts[k]);
 	$effect(() => {
-		void id;
-		void load();
+		const folderId = id;
+		untrack(() => {
+			kind = 'all';
+			selection.stop();
+			menu = null;
+			void folder.load(folderId);
+		});
 	});
-	async function loadMore() {
-		const last = items.at(-1);
-		if (!last || busy) return;
-		busy = true;
-		const r = await fetchFolder(id, last.id).catch(() => null);
-		if (!accountIsCurrent(account)) return;
-		if (r) {
-			items = [...items, ...r.letters];
-			more = r.letters.length === PAGE;
-		}
-		busy = false;
-	}
 
 	// ── 선택 ──
-	let selecting = $state(false);
-	let picked = $state<number[]>([]);
-	let moving = $state(false);
-	backClose(() => stopSelect(), { open: () => selecting });
-	function stopSelect() {
-		selecting = false;
-		picked = [];
-		moving = false;
-		confirming = false;
-	}
-	const toggle = (it: MailItem) => (picked = picked.includes(it.id) ? picked.filter((x) => x !== it.id) : [...picked, it.id]);
 	/** 폴더에서 나간 편지 — 목록에서 빼고, 보관함 목록 · 폴더 수를 새로 */
 	function leave(ids: number[]) {
 		const out = new Set(ids);
-		drop((x) => out.has(x.id));
+		folder.drop((x) => out.has(x.id));
 		refreshMailbox();
 	}
+	let taking = $state(false);
 	async function takeOut() {
-		const ids = picked;
+		if (taking || !selection.picked.length || !folder.isCurrent(id)) return;
+		const folderId = id;
+		const ids = [...selection.picked];
+		taking = true;
 		try {
 			const r = await takeFromFolder(ids);
-			if (!accountIsCurrent(account)) return;
+			if (!folder.isCurrent(folderId)) return;
 			const err = folderError(r);
 			if (err) return toast(err);
-			stopSelect();
+			selection.stop();
 			leave(ids);
 			toast(`${ids.length}통을 보관함으로 돌려놨어요`);
 		} catch (e) {
-			toast(errMsg(e));
+			if (folder.isCurrent(folderId)) toast(errMsg(e));
+		} finally {
+			taking = false;
 		}
 	}
-	async function moved(to: string) {
-		const ids = picked;
-		moving = false;
-		await historySettled(); // 폴더 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
-		if (!accountIsCurrent(account)) return;
-		stopSelect();
+	const moved = (to: string) => selection.complete((ids) => {
 		leave(ids);
 		toast(to ? `'${to}' 폴더로 ${ids.length}통을 옮겼어요` : '옮겼어요');
-	}
-
-	// ── 삭제 (Phase 69) — 확인 시트 → 내 편지함에서만 지운다 (폴더에서도 빠진다) ──
-	let confirming = $state(false);
-	let deleting = $state(false);
-	async function removeLetters() {
-		if (deleting) return;
-		const ids = picked;
-		deleting = true;
-		try {
-			const r = await deleteLetters(ids);
-			if (!accountIsCurrent(account)) return;
-			const err = folderError(r);
-			if (err) return toast(err);
-			confirming = false;
-			await historySettled(); // 확인 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
-			if (!accountIsCurrent(account)) return;
-			stopSelect();
-			leave(ids);
-			toast(`편지 ${r.status === 'ok' ? r.moved : ids.length}통을 삭제했어요`);
-		} catch (e) {
-			toast(errMsg(e));
-		} finally {
-			deleting = false;
-		}
-	}
+	});
 
 	// ── ⋯ 메뉴: 이름 바꾸기 · 지우기 ──
 	let menu = $state<null | 'menu' | 'rename' | 'delete'>(null);
@@ -155,40 +84,42 @@
 	let acting = $state(false);
 	async function rename() {
 		const nm = draft.trim().replace(/\s+/g, ' ');
-		if (!nm || acting) return;
+		if (!nm || acting || !folder.isCurrent(id)) return;
+		const folderId = id;
 		acting = true;
 		try {
-			const r = await renameFolder(id, nm);
-			if (!accountIsCurrent(account)) return;
+			const r = await renameFolder(folderId, nm);
+			if (!folder.isCurrent(folderId)) return;
 			const err = folderError(r);
 			if (err) return toast(err);
-			name = nm;
-			const f = BOX.folders.find((x) => x.id === id);
+			folder.name = nm;
+			const f = BOX.folders.find((x) => x.id === folderId);
 			if (f) f.name = nm;
 			menu = null;
 			toast('폴더 이름을 바꿨어요');
 		} catch (e) {
-			toast(errMsg(e));
+			if (folder.isCurrent(folderId)) toast(errMsg(e));
 		} finally {
 			acting = false;
 		}
 	}
 	async function remove() {
-		if (acting) return;
+		if (acting || !folder.isCurrent(id)) return;
+		const folderId = id;
 		acting = true;
 		try {
-			const r = await deleteFolder(id);
-			if (!accountIsCurrent(account)) return;
+			const r = await deleteFolder(folderId);
+			if (!folder.isCurrent(folderId)) return;
 			const err = folderError(r);
 			if (err) return toast(err);
-			BOX.folders = BOX.folders.filter((x) => x.id !== id);
+			BOX.folders = BOX.folders.filter((x) => x.id !== folderId);
 			refreshMailbox();
-			toast(`'${name}' 폴더를 지웠어요 · 편지는 보관함으로 돌아갔어요`);
+			toast(`'${folder.name}' 폴더를 지웠어요 · 편지는 보관함으로 돌아갔어요`);
 			// 메뉴 시트를 닫으며 이동 — 시트의 뒤로가기 칸과 이동이 서로 취소하지 않게 (G5.2)
 			void navigateFromOverlay('/letters/archive', { replaceState: true });
 			menu = null;
 		} catch (e) {
-			toast(errMsg(e));
+			if (folder.isCurrent(folderId)) toast(errMsg(e));
 		} finally {
 			acting = false;
 		}
@@ -197,19 +128,25 @@
 
 <div class="topbar">
 	<BackButton href="/letters/archive" history />
-	<span class="title fname">{selecting ? '편지 선택' : name || '폴더'}</span>
-	{#if selecting}
-		<button class="btn-text push" onclick={stopSelect}>취소</button>
-	{:else if !gone && loaded}
-		{#if items.length}<button class="btn-text push" onclick={() => (selecting = true)}>선택</button>{/if}
-		<MoreButton onclick={() => (menu = 'menu')} label="폴더 메뉴" push={!items.length} />
+	<span class="title fname">{selection.active ? '편지 선택' : folder.name || '폴더'}</span>
+	{#if selection.active}
+		<button class="btn-text push" onclick={() => selection.stop()}>취소</button>
+	{:else if !folder.gone && folder.loaded && folder.name}
+		{#if folder.items.length}<button class="btn-text push" onclick={() => selection.start()}>선택</button>{/if}
+		<MoreButton onclick={() => (menu = 'menu')} label="폴더 메뉴" push={!folder.items.length} />
 	{/if}
 </div>
 
-<div class="page folder" class:selecting>
-	{#if gone}
+<div class="page folder" class:selecting={selection.active}>
+	{#if folder.error}
+		<div class="center" role="status">
+			<p class="muted">{folder.error}</p>
+			<button class="btn-text" onclick={() => folder.retry()}>다시 시도</button>
+		</div>
+	{/if}
+	{#if folder.gone}
 		<p class="muted center">폴더를 찾을 수 없어요</p>
-	{:else if loaded && items.length === 0}
+	{:else if folder.loaded && folder.items.length === 0 && !folder.error}
 		<div class="empty">
 			<span class="icon" aria-hidden="true"></span>
 			<p>폴더가 비어 있어요</p>
@@ -230,46 +167,41 @@
 			<MailStack
 				items={shown}
 				box="received"
-				loading={!loaded}
+				loading={!folder.loaded}
 				ghosts={2}
-				{selecting}
-				{picked}
+				selecting={selection.active}
+				picked={selection.picked}
 				showBox
-				ontoggle={toggle}
-				ondrop={(t) => drop((x) => x.thread_id === t)}
+				ontoggle={(item) => selection.toggle(item, 'received')}
+				ondrop={(t) => folder.drop((x) => x.thread_id === t)}
 			/>
 		{/key}
-		{#if loaded && !shown.length && items.length}
+		{#if folder.loaded && !shown.length && folder.items.length}
 			<p class="muted center">불러온 편지 중에는 {view === 'sent' ? '보낸' : '받은'} 편지가 없어요</p>
 		{/if}
-		{#if more}<button class="more" onclick={loadMore} disabled={busy}>{busy ? '가져오는 중…' : '지난 편지 더 보기'}</button>{/if}
+		{#if folder.more}<button class="more" onclick={() => folder.loadMore()} disabled={folder.busy}>{folder.busy ? '가져오는 중…' : '지난 편지 더 보기'}</button>{/if}
 	{/if}
 </div>
 
-{#if selecting}
-	<SelectBar count={picked.length}>
-		<button class="danger" onclick={() => (confirming = true)} disabled={!picked.length}>삭제</button>
-		<button class="plain" onclick={takeOut} disabled={!picked.length}>폴더에서 빼기</button>
-		<button class="go" onclick={() => (moving = true)} disabled={!picked.length}>다른 폴더로</button>
+{#if selection.active}
+	<SelectBar count={selection.picked.length}>
+		<button class="danger" onclick={() => (selection.dialog = 'delete')} disabled={!selection.picked.length}>삭제</button>
+		<button class="plain" onclick={takeOut} disabled={!selection.picked.length || taking} aria-busy={taking}>폴더에서 빼기</button>
+		<button class="go" onclick={() => (selection.dialog = 'folder')} disabled={!selection.picked.length}>다른 폴더로</button>
 	</SelectBar>
 {/if}
-{#if moving}
-	<FolderPicker ids={picked} folders={BOX.folders} exclude={id} onclose={() => (moving = false)} ondone={moved} />
+{#if selection.dialog === 'folder'}
+	<FolderPicker ids={selection.picked} folders={BOX.folders} exclude={id} onclose={() => (selection.dialog = null)} ondone={moved} />
 {/if}
-{#if confirming}
-	<Sheet onclose={() => (confirming = false)} label="편지 삭제">
-		<p class="ask">편지 {picked.length}통을 삭제할까요?</p>
-		<p class="warn">내 편지함에서만 지워지고 상대에게는 그대로 남아요. 삭제한 편지는 되돌릴 수 없어요.</p>
-		<button class="item danger" onclick={removeLetters} disabled={deleting} aria-busy={deleting}>삭제</button>
-		<button class="item" onclick={() => (confirming = false)}>취소</button>
-	</Sheet>
+{#if selection.dialog === 'delete'}
+	<DeleteLettersSheet count={selection.picked.length} busy={selection.deleting} ondelete={() => selection.remove()} onclose={() => (selection.dialog = null)} />
 {/if}
 
 {#if menu}
 	<Sheet onclose={() => (menu = null)} label="폴더 메뉴">
 		{#if menu === 'menu'}
-			<p class="ask">{name}</p>
-			<button class="item" onclick={() => ((draft = name), (menu = 'rename'))}>이름 바꾸기</button>
+			<p class="ask">{folder.name}</p>
+			<button class="item" onclick={() => ((draft = folder.name), (menu = 'rename'))}>이름 바꾸기</button>
 			<button class="item danger" onclick={() => (menu = 'delete')}>폴더 지우기</button>
 			<button class="item cancel" onclick={() => (menu = null)}>취소</button>
 		{:else if menu === 'rename'}
@@ -286,7 +218,7 @@
 			</form>
 			<button class="item" onclick={() => (menu = 'menu')}>돌아가기</button>
 		{:else}
-			<p class="ask">'{name}' 폴더를 지울까요?</p>
+			<p class="ask">'{folder.name}' 폴더를 지울까요?</p>
 			<p class="warn">편지는 지워지지 않고 보관함(받은 편지 · 보낸 편지)으로 돌아가요.</p>
 			<button class="item danger" onclick={remove} disabled={acting} aria-busy={acting}>폴더 지우기</button>
 			<button class="item" onclick={() => (menu = 'menu')}>돌아가기</button>

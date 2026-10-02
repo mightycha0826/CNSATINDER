@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { readFileSync } from 'node:fs';
+import { readScriptEnv } from './lib/env.mjs';
 
 /**
  * 개발용 테스트 계정 만들기 (메일 발송 없음).
@@ -19,12 +19,7 @@ if (!email || !password) {
 	process.exit(1);
 }
 
-const env = Object.fromEntries(
-	readFileSync(new URL('../.env', import.meta.url), 'utf8')
-		.split(/\r?\n/)
-		.filter((l) => /^[A-Z_]+=/.test(l))
-		.map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()])
-);
+const env = readScriptEnv();
 const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
 const { data, error } = await admin.auth.admin.createUser({ email, email_confirm: true });

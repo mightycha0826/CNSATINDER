@@ -1,6 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
-import { adminRpc, supabaseAdmin } from '$lib/server/supabaseAdmin';
-import { deliver, vapidKeys, type PushNote } from '$lib/server/pushSend';
+import { adminRpc, userFromClaims } from '$lib/server/supabaseAdmin';
+import { deliver, vapidKeys, type PushPayload } from '$lib/server/pushSend';
+import { bearerToken, jsonObject, positiveId } from '$lib/server/request';
 
 /**
  * POST /api/push   Authorization: Bearer <보낸 사람 access token>
@@ -17,10 +18,6 @@ import { deliver, vapidKeys, type PushNote } from '$lib/server/pushSend';
  *   ③ 받는 사람의 기기마다 암호화해서 보낸다 (lib/server/pushSend). 사라진 기기는 지운다.
  * 응답은 기다리지 않아도 된다 — 알림이 실패해도 글 전송에는 영향이 없다.
  */
-type Payload = { skip: string } | Omit<PushNote, 'kind'>;
-
-const isId = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
-
 /** 요청 본문의 키 → 발송 판단 DB 함수 · 앱 안 알림 모양 */
 const KINDS = [
 	{ field: 'message_id', rpc: 'push_payload', param: 'p_message', actor: 'p_sender', kind: 'chat' },
@@ -32,17 +29,16 @@ const KINDS = [
 export const POST: RequestHandler = async ({ request, platform }) => {
 	if (!vapidKeys()) return json({ skip: 'not_configured' });
 
-	const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-	const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
-	const kind = KINDS.find((k) => isId(body[k.field]));
+	const token = bearerToken(request);
+	const body = await jsonObject(request);
+	const kind = KINDS.find((k) => positiveId(body[k.field]));
 	if (!token || !kind) return json({ error: 'bad_request' }, { status: 400 });
 
-	const { data: claims, error } = await supabaseAdmin().auth.getClaims(token);
-	const uid = !error && claims?.claims.role === 'authenticated' ? claims.claims.sub : null;
+	const uid = await userFromClaims(token);
 	if (!uid) return json({ error: 'unauthorized' }, { status: 401 });
 
 	// 누가 보냈는지는 클라가 아니라 토큰에서 — DB 함수가 "진짜 그 사람의 글·공감인지"를 다시 확인한다
-	const p = await adminRpc<Payload>(kind.rpc, { [kind.param]: body[kind.field], [kind.actor]: uid });
+	const p = await adminRpc<PushPayload>(kind.rpc, { [kind.param]: body[kind.field], [kind.actor]: uid });
 	if ('skip' in p) return json(p);
 
 	return json(await deliver({ ...p, kind: kind.kind }, platform));

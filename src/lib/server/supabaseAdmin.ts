@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { env } from '$env/dynamic/private';
 import { env as pub } from '$env/dynamic/public';
+import { bearerToken } from './request';
 
 /**
  * service_role 클라이언트 — 서버 전용($lib/server). 클라이언트 번들에 들어갈 경로가 없다.
@@ -48,8 +49,14 @@ export async function rosterNameOf(email: string | null, staffId: string): Promi
 
 /** 요청한 학생 — Authorization: Bearer <access token> 에서. 클라가 주장하는 id 는 믿지 않는다. */
 export async function userFromBearer(request: Request): Promise<string | null> {
-	const token = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+	const token = bearerToken(request);
 	if (!token) return null;
 	const { data } = await supabaseAdmin().auth.getUser(token);
 	return data.user?.id ?? null;
+}
+
+/** 푸시용 JWT 검증 — 비대칭 키는 로컬 서명·만료 검사, 대칭 키는 인증 서버에 확인한다. */
+export async function userFromClaims(token: string): Promise<string | null> {
+	const { data, error } = await supabaseAdmin().auth.getClaims(token);
+	return !error && data?.claims.role === 'authenticated' ? data.claims.sub : null;
 }

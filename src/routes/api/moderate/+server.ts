@@ -1,6 +1,7 @@
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { AiUnavailable, runAi } from '$lib/server/ai';
-import { fakeVerdict, moderationPrompt, parseVerdict, type ModItem } from '$lib/server/moderation';
+import { fakeVerdict, moderationPrompt, type ModItem } from '$lib/server/moderation';
+import { moderateBatch } from '$lib/server/moderationBatch';
 import { adminRpc, userFromBearer } from '$lib/server/supabaseAdmin';
 
 /**
@@ -19,30 +20,19 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const items = await adminRpc<ModItem[]>('mod_claim', { p_n: 5 });
 	if (!items.length) return json({ claimed: 0 });
 
-	const work = (async () => {
-		let checked = 0;
-		let flagged = 0;
-		for (let i = 0; i < items.length; i++) {
-			const it = items[i];
-			let raw: string;
+	const work = moderateBatch(items, {
+		review: async (item) => {
 			try {
-				raw = await runAi(platform?.env?.AI, moderationPrompt(it), { maxTokens: 80, temperature: 0, fake: fakeVerdict });
+				return await runAi(platform?.env?.AI, moderationPrompt(item), { maxTokens: 80, temperature: 0, fake: fakeVerdict });
 			} catch (e) {
 				if (!(e instanceof AiUnavailable)) throw e;
 				console.error('[moderate] Workers AI 실패:', e.message);
-				// 남은 것은 돌려놓는다 (시도 횟수를 쓰지 않고) — 다음 호출이나 내일
-				await adminRpc('mod_release', { p_ids: items.slice(i).map((x) => x.id) });
-				break;
+				return null;
 			}
-			const v = parseVerdict(raw);
-			// 알아볼 수 없는 답 — 그대로 두면 2분 뒤 다시 시도되고, 세 번 실패하면 DB 가 '오류'로 접는다
-			if (!v) continue;
-			await adminRpc('mod_verdict', { p_id: it.id, p_flag: v.flag, p_category: v.category, p_reason: v.reason });
-			checked++;
-			if (v.flag) flagged++;
-		}
-		return { checked, flagged };
-	})();
+		},
+		save: (id, verdict) => adminRpc('mod_verdict', { p_id: id, p_flag: verdict.flag, p_category: verdict.category, p_reason: verdict.reason }),
+		release: (ids) => adminRpc('mod_release', { p_ids: ids })
+	});
 
 	// Workers: 응답을 먼저 돌려주고 검토는 뒤에서 마저 한다
 	if (platform?.context?.waitUntil) {

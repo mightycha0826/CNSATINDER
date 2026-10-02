@@ -69,6 +69,7 @@ export class SupabaseTransport implements ChatTransport {
 		this.#partnerHere = false;
 		let roomReady = false;
 		let peerReady = false;
+		let peerSubscription = 0;
 		let announced = false;
 		const subscribed = () => {
 			if (current() && roomReady && peerReady && !announced) {
@@ -138,11 +139,13 @@ export class SupabaseTransport implements ChatTransport {
 			})
 			.subscribe(async (status, err) => {
 				if (!current()) return;
+				const subscription = ++peerSubscription;
 				if (status === 'SUBSCRIBED') {
 					peerReady = false;
 					// ★ presence 에는 seat 외 아무것도 싣지 않는다
 					const result = await peerCh.track({ seat }).catch(() => 'error');
-					if (!current()) return;
+					// 같은 채널에서 추적을 기다리는 동안 끊기거나 다시 구독됐을 수도 있다.
+					if (!current() || subscription !== peerSubscription) return;
 					if (result !== 'ok') return down('presence_failed');
 					peerReady = true;
 					subscribed();

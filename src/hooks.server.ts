@@ -1,7 +1,7 @@
-import { redirect, type Handle, type HandleServerError } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError, type RequestEvent } from '@sveltejs/kit';
 import { readSession } from '$lib/server/adminSession';
 import { adminRpc } from '$lib/server/supabaseAdmin';
-import type { Perm, TeamMember } from '$lib/adminRoles';
+import { isStaffRole, type Perm, type TeamMember } from '$lib/adminRoles';
 
 /**
  * /admin 가드 (dabang-kiosk hooks.server.ts 구조 + 강화된 인증).
@@ -12,48 +12,45 @@ import type { Perm, TeamMember } from '$lib/adminRoles';
  */
 const OPEN = new Set(['/admin/login', '/admin/session']);
 
-export const handle: Handle = async ({ event, resolve }) => {
-	event.locals.staff = null;
-	event.locals.team = null;
-	event.locals.maintenance = false;
-	event.locals.maintenanceAt = null;
+type StaffTouch = {
+	role: string;
+	owner?: boolean;
+	perms?: Perm[];
+	maintenance?: boolean;
+	maintenance_at?: string | null;
+	team: TeamMember[];
+};
+
+/** 페이지를 여는 요청만 활동 주소를 갱신한다. 현황 폴링·다운로드는 마지막 화면을 유지한다. */
+function activityPath(event: RequestEvent) {
 	const path = event.url.pathname;
-	const isAdmin = path === '/admin' || path.startsWith('/admin/');
+	return event.request.method === 'GET' && !/\/(status|team|export|session)(\/|$)/.test(path)
+		? path.replace(/\/__data\.json$/, '') || '/admin'
+		: null;
+}
 
-	if (isAdmin) {
-		let setupError: string | null = null;
-		try {
-			const uid = await readSession(event.cookies);
-			if (uid) {
-				// 역할 확인 + "지금 보는 화면" 적기 + 운영진 현황(오른쪽 판)을 한 번에 (Phase 49 — 요청 수 그대로).
-				// 화면 주소는 페이지(또는 그 데이터)를 열 때만 — 현황 새로고침 · 파일 내려받기 같은 요청은 null(그대로 둔다)
-				const page = event.request.method === 'GET' && !/\/(status|team|export|session)(\/|$)/.test(path) ? path.replace(/\/__data\.json$/, '') || '/admin' : null;
-				const t = await adminRpc<{ role: string; owner?: boolean; perms?: Perm[]; maintenance?: boolean; maintenance_at?: string | null; team: TeamMember[] } | null>('admin_staff_touch', { p_uid: uid, p_path: page });
-				event.locals.maintenance = !!t?.maintenance; // 서버 점검 중 (Phase 52 — 운영 화면 위 띠)
-				event.locals.maintenanceAt = t?.maintenance_at ?? null; // 점검 예약 (Phase 53)
-				const role = t?.role;
-				// perms = 내 역할의 권한 (Phase 51 — 최고 관리자가 정한 표)
-				if (role === 'admin' || role === 'moderator' || role === 'developer' || role === 'beta') {
-					event.locals.staff = { id: uid, role, owner: !!t!.owner, perms: t!.perms ?? [] };
-					event.locals.team = t!.team;
-				}
+/** 쿠키는 신원만 증명한다. 매 요청마다 DB 명단과 현재 권한을 확인한다. */
+async function authenticateStaff(event: RequestEvent) {
+	try {
+		const uid = await readSession(event.cookies);
+		if (uid) {
+			// 역할·권한 + 마지막 화면 + 운영진 현황을 한 번의 요청으로 받는다.
+			const touch = await adminRpc<StaffTouch | null>('admin_staff_touch', { p_uid: uid, p_path: activityPath(event) });
+			event.locals.maintenance = !!touch?.maintenance;
+			event.locals.maintenanceAt = touch?.maintenance_at ?? null;
+			if (touch && isStaffRole(touch.role)) {
+				event.locals.staff = { id: uid, role: touch.role, owner: !!touch.owner, perms: touch.perms ?? [] };
+				event.locals.team = touch.team;
 			}
-		} catch (e) {
-			// 설정 누락(서버 키·세션 비밀)은 로그인 화면에서 안내한다
-			setupError = e instanceof Error ? e.message : String(e);
 		}
-
-		if (!event.locals.staff && !OPEN.has(path)) {
-			const q = setupError ? `?setup=${encodeURIComponent(setupError)}` : '';
-			redirect(303, `/admin/login${q}`);
-		}
+	} catch (e) {
+		// 설정 누락(서버 키·세션 비밀)은 로그인 화면에서 안내한다.
+		return e instanceof Error ? e.message : String(e);
 	}
+	return null;
+}
 
-	// 운영자 화면은 서버에서 그릴 때부터 넓은 레이아웃(body.admin) — 스크립트가 늦게 떠도 모양이 깨지지 않게
-	const res = await resolve(
-		event,
-		isAdmin ? { transformPageChunk: ({ html }) => html.replace('<body ', '<body class="admin" ') } : undefined
-	);
+function securityHeaders(res: Response, isAdmin: boolean) {
 	try {
 		// 모든 화면 공통 — 틀(iframe) 안에 띄우기 금지(옛 브라우저용, 새 브라우저는 CSP frame-ancestors),
 		// 파일 종류 추측 금지, 다른 사이트로 나갈 때 주소는 도메인까지만, 카메라·마이크·위치는 쓰지 않음
@@ -71,6 +68,29 @@ export const handle: Handle = async ({ event, resolve }) => {
 		/* 불변 헤더인 응답(리다이렉트 등)은 건너뛴다 */
 	}
 	return res;
+}
+
+export const handle: Handle = async ({ event, resolve }) => {
+	event.locals.staff = null;
+	event.locals.team = null;
+	event.locals.maintenance = false;
+	event.locals.maintenanceAt = null;
+	const path = event.url.pathname;
+	const isAdmin = path === '/admin' || path.startsWith('/admin/');
+	if (isAdmin) {
+		const setupError = await authenticateStaff(event);
+		if (!event.locals.staff && !OPEN.has(path)) {
+			const q = setupError ? `?setup=${encodeURIComponent(setupError)}` : '';
+			redirect(303, `/admin/login${q}`);
+		}
+	}
+
+	// 운영자 화면은 서버에서 그릴 때부터 넓은 레이아웃(body.admin).
+	const res = await resolve(
+		event,
+		isAdmin ? { transformPageChunk: ({ html }) => html.replace('<body ', '<body class="admin" ') } : undefined
+	);
+	return securityHeaders(res, isAdmin);
 };
 
 /**

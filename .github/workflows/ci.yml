@@ -29,24 +29,8 @@ jobs:
       - run: npm ci
       - name: 타입 검사
         run: npm run check
-      - name: 채팅 로직
-        run: npm run test:chat
-      - name: AI 대화 모양
-        run: npm run test:aichat
-      - name: 운영자 세션
-        run: npm run test:admin
-      - name: 알림(toast)
-        run: npm run test:toast
-      - name: 계정 전환 · 개인정보 캐시
-        run: npm run test:account
-      - name: 화면 테스트 프로세스 실행 · 종료
-        run: npm run test:uiprocess
-      - name: 기기 판별
-        run: npm run test:platform
-      - name: 웹 푸시 서명
-        run: npm run test:push
-      - name: DB 스키마 (PGlite)
-        run: npm run test:schema
+      - name: 단위 테스트 · DB 스키마 (실서버 없이)
+        run: npm test
       - name: 빌드
         run: npm run build
 

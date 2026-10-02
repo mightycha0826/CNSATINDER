@@ -1,4 +1,8 @@
-import { createServer } from 'vite';
+import { compileModule } from 'svelte/compiler';
+import { stripTypeScriptTypes } from 'node:module';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, rmdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 /**
  * ChatRoom 클라이언트 로직 테스트 — 가짜 전송 계층으로 네트워크 경쟁 상황을 재현한다.
@@ -6,13 +10,30 @@ import { createServer } from 'vite';
  *
  *   npm run test:chat
  *
- * vite 의 ssrLoadModule 로 room.svelte.ts 를 컴파일해서 불러온다(runes 포함).
+ * Svelte 클라이언트 모듈로 직접 컴파일한다 — 실제 $state 프록시를 검사하고 .env 는 읽지 않는다.
  */
-const vite = await createServer({
-	server: { middlewareMode: true, hmr: false },
-	appType: 'custom',
-	logLevel: 'error'
-});
+const root = fileURLToPath(new URL('..', import.meta.url));
+const temporary = mkdtempSync(join(root, 'scripts', '.chat-test-'));
+const modules = new Map();
+const temporaryFiles = [];
+
+function write(name, source) {
+	const path = join(temporary, name + '.mjs');
+	writeFileSync(path, source);
+	temporaryFiles.push(path);
+	const url = pathToFileURL(path).href;
+	modules.set(name, url);
+	return url;
+}
+
+function build(path, name, imports = {}) {
+	let source = stripTypeScriptTypes(readFileSync(join(root, path), 'utf8'), { mode: 'transform' });
+	for (const [specifier, target] of Object.entries(imports)) {
+		source = source.replaceAll("'" + specifier + "'", JSON.stringify(modules.get(target)));
+	}
+	if (path.endsWith('.svelte.ts')) source = compileModule(source, { generate: 'client', filename: path, dev: false }).js.code;
+	write(name, source);
+}
 
 let pass = 0;
 let fail = 0;
@@ -27,7 +48,20 @@ globalThis.document ??= { addEventListener() {}, removeEventListener() {}, visib
 globalThis.window ??= { addEventListener() {}, removeEventListener() {} };
 
 try {
-	const { ChatRoom } = await vite.ssrLoadModule('/src/lib/chat/room.svelte.ts');
+	write('supabase', 'export const supabase = {};');
+	write('rpc', 'export const rpc = () => { throw new Error("unexpected RPC in unit test"); };');
+	write('push', 'export const notifyReaction = () => {}; export const notifySent = () => {};');
+	write('moderation', 'export const requestModeration = () => {};');
+	write('manner', 'export const ratePartner = () => { throw new Error("unexpected rating in unit test"); };');
+	write('haptics', 'export const match = () => {};');
+	build('src/lib/chat/message-ledger.svelte.ts', 'ledger');
+	build('src/lib/chat/supabase-transport.ts', 'transport', {
+		'../supabase': 'supabase', '../rpc': 'rpc', '../push': 'push', '../moderation': 'moderation', '../manner': 'manner'
+	});
+	build('src/lib/chat/room.svelte.ts', 'room', { './supabase-transport': 'transport', './message-ledger.svelte': 'ledger' });
+	build('src/lib/pollSeeker.svelte.ts', 'pollSeeker');
+	build('src/lib/seeker.svelte.ts', 'seeker', { './haptics': 'haptics', './supabase': 'supabase', './pollSeeker.svelte': 'pollSeeker' });
+	const { ChatRoom } = await import(modules.get('room'));
 
 	const ROOM = '00000000-0000-0000-0000-00000000000r';
 	const now = () => new Date().toISOString();
@@ -230,6 +264,44 @@ try {
 		await r.retry(r.msgs[0]);
 		check('duplicate 응답 → 서버 행을 읽어 sent 로 확정', r.msgs[0].state === 'sent' && r.msgs[0].id != null);
 		check('여전히 1개', r.msgs.length === 1);
+	}
+	{
+		const t = fake();
+		const r = new ChatRoom(ROOM, t);
+		await r.open();
+		t.sendImpl = async (_r, seat, body, cid) => {
+			t.server.push(row(seat, body, cid));
+			return { ok: false, reason: 'network' };
+		};
+		await r.send('종료 전에 저장됨');
+		let release;
+		t.sendImpl = async () => ({ ok: false, reason: 'duplicate' });
+		t.fetchRecent = () => new Promise((resolve) => (release = resolve));
+		const retrying = r.retry(r.msgs[0]);
+		await sleep(0);
+		t.handlers.onRoom({ ...t.snap, id: ROOM, status: 'closed', close_reason: 'left', read1: null, read2: null });
+		release([...t.server]);
+		await retrying;
+		check('★ 중복 전송 확인 중 상대가 종료해도 저장된 행은 sent로 확정한다', r.closed && r.msgs.length === 1 && r.msgs[0].state === 'sent' && r.msgs[0].id === t.server[0].id);
+		r.dispose();
+	}
+	{
+		const t = fake();
+		const r = await mk(t);
+		t.sendImpl = async (_r, seat, body, cid) => {
+			t.server.push(row(seat, body, cid));
+			return { ok: false, reason: 'network' };
+		};
+		await r.send('화면 이탈 전 저장됨');
+		let release;
+		t.sendImpl = async () => ({ ok: false, reason: 'duplicate' });
+		t.fetchRecent = () => new Promise((resolve) => (release = resolve));
+		const retrying = r.retry(r.msgs[0]);
+		await sleep(0);
+		r.dispose();
+		release([...t.server]);
+		await retrying;
+		check('중복 전송 확인 중 화면을 떠나면 늦은 확정 · 실패 모두 반영하지 않는다', r.msgs[0].id == null && r.msgs[0].state === 'sending');
 	}
 
 	console.log('\n[8] 방이 만료된 뒤 전송');
@@ -498,7 +570,7 @@ try {
 	}
 	console.log('\n[18] 찾는 중 폴링 — 오래 기다릴수록 천천히, 서버 풀 TTL(15초) 안쪽');
 	{
-		const { waitingPollMs } = await vite.ssrLoadModule('/src/lib/seeker.svelte.ts');
+		const { waitingPollMs } = await import(modules.get('seeker'));
 		check('처음 30초는 서버 간격 그대로', waitingPollMs(4000, 10_000) === 4000);
 		check('30초 넘으면 8초', waitingPollMs(4000, 45_000) === 8000);
 		check('2분 넘으면 10초', waitingPollMs(4000, 150_000) === 10_000);
@@ -629,7 +701,7 @@ try {
 
 	console.log('\n[23] DB 방송과 학생의 타이핑 · 접속 채널을 분리한다');
 	{
-		const { SupabaseTransport } = await vite.ssrLoadModule('/src/lib/chat/supabase-transport.ts');
+		const { SupabaseTransport } = await import(modules.get('transport'));
 		const channels = [];
 		const removed = [];
 		const client = {
@@ -679,13 +751,25 @@ try {
 		db.emit('broadcast', 'msg', row(2, 'stale', 'stale', 1402));
 		await db.callback('CLOSED');
 		check('교체한 옛 채널의 늦은 메시지 · 종료 콜백은 무시한다', received.messages.length === 1 && received.down === 0);
+		const [nextDb, nextPeer] = channels.slice(2);
+		let finishTrack;
+		nextPeer.track = () => new Promise((resolve) => (finishTrack = resolve));
+		await nextDb.callback('SUBSCRIBED');
+		const tracking = nextPeer.callback('SUBSCRIBED');
+		await nextPeer.callback('CHANNEL_ERROR');
+		finishTrack('ok');
+		await tracking;
+		check('★ peer가 끊긴 뒤 늦은 presence 성공이 연결 완료로 되돌리지 않는다', received.subscribed === 1 && received.down === 1);
+		nextPeer.track = async () => 'ok';
+		await nextPeer.callback('SUBSCRIBED');
+		check('새 peer 구독의 presence가 완료돼야 다시 연결됨을 알린다', received.subscribed === 2);
 		t.disconnect();
 		check('연결을 닫으면 두 채널 모두 해제한다', removed.length === 4);
 	}
 
 	console.log('\n[24] 전송 계층은 읽음 실패와 부분 페이지 조회 실패를 숨기지 않는다');
 	{
-		const { SupabaseTransport } = await vite.ssrLoadModule('/src/lib/chat/supabase-transport.ts');
+		const { SupabaseTransport } = await import(modules.get('transport'));
 		const pages = [];
 		const networkError = { message: 'temporary network outage' };
 		const client = {
@@ -710,11 +794,121 @@ try {
 		try { await t.fetchAfter(ROOM, 0); } catch (e) { fetchError = e; }
 		check('★ 첫 페이지가 성공해도 다음 페이지 오류는 전체 조회 실패다', fetchError === networkError && pages.join(',') === '0,200');
 	}
+
+	console.log('\n[25] 메시지 확정 · 삭제는 늦은 응답으로 되돌리지 않는다');
+	{
+		const t = fake();
+		const r = await mk(t);
+		t.sendImpl = async (_id, seat, body, cid) => {
+			r.upsert(row(seat, body, cid), 'sent');
+			return { ok: false, reason: 'network' }; // 커밋 에코 뒤에 HTTP 응답만 실패
+		};
+		await r.send('서버에 들어간 메시지');
+		const message = r.msgs[0];
+		check('★ 확정 에코가 먼저 오면 늦은 전송 실패에도 sent 상태', message.id != null && message.state === 'sent');
+		let attempts = 0;
+		t.sendImpl = async () => { attempts++; return { ok: false, reason: 'network' }; };
+		await r.retry(message);
+		check('이미 확정한 메시지는 재전송하지 않는다', attempts === 0 && message.state === 'sent');
+		r.upsert({ client_msg_id: message.client_msg_id, deleted_at: now(), body: '삭제된 메시지입니다' }, 'sent');
+		r.upsert({ ...message, deleted_at: null, body: '옛 본문' }, 'sent');
+		check('삭제 뒤 옛 방송을 받아도 본문을 되살리지 않는다', message.deleted_at != null && message.body === '삭제된 메시지입니다');
+		r.dispose();
+	}
+
+	console.log('\n[26] 방 수명 — 중복 open · 입장 중 이탈 · 늦은 동기화 응답');
+	{
+		const t = fake();
+		let release;
+		let acks = 0;
+		let connects = 0;
+		const views = [];
+		t.ack = () => { acks++; return new Promise((resolve) => (release = resolve)); };
+		t.connect = () => { connects++; };
+		t.view = async (_id, on) => { views.push(on); return snap(); };
+		const r = new ChatRoom(ROOM, t);
+		const first = r.open();
+		const second = r.open();
+		check('입장 중 다시 열어도 같은 입장 요청을 기다린다', acks === 1 && first === second);
+		r.dispose();
+		release(snap());
+		await Promise.all([first, second]);
+		check('★ 입장 중 떠나면 응답이 와도 구독 · 상태를 만들지 않는다', connects === 0 && r.snap === null && !r.connected);
+		check('늦은 입장 확인 뒤에도 보고 있음 신호를 끈다', views.join(',') === 'false,false');
+		await r.open();
+		await r.resync();
+		check('이탈한 방은 다시 열거나 동기화하지 않는다', acks === 1 && t.calls.snapshot === 0);
+	}
+	{
+		const t = fake();
+		let release;
+		t.closeIfExpired = () => new Promise((resolve) => (release = resolve));
+		const r = await mk(t);
+		const syncing = r.resync();
+		r.dispose();
+		release(snap({ round: 2 }));
+		await syncing;
+		check('늦은 스냅샷은 상태를 바꾸거나 메시지 · 공감을 추가 조회하지 않는다', r.snap.round === 1 && t.calls.fetchAfter === 0 && t.calls.fetchReactions === 0);
+	}
+	{
+		const t = fake();
+		let release;
+		t.fetchReactions = () => new Promise((resolve) => (release = resolve));
+		const r = await mk(t);
+		const syncing = r.resync();
+		await sleep(0);
+		r.dispose();
+		release([{ message_id: 1500, room_id: ROOM, seat: 2, emoji: 'heart' }]);
+		await syncing;
+		check('이탈 뒤 늦은 공감 목록은 반영하지 않는다', r.reactions[1500] === undefined);
+	}
+	{
+		const t = fake();
+		let connects = 0;
+		const connect = t.connect;
+		t.connect = (...args) => { connects++; connect(...args); };
+		const r = new ChatRoom(ROOM, t);
+		await r.open();
+		await r.open();
+		check('이미 열린 방을 다시 열어도 구독은 하나', connects === 1);
+		t.handlers.onSubscribed();
+		await sleep(0);
+		await r.leave(false);
+		t.handlers.onSubscribed();
+		t.handlers.onPresence([1, 2]);
+		check('종료된 방은 늦은 구독 · 접속 신호에도 끊긴 상태', r.closed && !r.connected && !r.partnerHere);
+		r.dispose();
+	}
+
+	console.log('\n[27] 찾기 수명 — 취소한 요청이 새 찾기를 끝내지 않는다');
+	{
+		const { PollSeeker } = await import(modules.get('pollSeeker'));
+		class TestSeeker extends PollSeeker {
+			requests = [];
+			handled = [];
+			request() { return new Promise((resolve) => this.requests.push(resolve)); }
+			handle(result) { this.handled.push(result); this.halt(); }
+		}
+		const seeker = new TestSeeker(() => {});
+		seeker.start();
+		await sleep(5);
+		seeker.cancel();
+		seeker.start();
+		await sleep(5);
+		check('이전 요청이 끝날 때까지 서버 요청을 겹치지 않는다', seeker.requests.length === 1);
+		seeker.requests[0]('old-match');
+		await sleep(5);
+		check('★ 이전 응답은 버리고 새 찾기 요청을 이어 간다', seeker.handled.length === 0 && seeker.seeking && seeker.requests.length === 2);
+		seeker.requests[1]('current-match');
+		await sleep(5);
+		check('새 요청의 결과만 반영한다', seeker.handled.join(',') === 'current-match' && !seeker.seeking);
+	}
 } catch (e) {
 	fail++;
 	console.error(e);
 } finally {
-	await vite.close();
+	for (const path of temporaryFiles) rmSync(path, { force: true });
+	rmdirSync(temporary);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

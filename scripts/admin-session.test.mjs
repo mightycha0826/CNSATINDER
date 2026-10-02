@@ -5,9 +5,23 @@ import { createServer } from 'vite';
  *
  *   npm run test:admin
  */
-process.env.ADMIN_SESSION_SECRET = 'test-secret-'.padEnd(48, 'x');
+/** 실제 .env를 읽지 않고 세션 코드에 가짜 비밀키만 넣는다. 키 교체 검사는 별도 서버로 격리한다. */
+function serverForSecret(secret) {
+	return createServer({
+		configFile: false,
+		envFile: false,
+		server: { middlewareMode: true, hmr: false, ws: false },
+		appType: 'custom',
+		logLevel: 'error',
+		plugins: [{
+			name: 'admin-session-test-secret',
+			resolveId: (id) => id === '$env/dynamic/private' ? '\0admin-session-test-secret' : undefined,
+			load: (id) => id === '\0admin-session-test-secret' ? `export const env = { ADMIN_SESSION_SECRET: ${JSON.stringify(secret)} };` : undefined
+		}]
+	});
+}
 
-const vite = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom', logLevel: 'error' });
+const vite = await serverForSecret('test-secret-'.padEnd(48, 'x'));
 let pass = 0;
 let fail = 0;
 const check = (name, ok, detail = '') => {
@@ -64,11 +78,10 @@ try {
 	const past = Math.floor(Date.now() / 1000) - 10;
 	check('만료된 쿠키 → 거부 (서명이 맞아도)', (await forge(`${uid}.${past}.${sig}`)) === null);
 
-	// $env/dynamic/private 는 서버 시작 시점에 읽히므로, 비밀키마다 서버를 새로 띄운다
+	// 비밀키마다 모듈을 새로 불러서 이전 서명키가 섞이지 않게 한다.
 	console.log('\n[4] ★ 비밀키');
 	async function withSecret(secret, fn) {
-		process.env.ADMIN_SESSION_SECRET = secret;
-		const v = await createServer({ server: { middlewareMode: true, hmr: false }, appType: 'custom', logLevel: 'error' });
+		const v = await serverForSecret(secret);
 		try {
 			return await fn(await v.ssrLoadModule('/src/lib/server/adminSession.ts'));
 		} finally {

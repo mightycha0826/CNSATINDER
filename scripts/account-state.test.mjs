@@ -53,7 +53,8 @@ try {
 		'  async signOut() {this.emit("SIGNED_OUT", null); return {error: null};}',
 		' },',
 		' rpc(fn, args) {return fn === "ensure_self" ? Promise.resolve({data: null}) : ask(fn, args);},',
-		' from(table) {let uid; return {select() {return this;}, eq(_key, id) {uid = id; return this;},',
+		' from(table) {let uid, patch; return {select() {return this;}, update(value) {patch = value; return this;},',
+		'  eq(_key, id) {uid = id; return patch ? ask("update:" + table, {uid, patch}) : this;},',
 		'  maybeSingle() {return ask(table, {uid});}};},',
 		' channel() {return {on() {return this;}, subscribe() {return this;}};},',
 		' async removeChannel() {}',
@@ -62,14 +63,17 @@ try {
 	write('push', 'export const disablePush = async () => {}; export const syncPush = async () => {};');
 	write('rpc', 'export const rpc = async () => null;');
 	build('src/lib/toast.svelte.ts', 'toast');
+	build('src/lib/errors.ts', 'errors');
+	build('src/lib/schemaCompatibility.ts', 'compatibility');
 	build('src/lib/state.svelte.ts', 'state', {
-		'./supabase': 'supabase', './rpc': 'rpc', './push': 'push', './accountScope': 'scope', './toast.svelte': 'toast'
+		'./supabase': 'supabase', './rpc': 'rpc', './push': 'push', './accountScope': 'scope', './toast.svelte': 'toast',
+		'./errors': 'errors', './schemaCompatibility': 'compatibility'
 	});
 	write('api', 'import {supabase} from ' + JSON.stringify(urls.get('supabase')) + ';\n' +
 		'export const fetchMailbox = async (box, before) => (await supabase.rpc("mailbox:" + box, {before})).data;\n' +
 		'export const fetchUnread = async () => (await supabase.rpc("dm_unread")).data;');
 	build('src/lib/letters/unread.svelte.ts', 'unread', {'./api': 'api', '../accountScope': 'scope'});
-	build('src/lib/letters/mailbox.svelte.ts', 'mailbox', {'./api': 'api', './unread.svelte': 'unread', '../accountScope': 'scope'});
+	build('src/lib/letters/mailbox.svelte.ts', 'mailbox', {'./api': 'api', './unread.svelte': 'unread', '../accountScope': 'scope', '../errors': 'errors'});
 	build('src/lib/notices.svelte.ts', 'notices', {'./supabase': 'supabase', './accountScope': 'scope'});
 	write('visible', 'export const whileVisible = () => () => {};');
 	build('src/lib/inbox.svelte.ts', 'inbox', {'./supabase': 'supabase', './state.svelte': 'state', './visible': 'visible', './accountScope': 'scope'});
@@ -78,7 +82,7 @@ try {
 
 	const A = await import(urls.get('scope'));
 	const {supabase, answer, pending} = await import(urls.get('supabase'));
-	const {S, UI, init, loadProfile, loadAccount, recheckMaint} = await import(urls.get('state'));
+	const {S, UI, init, loadProfile, loadAccount, recheckMaint, setProfileField} = await import(urls.get('state'));
 	const M = await import(urls.get('mailbox'));
 	const U = await import(urls.get('unread'));
 	const N = await import(urls.get('notices'));
@@ -112,8 +116,12 @@ try {
 	I.notifyInApp({key: 'old', title: 'A', body: 'private A', url: '/x', kind: 'notice'});
 	check('A의 개인정보 캐시가 채워짐', S.me.name === 'a' && N.NOTICES.personal[0].title === 'A' && M.BOX.folders[0].name === 'A');
 	const tokenA = A.accountToken();
+	const oldWrite = setProfileField({ want: 'any' });
 	const late = [N.loadNotices(true), M.loadBox('received'), U.refreshUnread(), INBOX.load(), loadProfile(), loadAccount(), recheckMaint()];
 	supabase.auth.emit('SIGNED_IN', session('b'));
+	const writeArgs = answer('update:profiles', null);
+	await oldWrite;
+	check('늦은 프로필 저장도 원래 계정을 수정하고 새 계정의 조회를 만들지 않음', writeArgs.uid === 'a' && writeArgs.patch.want === 'any' && pending.get('profiles').filter((call) => call.args.uid === 'b').length === 1);
 	check('계정 변경 즉시 공지·편지·폴더·채팅 캐시가 지워짐', N.NOTICES.personal.length === 0 && !N.NOTICES.loaded && M.BOX.received.length === 0 && M.BOX.folders.length === 0 && !M.BOX.loaded.received && INBOX.rooms.length === 0 && !INBOX.loaded);
 	check('안 읽음·알림·연출 상태도 지워짐', U.DM.unread === 0 && !U.DM.loaded && U.LIST.tab === 'received' && I.INAPP.cur === null && M.ANNOUNCED.size === 0 && !M.POSTED.pending && M.KNOCK.hand === null);
 	check('계정 정보와 UI 수명이 새 세대로 바뀜', S.me === undefined && S.profile === null && S.accountVersion > tokenA && !UI.achNew);
@@ -124,6 +132,12 @@ try {
 	await Promise.all(late);
 	check('늦은 A 응답이 개인정보·로딩 상태를 덮어쓰지 않음', S.profile === null && S.me === undefined && S.profileLoading && S.maint === null && !UI.achNew && N.NOTICES.personal.length === 0 && !N.NOTICES.loaded && !M.BOX.loaded.received && !U.DM.loaded && !INBOX.loaded);
 	await settleLogin('b');
+	const preference = setProfileField({ letters_open: false });
+	const preferenceArgs = answer('update:profiles', null);
+	await drain();
+	const profileArgs = answer('profiles', {id: 'b', letters_open: false});
+	await preference;
+	check('같은 계정의 설정 저장은 본인 행을 수정하고 프로필을 갱신', preferenceArgs.uid === 'b' && profileArgs.uid === 'b' && S.profile.letters_open === false);
 	const bToken = A.accountToken();
 	supabase.auth.emit('TOKEN_REFRESHED', session('b'));
 	check('같은 계정 토큰 갱신은 데이터·세대를 유지', S.me.name === 'b' && A.accountToken() === bToken);
@@ -145,6 +159,8 @@ try {
 	check('중첩 조회는 최신 요청 결과를 유지', N.NOTICES.personal[0].title === 'NEW B');
 	supabase.auth.emit('SIGNED_OUT', null);
 	check('로그아웃도 개인정보와 인증 부가정보를 초기화', S.me === undefined && S.hasPassword === null && S.settings === null && M.BOX.received.length === 0 && N.NOTICES.personal.length === 0 && INBOX.rooms.length === 0);
+	await assert.rejects(setProfileField({ want: 'any' }), /unauthenticated/);
+	check('로그인하지 않은 프로필 저장은 데이터베이스에 요청하지 않음', pending.get('update:profiles').length === 0);
 	supabase.auth.emit('SIGNED_IN', session('b'));
 	check('같은 ID로 재로그인해도 새 계정 수명', A.accountToken() > bToken && !A.accountIsCurrent(bToken));
 	await settleLogin('b');

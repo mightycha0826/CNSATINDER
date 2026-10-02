@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { readFileSync } from 'node:fs';
+import { readScriptEnv } from './lib/env.mjs';
 
 /**
  * 실서버 Realtime E2E — 실제 Supabase 프로젝트에서 두 계정이 대화하는 것을 자동 검증한다.
@@ -11,12 +11,7 @@ import { readFileSync } from 'node:fs';
  *
  * 이 스크립트가 재는 전달 지연은 학술탐구의 B=0(write-through) 기준선이기도 하다.
  */
-const env = Object.fromEntries(
-	readFileSync(new URL('../.env', import.meta.url), 'utf8')
-		.split(/\r?\n/)
-		.filter((l) => /^[A-Z_]+=/.test(l))
-		.map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()])
-);
+const env = readScriptEnv();
 const URL_ = env.PUBLIC_SUPABASE_URL;
 const PUB = env.PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.PUBLIC_SUPABASE_ANON_KEY;
 const SVC = env.SUPABASE_SERVICE_ROLE_KEY;

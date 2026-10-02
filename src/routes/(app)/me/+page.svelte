@@ -17,8 +17,7 @@
 		type MyAchievements
 	} from '$lib/achievements';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
-	import { supabase } from '$lib/supabase';
-	import { S, errMsg, loadProfile, saveProfile, toast } from '$lib/state.svelte';
+	import { S, errMsg, setProfileField, saveProfile, toast } from '$lib/state.svelte';
 
 	/**
 	 * 내 프로필 (하단 탭 오른쪽) — 상대에게 보이는 소개 · 관심사 · MBTI, 이야기하고 싶은 상대.
@@ -142,12 +141,7 @@
 		if (busy || S.profile?.want === want) return;
 		busy = true;
 		try {
-			const { error } = await supabase
-				.from('profiles')
-				.update({ want })
-				.eq('id', S.session?.user.id ?? '');
-			if (error) throw error;
-			await loadProfile();
+			await setProfileField({ want });
 			toast('변경 완료');
 		} catch (e) {
 			toast(errMsg(e));

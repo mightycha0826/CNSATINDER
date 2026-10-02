@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
 import { friendly, guard, studentLabels } from '$lib/server/adminAuth';
-import { deliver, type PushNote } from '$lib/server/pushSend';
+import { notifyPersonalNotice } from '$lib/server/pushSend';
 import type { InquiryRow } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -12,7 +12,7 @@ import type { Actions, PageServerLoad } from './$types';
  */
 export const load: PageServerLoad = async ({ locals, url }) => {
 	guard(locals, url); // 문의 권한 (Phase 51 표)
-	const r =await adminRpc<{ open: number; items: InquiryRow[] }>('admin_inquiries', { p_staff: locals.staff!.id });
+	const r = await adminRpc<{ open: number; items: InquiryRow[] }>('admin_inquiries', { p_staff: locals.staff!.id });
 	const students = await studentLabels(locals, r.items.filter((x) => !x.answered_at).map((x) => x.user_id));
 	return { open: r.open, items: r.items, students };
 };
@@ -32,8 +32,7 @@ export const actions: Actions = {
 			return friendly(e);
 		}
 		// 알림은 실패해도 답변은 이미 갔다
-		const p = await adminRpc<{ skip: string } | Omit<PushNote, 'kind'>>('personal_notice_push', { p_id: notice }).catch(() => ({ skip: 'error' }));
-		if (!('skip' in p)) await deliver({ ...p, kind: 'notice' }, platform).catch(() => null);
+		await notifyPersonalNotice(notice, platform);
 		return { done: '답변을 보냈어요 · 학생의 알림(하트)과 공지에 떠요' };
 	}
 };

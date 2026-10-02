@@ -2,43 +2,11 @@ import { fail } from '@sveltejs/kit';
 import { adminRpc, supabaseAdmin } from '$lib/server/supabaseAdmin';
 import { checkAi } from '$lib/server/ai';
 import { allowed, friendly, guard } from '$lib/server/adminAuth';
+import { integerFields } from '$lib/server/adminForms';
+import { AI_INTEGER_FIELDS, INTEGER_FIELDS, maintenanceInput, type AiUsage, type AppSettings } from '$lib/server/adminSettings';
 import type { Actions, PageServerLoad } from './$types';
 
-export type AppSettings = {
-	is_open: boolean;
-	notice: string;
-	room_minutes: number;
-	extend_minutes: number;
-	vote_window_sec: number;
-	max_rounds: number;
-	rematch_cooldown_days: number;
-	auto_suspend_reports: number;
-	max_open_rooms: number;
-	/** Phase 19 — DB 패치 전이면 없음 */
-	ai_moderation?: boolean;
-	ai_mod_daily_cap?: number;
-	ai_chat?: boolean;
-	ai_chat_per_user?: number;
-	ai_chat_daily_cap?: number;
-	ai_chat_minutes?: number;
-	ai_chat_max_turns?: number;
-	/** Phase 44 — 익명편지 잠금 (가입한 학생이 letters_gate_min 명이 될 때까지) */
-	letters_gate?: boolean;
-	letters_gate_min?: number;
-	/** Phase 52 — 서버 점검 */
-	maintenance?: boolean;
-	maintenance_msg?: string;
-	maintenance_until?: string | null;
-	/** Phase 53 — 점검 예약 */
-	maintenance_at?: string | null;
-};
-
-export type AiUsage = {
-	mod_checked_today: number;
-	mod_flagged_today: number;
-	mod_pending: number;
-	ai_chats_today: number;
-};
+export type { AiUsage, AppSettings } from '$lib/server/adminSettings';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
 	guard(locals, url); // 서비스 열고 닫기 또는 운영 설정 권한 (Phase 51 표)
@@ -57,23 +25,17 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	return { s, usage, terms, students };
 };
 
-const AI_INT: [keyof AppSettings, number, number][] = [
-	['ai_mod_daily_cap', 0, 100000],
-	['ai_chat_per_user', 0, 50],
-	['ai_chat_daily_cap', 0, 100000],
-	['ai_chat_minutes', 1, 30],
-	['ai_chat_max_turns', 1, 100]
-];
-
-const INT: [keyof AppSettings, number, number][] = [
-	['room_minutes', 1, 60],
-	['extend_minutes', 1, 60],
-	['vote_window_sec', 15, 300],
-	['max_rounds', 0, 50],
-	['rematch_cooldown_days', 0, 365],
-	['auto_suspend_reports', 1, 50],
-	['max_open_rooms', 1, 20]
-];
+/** 모든 설정 액션은 같은 RPC와 DB 오류 정책을 쓴다. */
+async function updateSettings(locals: App.Locals, patch: Record<string, unknown>, checkRange = false) {
+	try {
+		await adminRpc('admin_update_settings', { p_patch: patch, p_staff: locals.staff!.id });
+	} catch (e) {
+		// 폼 검증과 DB check 제약이 어긋난 경우도 입력 오류로 안내한다.
+		if (checkRange && String((e as Error)?.message).includes('check')) return fail(400, { error: '허용 범위를 벗어난 값이 있어요' });
+		return friendly(e);
+	}
+	return null;
+}
 
 export const actions: Actions = {
 	/**
@@ -82,61 +44,27 @@ export const actions: Actions = {
 	 */
 	maint: async ({ request, locals }) => {
 		if (!allowed(locals, 'service') && !allowed(locals, 'settings')) return fail(403, { error: '서버 점검을 켜고 끌 권한이 없어요' });
-		const f = await request.formData();
-		const on = f.get('on') === 'true';
-		const msg = String(f.get('msg') ?? '').trim().slice(0, 300);
-		// datetime-local 은 시간대가 없다 — 운영진은 한국에 있으니 +09:00 으로 읽는다
-		const kst = (name: string) => {
-			const raw = String(f.get(name) ?? '').trim();
-			return raw ? new Date(`${raw}:00+09:00`) : null;
-		};
-		const until = kst('until');
-		const at = kst('at'); // 점검 예약 (Phase 53) — 비우면 지금 바로
-		if ((until && Number.isNaN(until.getTime())) || (at && Number.isNaN(at.getTime()))) return fail(400, { error: '시각을 확인해 주세요' });
-		const later = !!at && at.getTime() > Date.now() + 30_000;
-		if (on && later && until && until <= at!) return fail(400, { error: '끝나는 시각은 시작 시각보다 뒤여야 해요' });
-		// 끄기 = 점검 · 예약 둘 다 지운다. 예약 = 아직 켜지 않고 시각만. 지금 = 바로 켜고 예약은 지운다
-		const patch: Record<string, unknown> = !on
-			? { maintenance: false, maintenance_at: '' }
-			: { maintenance: !later, maintenance_at: later ? at!.toISOString() : '', maintenance_msg: msg, maintenance_until: until ? until.toISOString() : '' };
-		try {
-			await adminRpc('admin_update_settings', { p_patch: patch, p_staff: locals.staff!.id });
-		} catch (e) {
-			return friendly(e);
-		}
-		if (on && later) return { done: `점검 예약됨 · ${at!.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}부터` };
-		return { done: on ? '점검 시작 · 1분 안에 모든 학생에게 점검 화면' : '점검 끝 · 1분 안에 다시 열려요' };
+		const input = maintenanceInput(await request.formData());
+		if ('error' in input) return fail(400, { error: input.error });
+		const result = await updateSettings(locals, input.patch);
+		if (result) return result;
+		if (input.startsAt) return { done: `점검 예약됨 · ${input.startsAt.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })}부터` };
+		return { done: input.on ? '점검 시작 · 1분 안에 모든 학생에게 점검 화면' : '점검 끝 · 1분 안에 다시 열려요' };
 	},
 
 	/** 킬 스위치 — 한 번 눌러서 바로 */
 	toggle: async ({ request, locals }) => {
 		const open = (await request.formData()).get('open') === 'true';
-		try {
-			await adminRpc('admin_update_settings', { p_patch: { is_open: open }, p_staff: locals.staff!.id });
-		} catch (e) {
-			return friendly(e);
-		}
-		return { done: open ? '서비스 열림' : '서비스 닫힘. 진행 중인 대화는 유지됩니다' };
+		return await updateSettings(locals, { is_open: open }) ?? { done: open ? '서비스 열림' : '서비스 닫힘. 진행 중인 대화는 유지됩니다' };
 	},
 
 	save: async ({ request, locals }) => {
 		if (!allowed(locals, 'settings')) return fail(403, { error: '개발자 · 관리자만 바꿀 수 있어요' });
 		const f = await request.formData();
-		const patch: Record<string, unknown> = { notice: String(f.get('notice') ?? '').slice(0, 300) };
-		for (const [k, min, max] of INT) {
-			const n = Number(f.get(k));
-			if (!Number.isInteger(n) || n < min || n > max)
-				return fail(400, { error: `${k} 는 ${min}~${max} 사이의 정수여야 해요` });
-			patch[k] = n;
-		}
-		try {
-			await adminRpc('admin_update_settings', { p_patch: patch, p_staff: locals.staff!.id });
-		} catch (e) {
-			// 범위는 위에서 걸렀지만, DB check 제약과 어긋나면 여기로 온다
-			if (String((e as Error)?.message).includes('check')) return fail(400, { error: '허용 범위를 벗어난 값이 있어요' });
-			return friendly(e);
-		}
-		return { done: '저장 완료' };
+		const input = integerFields(f, INTEGER_FIELDS);
+		if ('error' in input) return fail(400, { error: input.error });
+		const patch = { notice: String(f.get('notice') ?? '').slice(0, 300), ...input.values };
+		return await updateSettings(locals, patch, true) ?? { done: '저장 완료' };
 	},
 
 	/** 익명편지 잠금 (Phase 44, 관리자만) — 켜 두면 가입한 학생이 기준 인원이 될 때까지 편지 쓰기 · 찾기가 막힌다 */
@@ -146,35 +74,21 @@ export const actions: Actions = {
 		const min = Number(f.get('letters_gate_min'));
 		if (!Number.isInteger(min) || min < 1 || min > 10000) return fail(400, { error: '열리는 인원은 1~10000 사이의 정수여야 해요' });
 		const gate = f.get('letters_gate') === 'on';
-		try {
-			await adminRpc('admin_update_settings', { p_patch: { letters_gate: gate, letters_gate_min: min }, p_staff: locals.staff!.id });
-		} catch (e) {
-			return friendly(e);
-		}
-		return { done: gate ? `익명편지 잠금 켬 · 가입 ${min}명에 열림` : '익명편지 잠금 끔 · 지금 바로 열림' };
+		return await updateSettings(locals, { letters_gate: gate, letters_gate_min: min }) ?? { done: gate ? `익명편지 잠금 켬 · 가입 ${min}명에 열림` : '익명편지 잠금 끔 · 지금 바로 열림' };
 	},
 
 	/** 검열봇 · AI 대화 상대 (관리자만) */
 	ai: async ({ request, locals }) => {
 		if (!allowed(locals, 'settings')) return fail(403, { error: '개발자 · 관리자만 바꿀 수 있어요' });
 		const f = await request.formData();
+		const input = integerFields(f, AI_INTEGER_FIELDS);
+		if ('error' in input) return fail(400, { error: input.error });
 		const patch: Record<string, unknown> = {
 			ai_moderation: f.get('ai_moderation') === 'on',
-			ai_chat: f.get('ai_chat') === 'on'
+			ai_chat: f.get('ai_chat') === 'on',
+			...input.values
 		};
-		for (const [k, min, max] of AI_INT) {
-			const n = Number(f.get(k));
-			if (!Number.isInteger(n) || n < min || n > max)
-				return fail(400, { error: `${k} 는 ${min}~${max} 사이의 정수여야 해요` });
-			patch[k] = n;
-		}
-		try {
-			await adminRpc('admin_update_settings', { p_patch: patch, p_staff: locals.staff!.id });
-		} catch (e) {
-			if (String((e as Error)?.message).includes('check')) return fail(400, { error: '허용 범위를 벗어난 값이 있어요' });
-			return friendly(e);
-		}
-		return { done: 'AI 설정 저장 완료' };
+		return await updateSettings(locals, patch, true) ?? { done: 'AI 설정 저장 완료' };
 	},
 
 	/** AI 연결 확인 — 짧은 질문 하나를 보내서 되는지, 안 되면 Cloudflare 가 준 오류를 그대로 보여 준다 (관리자만) */

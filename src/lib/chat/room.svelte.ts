@@ -1,8 +1,8 @@
 import type { ChatTransport } from './transport';
 import { SupabaseTransport } from './supabase-transport';
+import { MessageLedger, type MessageUpdate } from './message-ledger.svelte';
 import type {
 	Msg,
-	MsgRow,
 	PartnerProfile,
 	ReactResult,
 	ReactionKey,
@@ -41,7 +41,6 @@ const VIEW_PING_MS = 20_000;
  */
 export class ChatRoom {
 	snap = $state<RoomSnap | null>(null);
-	msgs = $state<Msg[]>([]);
 	partnerTypingUntil = $state(0);
 	partnerHere = $state(false);
 	connected = $state(false);
@@ -51,8 +50,7 @@ export class ChatRoom {
 	reactions = $state<Record<number, Partial<Record<1 | 2, ReactionKey>>>>({});
 
 	#t: ChatTransport;
-	#byCid = new Map<string, Msg>();
-	#maxId = 0;
+	#messages: MessageLedger;
 	/** 조회가 끝난 메시지까지만 전진한다. 실시간 도착은 과거 갭을 메웠다는 증거가 아니다. */
 	#fetchedId = 0;
 	#fetching: Promise<void> | null = null;
@@ -62,6 +60,8 @@ export class ChatRoom {
 	#hiddenAt = 0;
 	#lastTypingSent = 0;
 	#disposed = false;
+	#opening: Promise<void> | null = null;
+	#opened = false;
 	#onVisibility = () => this.#visibility();
 	#onOnline = () => this.#reconnectNow();
 
@@ -75,6 +75,11 @@ export class ChatRoom {
 	) {
 		this.#t = transport;
 		this.#safetyMs = opts.safetySyncMs ?? SAFETY_SYNC_MS;
+		this.#messages = new MessageLedger(roomId, () => this.seat, () => this.serverNow());
+	}
+
+	get msgs() {
+		return this.#messages.rows;
 	}
 
 	get seat() {
@@ -89,9 +94,27 @@ export class ChatRoom {
 	}
 
 	// ── 수명 ─────────────────────────────────────────────────────
-	async open() {
+	open(): Promise<void> {
+		if (this.#disposed || this.#opened) return Promise.resolve();
+		if (this.#opening) return this.#opening;
+		const opening = this.#open();
+		this.#opening = opening;
+		void opening.finally(() => {
+			if (this.#opening === opening) this.#opening = null;
+		}).catch(() => {});
+		return opening;
+	}
+
+	async #open() {
 		// 화면을 연 것 자체가 입장 확인. 양쪽이 모두 열어야 10분 타이머가 시작된다.
-		this.#absorb(await this.#t.ack(this.roomId));
+		const snap = await this.#t.ack(this.roomId);
+		if (this.#disposed) {
+			// 떠남 신호보다 ack 가 늦게 끝났으면 서버의 "보고 있음"도 다시 끈다.
+			void this.#t.view?.(this.roomId, false).catch(() => {});
+			return;
+		}
+		this.#opened = true;
+		this.#absorb(snap);
 		if (this.closed) return;
 		this.#connect();
 		document.addEventListener('visibilitychange', this.#onVisibility);
@@ -117,41 +140,59 @@ export class ChatRoom {
 	}
 
 	dispose() {
-		if (!this.#disposed && !this.closed) void this.#t.view?.(this.roomId, false).catch(() => {}); // 떠났다 → 상대 쪽 시간도 멈춘다
-		if (this.#viewTimer) clearInterval(this.#viewTimer);
+		if (this.#disposed) return;
 		this.#disposed = true;
+		if (!this.closed) void this.#t.view?.(this.roomId, false).catch(() => {}); // 떠났다 → 상대 쪽 시간도 멈춘다
+		this.#stopLiveUpdates();
+	}
+
+	/** 종료 · 화면 이탈 때 구독과 타이머를 한 곳에서 정리한다. */
+	#stopLiveUpdates() {
 		this.#t.disconnect();
+		this.connected = false;
+		this.partnerHere = false;
+		this.partnerTypingUntil = 0;
 		if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer);
 		if (this.#tailTimer) clearTimeout(this.#tailTimer);
 		if (this.#safetyTimer) clearInterval(this.#safetyTimer);
+		if (this.#viewTimer) clearInterval(this.#viewTimer);
 		if (this.#readTimer) clearTimeout(this.#readTimer);
+		this.#reconnectTimer = this.#tailTimer = this.#readTimer = null;
+		this.#safetyTimer = this.#viewTimer = null;
 		document.removeEventListener('visibilitychange', this.#onVisibility);
 		window.removeEventListener('online', this.#onOnline);
 	}
 
 	#connect() {
-		if (this.#disposed) return;
+		if (this.#disposed || this.closed) return;
+		this.connected = false;
+		this.partnerHere = false;
 		this.#t.connect(this.roomId, this.seat, {
 			onMessage: (row) => this.upsert(row, 'sent'),
 			onRoom: (row) => this.#applyRoom(row),
 			onVote: (v) => this.#applyVote(v),
 			onReaction: (r) => {
+				if (this.#disposed || this.closed) return;
 				// 내가 방금 바꾸는 중인 공감의 옛 에코는 건너뛴다 (❤️→😂 를 빨리 누르면 ❤️ 에코가 늦게 온다)
 				if (r.seat === this.seat && this.#pendingReact.has(r.message_id)) return;
 				this.#applyReaction(r);
 			},
 			onTyping: (s) => {
+				if (this.#disposed || this.closed) return;
 				if (s !== this.seat) this.partnerTypingUntil = Date.now() + TYPING_SHOW_MS;
 			},
 			onPresence: (seats) => {
+				if (this.#disposed || this.closed) return;
 				this.partnerHere = seats.some((s) => s !== this.seat);
 			},
 			onSubscribed: () => {
+				if (this.#disposed || this.closed) return;
 				this.connected = true;
 				this.#retry = 0;
 				void this.resync();
 			},
 			onDown: () => {
+				if (this.#disposed || this.closed) return;
 				this.connected = false;
 				this.#scheduleReconnect();
 			}
@@ -195,24 +236,18 @@ export class ChatRoom {
 	// ── 동기화 ───────────────────────────────────────────────────
 	/** 방 상태 + 메시지 갭을 한꺼번에 메운다. 재연결·포그라운드 복귀 때마다 호출. */
 	async resync() {
-		try {
-			// 스냅샷 대신 close_if_expired — 오프라인 동안 만료됐다면 서버가 여기서 닫아준다
-			this.#absorb(await this.#t.closeIfExpired(this.roomId));
-		} catch {
-			return; // 멤버가 아니게 됐거나 네트워크 오류 — 다음 기회에
-		}
-		if (this.closed) {
-			this.#t.disconnect();
-			return;
-		}
+		if (!(await this.#refreshSnapshot())) return;
 		try {
 			await this.#fetchMessages();
 		} catch {
 			return; // 조회가 실패하면 커서는 그대로 — 다음 동기화가 같은 갭을 다시 읽는다
 		}
+		if (this.#disposed || this.closed) return;
 		// 끊겨 있던 동안 바뀐 공감도 — 방 전체를 다시 읽어 통째로 맞춘다 (방 하나에 많아야 메시지 수 × 2)
 		try {
-			this.#setReactions(await this.#t.fetchReactions(this.roomId));
+			const rows = await this.#t.fetchReactions(this.roomId);
+			if (this.#disposed || this.closed) return;
+			this.#setReactions(rows);
 		} catch {
 			/* 다음 동기화 때 */
 		}
@@ -221,12 +256,13 @@ export class ChatRoom {
 		// identity 는 id 를 먼저 받은 트랜잭션이 나중에 커밋될 수 있다.
 		// id=101 이 먼저 보이고 id=100 이 0.2초 뒤 커밋되면 gt(maxId=101) 로는 100 을 영영 못 본다.
 		// upsert 가 멱등이므로 잠시 뒤 최근 50개를 무조건 다시 읽어 병합한다.
+		if (this.#disposed || this.closed) return;
 		if (this.#tailTimer) clearTimeout(this.#tailTimer);
 		this.#tailTimer = setTimeout(async () => {
 			this.#tailTimer = null;
 			if (this.#disposed || this.closed) return;
 			try {
-				for (const r of await this.#t.fetchRecent(this.roomId, 50)) this.upsert(r, 'sent');
+				await this.#fetchRecent();
 			} catch {
 				/* 다음 동기화 때 다시 읽는다 */
 			}
@@ -239,17 +275,29 @@ export class ChatRoom {
 	 * (예전엔 30초마다 4개씩, Phase 36 전에는 45초마다 보냈다)
 	 */
 	async #lightSync() {
-		try {
-			this.#absorb(await this.#t.closeIfExpired(this.roomId));
-		} catch {
-			return;
-		}
-		if (this.closed) return;
+		if (!(await this.#refreshSnapshot())) return;
 		try {
 			await this.#fetchMessages();
 		} catch {
 			/* 다음 안전망 · 재연결 때 같은 커서로 다시 읽는다 */
 		}
+	}
+
+	/** 오프라인 동안 만료됐으면 서버가 닫는다. 응답 뒤에도 화면 수명을 확인한다. */
+	async #refreshSnapshot() {
+		if (this.#disposed || this.closed) return false;
+		try {
+			this.#absorb(await this.#t.closeIfExpired(this.roomId));
+			return !this.#disposed && !this.closed;
+		} catch {
+			return false; // 다음 안전망 · 재연결 때 다시 확인
+		}
+	}
+
+	async #fetchRecent(allowClosed = false) {
+		const rows = await this.#t.fetchRecent(this.roomId, 50);
+		if (this.#disposed || (this.closed && !allowClosed)) return;
+		for (const row of rows) this.upsert(row, 'sent');
 	}
 
 	/** 중첩 동기화도 같은 조회를 기다린다. 페이지 전부를 받은 뒤에만 커서를 확정한다. */
@@ -272,13 +320,14 @@ export class ChatRoom {
 	}
 
 	#absorb(s: RoomSnap) {
+		if (this.#disposed || (this.closed && s.status !== 'closed')) return;
 		this.skew = Date.parse(s.server_now) - Date.now();
 		this.snap = s;
-		if (s.status === 'closed') this.#t.disconnect();
+		if (s.status === 'closed') this.#stopLiveUpdates();
 	}
 
 	#applyRoom(r: RoomRow) {
-		if (!this.snap) return;
+		if (!this.snap || this.#disposed || this.closed) return;
 		const s = this.snap;
 		const wasPending = s.status === 'pending';
 		if (r.round !== s.round) {
@@ -304,12 +353,12 @@ export class ChatRoom {
 		}
 		s.close_reason = r.close_reason;
 		s.their_read_id = s.my_seat === 1 ? r.read2 : r.read1;
-		if (r.status === 'closed') this.#t.disconnect();
+		if (r.status === 'closed') this.#stopLiveUpdates();
 	}
 
 	#applyVote(v: VoteRow) {
 		const s = this.snap;
-		if (!s || v.round !== s.round) return;
+		if (!s || this.#disposed || this.closed || v.round !== s.round) return;
 		if (v.seat === s.my_seat) s.my_vote = v.agree;
 		else s.partner_vote = v.agree;
 	}
@@ -319,7 +368,7 @@ export class ChatRoom {
 
 	/** hint = 디플로마 · 동아리 · 공통 질문 차례에 연장하면서 적은 내 값. 고정을 묻는 차례면 agree = 고정하기 */
 	async vote(agree: boolean, hint: string | null = null): Promise<VoteResult | null> {
-		if (!this.snap || this.voting) return null;
+		if (!this.snap || this.voting || this.#disposed) return null;
 		this.voting = true;
 		try {
 			const { result, snap } = await this.#t.vote(this.roomId, agree, hint);
@@ -351,7 +400,7 @@ export class ChatRoom {
 	 * 서버가 아직 아니라고 하면 skew 가 재동기화되어 카운트다운이 되살아난다.
 	 */
 	async checkExpiry() {
-		if (this.#checking || this.closed || Date.now() - this.#lastCheck < 3000) return;
+		if (this.#checking || this.closed || this.#disposed || Date.now() - this.#lastCheck < 3000) return;
 		this.#checking = true;
 		this.#lastCheck = Date.now();
 		try {
@@ -400,37 +449,8 @@ export class ChatRoom {
 
 	// ── 메시지 ───────────────────────────────────────────────────
 	/** 유일한 진입점. 멱등 — 같은 행이 몇 번 와도 결과가 같다. */
-	upsert(row: Partial<MsgRow> & { client_msg_id: string }, state: Msg['state']) {
-		const prev = this.#byCid.get(row.client_msg_id);
-		if (prev) {
-			// 확정된 id 를 null 로 되돌리지 않는다
-			if (row.id != null) prev.id = row.id;
-			if (row.created_at) prev.created_at = row.created_at;
-			prev.state = prev.id != null ? 'sent' : state;
-			// 보낸 사람이 지웠다 (실시간 UPDATE · 다시 읽기) — 되살리지는 않는다
-			if (row.deleted_at && !prev.deleted_at) {
-				prev.deleted_at = row.deleted_at;
-				prev.body = row.body ?? prev.body;
-			}
-		} else {
-			const m: Msg = {
-				id: row.id ?? null,
-				room_id: row.room_id ?? this.roomId,
-				sender_seat: (row.sender_seat ?? this.seat) as Msg['sender_seat'],
-				body: row.body ?? '',
-				client_msg_id: row.client_msg_id,
-				created_at: row.created_at ?? new Date(this.serverNow()).toISOString(),
-				reply_to: row.reply_to ?? null,
-				deleted_at: row.deleted_at ?? null,
-				state: row.id != null ? 'sent' : state
-			};
-			this.msgs.push(m);
-			// $state 배열에 넣은 뒤의 프록시를 맵에 보관해야 이후 변경이 화면에 반영된다
-			this.#byCid.set(m.client_msg_id, this.msgs[this.msgs.length - 1]);
-		}
-		if (row.id != null && row.id > this.#maxId) this.#maxId = row.id;
-		// 확정 id 순. 미확정(null)은 항상 맨 아래.
-		this.msgs.sort((a, b) => (a.id ?? Infinity) - (b.id ?? Infinity));
+	upsert(row: MessageUpdate, state: Msg['state']) {
+		if (!this.#disposed) this.#messages.upsert(row, state);
 	}
 
 	/**
@@ -439,7 +459,7 @@ export class ChatRoom {
 	 */
 	async send(raw: string, replyTo: number | null = null): Promise<{ blocked: string } | null> {
 		const body = raw.trim();
-		if (!body || !this.snap || this.closed) return null;
+		if (!body || !this.snap || this.closed || this.#disposed) return null;
 		const cid = crypto.randomUUID();
 		this.upsert({ client_msg_id: cid, sender_seat: this.seat, body, reply_to: replyTo }, 'sending');
 		return this.#flush(cid, body, replyTo);
@@ -447,36 +467,36 @@ export class ChatRoom {
 
 	/** 재전송 — 같은 client_msg_id 로 보내므로 unique index 가 중복을 막는다 */
 	async retry(m: Msg) {
-		if (m.state === 'sending' || this.closed) return null;
+		if (m.id != null || m.state === 'sending' || this.closed || this.#disposed) return null;
 		m.state = 'sending';
 		return this.#flush(m.client_msg_id, m.body, m.reply_to ?? null);
 	}
 
 	async #flush(cid: string, body: string, replyTo: number | null): Promise<{ blocked: string } | null> {
 		const res = await this.#t.send(this.roomId, this.seat, body, cid, replyTo);
-		const m = this.#byCid.get(cid);
+		if (this.#disposed) return null;
 		if (res.ok) {
 			this.upsert(res.row, 'sent');
 			return null;
 		}
 		if (res.reason === 'blocked') {
 			// 서버에 남지 않았다 — "실패(다시 보내기)"로 두면 몇 번을 눌러도 똑같이 막히므로 아예 지운다
-			const i = this.msgs.findIndex((x) => x.client_msg_id === cid);
-			if (i >= 0) this.msgs.splice(i, 1);
-			this.#byCid.delete(cid);
+			this.#messages.remove(cid);
 			return { blocked: res.code };
 		}
 		if (res.reason === 'duplicate') {
 			// 타임아웃 후 재시도였는데 서버엔 이미 들어가 있다 → 그 행을 읽어 확정
 			try {
-				for (const r of await this.#t.fetchRecent(this.roomId, 50)) this.upsert(r, 'sent');
+				// 기다리는 사이 방이 종료돼도 이미 저장된 전송 결과는 확정한다.
+				await this.#fetchRecent(true);
 			} catch {
 				/* 읽기가 실패하면 다시 보내기 상태로 남긴다 */
 			}
-			if (m && m.id == null) m.state = 'failed';
+			if (this.#disposed) return null;
+			this.#messages.fail(cid);
 			return null;
 		}
-		if (m) m.state = res.reason === 'rate_limited' ? 'rate_limited' : 'failed';
+		this.#messages.fail(cid, res.reason === 'rate_limited' ? 'rate_limited' : 'failed');
 		if (res.reason === 'closed') void this.resync(); // 만료/종료 — 스냅샷으로 확인
 		return null;
 	}
@@ -501,7 +521,7 @@ export class ChatRoom {
 
 	/** 내 공감을 바꾼다 (null = 취소). 화면에는 바로 반영하고, 서버가 거절하면 되돌린다. */
 	async react(messageId: number, emoji: ReactionKey | null): Promise<ReactResult> {
-		if (this.closed) return 'closed';
+		if (this.closed || this.#disposed) return 'closed';
 		const seat = this.seat;
 		const before = this.reactions[messageId]?.[seat] ?? null;
 		if (before === emoji) return 'ok';
@@ -547,6 +567,7 @@ export class ChatRoom {
 	}
 
 	onInput() {
+		if (this.#disposed || this.closed) return;
 		const now = Date.now();
 		if (now - this.#lastTypingSent < TYPING_SEND_EVERY_MS) return;
 		this.#lastTypingSent = now;
@@ -563,7 +584,7 @@ export class ChatRoom {
 	markRead() {
 		if (this.#disposed || this.closed) return;
 		// 기다리는 사이 위로 스크롤해도, 그 뒤에 온 아직 안 본 메시지를 읽음 처리하지 않는다.
-		this.#readTarget = Math.max(this.#readTarget, this.#maxId);
+		this.#readTarget = Math.max(this.#readTarget, this.#messages.maxId);
 		this.#scheduleRead();
 	}
 

@@ -11,105 +11,46 @@
 	 * 삭제 (Phase 69): 선택한 편지를 확인 시트를 거쳐 지운다 — 내 편지함에서만 (상대의 편지 · 편지 줄기는 그대로, 되돌릴 수 없다).
 	 */
 	import BackButton from '$lib/ui/BackButton.svelte';
-	import { onDestroy } from 'svelte';
+	import { untrack } from 'svelte';
 	import MailStack from '$lib/letters/MailStack.svelte';
 	import FolderPicker from '$lib/letters/FolderPicker.svelte';
 	import SelectBar from '$lib/letters/SelectBar.svelte';
-	import Sheet from '$lib/ui/Sheet.svelte';
-	import { BOX, filed, loadMore, refreshMailbox } from '$lib/letters/mailbox.svelte';
+	import DeleteLettersSheet from '$lib/letters/DeleteLettersSheet.svelte';
+	import { MailSelection } from '$lib/letters/selection.svelte';
+	import { BOX, filed, loadMore, refreshMailbox, retryBox } from '$lib/letters/mailbox.svelte';
 	import { LIST } from '$lib/letters/unread.svelte';
-	import { deleteLetters, folderError, type MailItem } from '$lib/letters/api';
-	import { backClose, historySettled } from '$lib/overlay.svelte';
-	import { errMsg, toast } from '$lib/state.svelte';
-	import { accountIsCurrent, accountToken } from '$lib/accountScope';
-	const account = accountToken();
-	let alive = true;
-	onDestroy(() => (alive = false));
-	const current = () => alive && accountIsCurrent(account);
+	import { toast } from '$lib/state.svelte';
 
-	$effect(() => refreshMailbox());
+	$effect(() => untrack(refreshMailbox));
 
-	// ── 선택 ──
-	let selecting = $state(false);
-	let picked = $state<number[]>([]);
-	let picking = $state(false);
-	backClose(() => stopSelect(), { open: () => selecting });
-	function stopSelect() {
-		selecting = false;
-		picked = [];
-		picking = false;
-		confirming = false;
-	}
-	function toggle(it: MailItem) {
-		if ((it.box ?? tab) === 'received' && !it.opened) return toast('봉투를 열어 본 편지만 선택할 수 있어요');
-		picked = picked.includes(it.id) ? picked.filter((x) => x !== it.id) : [...picked, it.id];
-	}
-	async function done(name: string) {
-		if (!current()) return;
-		const ids = picked;
-		picking = false;
-		await historySettled(); // 폴더 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
-		if (!current()) return;
-		stopSelect();
+	const selection = new MailSelection(filed);
+	const done = (name: string) => selection.complete((ids) => {
 		filed(ids);
 		toast(name ? `'${name}' 폴더에 ${ids.length}통을 넣었어요` : '폴더에 넣었어요');
-	}
-
-	// ── 삭제 (Phase 69) — 확인 시트 → 내 편지함에서만 지운다 ──
-	let confirming = $state(false);
-	let deleting = $state(false);
-	async function remove() {
-		if (deleting || !current()) return;
-		const ids = picked;
-		deleting = true;
-		try {
-			const r = await deleteLetters(ids);
-			if (!current()) return;
-			const err = folderError(r);
-			if (err) return toast(err);
-			confirming = false;
-			await historySettled(); // 확인 시트의 뒤로가기 칸이 걷힌 뒤에 선택을 끝낸다
-			if (!current()) return;
-			stopSelect();
-			filed(ids);
-			toast(`편지 ${r.status === 'ok' ? r.moved : ids.length}통을 삭제했어요`);
-		} catch (e) {
-			if (current()) toast(errMsg(e));
-		} finally {
-			deleting = false;
-		}
-	}
+	});
 
 	const tab = $derived(LIST.tab);
 	const list = $derived(BOX[tab]);
-	let busy = $state(false);
-
-	async function more() {
-		if (busy) return;
-		busy = true;
-		await loadMore(tab);
-		busy = false;
-	}
 </script>
 
 <div class="topbar">
 	<BackButton href="/letters" history />
-	<span class="title">{selecting ? '편지 선택' : '편지 보관함'}</span>
-	{#if selecting}
-		<button class="btn-text push" onclick={stopSelect}>취소</button>
+	<span class="title">{selection.active ? '편지 선택' : '편지 보관함'}</span>
+	{#if selection.active}
+		<button class="btn-text push" onclick={() => selection.stop()}>취소</button>
 	{:else if BOX.received.length || BOX.sent.length}
-		<button class="btn-text push" onclick={() => (selecting = true)}>선택</button>
+		<button class="btn-text push" onclick={() => selection.start()}>선택</button>
 	{/if}
 </div>
 
-<div class="page archive" class:selecting>
+<div class="page archive" class:selecting={selection.active}>
 	<div class="seg" role="tablist" aria-label="보관함">
 		<button role="tab" class:on={tab === 'received'} aria-selected={tab === 'received'} onclick={() => (LIST.tab = 'received')}>받은 편지</button>
 		<button role="tab" class:on={tab === 'sent'} aria-selected={tab === 'sent'} onclick={() => (LIST.tab = 'sent')}>보낸 편지</button>
 		<span class="thumb" class:right={tab === 'sent'} aria-hidden="true"></span>
 	</div>
 
-	{#if BOX.folders.length && !selecting}
+	{#if BOX.folders.length && !selection.active}
 		<!-- 폴더 서랍 — 옆으로 밀어서 본다 -->
 		<ul class="folders" aria-label="내 폴더">
 			{#each BOX.folders as f (f.id)}
@@ -126,7 +67,13 @@
 		</ul>
 	{/if}
 
-	{#if BOX.loaded[tab] && list.length === 0}
+	{#if BOX.error[tab]}
+		<div class="center" role="status">
+			<p class="muted">{BOX.error[tab]}</p>
+			<button class="btn-text" onclick={() => retryBox(tab)}>다시 시도</button>
+		</div>
+	{/if}
+	{#if BOX.loaded[tab] && !BOX.loading[tab] && list.length === 0 && !BOX.error[tab]}
 		<p class="muted center">
 			{#if BOX.folders.length}폴더에 넣지 않은 {tab === 'received' ? '받은' : '보낸'} 편지가 없어요
 			{:else}{tab === 'received' ? '아직 받은 편지가 없어요' : '아직 보낸 편지가 없어요'}{/if}
@@ -134,28 +81,23 @@
 	{:else}
 		<!-- 탭을 바꾸면 봉투가 다시 한 통씩 내려앉는다 -->
 		{#key tab}
-			<MailStack items={list} box={tab} loading={!BOX.loaded[tab] && list.length === 0} ghosts={2} {selecting} {picked} ontoggle={toggle} />
+			<MailStack items={list} box={tab} loading={(!BOX.loaded[tab] || BOX.loading[tab]) && list.length === 0} ghosts={2} selecting={selection.active} picked={selection.picked} ontoggle={(item) => selection.toggle(item, tab)} />
 		{/key}
-		{#if BOX.more[tab]}<button class="more" onclick={more} disabled={busy}>{busy ? '가져오는 중…' : '지난 편지 더 보기'}</button>{/if}
+		{#if BOX.more[tab]}<button class="more" onclick={() => loadMore(tab)} disabled={BOX.busy[tab] || BOX.loading[tab]}>{BOX.busy[tab] ? '가져오는 중…' : '지난 편지 더 보기'}</button>{/if}
 	{/if}
 </div>
 
-{#if selecting}
-	<SelectBar count={picked.length}>
-		<button class="danger" onclick={() => (confirming = true)} disabled={!picked.length}>삭제</button>
-		<button class="go" onclick={() => (picking = true)} disabled={!picked.length}>폴더에 넣기</button>
+{#if selection.active}
+	<SelectBar count={selection.picked.length}>
+		<button class="danger" onclick={() => (selection.dialog = 'delete')} disabled={!selection.picked.length}>삭제</button>
+		<button class="go" onclick={() => (selection.dialog = 'folder')} disabled={!selection.picked.length}>폴더에 넣기</button>
 	</SelectBar>
 {/if}
-{#if picking}
-	<FolderPicker ids={picked} folders={BOX.folders} onclose={() => (picking = false)} ondone={done} />
+{#if selection.dialog === 'folder'}
+	<FolderPicker ids={selection.picked} folders={BOX.folders} onclose={() => (selection.dialog = null)} ondone={done} />
 {/if}
-{#if confirming}
-	<Sheet onclose={() => (confirming = false)} label="편지 삭제">
-		<p class="ask">편지 {picked.length}통을 삭제할까요?</p>
-		<p class="warn">내 편지함에서만 지워지고 상대에게는 그대로 남아요. 삭제한 편지는 되돌릴 수 없어요.</p>
-		<button class="item danger" onclick={remove} disabled={deleting} aria-busy={deleting}>삭제</button>
-		<button class="item" onclick={() => (confirming = false)}>취소</button>
-	</Sheet>
+{#if selection.dialog === 'delete'}
+	<DeleteLettersSheet count={selection.picked.length} busy={selection.deleting} ondelete={() => selection.remove()} onclose={() => (selection.dialog = null)} />
 {/if}
 
 <style>
@@ -172,12 +114,6 @@
 	.push {
 		margin-left: auto;
 		margin-right: -6px;
-	}
-	.ask {
-		margin: 4px 0 10px;
-		font-size: 17px;
-		font-weight: 800;
-		text-align: center;
 	}
 
 	/* ── 폴더 서랍 — 마닐라 폴더 모양 카드가 옆으로 늘어선다 ── */

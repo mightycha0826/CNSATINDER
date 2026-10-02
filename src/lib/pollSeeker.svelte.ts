@@ -14,6 +14,8 @@ export abstract class PollSeeker<R> {
 
 	#timer: ReturnType<typeof setTimeout> | null = null;
 	#inflight = false;
+	/** 취소 전 요청이 새 찾기의 결과로 반영되지 않게 실행마다 바꾼다. */
+	#generation = 0;
 	#onVis = () => {
 		if (this.seeking && document.visibilityState === 'visible') this.schedule(0);
 	};
@@ -28,6 +30,7 @@ export abstract class PollSeeker<R> {
 
 	start() {
 		if (this.seeking) return;
+		this.#generation++;
 		this.seeking = true;
 		this.reason = null;
 		this.since = Date.now();
@@ -43,6 +46,7 @@ export abstract class PollSeeker<R> {
 
 	/** 찾기를 멈춘다 (서버에 알리지 않음) */
 	protected halt() {
+		this.#generation++;
 		this.seeking = false;
 		if (this.#timer) clearTimeout(this.#timer);
 		this.#timer = null;
@@ -57,6 +61,7 @@ export abstract class PollSeeker<R> {
 
 	/** ms 뒤에 다시 묻는다. jitter 만큼 무작위로 더 기다린다 — 여러 명의 폴링이 한 순간에 몰리지 않게. */
 	protected schedule(ms: number, jitter = 0) {
+		if (!this.seeking) return;
 		if (this.#timer) clearTimeout(this.#timer);
 		this.#timer = setTimeout(() => void this.#tick(), ms + Math.random() * jitter);
 	}
@@ -67,6 +72,7 @@ export abstract class PollSeeker<R> {
 		if (document.visibilityState !== 'visible') return; // 백그라운드에서는 쉰다
 
 		this.#inflight = true;
+		const generation = this.#generation;
 		let res: R | null = null;
 		try {
 			res = await this.request();
@@ -75,6 +81,8 @@ export abstract class PollSeeker<R> {
 		} finally {
 			this.#inflight = false;
 		}
-		if (this.seeking) this.handle(res);
+		if (!this.seeking) return;
+		if (generation === this.#generation) this.handle(res);
+		else this.schedule(0); // 옛 요청을 기다리다 멈춘 새 찾기를 이어 간다. 요청은 겹치지 않는다.
 	}
 }

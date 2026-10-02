@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc } from '$lib/server/supabaseAdmin';
 import { friendly, guard } from '$lib/server/adminAuth';
-import { EDITABLE_ROLES, PERM_INFO, type Perm, type StaffRole, type StaffRow } from '$lib/adminRoles';
+import { EDITABLE_ROLES, PERM_INFO, isStaffRole, type Perm, type StaffRole, type StaffRow } from '$lib/adminRoles';
 import type { Actions, PageServerLoad } from './$types';
 
 /**
@@ -16,8 +16,6 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	]);
 	return { list, perms };
 };
-
-const ROLES: StaffRole[] = ['moderator', 'developer', 'beta', 'admin'];
 
 async function set(locals: App.Locals, no: string, role: StaffRole | null, name: string | null) {
 	if (!locals.staff?.owner) return fail(403, { error: '최고 관리자만 할 수 있어요' });
@@ -35,8 +33,8 @@ export const actions: Actions = {
 	save: async ({ request, locals }) => {
 		const f = await request.formData();
 		const no = String(f.get('no') ?? '').trim();
-		const role = String(f.get('role') ?? '') as StaffRole;
-		if (!ROLES.includes(role)) return fail(400, { error: '역할을 골라 주세요' });
+		const role = String(f.get('role') ?? '');
+		if (!isStaffRole(role)) return fail(400, { error: '역할을 골라 주세요' });
 		const name = String(f.get('name') ?? '').trim().slice(0, 20) || null;
 		const r = await set(locals, no, role, name);
 		return r ?? { done: f.get('add') ? `${no} 지정됨` : '저장됨' };

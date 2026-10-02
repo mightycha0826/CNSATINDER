@@ -391,16 +391,21 @@ try {
 	check('★ 소개의 메달을 누르면 어떻게 얻는지 · 등급 기준 (업적 화면과 같은 모양)', (await fun.innerText()).includes('"대화가 재밌어요" 받기') && (await fun.locator('.tiers li.done').count()) === 3
 		&& (await fun.innerText()).replace(/\s+/g, '').includes('금200번'), await fun.innerText().catch(() => ''));
 	await page.screenshot({ path: `${SP}/ach-5-partner-badge.png` });
-	await page.keyboard.press('Escape'); await page.waitForTimeout(300);
-	await page.getByRole('button', { name: '프로필 보기' }).first().click(); await page.waitForTimeout(300);
+	await page.keyboard.press('Escape');
+	await fun.waitFor({ state: 'detached' });
+	// 닫기 애니메이션 뒤 history.back의 popstate까지 끝나야 다음 시트가 닫히지 않는다.
+	await page.waitForFunction(() => !(history.state?.['sveltekit:states']?.ov ?? []).length);
+	await page.getByRole('button', { name: '프로필 보기' }).first().click();
+	await page.locator('.profile .badges').waitFor({ state: 'visible' });
 	check('★ 상대 프로필 시트: 교복 깃에 대표 업적 배지 (이름 · 등급) · 늘 넥타이 (Phase 60)', (await page.locator('.profile .badges').getByRole('button', { name: '따뜻한 사람 업적 자세히' }).count()) === 1
 		&& (await page.locator('.profile .badges [aria-label="이야기꾼 금"]').count()) === 1 && (await page.locator('.profile .uniform[data-neck="tie"]').count()) === 1
 		&& (await page.locator('.profile .uniform .empty').count()) === 0);
 	await page.screenshot({ path: `${SP}/ach-4-partner.png` });
 	await page.emulateMedia({ reducedMotion: 'reduce' }); // 교복 배지는 숨 쉬듯 움직인다 — 멈추고 누른다
-	await page.locator('.profile .badges').getByRole('button', { name: '고정 친구 업적 자세히' }).click(); await page.waitForTimeout(400);
-	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	await page.locator('.profile .badges').getByRole('button', { name: '고정 친구 업적 자세히' }).click();
 	const pin = page.getByRole('dialog', { name: '고정 친구' });
+	await pin.locator('.tiers li').first().waitFor();
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
 	check('★ 프로필 시트 위에 메달 자세히 (동 1명 · 동만 달성)', (await pin.innerText()).includes('둘 다 고정한 채팅') && (await pin.locator('.tiers li.done').count()) === 1);
 	check('카탈로그는 한 번만 받는다', catalogCalls === 1, String(catalogCalls));
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));

@@ -1,7 +1,8 @@
 import { fail } from '@sveltejs/kit';
 import { adminRpc, supabaseAdmin } from '$lib/server/supabaseAdmin';
 import { friendly, guard } from '$lib/server/adminAuth';
-import { deliver, type PushNote } from '$lib/server/pushSend';
+import { notifyPersonalNotice } from '$lib/server/pushSend';
+import { badgeCode } from '$lib/server/adminForms';
 import type { BadgeAdminRow, BadgeRequestRow } from '$lib/adminTypes';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -12,7 +13,6 @@ import type { Actions, PageServerLoad } from './$types';
  * 결과는 그 학생에게 개인 공지(하트 · 공지 · 푸시)로 간다.
  */
 const BUCKET = 'badge-proofs';
-const CODE = /^[a-z_]{1,40}$/;
 
 export const load: PageServerLoad = async ({ url, locals }) => {
 	guard(locals, url); // 관리자 (identity)
@@ -38,8 +38,7 @@ export const actions: Actions = {
 		const id = Number(f.get('id'));
 		const ok = f.get('ok') === '1';
 		const note = String(f.get('note') ?? '').trim();
-		const raw = String(f.get('code') ?? '');
-		const code = CODE.test(raw) ? raw : null;
+		const code = badgeCode(f);
 		if (!Number.isSafeInteger(id) || id < 1) return fail(400, { error: '잘못된 요청' });
 		if (note.length > 500) return fail(400, { error: '메모는 500자까지' });
 		let r: { status: string; given: number; missing: number[]; photos: string[]; notice: number };
@@ -54,8 +53,7 @@ export const actions: Actions = {
 		}
 		// 사진 지우기 · 알림은 실패해도 결정은 이미 됐다
 		if (r.photos?.length) await supabaseAdmin().storage.from(BUCKET).remove(r.photos).catch(() => null);
-		const p = await adminRpc<{ skip: string } | Omit<PushNote, 'kind'>>('personal_notice_push', { p_id: r.notice }).catch(() => ({ skip: 'error' }));
-		if (!('skip' in p)) await deliver({ ...p, kind: 'notice' }, platform).catch(() => null);
+		await notifyPersonalNotice(r.notice, platform);
 		if (!ok) return { done: '반려했어요 · 학생에게 알렸어요' };
 		return {
 			done: [r.given ? `${r.given}명에게 뱃지를 줬어요` : '승인했어요', r.missing?.length ? `못 찾은 학번 ${r.missing.join(', ')}` : '', '학생에게 알렸어요']

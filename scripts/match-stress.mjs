@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { readFileSync } from 'node:fs';
+import { readScriptEnv } from './lib/env.mjs';
 
 /**
  * 매칭 동시성 스트레스 — 실서버 전용.
@@ -15,12 +15,7 @@ import { readFileSync } from 'node:fs';
  * 를 확인하고 전부 삭제한다.
  */
 const N = Math.max(4, Number(process.argv[2]) || 20) & ~1; // 짝수
-const env = Object.fromEntries(
-	readFileSync(new URL('../.env', import.meta.url), 'utf8')
-		.split(/\r?\n/)
-		.filter((l) => /^[A-Z_]+=/.test(l))
-		.map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()])
-);
+const env = readScriptEnv();
 const URL_ = env.PUBLIC_SUPABASE_URL;
 const PUB = env.PUBLIC_SUPABASE_PUBLISHABLE_KEY || env.PUBLIC_SUPABASE_ANON_KEY;
 const SVC = env.SUPABASE_SERVICE_ROLE_KEY;

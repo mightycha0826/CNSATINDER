@@ -32,7 +32,7 @@
 	let landing = $state(false);
 	let firstLoad: Promise<void> | null = null; // 들어올 때 새로 읽는 것 — 알림에서 왔을 때 한 번 더 읽지 않고 같이 기다린다
 	$effect(() => {
-		const loaded = (firstLoad = reloadMailbox());
+		const loaded = (firstLoad = untrack(reloadMailbox));
 		// 방금 편지를 보냈다 (Phase 72) — 목록을 새로 읽은 뒤(더미 맨 위가 그 편지) 우체통 위에 "+✉" · 책상 더미에 내려앉는다
 		if (POSTED.pending) {
 			POSTED.pending = false;
@@ -134,7 +134,8 @@
 	});
 	// 한 통이라도 있으면 겹겹이 쌓인 느낌이 나게 최소 네 장
 	const pileSize = $derived(readCount + sentCount ? Math.min(7, Math.max(4, readCount + sentCount + 1)) : 0);
-	const loaded = $derived(BOX.loaded.received && BOX.loaded.sent);
+	const loaded = $derived(BOX.loaded.received && BOX.loaded.sent && !BOX.loading.received && !BOX.loading.sent);
+	const loadError = $derived(BOX.error.received ?? BOX.error.sent);
 	// 봉투에 적힌 나 (받은 편지의 To. · 보낸 편지의 From.)
 	const me = (it: (typeof BOX.received)[number], box: 'received' | 'sent') => myLabel(it, box, { name: S.me?.name, gender: S.profile?.gender });
 
@@ -192,7 +193,7 @@
 			class="post"
 			bind:this={postEl}
 			onclick={tapPostbox}
-			aria-label={unread.length ? `우체통 — 새 편지 ${unread.length}통, 눌러서 가장 최근 편지 꺼내기` : BOX.loaded.received ? '우체통 — 새 편지 없음' : '우체통'}
+			aria-label={unread.length ? `우체통 — 새 편지 ${unread.length}통, 눌러서 가장 최근 편지 꺼내기` : BOX.error.received ? '우체통 — 편지를 불러오지 못했어요' : BOX.loaded.received && !BOX.loading.received ? '우체통 — 새 편지 없음' : '우체통'}
 		>
 			<Postbox count={unread.length} {drop} {dropN} {added} {bump} />
 		</button>
@@ -200,6 +201,12 @@
 
 	<!-- 책상 — 벽 아래로 이어지는 한 장의 나무 판. 아래쪽엔 편지 보관함(서류 더미) -->
 	<div class="surface">
+	{#if loadError}
+		<div class="load-error" role="status">
+			<p>{loadError}</p>
+			<button class="btn-text" onclick={reloadMailbox}>다시 시도</button>
+		</div>
+	{/if}
 
 	<!-- 편지 보관함 — 책상 위 서류 더미. 앞 한 줄은 [이름표 | 편지 쓰기] -->
 	<div class="desk-area">
@@ -285,7 +292,7 @@
 							w={Math.round(176 * k)}
 						/>
 					</span>
-				{:else if loaded && !pileSize}
+				{:else if loaded && !pileSize && !loadError}
 					<span class="empty-desk">아직 쌓인 편지가 없어요</span>
 				{/if}
 			</span>
@@ -311,6 +318,14 @@
 
 
 <style>
+	.load-error {
+		padding: 12px var(--side);
+		text-align: center;
+		color: var(--wood-ink);
+	}
+	.load-error p {
+		margin: 0;
+	}
 	/* 한 장면 (Phase 73): 벽(우체통) → 그 아래로 이어지는 나무 책상 한 장(새 편지 · 물건 · 서류 더미) → 책상 앞 모서리에 [이름표 | 편지 쓰기] */
 	.mailbox {
 		/* 책상이 화면 양옆보다 이만큼 더 넓다 (Phase 71) — 눌러서 살짝 줄어도 모서리에 바깥 바탕이 비치지 않게 */

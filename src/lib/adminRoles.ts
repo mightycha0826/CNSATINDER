@@ -4,8 +4,14 @@
  * 최고 관리자가 운영진 관리 화면에서 바꾼다. 내 권한 목록(perms)은 요청마다 역할 확인(admin_staff_touch)과 같이 온다.
  * 화면은 권한 없는 메뉴를 숨기고, 화면 load(guard)는 주소를 직접 쳐도 막고, DB 함수가 같은 표로 한 번 더 막는다.
  */
-export type StaffRole = 'moderator' | 'developer' | 'beta' | 'admin';
+export const STAFF_ROLES = ['moderator', 'developer', 'beta', 'admin'] as const;
+export type StaffRole = (typeof STAFF_ROLES)[number];
+export const isStaffRole = (role: unknown): role is StaffRole => STAFF_ROLES.some((known) => role === known);
 export type Perm = 'live' | 'moderate' | 'identity' | 'settings' | 'service' | 'inquiry' | 'notice' | 'audit';
+
+/** 긴 정지는 관리자 역할만. identity 권한과 제재 기간 제한은 별개다 (DB도 같은 규칙). */
+export const MOD_MAX_SUSPEND_DAYS = 7;
+export const ADMIN_MAX_SUSPEND_DAYS = 365;
 
 export const ROLE_LABEL: Record<StaffRole, string> = { moderator: '운영자', developer: '개발자', beta: '베타테스터', admin: '관리자' };
 export const ROLE_COLOR: Record<StaffRole, string> = { moderator: '#16a34a', developer: '#2563eb', beta: '#9333ea', admin: '#e11d48' };

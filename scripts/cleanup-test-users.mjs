@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { readFileSync } from 'node:fs';
+import { readScriptEnv } from './lib/env.mjs';
 
 /**
  * 테스트 스크립트가 중간에 죽어서 남긴 일회용 계정 정리.
@@ -10,12 +10,7 @@ import { readFileSync } from 'node:fs';
  */
 const PREFIXES = ['simbun-e2e-', 'simbun-stress-', 'simbun-warm-'];
 
-const env = Object.fromEntries(
-	readFileSync(new URL('../.env', import.meta.url), 'utf8')
-		.split(/\r?\n/)
-		.filter((l) => /^[A-Z_]+=/.test(l))
-		.map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()])
-);
+const env = readScriptEnv();
 const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
 const found = [];

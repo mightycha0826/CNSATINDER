@@ -2,6 +2,7 @@ import { json, type RequestHandler } from '@sveltejs/kit';
 import { AiUnavailable, runAi } from '$lib/server/ai';
 import { chatPrompt, cleanHistory, conversationText, fakeReply, tidyReply } from '$lib/server/aiChat';
 import { adminRpc, userFromBearer } from '$lib/server/supabaseAdmin';
+import { jsonObject } from '$lib/server/request';
 
 /**
  * POST /api/ai-chat   Authorization: Bearer <access token>   — 대화 봇 (Phase 43, lib/bot)
@@ -16,7 +17,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const POST: RequestHandler = async ({ request, platform }) => {
 	const uid = await userFromBearer(request).catch(() => null);
 	if (!uid) return json({ error: 'unauthorized' }, { status: 401 });
-	const body = ((await request.json().catch(() => null)) ?? {}) as { chat_id?: unknown; messages?: unknown };
+	const body = await jsonObject(request);
 	const turns = cleanHistory(body.messages);
 	if (typeof body.chat_id !== 'string' || !UUID.test(body.chat_id) || !turns) {
 		return json({ error: 'bad_request' }, { status: 400 });

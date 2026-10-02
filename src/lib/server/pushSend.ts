@@ -22,6 +22,9 @@ export type PushNote = {
 	subs: PushSub[];
 };
 
+/** DB가 발송 여부를 판단한 결과. 수신자 신원은 RPC가 결정하며 요청 본문에서 받지 않는다. */
+export type PushPayload = { skip: string } | Omit<PushNote, 'kind'>;
+
 export function vapidKeys() {
 	const v = {
 		publicKey: pub.PUBLIC_VAPID_KEY ?? '',
@@ -55,4 +58,10 @@ export async function deliver(p: PushNote, platform?: Readonly<Partial<App.Platf
 		return { queued: subs.length };
 	}
 	return { sent: await work.catch(() => 0) };
+}
+
+/** 개인 공지 저장이 끝난 뒤의 알림. 푸시 실패가 이미 완료된 조치를 실패로 바꾸지 않는다. */
+export async function notifyPersonalNotice(id: number, platform?: Readonly<Partial<App.Platform>>) {
+	const payload = await adminRpc<PushPayload>('personal_notice_push', { p_id: id }).catch(() => ({ skip: 'error' }));
+	if (!('skip' in payload)) await deliver({ ...payload, kind: 'notice' }, platform).catch(() => null);
 }

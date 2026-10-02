@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'node:fs';
+import { readScriptEnv } from './lib/env.mjs';
 
 /**
  * 학번-이름 명렬표를 private.student_roster 에 반영한다 (관리자 화면의 "이메일 확인" 옆에
@@ -60,12 +61,7 @@ if (byGrade.size === 0) {
 }
 if (dryRun) process.exit(0);
 
-const env = Object.fromEntries(
-	readFileSync(new URL('../.env', import.meta.url), 'utf8')
-		.split(/\r?\n/)
-		.filter((l) => /^[A-Z_]+=/.test(l))
-		.map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1).trim()])
-);
+const env = readScriptEnv();
 const admin = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
 
 for (const [grade, rows] of [...byGrade].sort()) {

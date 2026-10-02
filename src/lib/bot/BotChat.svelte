@@ -22,7 +22,7 @@
 	import { focustrap } from '$lib/focustrap';
 	import { backClose } from '$lib/overlay.svelte';
 	import { botApi, type BotApi, type BotStart } from './api';
-	import { snapshotTurn, type ChatLine as Line } from './conversation';
+	import { requestTurn, snapshotTurn, type ChatLine as Line } from './conversation';
 	import { GOODBYES, GREETINGS, NUDGES, NUDGE_AFTER_MS, REPLY_AFTER_MS, pick, rand, splitReply, typeMs } from './persona';
 
 	let {
@@ -180,17 +180,12 @@
 			typing = true;
 			void scrollDown();
 			const t0 = Date.now();
-			let r = await api.turn(chat.id, history).catch(() => ({ status: 'network' as const }));
-			if (!alive || phase !== 'live') return;
-			if (r.status === 'network' || r.status === 'ai_unavailable') {
-				typing = false;
-				await sleep(3000);
-				if (!alive || phase !== 'live') return;
-				typing = true;
-				// 새 메시지를 끼워 넣지 않고 같은 요청을 한 번만 다시 보낸다.
-				r = await api.turn(chat.id, history).catch(() => ({ status: 'network' as const }));
-				if (!alive || phase !== 'live') return;
-			}
+			const r = await requestTurn(api, chat.id, history, {
+				isActive: () => alive && phase === 'live',
+				wait: () => sleep(3000),
+				onRetry: (waiting) => { typing = !waiting; }
+			});
+			if (!r) return;
 
 			switch (r.status) {
 				case 'ok':
