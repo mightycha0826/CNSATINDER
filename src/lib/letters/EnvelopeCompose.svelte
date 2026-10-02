@@ -20,10 +20,9 @@
 	import { KB } from '../keyboard.svelte';
 	import * as haptic from '../haptics';
 	import { NICK_MAX, paperDate, stampDate } from './api';
-	import { accountIsCurrent, accountToken } from '$lib/accountScope';
-	const account = accountToken();
+	// 계정이 바뀌면 루트 레이아웃이 화면을 통째로 다시 만든다 — 떠 있는지만 보면 된다
 	let alive = true;
-	const current = () => alive && accountIsCurrent(account);
+	const current = () => alive;
 
 	let {
 		to,

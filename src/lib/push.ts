@@ -180,7 +180,7 @@ export async function clearNotifications(tag: string, prefix = false) {
 	}
 }
 
-export type SwNote = { kind: 'chat' | 'reaction' | 'letter' | 'notice' | 'other'; title: string; body: string; url: string; tag: string };
+type SwNote = { kind: 'chat' | 'reaction' | 'letter' | 'notice' | 'other'; title: string; body: string; url: string; tag: string };
 
 /**
  * 서비스워커가 보내는 말 (Phase 35)

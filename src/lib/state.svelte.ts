@@ -5,7 +5,6 @@ import { disablePush, syncPush } from './push';
 import { accountIsCurrent, accountToken, changeAccount } from './accountScope';
 import { toasts } from './toast.svelte';
 import type { Profile, Settings } from './accountTypes';
-import { readWithFallback } from './schemaCompatibility';
 
 export type { Profile, Settings } from './accountTypes';
 export { errMsg } from './errors';
@@ -106,7 +105,6 @@ function selectSession(session: Session | null) {
 		S.maintAt = null;
 		S.profileLoading = false;
 		loadedFor = null;
-		achAsked = false;
 		otpVerifiedAt = 0;
 		UI.busy = UI.celebrating = UI.touring = UI.seekOnHome = UI.achNew = false;
 		if (previous) UI.afterLogin = null;
@@ -141,10 +139,7 @@ export async function loadProfile() {
 	// ★ select('*') 를 쓰지 않는다. 항상 명시 컬럼.
 	const cols = 'id, nickname, bio, interests, mbti, gender, want, status, suspended_until, verified, onboarded';
 	const read = (c: string) => supabase.from('profiles').select(c).eq('id', uid).maybeSingle();
-	// Phase 21 · 23 · 30 · 84 를 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 프로필을 못 읽는 일이 없게
-	const { data } = await readWithFallback(read, cols, [
-		'allow_rematch', 'letters_open', 'manner_temp', 'letters_recommend, letter_badge_order'
-	]);
+	const { data } = await read(`${cols}, allow_rematch, letters_open, manner_temp, letters_recommend, letter_badge_order`);
 	if (accountIsCurrent(token)) S.profile = (data as unknown as Profile) ?? null;
 }
 
@@ -163,8 +158,6 @@ async function updateProfile(patch: ProfilePreferences | Pick<Profile, 'gender' 
 /** 설정 스위치와 매칭 선호 — 상태·인증 여부 같은 서버 전용 열은 받지 않는다. */
 export const setProfileField = (patch: ProfilePreferences) => updateProfile(patch);
 
-/** 만났던 사람도 다시 만나기 (설정 화면 스위치) */
-export const setAllowRematch = (on: boolean) => setProfileField({ allow_rematch: on });
 
 const SETTINGS_COLS =
 	'is_open, notice, room_minutes, extend_minutes, vote_window_sec, join_grace_sec, max_rounds, heartbeat_sec, presence_ttl_sec, msg_max_len, max_open_rooms, letter_max_len, comment_max_len';
@@ -173,10 +166,7 @@ async function loadSettings() {
 	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();
 	const AI = 'ai_moderation, ai_chat, ai_chat_per_user';
 	const MAINT = 'maintenance, maintenance_msg, maintenance_until';
-	// 뱃지 인스타(84) · 점검 예약(53) · 서버 점검(52) · 편지 잠금(44) · AI 설정(19)을 DB 에 반영하기 전이면 그 열 없이 — 앱이 먼저 배포돼도 멈추지 않게
-	const { data } = await readWithFallback(read, SETTINGS_COLS, [
-		AI, 'letters_gate, letters_gate_min', MAINT, 'maintenance_at', 'badge_instagram'
-	]);
+	const { data } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}, maintenance_at, badge_instagram`);
 	if (!accountIsCurrent(token)) return;
 	S.settings = (data as unknown as Settings) ?? null;
 	// 예약 시각이 지났으면 점검 중 (Phase 53 — DB 의 private.in_maintenance 와 같은 규칙)
@@ -215,8 +205,6 @@ export async function saveMyName(name: string) {
 // 요청 하나하나가 Supabase 로그 사용량이 되므로 주기는 필요한 만큼만 (Phase 36).
 const BEAT_MS = 60_000;
 let beatTimer: ReturnType<typeof setInterval> | null = null;
-/** ach_new 를 모르는 예전 DB — 앱을 켤 때 한 번만 묻게 */
-let achAsked = false;
 
 async function beat(online: boolean) {
 	if (!S.session) return;
@@ -236,8 +224,7 @@ async function beat(online: boolean) {
 			const at = d?.maintenance_at ?? null;
 			if (at !== S.maintAt) S.maintAt = at;
 			// 새 업적 (Phase 55) — 예전엔 축하 창이 10분마다 따로 물었다. 이제 박동이 "있다"고 할 때만 받아 간다
-			if (d?.ach_new || (d && d.ach_new === undefined && !achAsked)) UI.achNew = true;
-			achAsked = true;
+			if (d?.ach_new) UI.achNew = true;
 		}
 	} catch {
 		/* 다음 박동에 다시 */
@@ -260,7 +247,7 @@ function startHeartbeat() {
 }
 
 // ── 설치 게이트 ───────────────────────────────────────────────────────
-export function detectStandalone() {
+function detectStandalone() {
 	if (typeof window === 'undefined') return;
 	// 개발 중에는 게이트를 끈다. ?gate 를 붙이면 설치 안내 화면을 확인할 수 있다.
 	if (import.meta.env.DEV && !location.search.includes('gate')) {

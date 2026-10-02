@@ -16,14 +16,14 @@ export const SCORES: { k: Score; label: string; face: string }[] = [
 	{ k: 'good', label: '좋았어요', face: '😊' }
 ];
 /** 좋았어요 · 괜찮았어요일 때 고르는 칩 / 아쉬웠어요일 때 고르는 칩 — 서버가 섞인 것은 거절한다 */
-export const GOOD_REASONS: { k: Reason; label: string }[] = [
+const GOOD_REASONS: { k: Reason; label: string }[] = [
 	{ k: 'kind', label: '친절해요' },
 	{ k: 'fun', label: '대화가 재밌어요' },
 	{ k: 'listen', label: '잘 들어줘요' },
 	{ k: 'fast', label: '답이 빨라요' },
 	{ k: 'manner', label: '예의 발라요' }
 ];
-export const BAD_REASONS: { k: Reason; label: string }[] = [
+const BAD_REASONS: { k: Reason; label: string }[] = [
 	{ k: 'rude', label: '무례해요' },
 	{ k: 'dry', label: '성의가 없어요' },
 	{ k: 'uncomfy', label: '불편한 질문을 해요' },

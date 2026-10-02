@@ -21,7 +21,7 @@ const SYSTEM = `너는 학교 익명 채팅 앱 랜디(Landy)의 "대화 봇"이
 - 상대가 죽고 싶다거나 자해를 이야기하면 장난 없이 진지하고 따뜻하게 들어 주고, 믿을 수 있는 어른(선생님 · 보호자)과 이야기해 보라고 권하고, 자살예방 상담전화 109(24시간)와 청소년상담 1388을 알려 준다.
 - 숙제나 시험 답을 대신 써 주지 않는다.`;
 
-export type ChatTurn = { role: 'user' | 'assistant'; content: string };
+type ChatTurn = { role: 'user' | 'assistant'; content: string };
 
 /** 클라가 보낸 기록을 믿지 않고 다시 자른다 — 최근 20개(봇은 말풍선을 나눠 보내서), 한 말에 500자, 마지막은 반드시 사용자 */
 export function cleanHistory(raw: unknown): ChatTurn[] | null {

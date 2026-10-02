@@ -34,7 +34,6 @@
 		errMsg,
 		recentlyVerified,
 		sendOtpToMe,
-		setAllowRematch,
 		setPassword,
 		setProfileField,
 		signOut,
@@ -216,7 +215,7 @@
 		if (rematchBusy) return;
 		rematchBusy = true;
 		try {
-			await setAllowRematch(on);
+			await setProfileField({ allow_rematch: on });
 			toast(on ? '만났던 사람도 다시 만날 수 있어요' : '최근에 만난 사람은 다시 만나지 않아요');
 		} catch (err) {
 			toast(errMsg(err));

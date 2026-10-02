@@ -6,8 +6,8 @@ import { accountIsCurrent, accountToken, currentAccountId, onAccountChange } fro
  * 어디까지 봤는지(lastSeen)는 서버가 계정에 저장한다 (폰을 바꿔도 이미 본 공지에 점이 다시 뜨지 않게).
  * 개인 공지(Phase 35) — 운영진이 나에게만 보낸 경고 · 연락. 한 통씩 읽음 표시.
  */
-export type Notice = { id: number; title: string; body: string; created_at: string };
-export type PersonalNotice = Notice & { kind: 'message' | 'warning'; read: boolean };
+type Notice = { id: number; title: string; body: string; created_at: string };
+type PersonalNotice = Notice & { kind: 'message' | 'warning'; read: boolean };
 
 export const NOTICES = $state({
 	list: [] as Notice[],

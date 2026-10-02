@@ -1,9 +1,9 @@
 <script lang="ts" module>
-	export type Side = 'front' | 'back';
+	type Side = 'front' | 'back';
 	/** 편지지 위치 — 봉투 안 / 반쯤 나옴 / 거의 다 나옴 */
-	export type PaperPos = 'in' | 'peek' | 'out';
+	type PaperPos = 'in' | 'peek' | 'out';
 	/** 항공우편 테두리 색 — brand: 테마 색(보낸 편지) · f: 붉은색(여학생이 보낸 편지) · m: 푸른색(남학생) · x: 성별 없음 */
-	export type Border = 'brand' | 'f' | 'm' | 'x';
+	type Border = 'brand' | 'f' | 'm' | 'x';
 </script>
 
 <script lang="ts">

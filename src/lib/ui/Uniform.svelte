@@ -1,7 +1,7 @@
 <script lang="ts" module>
 	/** 깃에 다는 배지 칸 — 기본 3, Landy 금 뱃지 5개면 5 (Phase 84 — 넷째 · 다섯째는 가슴 주머니 위) */
-	export const LAPEL_SLOTS = 3;
-	export const MAX_SLOTS = 5;
+	const LAPEL_SLOTS = 3;
+	const MAX_SLOTS = 5;
 </script>
 
 <script lang="ts">

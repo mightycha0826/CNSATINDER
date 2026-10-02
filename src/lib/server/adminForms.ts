@@ -21,7 +21,7 @@ export function noticeError({ title, body }: ReturnType<typeof noticeInput>): st
 	return null;
 }
 
-export type IntegerField = readonly [name: string, min: number, max: number];
+type IntegerField = readonly [name: string, min: number, max: number];
 
 /** 첫 잘못된 값의 기존 오류 문구를 유지하고, 전부 유효할 때만 설정 패치를 만든다. */
 export function integerFields(form: FormData, fields: readonly IntegerField[]): { values: Record<string, number> } | { error: string } {

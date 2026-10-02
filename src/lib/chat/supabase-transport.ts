@@ -20,24 +20,7 @@ import type {
 } from './types';
 
 // ★ select('*') 금지 — 항상 명시 컬럼
-const BASE_COLS = 'id, room_id, sender_seat, body, client_msg_id, created_at';
-/**
- * 나중에 생긴 열 — reply_to(답장, Phase 18) · deleted_at(삭제, Phase 28)은 schema.sql 을 반영하기 전 DB 에는 없다.
- * 그 상태로 앱이 먼저 배포돼도 채팅 전체가 멈추지 않게, "없는 열" 오류가 나면 이 기기에서는 그 열을 빼고 쓴다.
- */
-const optCols = new Set(['reply_to', 'deleted_at']);
-const msgCols = () => [BASE_COLS, ...optCols].join(', ');
-const missingCol = (e: { message?: string } | null) => [...optCols].find((c) => !!e && new RegExp(c).test(e.message ?? ''));
-
-/** 메시지 조회·저장 — 없는 열이 있는 DB 면 그 열을 빼고 다시 */
-async function withMsgCols<T extends { error: { message?: string } | null }>(run: (cols: string) => PromiseLike<T>): Promise<T> {
-	let r = await run(msgCols());
-	for (let c = missingCol(r.error); c; c = missingCol(r.error)) {
-		optCols.delete(c);
-		r = await run(msgCols());
-	}
-	return r;
-}
+const MSG_COLS = 'id, room_id, sender_seat, body, client_msg_id, created_at, reply_to, deleted_at';
 const REACTION_COLS = 'message_id, room_id, seat, emoji';
 
 /**
@@ -171,7 +154,7 @@ export class SupabaseTransport implements ChatTransport {
 		try {
 			// 답장일 때만 reply_to 를 싣는다 — 보통 메시지는 Phase 18 전 DB 에서도 그대로 된다
 			const row = { room_id: roomId, sender_seat: seat, body, client_msg_id: clientMsgId, ...(replyTo != null && { reply_to: replyTo }) };
-			const { data, error } = await withMsgCols((cols) => this.client.from('messages').insert(row).select(cols).single());
+			const { data, error } = await this.client.from('messages').insert(row).select(MSG_COLS).single();
 			if (!error) {
 				const sent = data as unknown as MsgRow; // 열 목록이 문자열 변수라 supabase 타입 추론이 안 된다
 				if (!this.#partnerHere) notifySent(sent.id); // 상대가 이 방에 없으면 — 보낼지는 서버가 한 번 더 판단
@@ -198,9 +181,7 @@ export class SupabaseTransport implements ChatTransport {
 		const out: MsgRow[] = [];
 		let cursor = afterId;
 		for (;;) {
-			const { data, error } = await withMsgCols((cols) =>
-				this.client.from('messages').select(cols).eq('room_id', roomId).gt('id', cursor).order('id', { ascending: true }).limit(200)
-			);
+			const { data, error } = await this.client.from('messages').select(MSG_COLS).eq('room_id', roomId).gt('id', cursor).order('id', { ascending: true }).limit(200);
 			const rows = data as unknown as MsgRow[] | null;
 			if (error) throw error; // 부분 조회를 완료된 갭으로 착각해 커서를 넘기지 않는다
 			if (!rows?.length) break;
@@ -212,9 +193,7 @@ export class SupabaseTransport implements ChatTransport {
 	}
 
 	async fetchRecent(roomId: string, n: number): Promise<MsgRow[]> {
-		const { data, error } = await withMsgCols((cols) =>
-			this.client.from('messages').select(cols).eq('room_id', roomId).order('id', { ascending: false }).limit(n)
-		);
+		const { data, error } = await this.client.from('messages').select(MSG_COLS).eq('room_id', roomId).order('id', { ascending: false }).limit(n);
 		if (error) throw error;
 		return (data as unknown as MsgRow[] | null) ?? [];
 	}

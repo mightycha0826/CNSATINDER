@@ -4,7 +4,7 @@
  * 최고 관리자가 운영진 관리 화면에서 바꾼다. 내 권한 목록(perms)은 요청마다 역할 확인(admin_staff_touch)과 같이 온다.
  * 화면은 권한 없는 메뉴를 숨기고, 화면 load(guard)는 주소를 직접 쳐도 막고, DB 함수가 같은 표로 한 번 더 막는다.
  */
-export const STAFF_ROLES = ['moderator', 'developer', 'beta', 'admin'] as const;
+const STAFF_ROLES = ['moderator', 'developer', 'beta', 'admin'] as const;
 export type StaffRole = (typeof STAFF_ROLES)[number];
 export const isStaffRole = (role: unknown): role is StaffRole => STAFF_ROLES.some((known) => role === known);
 export type Perm = 'live' | 'moderate' | 'identity' | 'settings' | 'service' | 'inquiry' | 'notice' | 'audit';
@@ -48,7 +48,7 @@ const PAGES: [RegExp, (Perm | 'any')[]][] = [
 	[/^\/admin\/staff/, ['identity']], // 실제로는 최고 관리자만 (guard 가 따로 본다)
 	[/^\/admin\/?$/, ['moderate']]
 ];
-export function pagePerms(path: string): (Perm | 'any')[] {
+function pagePerms(path: string): (Perm | 'any')[] {
 	return PAGES.find(([re]) => re.test(path))?.[1] ?? ['any'];
 }
 export const canSee = (who: Who, path: string) => pagePerms(path).some((p) => can(who, p));

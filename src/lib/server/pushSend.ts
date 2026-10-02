@@ -10,7 +10,7 @@ import { isPushEndpoint, sendPush, type PushSub } from './webpush';
  *   kind = 앱이 화면에 떠 있을 때 앱 안 알림을 어떻게 그릴지 · id/at = 늦게 온 알림이 새 알림을 덮지 않게
  * 사라진 기기(404/410)는 지운다. Workers 면 응답을 먼저 돌려주고 발송은 뒤에서 (waitUntil).
  */
-export type PushNote = {
+type PushNote = {
 	kind: 'chat' | 'reaction' | 'letter' | 'notice';
 	title: string;
 	body: string;

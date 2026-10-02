@@ -12,7 +12,7 @@ import type { BadgeLite } from '../achievements';
  * 내가 이름으로 보낸 사람이 답장하면 그 사람 이름으로 보인다 (이미 아는 사이).
  * 서버는 전부 RPC (supabase/schema.sql Phase 23 · 32). 표는 private 라 직접 읽을 수 없다.
  */
-export type Gender = 'm' | 'f' | 'x';
+type Gender = 'm' | 'f' | 'x';
 export type Box = 'received' | 'sent';
 /** no = 학번 (같은 학년 동명이인 구분, Phase 35) */
 export type DmPerson = {
@@ -83,7 +83,7 @@ export type SendResult =
 	| { status: 'not_available' | 'restricted' | 'no_name' | 'bad_text' | 'bad_nick' | 'closed' | 'not_found' | 'letters_locked' | 'service_closed' };
 
 // ── 이름표 ──
-export const genderWord = (g: Gender | null | undefined) => (g === 'm' ? '남학생' : g === 'f' ? '여학생' : '학생');
+const genderWord = (g: Gender | null | undefined) => (g === 'm' ? '남학생' : g === 'f' ? '여학생' : '학생');
 export const anonName = (g: Gender | null | undefined) => `익명의 ${genderWord(g)}`;
 /** 받은 편지의 From. — 아는 사람이면 이름, 서명이 있으면 서명, 없으면 "익명의 ○학생" */
 export const fromLabel = (l: Pick<MailItem, 'from_name' | 'from_gender' | 'from_nick'>) => l.from_name ?? l.from_nick ?? anonName(l.from_gender);
@@ -138,7 +138,7 @@ export async function fetchFolder(id: number, before: number | null = null) {
 }
 
 // ── 폴더 (Phase 47) ──
-export type FolderResult = { status: 'ok'; folder?: { id: number; name: string }; moved: number } | { status: 'bad_name' | 'bad_request' | 'not_found' | 'too_many' | 'exists' };
+type FolderResult = { status: 'ok'; folder?: { id: number; name: string }; moved: number } | { status: 'bad_name' | 'bad_request' | 'not_found' | 'too_many' | 'exists' };
 /** 여러 통을 폴더에 — folder(있는 폴더) 또는 name(새 폴더, 같은 이름이 있으면 그 폴더) */
 export const putInFolder = (ids: number[], to: { folder: number } | { name: string }) =>
 	rpc<FolderResult>('dm_folder_put', { p_msgs: ids, p_folder: 'folder' in to ? to.folder : null, p_name: 'name' in to ? to.name : null });

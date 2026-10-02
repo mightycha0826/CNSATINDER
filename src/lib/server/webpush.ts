@@ -26,7 +26,7 @@ export function isPushEndpoint(endpoint: string): boolean {
 		return false;
 	}
 }
-export type Vapid = { publicKey: string; privateKey: string; subject: string };
+type Vapid = { publicKey: string; privateKey: string; subject: string };
 
 const enc = new TextEncoder();
 

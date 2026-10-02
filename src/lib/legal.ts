@@ -3,8 +3,8 @@
  * 짧게, 앱이 실제로 하는 일(supabase/schema.sql · SECURITY.md)만. 기능을 바꾸면 여기도 같이 고친다.
  * 문단은 글자 그대로 보여 준다 (HTML 없음). 목록은 { li: [...] }.
  */
-export type LegalBlock = string | { li: string[] };
-export type LegalDoc = {
+type LegalBlock = string | { li: string[] };
+type LegalDoc = {
 	title: string;
 	/** 설정 목록에 보이는 한 줄 설명 */
 	subtitle: string;

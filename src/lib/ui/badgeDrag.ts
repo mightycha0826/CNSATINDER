@@ -14,7 +14,7 @@ import { reducedMotion, scrollBehavior } from '$lib/motion';
  *  · 끌고 난 뒤의 click 은 삼킨다 (누르면 여는 자세히가 같이 열리지 않게).
  * 누르기(자세히 · 대표 업적으로 걸기)는 그대로 — 끌기는 더 빠른 길일 뿐이다.
  */
-export type BadgeDragOpts = {
+type BadgeDragOpts = {
 	/** 끌 수 있나 (잠긴 메달이면 false) */
 	enabled?: boolean;
 	/** 놓을 칸을 찾을 범위 (교복) — 늦게 생길 수 있어 함수로 */

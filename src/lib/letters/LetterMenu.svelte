@@ -16,11 +16,10 @@
 	import { errMsg, toast } from '$lib/state.svelte';
 	import { blockThread, closeThread, josa, reportThread, stampDate, type Box, type MailItem } from './api';
 	import { BOX } from './mailbox.svelte';
-	import { accountIsCurrent, accountToken } from '$lib/accountScope';
-	const account = accountToken();
+	// 계정이 바뀌면 루트 레이아웃이 화면을 통째로 다시 만든다 ({#key S.accountVersion}) — 떠 있는지만 보면 된다
 	let alive = true;
 	onDestroy(() => (alive = false));
-	const current = () => alive && accountIsCurrent(account);
+	const current = () => alive;
 
 	let {
 		thread,

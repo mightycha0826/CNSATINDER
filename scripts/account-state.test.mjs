@@ -64,10 +64,9 @@ try {
 	write('rpc', 'export const rpc = async () => null;');
 	build('src/lib/toast.svelte.ts', 'toast');
 	build('src/lib/errors.ts', 'errors');
-	build('src/lib/schemaCompatibility.ts', 'compatibility');
 	build('src/lib/state.svelte.ts', 'state', {
 		'./supabase': 'supabase', './rpc': 'rpc', './push': 'push', './accountScope': 'scope', './toast.svelte': 'toast',
-		'./errors': 'errors', './schemaCompatibility': 'compatibility'
+		'./errors': 'errors'
 	});
 	write('api', 'import {supabase} from ' + JSON.stringify(urls.get('supabase')) + ';\n' +
 		'export const fetchMailbox = async (box, before) => (await supabase.rpc("mailbox:" + box, {before})).data;\n' +

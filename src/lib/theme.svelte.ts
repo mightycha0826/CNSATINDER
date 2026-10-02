@@ -3,7 +3,7 @@
  * 이 기기에만 저장한다 (localStorage). <html data-theme> 로 app.css 의 색을 바꾼다.
  * 첫 화면이 잠깐 반대 색으로 번쩍이지 않게 app.html 의 짧은 스크립트가 같은 키를 먼저 읽어 입힌다.
  */
-export type ThemeMode = 'system' | 'light' | 'dark';
+type ThemeMode = 'system' | 'light' | 'dark';
 
 export const THEME_MODES: { id: ThemeMode; label: string }[] = [
 	{ id: 'system', label: '기기 설정 따르기' },

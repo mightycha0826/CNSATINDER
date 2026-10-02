@@ -5,7 +5,7 @@
  * ★ 앱이 백그라운드로 가면 부르지 않는다 — 폰을 내려놓은 사람에게 매칭·배정이 가지 않게.
  *   화면이 다시 보이면 곧바로 한 번 부른다.
  */
-export type SeekReason = 'empty' | 'filtered' | 'cooldown';
+type SeekReason = 'empty' | 'filtered' | 'cooldown';
 
 export abstract class PollSeeker<R> {
 	seeking = $state(false);

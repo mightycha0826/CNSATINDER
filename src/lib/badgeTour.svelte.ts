@@ -11,7 +11,7 @@ const KEY = 'cnsa-tour-v1';
 export const BADGE_TOUR = $state({ open: false });
 onAccountChange(() => { BADGE_TOUR.open = false; });
 
-export function badgeTourSeen(): boolean {
+function badgeTourSeen(): boolean {
 	try {
 		return localStorage.getItem(KEY) === '1';
 	} catch {

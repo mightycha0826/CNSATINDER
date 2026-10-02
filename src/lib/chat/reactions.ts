@@ -1,6 +1,6 @@
 import { REACTION_EMOJI, type ReactionKey } from './types';
 
-export type SeatReactions = Partial<Record<1 | 2, ReactionKey>>;
+type SeatReactions = Partial<Record<1 | 2, ReactionKey>>;
 
 /** 말풍선 아래 표시 — 둘이 같은 공감이면 "❤️ 2". 공감이 없으면 null */
 export function summarize(rx: SeatReactions | undefined) {

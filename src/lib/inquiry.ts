@@ -19,7 +19,7 @@ export const INQUIRY_MIN = 5;
 export const INQUIRY_MAX = 1000;
 
 export type Inquiry = { id: number; kind: InquiryKind; body: string; created_at: string; answer: string | null; answered_at: string | null };
-export type SendStatus = 'ok' | 'bad_input' | 'too_many' | 'rate';
+type SendStatus = 'ok' | 'bad_input' | 'too_many' | 'rate';
 
 export const fetchMyInquiries = () => rpc<Inquiry[] | null>('my_inquiries').then((r) => r ?? []);
 

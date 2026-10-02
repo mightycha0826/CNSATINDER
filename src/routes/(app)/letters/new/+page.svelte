@@ -14,11 +14,10 @@
 	import { anonName, recommendPeople, searchPeople, sendLetter, type DmPerson } from '$lib/letters/api';
 	import { afterSent, deliver } from '$lib/letters/send';
 	import { S, errMsg, toast } from '$lib/state.svelte';
-	import { accountIsCurrent, accountToken } from '$lib/accountScope';
-	const account = accountToken();
+	// 계정이 바뀌면 루트 레이아웃이 화면을 통째로 다시 만든다 ({#key S.accountVersion}) — 떠 있는지만 보면 된다
 	let alive = true;
 	onDestroy(() => (alive = false));
-	const current = () => alive && accountIsCurrent(account);
+	const current = () => alive;
 
 	let q = $state('');
 	let results = $state<DmPerson[] | null>(null);
@@ -91,7 +90,7 @@
 		nickable
 		placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.`}
 		onsend={send}
-		ondone={() => { if (current()) afterSent('편지를 보냈어요', account); }}
+		ondone={() => { if (current()) afterSent('편지를 보냈어요'); }}
 	/>
 {:else}
 	<div class="page pick">

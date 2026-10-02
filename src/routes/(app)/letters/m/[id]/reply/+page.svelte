@@ -13,11 +13,10 @@
 	import { anonName, fromLabel, openLetter, replyToLetter, type Letter } from '$lib/letters/api';
 	import { afterSent, deliver } from '$lib/letters/send';
 	import { S, errMsg, toast } from '$lib/state.svelte';
-	import { accountIsCurrent, accountToken } from '$lib/accountScope';
-	const account = accountToken();
+	// 계정이 바뀌면 루트 레이아웃이 화면을 통째로 다시 만든다 ({#key S.accountVersion}) — 떠 있는지만 보면 된다
 	let alive = true;
 	onDestroy(() => (alive = false));
-	const current = () => alive && accountIsCurrent(account);
+	const current = () => alive;
 
 	const id = $derived(Number(page.params.id));
 	const back = $derived(`/letters/m/${id}`);
@@ -65,7 +64,7 @@
 		nick={letter.my_nick ?? ''}
 		placeholder={'받은 편지에 답장을 적어 보세요.\n답장도 봉투에 담겨 전해져요.'}
 		onsend={send}
-		ondone={() => { if (current()) afterSent('답장을 보냈어요', account); }}
+		ondone={() => { if (current()) afterSent('답장을 보냈어요'); }}
 	/>
 {/if}
 

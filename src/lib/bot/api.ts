@@ -7,7 +7,7 @@ import { supabase } from '../supabase';
  */
 export type Line = { role: 'user' | 'assistant'; content: string };
 export type BotStart = { status: 'ok'; id: string; expires_at: string; turns: number; max_turns: number; left_today: number; server_now: string };
-export type StartResult = BotStart | { status: 'off' | 'full' | 'restricted' } | { status: 'limit'; per_user: number };
+type StartResult = BotStart | { status: 'off' | 'full' | 'restricted' } | { status: 'limit'; per_user: number };
 export type TurnResult =
 	| { status: 'ok'; reply: string; turns: number; max_turns: number }
 	| { status: 'blocked'; code: string }
@@ -19,7 +19,7 @@ export type BotApi = {
 };
 
 /** 서버에 보내는 기록 — 최근 20개 (서버도 같은 수로 다시 자른다, server/aiChat.ts) */
-export const HISTORY = 20;
+const HISTORY = 20;
 
 export const botApi: BotApi = {
 	async start() {

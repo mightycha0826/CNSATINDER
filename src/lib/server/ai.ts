@@ -25,7 +25,7 @@ const models = () => {
 };
 /** 이 Worker 에서 마지막으로 된 모델 — 안 되는 모델을 매번 먼저 부르지 않게 */
 let working: string | null = null;
-export const AI_MODEL = () => working ?? models()[0].id;
+const AI_MODEL = () => working ?? models()[0].id;
 
 export type { AiMessage } from './aiFold';
 import type { AiMessage } from './aiFold';

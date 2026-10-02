@@ -10,7 +10,7 @@ import { supabase } from './supabase';
  * 학번 · 이름이 보이는 사진이라 관리자만 보고, 결정하면 지운다. 요청이 안 되면 올린 사진을 바로 지운다.
  */
 export type RequestKind = 'proof' | 'club' | 'new';
-export type RequestStatus = 'pending' | 'approved' | 'rejected' | 'canceled';
+type RequestStatus = 'pending' | 'approved' | 'rejected' | 'canceled';
 export type MyBadgeRequest = {
 	id: number;
 	kind: RequestKind;
@@ -22,7 +22,7 @@ export type MyBadgeRequest = {
 	created_at: string;
 	decided_at: string | null;
 };
-export type SubmitStatus = 'ok' | 'bad_input' | 'not_club' | 'already' | 'too_many' | 'rate';
+type SubmitStatus = 'ok' | 'bad_input' | 'not_club' | 'already' | 'too_many' | 'rate';
 
 export const BUCKET = 'badge-proofs';
 export const MAX_PHOTOS = 3;
@@ -80,12 +80,12 @@ async function upload(uid: string, blobs: Blob[]): Promise<string[]> {
 }
 
 /** 내 사진 지우기 (요청이 안 됐거나 거뒀을 때) — 실패해도 조용히 */
-export async function removePhotos(paths: string[]) {
+async function removePhotos(paths: string[]) {
 	if (!paths.length) return;
 	await supabase.storage.from(BUCKET).remove(paths).catch(() => null);
 }
 
-export type SubmitInput = { kind: RequestKind; code: string | null; title: string | null; note: string; nos: number[]; photos: Blob[] };
+type SubmitInput = { kind: RequestKind; code: string | null; title: string | null; note: string; nos: number[]; photos: Blob[] };
 
 /** 제출 — 사진을 올리고 요청을 남긴다. ok 가 아니면 올린 사진을 지운다 */
 export async function submitBadgeRequest(uid: string, v: SubmitInput): Promise<SubmitStatus> {

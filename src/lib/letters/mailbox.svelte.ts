@@ -36,7 +36,7 @@ export const POSTED = { pending: false };
  * 편지 화면이 같은 자리에 같은 우체통을 그려 이어 받는다 (화면 넘김 없이 그대로 → 우체통이 두 번 덜컹 → 투입구에서 편지가 나온다).
  * 적은 지 2초가 지났거나 한 번 가져가면 끝 (화면을 그리는 데 쓰지 않아 반응형이 아니다)
  */
-export type Knock = { w: number; top: number; wallH: number; count: number };
+type Knock = { w: number; top: number; wallH: number; count: number };
 export const KNOCK = { at: 0, hand: null as Knock | null };
 export const knockFresh = () => KNOCK.hand != null && performance.now() - KNOCK.at < 2000;
 /**

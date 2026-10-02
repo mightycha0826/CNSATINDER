@@ -51,8 +51,6 @@ export type MyAchievements = {
 /** 금 뱃지 몇 개면 칸이 5개가 되나 */
 export const GOLDS_FOR_FIVE = 5;
 export const slotsOf = (d: Pick<MyAchievements, 'slots'> | null | undefined) => d?.slots ?? 3;
-/** Landy 뱃지 (기준을 채워 딴 것) — CNSA · 운영진이 주는 특별 업적이 아닌 것 */
-export const isLandy = (a: Pick<Achievement, 'category' | 'granted'>) => a.category !== 'cnsa' && !a.granted;
 
 export const TIER_NAME: Record<Tier, string> = { 0: '잠김', 1: '동', 2: '은', 3: '금' };
 
@@ -134,7 +132,7 @@ export const featuredOf = (items: BadgeLite[], codes: string[]): BadgeLite[] =>
 	});
 
 /** 다음 등급 기준 (금이면 null) */
-export function nextGoal(a: Achievement): number | null {
+function nextGoal(a: Achievement): number | null {
 	return a.tier >= 3 ? null : a.tiers[a.tier as 0 | 1 | 2];
 }
 

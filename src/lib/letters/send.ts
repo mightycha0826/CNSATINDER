@@ -24,8 +24,7 @@ export async function deliver(send: () => Promise<SendResult>): Promise<boolean>
 }
 
 /** 봉투가 날아간 뒤 — 편지함으로 (보관함을 열면 보낸 편지 칸) */
-export function afterSent(message: string, account: number) {
-	if (!accountIsCurrent(account)) return;
+export function afterSent(message: string) {
 	LIST.tab = 'sent';
 	POSTED.pending = true;
 	toast(message);

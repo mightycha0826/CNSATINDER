@@ -40,7 +40,7 @@ const DEBOUNCE_MS = 300;
  * 앱 전체가 하나를 같이 쓴다 (INBOX, Phase 35) — 앱 틀((app)/+layout)이 켜 두고, 홈은 기억해 둔 목록을 바로 그린다.
  * 새 메시지 · 새 대화가 오면 onNew 로 알린다 → 앱 안 알림 띠 (다른 화면을 보고 있을 때).
  */
-export class Inbox {
+class Inbox {
 	rooms = $state<InboxRoom[]>([]);
 	loaded = $state(false);
 	/** serverNow - clientNow (ms) — 남은 시간 표시용 */

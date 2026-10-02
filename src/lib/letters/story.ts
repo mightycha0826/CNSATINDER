@@ -12,8 +12,8 @@
 import { COLOR, HIGHLIGHT, toLines, type Align, type LetterFmt } from './rich';
 import { LOGO_PATH } from '../ui/schoolLogo';
 
-export const STORY_W = 1080;
-export const STORY_H = 1920;
+const STORY_W = 1080;
+const STORY_H = 1920;
 
 /** 편지지 — 화면의 편지지(폭 약 358px)를 S 배로 키운 모양 */
 const PX = 96;
@@ -35,7 +35,7 @@ const BRAND = ['#ff7a50', '#fb5c68', '#f0396e'];
 const TAPE = ['#f2603f', '#ee4360', '#d92868'];
 const SIZE_MUL: Record<string, number> = { sm: 0.85, lg: 1.25, xl: 1.6 };
 
-export type StoryLetter = {
+type StoryLetter = {
 	/** To. — 화면의 편지지와 같게 */
 	to: string;
 	/** From. — 부르는 쪽이 익명 이름표로 넘긴다 (이름으로 온 답장이어도 상대 이름은 싣지 않는다) */
@@ -392,7 +392,7 @@ export async function storyImage(l: StoryLetter): Promise<File> {
 	return new File([blob], 'landy-letter.png', { type: 'image/png' });
 }
 
-export type ShareResult = 'shared' | 'saved' | 'cancelled' | 'again';
+type ShareResult = 'shared' | 'saved' | 'cancelled' | 'again';
 
 /**
  * 폰 공유 창으로 그림 보내기 — 인스타그램을 고르면 스토리 · 피드 · DM 중에서.

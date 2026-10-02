@@ -7,7 +7,7 @@ import type { ReportStatus } from '$lib/adminTypes';
  * 채팅 신고(/admin/reports)와 편지 신고(/admin/letters)는 테이블만 다르고 처리 절차가 같다.
  * RPC 이름만 바꿔 끼워 같은 로드·액션을 쓴다.
  */
-export type ReportKind = 'chat' | 'letter';
+type ReportKind = 'chat' | 'letter';
 
 const RPC = {
 	chat: { list: 'admin_list_reports', detail: 'admin_report', set: 'admin_set_report' },
@@ -16,7 +16,7 @@ const RPC = {
 
 const STATUSES: readonly ReportStatus[] = ['open', 'reviewing', 'actioned', 'dismissed'];
 const FILTERS = [...STATUSES, 'all'] as const;
-export type ReportFilter = (typeof FILTERS)[number];
+type ReportFilter = (typeof FILTERS)[number];
 
 /** 목록 탭 (?status=) — 모르는 값이면 미처리 */
 export function reportFilter(url: URL): ReportFilter {

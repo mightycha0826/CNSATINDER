@@ -10,8 +10,8 @@
  * 화면 모드 · 테마 색상은 예전부터 따로 저장한다 (theme.svelte.ts · themeColor.svelte.ts).
  * <html> 에 입히는 셋은 첫 화면이 번쩍이지 않게 app.html 의 짧은 스크립트가 같은 키를 먼저 읽어 입힌다.
  */
-export type TextSize = 'sm' | 'md' | 'lg' | 'xl';
-export type LetterFont = 'hand' | 'plain';
+type TextSize = 'sm' | 'md' | 'lg' | 'xl';
+type LetterFont = 'hand' | 'plain';
 
 export const TEXT_SIZES: { id: TextSize; label: string }[] = [
 	{ id: 'sm', label: '작게' },
@@ -24,7 +24,7 @@ export const LETTER_FONTS: { id: LetterFont; label: string }[] = [
 	{ id: 'plain', label: '반듯한 글씨' }
 ];
 
-export type Prefs = {
+type Prefs = {
 	text: TextSize;
 	motion: boolean;
 	letterFont: LetterFont;

@@ -16,7 +16,7 @@ import { untrack } from 'svelte';
  *   자기가 바꾼 값에 다시 반응하는 무한 반복(effect_update_depth_exceeded)이 생길 수 있다.
  *   어디서 불러도 안전하도록 내부를 추적에서 뺀다.
  */
-export type Toast = { id: number; text: string; out: boolean };
+type Toast = { id: number; text: string; out: boolean };
 
 export const toasts = $state<Toast[]>([]);
 

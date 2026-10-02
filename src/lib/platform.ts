@@ -9,7 +9,7 @@
  */
 export type InApp = 'kakao' | 'instagram' | 'facebook' | 'naver' | 'line' | 'webview';
 
-export type Env = {
+type Env = {
 	os: 'ios' | 'android' | 'other';
 	/** iOS 에서 쓰는 브라우저 (iOS 16.4+ 는 Chrome·Edge·Firefox 도 홈 화면 추가 가능) */
 	browser: 'safari' | 'chrome' | 'edge' | 'firefox' | 'samsung' | 'other';
