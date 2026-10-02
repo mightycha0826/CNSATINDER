@@ -850,5 +850,5 @@ node scripts/dev-user.mjs simbun-test3@cnsa.hs.kr 비밀번호 m      # 성별�
       남긴 것(이름 편지가 같이 쓴다): 신고 표 `private.letter_reports` · `letter_report_evidence`, 한도 `letter_bucket_take`(2종), 익명 이름, `blocked_between`, 서식 검사 `letter_fmt_ok`, 운영자 편지 신고 RPC.
       검열 대기열(`mod_enqueue` · `mod_claim` · `mod_verdict`)은 채팅 · 이름 편지만. 운영자 통계 "24시간 편지"와 사용자 상세 "쓴 편지"는 이름 편지 수로 (예전엔 늘 0).
       `app_settings.letter_max_len` · `comment_max_len` 은 캐시된 옛 앱이 아직 고르므로 남김 (`ponytail:` 표시 — 새 앱이 다 퍼진 뒤 지운다).
-      `schema.sql` 7319 → 6520줄, 스키마 테스트 [45]~[52] · [59] 삭제 · [58] 은 `letter_fmt_ok` 를 바로 검사 (1196 → 1073). 옛 스키마 위에 새 스키마를 얹는 경로도 PGlite 로 확인 (1073 통과).
+      `schema.sql` 7319 → 6520줄, 스키마 테스트 [45]~[52] · [59] 삭제 · [58] 은 `letter_fmt_ok` 를 바로 검사 (1196 → 1073). 옛 스키마 위에 새 스키마를 얹는 경로도 PGlite 로 확인 (1073 통과). 실DB 반영 2026-10-02 (phase85_drop_public_letters_part1~2 — 표가 비어 있지 않으면 멈추는 안전장치와 함께, 반영 뒤 함수 7개 본문 해시 대조).
 - [ ] Phase 7 — Durable Object 전송 계층 + 학술탐구 실험
