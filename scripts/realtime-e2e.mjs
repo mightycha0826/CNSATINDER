@@ -9,7 +9,8 @@ import { readScriptEnv } from './lib/env.mjs';
  * 필요: .env 의 PUBLIC_SUPABASE_URL / PUBLIC 키 / SUPABASE_SERVICE_ROLE_KEY 가 **같은 프로젝트**.
  * 동작: 일회용 테스트 계정 3개 생성(메일 발송 없음) → 방 생성 → 실제 Realtime 으로 검증 → 전부 삭제.
  *
- * 이 스크립트가 재는 전달 지연은 학술탐구의 B=0(write-through) 기준선이기도 하다.
+ * 여기서 재는 전달 지연(insert 요청 → 상대 수신)은 옛 학술탐구 계획(버퍼 크기 K, "B=0 기준선")에서 쓰려던 값이다.
+ * 지금 학술탐구의 질문은 로그 저장 위치 비교이고, 측정은 별도 저장소(serverless-log-queue)의 하니스로 한다 — 이 스크립트는 기능 검증용이다.
  */
 const env = readScriptEnv();
 const URL_ = env.PUBLIC_SUPABASE_URL;
