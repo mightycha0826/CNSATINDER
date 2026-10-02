@@ -42,10 +42,11 @@ export const UI = $state({
 	busy: false,
 	/** 로그인 직후 갈 곳 — 비밀번호 찾기로 들어왔으면 새 비밀번호 화면으로 */
 	afterLogin: null as string | null,
-	/** 새 업적 축하가 떠 있다 — 저절로 뜨는 창은 한 번에 하나 (튜토리얼 > 축하 > 매너 평가 > 알림 권한, UX G8) */
+	/**
+	 * 축하할 새 업적이 있다 (떠 있거나, 안내 뒤에서 기다린다) — 저절로 뜨는 창은 한 번에 하나 (튜토리얼 > 축하 > 매너 평가 > 알림 권한, UX G8).
+	 * 튜토리얼이 뜰 차례인지는 lib/tour.svelte.ts 의 touring()
+	 */
 	celebrating: false,
-	/** 처음 사용법 안내(튜토리얼, Phase 44)가 떠 있다 — 다른 저절로 뜨는 창은 그 뒤에 */
-	touring: false,
 	/** 대화방에서 "새 대화 찾기"로 홈에 돌아왔다 — 홈이 바로 찾기를 시작한다 (lib/nav.ts backToSeek) */
 	seekOnHome: false,
 	/** 새로 딴 업적이 있다 (Phase 55) — 박동 대답(ach_new)으로 안다. 축하 창이 받아 가면 false */
@@ -106,7 +107,7 @@ function selectSession(session: Session | null) {
 		S.profileLoading = false;
 		loadedFor = null;
 		otpVerifiedAt = 0;
-		UI.busy = UI.celebrating = UI.touring = UI.seekOnHome = UI.achNew = false;
+		UI.busy = UI.celebrating = UI.seekOnHome = UI.achNew = false;
 		if (previous) UI.afterLogin = null;
 		toasts.splice(0);
 	}

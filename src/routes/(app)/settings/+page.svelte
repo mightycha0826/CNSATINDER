@@ -652,7 +652,7 @@
 			<span class="g-val">{reloading ? '불러오는 중…' : '최신 버전으로'}</span>
 			<Chevron />
 		</button>
-		<!-- 처음 사용법 안내 (Phase 44) — 홈으로 가서 처음부터 -->
+		<!-- 사용법 안내 (Phase 44 · 89) — 홈 · 프로필 · 익명편지 안내를 모두 처음부터 (홈으로 가서 홈 안내부터) -->
 		<button class="g-row" onclick={() => { replayTour(); void goto('/'); }}>
 			<span>사용법 다시 보기</span>
 			<Chevron />

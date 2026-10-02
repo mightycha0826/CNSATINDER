@@ -23,6 +23,8 @@ const inqCalls = [];
 const marks = [];
 
 let GATE = false; // 익명편지 잠금 (Phase 44)
+let FRESH = false; // 새로 딴 업적이 있다 (Phase 89 — 저절로 뜨는 창의 순서)
+let freshCalls = 0;
 const prof = { id: uid, nickname: '푸른고래', bio: '', interests: [], mbti: null, gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true, allow_rematch: false };
 const patches = [];
 
@@ -54,10 +56,13 @@ try {
 			inquiries.unshift({ id: 10 + inquiries.length, kind: a.p_kind, body: a.p_body, created_at: new Date().toISOString(), answer: null, answered_at: null });
 			return json({ status: 'ok', id: 10 });
 		}
+		if (u.pathname === '/rest/v1/rpc/heartbeat') return json({ server_now: new Date().toISOString(), ach_new: FRESH });
+		if (u.pathname === '/rest/v1/rpc/new_achievements') { freshCalls++; return json(FRESH ? [{ code: 'pioneer', title: '개척자', icon: 'flag', tier: 3 }] : []); }
 		if (u.pathname.startsWith('/rest/v1/rpc/')) return json(null);
 		return json([]);
 	});
-	await page.addInitScript(() => { try { localStorage.setItem('push-asked-v1', '1'); } catch {} });
+	// 알림 안내는 평소엔 물은 것으로 — e2e-ask 가 있으면 아직 묻지 않은 기기 (Phase 89)
+	await page.addInitScript(() => { try { localStorage.getItem('e2e-ask') ? localStorage.removeItem('push-asked-v1') : localStorage.setItem('push-asked-v1', '1'); } catch {} });
 
 	await page.goto(`${BASE}/login`);
 	await page.getByPlaceholder('학교 이메일 앞부분').fill('29999');
@@ -313,6 +318,88 @@ try {
 	await page.screenshot({ path: `${SP}/tour-4.png` });
 	await page.getByRole('button', { name: '시작하기' }).click(); await page.waitForTimeout(400);
 	check('시작하기 → 닫힘', (await page.getByRole('dialog', { name: '사용법 안내' }).count()) === 0);
+
+	console.log('[저절로 뜨는 창은 한 번에 하나 · 프로필 안내 · 익명편지 안내 (Phase 89)]');
+	// 처음 가입한 기기 흉내: 안내를 본 적 없고 · 새로 딴 업적이 있고 · 알림을 아직 묻지 않았다
+	FRESH = true;
+	await page.evaluate(() => { for (const k of ['tour-v1', 'tour-me-v1', 'tour-letters-v1', 'cnsa-tour-v1']) localStorage.removeItem(k); localStorage.setItem('e2e-ask', '1'); });
+	await page.goto(`${BASE}/?tour`);
+	// 홈이 그려질 때부터 3초 동안 떠 있던 창을 30ms 마다 적는다 — 안내가 뜨기 전 0.6초 사이에 다른 창이 먼저 뜨면 잡힌다
+	const during = await page.evaluate(() => new Promise((res) => {
+		const log = new Set(); const t0 = performance.now();
+		const iv = setInterval(() => {
+			log.add([...document.querySelectorAll('[role=dialog]')].map((d) => d.getAttribute('aria-label')).join('+'));
+			if (performance.now() - t0 > 3000) { clearInterval(iv); res([...log]); }
+		}, 30);
+	}));
+	const dialogs = () => page.evaluate(() => [...document.querySelectorAll('[role=dialog]')].map((d) => d.getAttribute('aria-label')).join('+'));
+	check('★ 처음 홈 — 사용법 안내만 뜬다 (업적 축하 · 알림 안내는 뒤에서 기다린다)', during.join('|') === '|사용법 안내' || during.join('|') === '사용법 안내', JSON.stringify(during));
+	check('새 업적은 안내 뒤에서 이미 받아 왔다 (한 번만 묻는다)', freshCalls === 1, String(freshCalls));
+	await tour.getByRole('button', { name: '건너뛰기' }).click(); await page.waitForTimeout(700);
+	check('★ 안내를 닫으면 → 업적 축하만 (알림 안내는 아직)', (await dialogs()) === '새 업적', await dialogs());
+	await page.getByRole('button', { name: '닫기', exact: true }).click(); await page.waitForTimeout(900);
+	const afterParty = await dialogs();
+	check('★ 축하를 닫아도 CNSA 뱃지 안내가 이어 뜨지 않는다 (프로필 안내로 옮겼다)', !afterParty.includes('CNSA 뱃지 안내') && !afterParty.includes('새 업적'), afterParty);
+	if (afterParty === '알림 받기') { // 알림을 쓸 수 있는 환경(VAPID 키)에서만 묻는다
+		check('★ 그다음에 알림 안내', true);
+		await page.getByRole('button', { name: '나중에' }).click(); await page.waitForTimeout(300);
+	}
+	FRESH = false;
+	await page.evaluate(() => localStorage.removeItem('e2e-ask'));
+
+	// 프로필 안내 — 처음 프로필에 오면. 끝까지 보면 CNSA 뱃지 안내가 이어진다
+	await page.goto(`${BASE}/me?tour`);
+	await tour.waitFor({ timeout: 8000 }); await page.waitForTimeout(900);
+	check('★ 처음 프로필 → 프로필 안내 (6단계 · 이름 카드를 비춘다)', (await tour.locator('h2').innerText()) === '내 프로필' && (await tour.locator('.dots i').count()) === 6
+		&& near(await page.locator('.tour .hole').boundingBox(), await page.locator('.who').boundingBox(), 6),
+		JSON.stringify([await tour.locator('h2').innerText(), await tour.locator('.dots i').count(), await page.locator('.tour .hole').boundingBox(), await page.locator('.who').boundingBox()]));
+	await tour.getByRole('button', { name: '다음' }).click(); await page.waitForTimeout(600);
+	const cardBox = await page.locator('.tour .card').boundingBox();
+	check('★ 교복을 비춘다 · 카드가 화면 안에 있다', (await tour.locator('h2').innerText()) === '교복과 대표 업적' && near(await page.locator('.tour .hole').boundingBox(), await page.locator('.dress').boundingBox(), 6)
+		&& cardBox.y >= 0 && cardBox.y + cardBox.height <= 844, JSON.stringify(cardBox));
+	await page.screenshot({ path: `${SP}/tour-me.png` });
+	for (let i = 0; i < 3; i++) { await tour.getByRole('button', { name: '다음' }).click(); await page.waitForTimeout(500); }
+	const want = await page.locator('[aria-labelledby="want-h"]').boundingBox();
+	check('★ 화면 아래쪽 카드(이야기하고 싶은 상대)는 끌어 올려 비춘다', (await tour.locator('h2').innerText()) === '이야기하고 싶은 상대' && want.y >= 0 && want.y + want.height <= 844
+		&& near(await page.locator('.tour .hole').boundingBox(), want, 6), JSON.stringify(want));
+	await tour.getByRole('button', { name: '다음' }).click(); await page.waitForTimeout(300);
+	check('마지막 장 — CNSA 뱃지 (건너뛰기 없음)', (await tour.locator('h2').innerText()) === 'CNSA 뱃지' && (await tour.getByRole('button', { name: '건너뛰기' }).count()) === 0);
+	await tour.getByRole('button', { name: '다음' }).click();
+	const cnsa = page.getByRole('dialog', { name: 'CNSA 뱃지 안내' });
+	await cnsa.waitFor({ timeout: 4000 }).catch(() => {}); await page.waitForTimeout(1200);
+	check('★ 끝까지 보면 CNSA 뱃지 안내가 이어진다 (떴다가 닫히지 않는다) · 프로필 안내는 "봤음"', (await dialogs()) === 'CNSA 뱃지 안내' && (await cnsa.locator('h2').innerText()) === 'CNSA 뱃지란?'
+		&& (await page.evaluate(() => localStorage.getItem('tour-me-v1'))) === '1' && (await page.evaluate(() => scrollY)) === 0, await dialogs());
+	await cnsa.getByRole('button', { name: '안내 닫기' }).click(); await page.waitForTimeout(400);
+	check('닫으면 CNSA 뱃지 안내도 "봤음"', (await dialogs()) === '' && (await page.evaluate(() => localStorage.getItem('cnsa-tour-v1'))) === '1');
+	await page.goto(`${BASE}/me?tour`); await page.locator('.who').waitFor(); await page.waitForTimeout(900);
+	check('한 번 보면 다시 뜨지 않는다', (await dialogs()) === '');
+	await page.evaluate(() => localStorage.removeItem('tour-me-v1'));
+	await page.goto(`${BASE}/me?tour`); await tour.waitFor({ timeout: 8000 });
+	check('CNSA 뱃지 안내를 이미 본 기기 — 프로필 안내는 5단계 (뱃지 안내를 다시 잇지 않는다)', (await tour.locator('.dots i').count()) === 5);
+	await tour.getByRole('button', { name: '건너뛰기' }).click(); await page.waitForTimeout(600);
+	check('건너뛰면 닫히고 "봤음"', (await dialogs()) === '' && (await page.evaluate(() => localStorage.getItem('tour-me-v1'))) === '1');
+
+	// 익명편지 안내 — 처음 익명편지에 오면 (편지가 열려 있을 때)
+	await page.goto(`${BASE}/letters?tour`);
+	await tour.waitFor({ timeout: 8000 });
+	check('★ 처음 익명편지 → 익명편지 안내 (5단계 · 봉투 그림)', (await tour.locator('h2').innerText()) === '익명편지' && (await tour.locator('.dots i').count()) === 5 && (await tour.locator('.art .env').count()) === 1);
+	await tour.getByRole('button', { name: '다음' }).click(); await page.waitForTimeout(600);
+	check('★ 우체통을 비춘다', (await tour.locator('h2').innerText()) === '우체통' && near(await page.locator('.tour .hole').boundingBox(), await page.locator('.wall .post').boundingBox(), 6));
+	await page.screenshot({ path: `${SP}/tour-letters.png` });
+	await tour.getByRole('button', { name: '다음' }).click(); await page.waitForTimeout(600);
+	check('편지 보관함 이름표를 비춘다', (await tour.locator('h2').innerText()) === '편지 보관함' && near(await page.locator('.tour .hole').boundingBox(), await page.locator('.desk .plate').boundingBox(), 6));
+	await tour.getByRole('button', { name: '다음' }).click(); await page.waitForTimeout(600);
+	check('★ 편지 쓰기 단추를 비춘다', (await tour.locator('h2').innerText()) === '편지 쓰기' && near(await page.locator('.tour .hole').boundingBox(), await page.locator('a.fab').boundingBox(), 6));
+	await tour.getByRole('button', { name: '다음' }).click(); await page.waitForTimeout(300);
+	check('마지막 장 — 버리기 · 차단 · 신고 · 편지 받기 끄기', (await tour.innerText()).includes('차단') && (await tour.innerText()).includes('편지 받기'));
+	await tour.getByRole('button', { name: '확인' }).click(); await page.waitForTimeout(500);
+	check('확인 → 닫히고 "봤음"', (await dialogs()) === '' && (await page.evaluate(() => localStorage.getItem('tour-letters-v1'))) === '1');
+	// 설정 › 사용법 다시 보기 — 세 안내가 모두 "안 봤음"으로
+	await page.goto(`${BASE}/settings`); await page.getByRole('button', { name: '사용법 다시 보기' }).click();
+	await tour.waitFor({ timeout: 8000 });
+	check('★ 사용법 다시 보기 → 세 안내 모두 다시 (홈 안내부터)', (await tour.innerText()).includes('환영')
+		&& (await page.evaluate(() => ['tour-v1', 'tour-me-v1', 'tour-letters-v1'].map((k) => localStorage.getItem(k)).join())) === ',,');
+	await tour.getByRole('button', { name: '건너뛰기' }).click(); await page.waitForTimeout(500);
 
 	console.log('[익명편지 잠금 (Phase 44)]');
 	GATE = true;

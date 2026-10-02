@@ -25,6 +25,7 @@
 	import * as haptic from '$lib/haptics';
 	import { whileVisible } from '$lib/visible';
 	import { S } from '$lib/state.svelte';
+	import { TOUR } from '$lib/tour.svelte';
 
 	const timers: ReturnType<typeof setTimeout>[] = [];
 	onDestroy(() => timers.forEach(clearTimeout));
@@ -90,7 +91,10 @@
 	// 주소의 ?take 는 먼저 지운다 — 편지를 읽고 뒤로 와도 다시 꺼내지 않게. 이미 연 편지면 그냥 그 편지로
 	let dropAt = 0;
 	let gone = false;
-	onDestroy(() => (gone = true));
+	onDestroy(() => {
+		gone = true;
+		TOUR.hold = false;
+	});
 	let taking: string | null = null; // 지금 꺼내는 중인 것 — 탭의 뒤로가기 기록(guard)이 쌓이며 주소가 다시 읽혀도 한 번만
 	$effect(() => {
 		const take = page.url.searchParams.get('take');
@@ -98,6 +102,7 @@
 		taking = take;
 		if (!take) return;
 		untrack(() => {
+			TOUR.hold = true; // 곧 편지 화면으로 넘어간다 — 그 사이에 익명편지 안내가 떴다 사라지지 않게 (꺼낼 편지가 없으면 푼다)
 			const p = firstLoad ?? reloadMailbox();
 			firstLoad = null;
 			void p.then(async () => {
@@ -111,7 +116,7 @@
 				timers.push(
 					setTimeout(() => {
 						const id = take === 'new' ? unread[0]?.id : Number(take);
-						if (!id) return;
+						if (!id) return void (TOUR.hold = false);
 						if (unread.some((i) => i.id === id)) takeOut(id);
 						else void goto(`/letters/m/${id}`);
 					}, wait)

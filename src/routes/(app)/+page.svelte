@@ -6,6 +6,7 @@
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import { INBOX, type InboxRoom } from '$lib/inbox.svelte';
 	import { S, UI, toast } from '$lib/state.svelte';
+	import { touring } from '$lib/tour.svelte';
 	import { Seeker } from '$lib/seeker.svelte';
 	import { isRestricted } from '$lib/restriction';
 	import { mmss } from '$lib/time';
@@ -240,7 +241,7 @@
 {/if}
 
 <!-- 방금 대화한 사람 평가 — 알림 안내 · 대화 봇 · 업적 축하가 떠 있지 않을 때 (RateQueue) -->
-<RateQueue paused={askPush || !!bot || UI.celebrating || UI.touring} />
+<RateQueue paused={askPush || !!bot || UI.celebrating || touring()} />
 
 <!-- 처음 한 번 — 알림 권한 안내 (PushAsk) -->
 <PushAsk bind:open={askPush} />

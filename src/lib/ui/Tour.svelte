@@ -1,30 +1,36 @@
 <script lang="ts">
 	/**
-	 * 처음 사용법 안내 (튜토리얼, Phase 44) — 처음 홈에 오면 한 단계씩: 어디를 누르면 무엇이 되는지 화면의 그 자리를 비춰 주고
-	 * (새 대화 찾기 · 익명편지 탭 · 프로필 탭 · 알림 · 설정), 화면에 없는 규칙(시간 · 연장 · 공개 · 고정 · 말풍선 · 매너 온도 · 지킬 것)은 그림 카드로.
+	 * 사용법 안내 (튜토리얼, Phase 44 · 89) — 탭마다 그 화면에 처음 오면 한 단계씩: 어디를 누르면 무엇이 되는지 화면의 그 자리를 비춰 주고,
+	 * 화면에 없는 규칙은 그림 카드로. 세 가지:
+	 *   홈 — 새 대화 찾기 · 익명편지 탭 · 프로필 탭 · 알림 · 설정, 규칙(시간 · 연장 · 공개 · 고정 · 말풍선 · 매너 온도 · 지킬 것)
+	 *   프로필 — 이름 카드 · 교복(대표 업적) · 전체 업적 · 소개 · 이야기하고 싶은 상대 → 끝까지 보면 CNSA 뱃지 안내(CnsaBadgeTour)가 이어진다
+	 *   익명편지 — 우체통 · 편지 보관함 · 편지 쓰기 · 버리기 · 차단 · 신고 (편지가 열려 있을 때만)
 	 * 언제든 "건너뛰기". 끝까지 보거나 건너뛰면 이 기기에 "봤음" (lib/tour.svelte.ts), 설정 › 앱 › "사용법 다시 보기"로 다시.
-	 * 떠 있는 동안 다른 저절로 뜨는 창(업적 축하 · 매너 평가 · 알림 권한)은 기다린다 (UI.touring).
+	 * 저절로 뜨는 창은 한 번에 하나 — 안내가 뜰 차례면(due) 뜨기 전부터 다른 창(업적 축하 · 매너 평가 · 알림 권한)이 기다린다 (lib/tour.svelte.ts 의 touring).
+	 * 예전엔 떠 있는 동안만 기다리게 해서, 홈이 그려지고 안내가 뜨기까지 0.6초 사이에 축하 · 알림 안내가 먼저 떠 한꺼번에 겹쳤다.
 	 */
-	import { page } from '$app/state';
 	import { focustrap } from '$lib/focustrap';
 	import { backClose } from '$lib/overlay.svelte';
-	import { S, UI } from '$lib/state.svelte';
-	import { TOUR, autoTourAllowed, markTourSeen, tourSeen } from '$lib/tour.svelte';
+	import { S } from '$lib/state.svelte';
+	import { TOUR, markTourSeen, tourDue } from '$lib/tour.svelte';
+	import { badgeTourSeen, openBadgeTour } from '$lib/badgeTour.svelte';
 	import { gateMin, gateOn, lettersState } from '$lib/letters/gate.svelte';
 	import MannerTemp from './MannerTemp.svelte';
 
-	type Art = 'hello' | 'timer' | 'reveal' | 'bubbles' | 'temp' | 'rules';
-	type Step = { target?: string; round?: boolean; title: string; body: string; art?: Art };
+	type Art = 'hello' | 'timer' | 'reveal' | 'bubbles' | 'temp' | 'rules' | 'letter';
+	/** next = 다음 단추 글 (없으면 "다음", 마지막은 "확인") · badges = 끝까지 보면 CNSA 뱃지 안내로 이어진다 */
+	type Step = { target?: string; round?: boolean; title: string; body: string; art?: Art; next?: string; badges?: boolean };
 
 	const room = $derived(S.settings?.room_minutes ?? 5);
 	const extend = $derived(S.settings?.extend_minutes ?? 10);
 	const lettersLocked = $derived(gateOn() && lettersState() !== 'open');
 
-	const STEPS = $derived<Step[]>([
+	const HOME = $derived<Step[]>([
 		{
 			art: 'hello',
 			title: '랜디에 온 걸 환영해요',
-			body: '이름도 학번도 묻지 않는 우리 학교 익명 대화 앱이에요. 어떻게 쓰는지 하나씩 알려 드릴게요.'
+			body: '이름도 학번도 묻지 않는 우리 학교 익명 대화 앱이에요. 어떻게 쓰는지 하나씩 알려 드릴게요.',
+			next: '알려 주세요'
 		},
 		{
 			target: '.cta',
@@ -70,41 +76,106 @@
 			title: '설정',
 			body: '화면 · 글자 크기 · 알림 종류를 바꿀 수 있어요. 이 안내도 여기서 다시 볼 수 있어요.'
 		},
-		{ art: 'rules', title: '이것만 지켜 주세요', body: '' }
+		{ art: 'rules', title: '이것만 지켜 주세요', body: '', next: '시작하기' }
 	]);
 
-	// ── 언제 띄우나 — 홈에서, 시작하기(온보딩)를 마친 뒤, 이 기기에서 처음(또는 다시 보기) ──
-	let open = $state(false);
+	// 프로필 — CNSA 뱃지 안내를 아직 못 본 기기는 마지막 장에서 그 안내로 이어진다 (열 때마다 다시 본다)
+	const meSteps = (): Step[] => [
+		{
+			target: '.who',
+			title: '내 프로필',
+			body: '익명 이름은 처음에 정해져서 바뀌지 않아요. 매너 온도는 대화가 끝난 뒤 받은 평가로 오르내려요.'
+		},
+		{
+			target: '.dress',
+			title: '교복과 대표 업적',
+			body: '모은 업적 중 대표로 건 것이 교복 깃에 달려서 대화 상대에게 보여요. 배지를 누르면 얻는 방법이 나오고, 꾹 눌러 끌면 자리를 바꿀 수 있어요.'
+		},
+		{
+			target: '.dress a.all',
+			title: '전체 업적',
+			body: '대화하고 편지를 주고받으면 업적이 모여요. 여기서 전부 보고 대표 업적을 골라요.'
+		},
+		{
+			target: '.g-card.bio',
+			title: '소개 · 관심사 · MBTI',
+			body: '대화 상대에게 보이는 건 익명 이름과 여기 적은 것뿐이에요. 고친 뒤에는 아래 "저장"을 눌러 주세요.'
+		},
+		{
+			target: '[aria-labelledby="want-h"]',
+			title: '이야기하고 싶은 상대',
+			body: '새 대화를 찾을 때 누구와 이어질지 골라요. 언제든 바꿀 수 있어요.'
+		},
+		...(badgeTourSeen()
+			? []
+			: [{ title: 'CNSA 뱃지', body: '학교에서 받은 실제 뱃지도 교복에 달 수 있어요. 이어서 알려 드릴게요.', next: '다음', badges: true }])
+	];
+
+	const LETTERS: Step[] = [
+		{
+			art: 'letter',
+			title: '익명편지',
+			body: '학생 이름을 찾아 익명으로 편지를 보내요. 받는 사람에게 나는 성별이나 내가 적은 서명으로만 보여요.'
+		},
+		{
+			target: '.wall .post',
+			title: '우체통',
+			body: '새 편지는 우체통으로 와요. 빨간 점이 보이면 눌러서 가장 최근에 온 편지를 꺼내 읽어요.'
+		},
+		{
+			target: '.desk .plate',
+			title: '편지 보관함',
+			body: '읽은 편지와 보낸 편지가 책상 위에 쌓여요. 누르면 전부 볼 수 있고, 폴더로 나눠 정리할 수 있어요.'
+		},
+		{
+			target: 'a.fab',
+			title: '편지 쓰기',
+			body: '받을 학생을 이름으로 찾아 편지지에 쓰고 봉투에 담아 보내요. 받은 편지에는 답장을 쓸 수 있어요.'
+		},
+		{
+			title: '불편한 편지가 오면',
+			body: '봉투를 길게 누르면 버리기 · 차단 · 신고가 나와요. 편지를 받고 싶지 않으면 설정 › 편지에서 "편지 받기"를 꺼 주세요.'
+		}
+	];
+
+	// ── 언제 띄우나 — due = 지금 화면에서 떠야 하는 안내 (lib/tour.svelte.ts), active = 지금 떠 있는 안내 ──
+	const due = $derived(tourDue());
+	const active = $derived(TOUR.active);
 	let step = $state(0);
-	// 홈이 다 그려진 뒤에 살짝 늦게 — 화면을 옮기는 중에 열면 그 이동이 끝나며 뒤로가기 칸(overlay)이 지워져 곧바로 닫힌다
+	// 화면이 다 그려진 뒤에 살짝 늦게 — 화면을 옮기는 중에 열면 그 이동이 끝나며 뒤로가기 칸(overlay)이 지워져 곧바로 닫힌다
 	$effect(() => {
-		const onHome = page.url.pathname === '/';
-		const ready = !!S.profile?.onboarded && S.me !== null;
-		if (!onHome || !ready || open) return;
+		if (!due || active) return;
+		const id = due;
 		const t = setTimeout(() => {
-			if (page.url.pathname !== '/') return;
-			if (TOUR.replay || (!tourSeen() && autoTourAllowed())) {
-				step = 0;
-				open = true;
-			}
+			step = 0;
+			TOUR.active = id;
 		}, 600);
 		return () => clearTimeout(t);
 	});
+	// 떠 있는 채 다른 화면으로 넘어갔으면 접는다 — "봤음"으로 치지 않는다 (다음에 그 탭에 오면 처음부터)
 	$effect(() => {
-		UI.touring = open;
-		return () => (UI.touring = false);
+		if (active && due !== active) TOUR.active = null;
 	});
+	$effect(() => () => void (TOUR.active = null)); // 화면이 통째로 사라질 때
 
-	function finish() {
-		open = false;
-		markTourSeen();
+	const STEPS = $derived<Step[]>(active === 'me' ? meSteps() : active === 'letters' ? LETTERS : HOME);
+
+	/** done = 끝까지 봤다 (건너뛰기 · 뒤로가기가 아니다) */
+	function finish(done = false) {
+		const id = active;
+		if (!id) return;
+		const badges = done && !!STEPS.at(-1)?.badges;
+		TOUR.active = null;
+		markTourSeen(id);
+		window.scrollTo(0, 0); // 비추려고 내려갔던 화면을 맨 위로
+		if (badges) openBadgeTour();
 	}
 	// 안드로이드 뒤로가기 = 건너뛰기 (저절로 뜨는 창 — 누른 적이 있는 화면에서만 기록을 쌓는다)
-	backClose(finish, { auto: true, open: () => open });
+	backClose(() => finish(), { auto: true, open: () => !!active });
 
 	const cur = $derived(STEPS[step]);
 	const last = $derived(step === STEPS.length - 1);
-	const next = () => (last ? finish() : (step += 1));
+	const next = () => (last ? finish(true) : (step += 1));
 	const prev = () => step > 0 && (step -= 1);
 
 	// ── 비출 자리 — 단계마다 · 화면 크기가 바뀌면 다시 잰다. 자리가 없으면(화면에 안 보임) 가운데 카드로 ──
@@ -114,7 +185,12 @@
 		vh = window.innerHeight;
 		const sel = STEPS[step]?.target;
 		const el = sel ? document.querySelector<HTMLElement>(sel) : null;
-		const r = el?.getBoundingClientRect();
+		let r = el?.getBoundingClientRect();
+		// 화면 밖에 걸쳐 있으면(프로필 아래쪽 카드) 가운데로 끌어온다
+		if (el && r && r.width && (r.top < 0 || r.bottom > vh)) {
+			el.scrollIntoView({ block: 'center', behavior: 'instant' });
+			r = el.getBoundingClientRect();
+		}
 		if (!el || !r || r.width === 0 || r.bottom < 0 || r.top > vh) {
 			hole = null;
 			return;
@@ -123,22 +199,31 @@
 		hole = { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2, r: STEPS[step].round ? 999 : 18 };
 	}
 	$effect(() => {
-		if (!open) return;
+		if (!active) return;
 		void step;
 		const raf = requestAnimationFrame(measure);
 		const late = setTimeout(measure, 350); // 탭바 · 버튼이 늦게 자리를 잡는 경우
 		window.addEventListener('resize', measure);
+		window.addEventListener('scroll', measure, { passive: true }); // 안내 뒤에서 화면이 밀려도 비춘 자리가 따라간다
 		return () => {
 			cancelAnimationFrame(raf);
 			clearTimeout(late);
 			window.removeEventListener('resize', measure);
+			window.removeEventListener('scroll', measure);
 		};
 	});
-	// 비춘 자리가 화면 아래쪽이면 카드는 그 위에, 위쪽이면 아래에
-	const cardAt = $derived(!hole ? 'center' : hole.y + hole.h / 2 > vh / 2 ? 'above' : 'below');
+	// 비춘 자리가 화면 아래쪽이면 카드는 그 위에, 위쪽이면 아래에. 자리가 커서(교복 · 우체통) 위아래 어디에도 카드가 안 들어가면 화면 아래에 겹쳐 놓는다
+	// ponytail: 카드 높이를 재지 않고 어림값으로 본다 — 글이 길어져 카드가 250px 을 넘는 단계가 생기면 실제 높이를 잰다
+	const CARD_H = 250;
+	const cardAt = $derived.by(() => {
+		if (!hole) return 'center';
+		const above = hole.y;
+		const below = vh - hole.y - hole.h;
+		return Math.max(above, below) < CARD_H ? 'over' : above > below ? 'above' : 'below';
+	});
 </script>
 
-{#if open}
+{#if active}
 	<div class="tour" role="dialog" aria-modal="true" aria-label="사용법 안내" tabindex="-1" use:focustrap>
 		<!-- 비추기 — 자리를 뺀 나머지를 어둡게 (자리가 없으면 전체를 어둡게) -->
 		<div
@@ -163,6 +248,11 @@
 						<div class="art art-{cur.art}" aria-hidden="true">
 							{#if cur.art === 'hello'}
 								<img src="/icon-192.png" alt="" width="72" height="72" />
+							{:else if cur.art === 'letter'}
+								<svg viewBox="0 0 96 68" class="env">
+									<rect x="2" y="2" width="92" height="64" rx="10" />
+									<path d="M6 10l42 32 42-32" />
+								</svg>
 							{:else if cur.art === 'timer'}
 								<svg viewBox="0 0 100 100" class="ring">
 									<circle cx="50" cy="50" r="42" class="track" />
@@ -201,10 +291,10 @@
 			</div>
 			<div class="foot">
 				<!-- 건너뛰기는 카드 안에 — 화면 위쪽(알림 · 설정)을 비출 때 가리지 않게 -->
-				{#if !last}<button class="skip u-tap" onclick={finish}>건너뛰기</button>{:else}<span></span>{/if}
+				{#if !last}<button class="skip u-tap" onclick={() => finish()}>건너뛰기</button>{:else}<span></span>{/if}
 				<div class="btns">
 					{#if step > 0}<button class="prev u-tap" onclick={prev}>이전</button>{/if}
-					<button class="btn next" onclick={next}>{last ? '시작하기' : step === 0 ? '알려 주세요' : '다음'}</button>
+					<button class="btn next" onclick={next}>{cur.next ?? (last ? '확인' : '다음')}</button>
 				</div>
 			</div>
 		</div>
@@ -269,6 +359,9 @@
 	.card.center {
 		top: 50%;
 		translate: -50% -50%;
+	}
+	.card.over {
+		bottom: calc(16px + env(safe-area-inset-bottom));
 	}
 	.inner {
 		display: flex;
@@ -361,6 +454,16 @@
 			transform: scale(0.6);
 			opacity: 0;
 		}
+	}
+	/* 익명편지 — 봉투 */
+	.env {
+		width: 96px;
+		fill: var(--field);
+		stroke: var(--g-coral);
+		stroke-width: 4;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		animation: pop 0.6s cubic-bezier(0.3, 1.5, 0.5, 1);
 	}
 	/* 시간 — 줄어드는 고리 */
 	.art-timer {

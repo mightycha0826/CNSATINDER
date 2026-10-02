@@ -29,6 +29,17 @@ export function markNavigating(on: boolean) {
 const ids = () => page.state.ov ?? [];
 
 /**
+ * 지금 쌓여 있는 창의 칸 (맨 뒤가 맨 위) — "내 칸이 맨 위인가"는 page.state.ov 가 아니라 여기서 본다.
+ * effect 를 정리하는 함수 안에서 읽은 page.state 는 바뀌기 전 값이라(Svelte), 같은 순간에 다른 창이 쌓은 칸이 보이지 않는다.
+ */
+const stack: string[] = [];
+/**
+ * 방금 닫힌 창의 칸이 걷히는 중 (history.back() 은 나중에 일어난다) — 그 사이에 다른 창이 칸을 쌓으면 그 back() 이 새 칸을 걷어 내
+ * 새 창이 뜨자마자 닫힌다 (Phase 89 — 사용법 안내를 닫자마자 뜨는 업적 축하 · 프로필 안내에 이어지는 CNSA 뱃지 안내). 걷힐 때까지 쌓기를 미룬다
+ */
+let settling: Promise<void> | null = null;
+
+/**
  * 컴포넌트 초기화 중에 부른다. onclose = 뒤로가기로 닫혔을 때 창을 닫는 함수(버튼이 부르는 것과 같은 것).
  *  · open — 컴포넌트가 늘 떠 있고 창만 켜졌다 꺼지는 경우(새 업적 축하) 창이 보이는지. 없으면 컴포넌트가 곧 창.
  *  · auto — 사용자가 누르지 않았는데 저절로 뜨는 창. 누른 적이 없는 화면에서는 기록을 쌓지 않는다
@@ -40,20 +51,35 @@ export function backClose(onclose: () => void, opts: { auto?: boolean; open?: ()
 
 	$effect(() => {
 		if (opts.open && !opts.open()) return;
-		const mine = untrack(() => {
-			if (opts.auto && !navigator.userActivation?.hasBeenActive) return '';
-			const next = `ov${++seq}`;
-			pushState('', { ...page.state, ov: [...ids(), next] });
-			return next;
-		});
-		id = mine;
+		let gone = false;
+		id = '';
 		closing = false;
+		// 한 박자 늦게 쌓는다 — 같은 순간에 닫히는 창이 있으면 그 창이 제 칸을 걷기 시작한 뒤에(settling), 다 걷히고 나서
+		void Promise.resolve()
+			.then(() => settling)
+			.then(() => {
+				if (gone || (opts.auto && !navigator.userActivation?.hasBeenActive)) return;
+				id = `ov${++seq}`;
+				stack.push(id);
+				pushState('', { ...page.state, ov: [...ids(), id] });
+			});
 		return () => {
 			// 버튼 · 바깥 누르기로 닫혔다 — 내 칸이 아직 맨 위에 있으면 걷어 낸다
+			gone = true;
 			const was = id;
 			id = '';
-			if (!was || closing || navigating) return;
-			if (untrack(ids).at(-1) === was) history.back();
+			const at = stack.indexOf(was);
+			if (at < 0) return;
+			const top = at === stack.length - 1;
+			stack.splice(at, 1);
+			if (closing || navigating || !top) return;
+			const done = (settling = historySettled().then(async () => {
+				// 앱을 켠 뒤 화면을 한 번도 옮기지 않았으면 SvelteKit 이 이 뒤로가기를 얕은 기록이 아니라 화면 이동으로 다뤄서
+				// page.state 가 조금 늦게 바뀐다 — 내 칸이 빠진 것이 보일 때까지 (길어야 0.6초)
+				for (let i = 0; i < 20 && ids().includes(was); i++) await new Promise((r) => setTimeout(r, 30));
+				if (settling === done) settling = null;
+			}));
+			history.back();
 		};
 	});
 

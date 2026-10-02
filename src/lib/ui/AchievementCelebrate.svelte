@@ -14,8 +14,8 @@
 	import { SPECIAL_BADGES } from './badgeIcons';
 	import { PIN_BADGES } from './pins';
 	import { fetchNewAchievements, markAchievementsSeen, TIER_NAME, type BadgeLite } from '$lib/achievements';
-	import { maybeOpenBadgeTour } from '$lib/badgeTour.svelte';
 	import { UI } from '$lib/state.svelte';
+	import { touring } from '$lib/tour.svelte';
 	import { accountIsCurrent, accountToken } from '$lib/accountScope';
 	const account = accountToken();
 
@@ -37,7 +37,9 @@
 			UI.achNew = false;
 			if (fresh.length) return; // 이미 떠 있으면 그대로
 			void fetchNewAchievements().then((got) => {
-				if (accountIsCurrent(account) && got.length) fresh = got;
+				if (!accountIsCurrent(account) || !got.length) return;
+				fresh = got;
+				UI.celebrating = true; // 안내 뒤에서 기다리는 동안에도 — 다른 저절로 뜨는 창(매너 평가 · 알림 권한)은 그 뒤에
 			}).catch(() => {});
 		});
 	});
@@ -49,23 +51,12 @@
 		if (!accountIsCurrent(account)) return;
 		// 보러 가기 — 이 창의 뒤로가기 칸을 업적 화면으로 바꿔 끼운다 (창을 닫으며 이동, lib/overlay.svelte.ts)
 		if (view) void navigateFromOverlay('/me/achievements');
-		// CNSA 뱃지를 처음 받았으면 이어서 CNSA 뱃지 안내 (Phase 84 — 한 번만)
-		const gotCnsa = fresh.some((b) => PIN_BADGES[b.code]);
 		fresh = [];
-		leaving = false;
-		if (!preview) {
-			await markAchievementsSeen().catch(() => {});
-			if (!accountIsCurrent(account)) return;
-			if (!view) maybeOpenBadgeTour(gotCnsa);
-		}
+		UI.celebrating = leaving = false;
+		if (!preview) await markAchievementsSeen().catch(() => {});
 	}
-	// 처음 사용법 안내(튜토리얼)가 떠 있으면 그 뒤에 (Phase 44)
-	const showing = $derived(!!fresh.length && (onRoot || !!preview) && !UI.touring);
-	// 떠 있는 동안 다른 저절로 뜨는 창(매너 평가 · 알림 권한)은 기다린다
-	$effect(() => {
-		UI.celebrating = showing;
-		return () => (UI.celebrating = false);
-	});
+	// 사용법 안내(튜토리얼)가 뜰 차례거나 떠 있으면 그 뒤에 (Phase 44 · 89)
+	const showing = $derived(!!fresh.length && (onRoot || !!preview) && !touring());
 	// 안드로이드 뒤로가기로 닫힌다 — 저절로 뜨는 창이라 누른 적이 있는 화면에서만 기록을 쌓는다
 	backClose(() => void close(), { auto: true, open: () => showing });
 	const top = $derived(fresh.slice(0, 6));

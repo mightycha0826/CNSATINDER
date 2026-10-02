@@ -1,10 +1,11 @@
 <script lang="ts">
 	/**
 	 * 처음 한 번 — 새 메시지 알림을 받을지 묻는 시트 (홈). 바깥을 눌러 닫지 않는다 (둘 중 하나를 골라야 다시 묻지 않는다).
-	 * open = 지금 물어야 하는지 (홈이 다른 창 — 매너 평가 — 을 이 동안 미룬다). 업적 축하가 떠 있으면 그 뒤에.
+	 * open = 지금 물어야 하는지 (홈이 다른 창 — 매너 평가 — 을 이 동안 미룬다). 사용법 안내 · 업적 축하가 있으면 그 뒤에.
 	 */
 	import Sheet from './Sheet.svelte';
 	import { UI, toast } from '$lib/state.svelte';
+	import { touring } from '$lib/tour.svelte';
 	import { enablePush, pushState } from '$lib/push';
 
 	let { open = $bindable(false) }: { open?: boolean } = $props();
@@ -38,7 +39,7 @@
 	}
 </script>
 
-{#if open && !UI.celebrating && !UI.touring}
+{#if open && !UI.celebrating && !touring()}
 	<Sheet label="알림 받기">
 		<div class="ask">
 			<div class="bell" aria-hidden="true">

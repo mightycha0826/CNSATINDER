@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * CNSA 뱃지 안내 (Phase 84) — CNSA 뱃지를 처음 받으면 한 번 (lib/badgeTour.svelte.ts), 업적 화면 CNSA 탭 · 설정 › 뱃지에서 다시.
+	 * CNSA 뱃지 안내 (Phase 84 · 89) — 프로필 안내의 끝에 이어서 한 번 (lib/badgeTour.svelte.ts), 업적 화면 CNSA 탭 · 설정 › 뱃지에서 다시.
 	 * 다섯 장: 무엇인가 → Landy 에서 얻는 법(기본 뱃지는 금 뱃지로 · 나머지는 사진으로 운영진에게) → 앱에 없는 뱃지 · 동아리 뱃지(기장이 부원까지) →
 	 *   어디에 보일지(랜덤채팅에서 뱃지마다 숨기기 · 편지 찾기의 뱃지 순서 — 여기서 바로 정한다) → 금 뱃지 5개면 대표 칸 5개.
 	 * 마지막 장에서 "뱃지 제출하기"로 바로 간다. 닫거나 끝까지 보면 이 기기에 "봤음".
@@ -9,7 +9,7 @@
 	import { backClose, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { BADGE_TOUR, closeBadgeTour } from '$lib/badgeTour.svelte';
 	import { fetchMyAchievements, GOLDS_FOR_FIVE, slotsOf, type MyAchievements } from '$lib/achievements';
-	import { S, UI, errMsg, setProfileField, toast } from '$lib/state.svelte';
+	import { S, errMsg, setProfileField, toast } from '$lib/state.svelte';
 	import Badge from './Badge.svelte';
 	import BadgeChatToggles from './BadgeChatToggles.svelte';
 
@@ -26,10 +26,7 @@
 			.then((d) => (mine = d))
 			.catch(() => {});
 	});
-	$effect(() => {
-		UI.touring = BADGE_TOUR.open;
-		return () => (UI.touring = false);
-	});
+	// 떠 있는 동안 다른 저절로 뜨는 창은 기다린다 — lib/tour.svelte.ts 의 touring() 이 BADGE_TOUR.open 을 같이 본다
 	backClose(closeBadgeTour, { open: () => BADGE_TOUR.open });
 
 	const last = $derived(step === STEPS.length - 1);

@@ -581,11 +581,14 @@ try {
 			return rt.fulfill({ status: 200, contentType: 'application/json', body: '{"status":"ok","id":1}' });
 		});
 
-		// 업적 화면 — 금 뱃지 진행도 · CNSA 탭의 안내 · 제출. CNSA 뱃지를 가졌고 안내를 아직 안 봤으면 저절로 (?tour — 자동 테스트에서도 띄우게)
+		// 업적 화면 — 금 뱃지 진행도 · CNSA 탭의 안내 · 제출. CNSA 뱃지 안내는 여기서 저절로 뜨지 않는다 (Phase 89 — 프로필 안내의 끝으로 옮겼다) → CNSA 탭의 단추로
 		await p11.goto(`${BASE}/me/achievements?tour`);
 		const tour = p11.getByRole('dialog', { name: 'CNSA 뱃지 안내' });
+		await p11.getByRole('button', { name: 'CNSA', exact: true }).waitFor({ timeout: 4000 }); await p11.waitForTimeout(1000);
+		check('★ CNSA 뱃지를 가졌어도 업적 화면에서 안내가 저절로 뜨지 않는다 (Phase 89)', (await tour.count()) === 0);
+		await p11.getByRole('button', { name: 'CNSA', exact: true }).click(); await p11.getByRole('button', { name: 'CNSA 뱃지 안내' }).click();
 		await tour.waitFor({ timeout: 4000 });
-		check('★ CNSA 뱃지를 가졌으면 CNSA 뱃지 안내가 한 번 저절로 — 다섯 장', (await tour.locator('.dots i').count()) === 5 && (await tour.locator('h2').innerText()) === 'CNSA 뱃지란?'
+		check('★ CNSA 탭 "CNSA 뱃지 안내" → 다섯 장', (await tour.locator('.dots i').count()) === 5 && (await tour.locator('h2').innerText()) === 'CNSA 뱃지란?'
 			&& (await tour.locator('.pins .medal').count()) === 4);
 		await tour.getByRole('button', { name: '다음' }).click(); await p11.waitForTimeout(200);
 		const how = await tour.innerText();
@@ -604,9 +607,9 @@ try {
 		check('★ 마지막 장 — 금 뱃지 5개면 칸 5개 · 지금 1/5', (await tour.locator('h2').innerText()) === '금 뱃지 5개면 칸이 5개' && (await tour.innerText()).includes('1/5'));
 		await p11.screenshot({ path: `${SP}/cnsa-tour.png` });
 		await tour.getByRole('button', { name: '확인' }).click(); await p11.waitForTimeout(300);
-		check('닫으면 이 기기에 "봤음" — 다시 와도 저절로 뜨지 않는다', (await p11.evaluate(() => localStorage.getItem('cnsa-tour-v1'))) === '1');
+		check('닫으면 이 기기에 "봤음" — 프로필 안내에서 다시 잇지 않는다', (await p11.evaluate(() => localStorage.getItem('cnsa-tour-v1'))) === '1');
 		// 다시 열어 마지막 장의 "뱃지 제출하기" — 창을 닫으며 제출 화면으로, 뒤로 오면 업적 화면
-		await p11.getByRole('button', { name: 'CNSA', exact: true }).click(); await p11.getByRole('button', { name: 'CNSA 뱃지 안내' }).click();
+		await p11.getByRole('button', { name: 'CNSA 뱃지 안내' }).click();
 		for (let i = 0; i < 4; i++) { await tour.getByRole('button', { name: '다음' }).click(); await p11.waitForTimeout(150); }
 		await tour.getByRole('button', { name: '뱃지 제출하기' }).click();
 		await p11.waitForURL('**/me/achievements/submit', { timeout: 4000 }).catch(() => {});
