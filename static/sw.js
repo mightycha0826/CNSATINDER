@@ -13,7 +13,8 @@
 // v9: 앱 안 알림 · 대화별로 모이는 알림 · 알림을 누르면 새로고침 없이 그 화면으로 (Phase 35)
 // v10: 앱 이름을 랜디(Landy)로 — 캐시 이름도 바꾼다 (옛 캐시는 activate 에서 지워진다)
 // (Phase 80) 편지 알림을 누르면 편지함의 우체통에서 꺼낸다 — /letters/m/번호 → /letters?take=번호 (앱의 viaMailbox 와 같은 규칙)
-const VERSION = 'landy-v10';
+// v11: 새 로고 (Phase 86) — 아이콘은 주소가 그대로라 캐시 우선으로 옛 그림이 계속 나왔다. ★ SHELL 의 그림을 바꾸면 버전을 올린다
+const VERSION = 'landy-v11';
 const SHELL = ['/', '/icon-192.png', '/icon-512.png', '/badge-96.png', '/manifest.webmanifest'];
 // 버전이 바뀌어도 지우지 않는 작은 저장소 — "설치한 앱으로 쓰는 기기인지", 앱 창 id
 const META = 'landy-meta';
@@ -30,7 +31,7 @@ self.addEventListener('install', (e) => {
 	e.waitUntil(
 		caches
 			.open(VERSION)
-			.then((c) => c.addAll(SHELL))
+			.then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))) // 브라우저 HTTP 캐시의 옛 사본을 받지 않게
 			.then(() => self.skipWaiting())
 			.catch(() => self.skipWaiting())
 	);
