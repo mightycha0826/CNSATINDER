@@ -2,7 +2,7 @@ import type { Component } from 'svelte';
 import Beatus from './Beatus.svelte';
 import CnsaCube from './CnsaCube.svelte';
 import Geukjakso from './Geukjakso.svelte';
-import MsmspGold from './MsmspGold.svelte';
+import MsmpGold from './MsmpGold.svelte';
 
 /**
  * CNSA 뱃지 (Phase 70 · 71) — 학교 · 동아리 · 행사의 실제 에나멜 핀을 그대로 그린 것. 동그란 메달 대신 이 그림을 쓴다 (Badge.svelte).
@@ -10,7 +10,7 @@ import MsmspGold from './MsmspGold.svelte';
  */
 export const PIN_BADGES: Record<string, Component<{ shine?: boolean; delay?: number }>> = {
 	cnsa_student: CnsaCube,
-	msmsp_gold: MsmspGold,
+	msmp_gold: MsmpGold,
 	club_beatus: Beatus,
 	club_geukjakso: Geukjakso
 };

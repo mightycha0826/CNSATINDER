@@ -564,7 +564,7 @@ try {
 			items: [
 				def('fun', '이야기꾼', 'manner', 3, { granted: false }),
 				def('cnsa_student', 'CNSA 뱃지', 'cnsa', 3),
-				def('msmsp_gold', 'MSMP 우수 금뱃지', 'cnsa', 0),
+				def('msmp_gold', 'MSMP 우수 금뱃지', 'cnsa', 0),
 				def('club_beatus', 'Beatus', 'cnsa', 0),
 				def('club_geukjakso', '극작소', 'cnsa', 0)
 			],
@@ -634,7 +634,7 @@ try {
 		await sendBtn.click(); await p11.waitForTimeout(800);
 		const up = w11.calls.filter((c) => c[0] === 'storage' && c[1] === 'POST');
 		const sub = called(w11, 'badge_request_submit').at(-1)?.[1];
-		check('★ 사진은 내 폴더(badge-proofs/내 id/)에 올리고 그 경로로 요청', up.length === 1 && up[0][2].startsWith(`/storage/v1/object/badge-proofs/${uid}/`) && sub?.p_kind === 'proof' && sub.p_code === 'msmsp_gold'
+		check('★ 사진은 내 폴더(badge-proofs/내 id/)에 올리고 그 경로로 요청', up.length === 1 && up[0][2].startsWith(`/storage/v1/object/badge-proofs/${uid}/`) && sub?.p_kind === 'proof' && sub.p_code === 'msmp_gold'
 			&& sub.p_photos.length === 1 && sub.p_photos[0].startsWith(`${uid}/`) && sub.p_photos[0].endsWith('.jpg'), JSON.stringify({ up, sub }));
 		check('★ 보낸 요청 목록에 "확인 중"', (await p11.locator('.mine li').first().innerText()).includes('확인 중') && (await p11.getByRole('button', { name: '거두기' }).count()) === 1);
 		await p11.getByRole('tab', { name: '동아리 기장 제출' }).click(); await p11.waitForTimeout(200);

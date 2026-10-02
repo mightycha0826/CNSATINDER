@@ -55,7 +55,7 @@
 		void navigateFromOverlay('/me/achievements/submit');
 		closeBadgeTour();
 	}
-	const PINS = ['cnsa_student', 'msmsp_gold', 'club_beatus', 'club_geukjakso'];
+	const PINS = ['cnsa_student', 'msmp_gold', 'club_beatus', 'club_geukjakso'];
 </script>
 
 <svelte:window onkeydown={(e) => BADGE_TOUR.open && e.key === 'Escape' && closeBadgeTour()} />

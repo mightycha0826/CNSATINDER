@@ -57,7 +57,7 @@
 		A('pioneer', '개척자', '🚩', 'special', [1000, 300, 100], 42, 3, { unit: '번째', description: '가입한 순서', lower_better: true }),
 		// CNSA 뱃지 (Phase 70 · 71) — 실제 학교 · 동아리 핀 모양
 		A('cnsa_student', 'CNSA 뱃지', '🏫', 'cnsa', [1, 1, 1], 0, 3, { unit: '', description: '충남삼성고 학생임을 증명하는 뱃지', granted: true }),
-		A('msmsp_gold', 'MSMP 우수 금뱃지', '🥇', 'cnsa', [1, 1, 1], 0, 3, { unit: '', description: 'MSMP 우수자에게 수여하는 뱃지', granted: true }),
+		A('msmp_gold', 'MSMP 우수 금뱃지', '🥇', 'cnsa', [1, 1, 1], 0, 3, { unit: '', description: 'MSMP 우수자에게 수여하는 뱃지', granted: true }),
 		A('club_beatus', 'Beatus', '💻', 'cnsa', [1, 1, 1], 0, 0, { unit: '', description: 'IT 동아리 Beatus의 뱃지', granted: true }),
 		A('club_geukjakso', '극작소', '🎬', 'cnsa', [1, 1, 1], 0, 3, { unit: '', description: '연극 동아리 극작소 부원', granted: true })
 	];

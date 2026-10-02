@@ -5982,7 +5982,7 @@ on conflict (code) do update
 -- ════════════════════════════════════════════════════════════════════
 insert into private.achievement_defs (code, title, description, icon, category, stat, unit, bronze, silver, gold, lower_better, sort, granted) values
   ('cnsa_student', 'CNSA 뱃지',          '충남삼성고 학생임을 증명하는 뱃지', '🏫', 'cnsa', 'cnsa_student', '', 1, 1, 1, false, 55, true),
-  ('msmsp_gold',   'MSMP 우수 금뱃지',  'MSMP 우수자에게 수여하는 뱃지',     '🥇', 'cnsa', 'msmsp_gold',   '', 1, 1, 1, false, 56, true),
+  ('msmp_gold',   'MSMP 우수 금뱃지',  'MSMP 우수자에게 수여하는 뱃지',     '🥇', 'cnsa', 'msmp_gold',   '', 1, 1, 1, false, 56, true),
   ('club_beatus',  'Beatus', 'IT 동아리 Beatus의 뱃지',           '💻', 'cnsa', 'club_beatus',  '', 1, 1, 1, false, 58, true)
 on conflict (code) do update
   set title = excluded.title, description = excluded.description, icon = excluded.icon, category = excluded.category,
@@ -6518,3 +6518,17 @@ alter table public.app_settings
   drop column if exists letter_reply_cooldown_days, drop column if exists letter_reply_deadline_hours,
   drop column if exists letter_feed_page_size;
 alter table public.user_presence drop column if exists task_tokens, drop column if exists task_at;
+
+
+-- ════════════════════════════════════════════════════════════════════
+--  Phase 88 — 뱃지 코드 msmsp_gold → msmp_gold (이름이 MSMP 인데 코드에 s 가 하나 더 있었다)
+--
+--  정의는 Phase 71 의 insert 에서 새 코드로 만든다. 여기서는 이미 설치된 DB 에서 옛 코드를 가리키던 것을 옮긴다:
+--  가진 학생 · 뱃지 요청 · 대표 업적 · 랜덤채팅 숨김 설정. 다 옮긴 뒤 옛 정의를 지운다. 새 DB 에서는 아무 일도 하지 않는다.
+--  활동 기록(audit_log)의 옛 코드는 그때의 기록이라 고치지 않는다.
+-- ════════════════════════════════════════════════════════════════════
+update private.user_achievements set code = 'msmp_gold' where code = 'msmsp_gold';
+update private.badge_requests set code = 'msmp_gold' where code = 'msmsp_gold';
+update public.profiles set featured_badges = array_replace(featured_badges, 'msmsp_gold', 'msmp_gold') where 'msmsp_gold' = any(featured_badges);
+update public.profiles set badge_chat = (badge_chat - 'msmsp_gold') || jsonb_build_object('msmp_gold', badge_chat -> 'msmsp_gold') where badge_chat ? 'msmsp_gold';
+delete from private.achievement_defs where code = 'msmsp_gold';
