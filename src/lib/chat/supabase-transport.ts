@@ -192,6 +192,13 @@ export class SupabaseTransport implements ChatTransport {
 		return out;
 	}
 
+	async fetchBefore(roomId: string, beforeId: number, n: number): Promise<MsgRow[]> {
+		const { data, error } = await this.client.from('messages').select(MSG_COLS).eq('room_id', roomId)
+			.lt('id', beforeId).order('id', { ascending: false }).limit(Math.min(n, 200));
+		if (error) throw error;
+		return (data as unknown as MsgRow[] | null) ?? [];
+	}
+
 	async fetchRecent(roomId: string, n: number): Promise<MsgRow[]> {
 		const { data, error } = await this.client.from('messages').select(MSG_COLS).eq('room_id', roomId).order('id', { ascending: false }).limit(n);
 		if (error) throw error;

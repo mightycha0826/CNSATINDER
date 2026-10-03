@@ -9,7 +9,7 @@
  * 공유는 Web Share(파일) — 폰 공유 창에서 인스타그램 › 스토리. 파일 공유가 안 되는 곳(데스크톱 등)은 그림을 저장한다.
  * 그림은 이 기기에서만 만든다 — 서버 요청 없음 (G13).
  */
-import { COLOR, HIGHLIGHT, toLines, type Align, type LetterFmt } from './rich';
+import { COLOR_LIGHT as COLOR, HIGHLIGHT, toLines, type Align, type LetterFmt } from './rich';
 import { LOGO_PATH } from '../ui/schoolLogo';
 
 const STORY_W = 1080;

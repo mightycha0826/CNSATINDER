@@ -19,15 +19,17 @@ export async function requestTurn(
 	chatId: string,
 	history: Line[],
 	options: {
+		requestId?: string;
 		isActive(): boolean;
 		wait(): Promise<void>;
 		onRetry(waiting: boolean): void;
 	}
 ): Promise<TurnResult | null> {
-	const request = () => api.turn(chatId, history).catch((): TurnResult => ({ status: 'network' }));
+	const requestId = options.requestId ?? crypto.randomUUID();
+	const request = () => api.turn(chatId, history, requestId).catch((): TurnResult => ({ status: 'network' }));
 	let result = await request();
 	if (!options.isActive()) return null;
-	if (result.status === 'network' || result.status === 'ai_unavailable') {
+	if (result.status === 'network' || result.status === 'ai_unavailable' || result.status === 'pending') {
 		options.onRetry(true);
 		await options.wait();
 		if (!options.isActive()) return null;

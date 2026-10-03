@@ -5,6 +5,7 @@
 - 전체 설계: `~/.claude/plans/dynamic-purring-acorn.md`
 - 스택: SvelteKit 2 + Svelte 5 (runes) + Supabase + Cloudflare Pages
 - **UX 가이드라인: [`docs/UX-GUIDELINES.md`](docs/UX-GUIDELINES.md)** — 화면을 만들거나 고칠 때의 기준 (누름 영역 44px · 누름 반응 · 네 가지 상태 · 뒤로가기 · 입력 보존 · 요청 예산 · 검토 매트릭스)
+- **제품 문서: [PRD](docs/PRD.md) · [유저 플로우](docs/USER-FLOWS.md) · [문서 안내](docs/README.md)** — 제품 목적·기능 요구사항·운영 정책과 학생/운영자 과업별 정상·예외 경로
 
 ## 설계 원칙 (코드를 고칠 때 반드시 지킬 것)
 

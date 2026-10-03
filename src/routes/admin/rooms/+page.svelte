@@ -12,6 +12,7 @@
 	let to = $state(kstDay(0));
 	let busy = $state(false);
 	let progress = $state('');
+	let download: AbortController | null = null;
 
 	const HEADER = '메시지번호,대화방,방 상태,자리,보낸 사람(방 안 익명 이름),보낸 시각(한국),내용,답장 대상';
 
@@ -21,14 +22,21 @@
 		busy = true;
 		progress = '받는 중…';
 		const parts: string[] = [];
+		download = new AbortController();
+		let job: string | null = null;
+		let bytes = 0;
 		let after = 0;
 		let total = 0;
 		try {
 			for (;;) {
-				const res = await fetch(`/admin/rooms/export?from=${from}&to=${to}&after=${after}`);
+				const query = job ? `job=${job}&after=${after}` : `from=${from}&to=${to}`;
+				const res = await fetch(`/admin/rooms/export?${query}`, { signal: download.signal });
 				if (!res.ok) throw new Error(await res.text());
-				const c = (await res.json()) as { csv: string; last_id: number | null; count: number };
+				const c = (await res.json()) as { csv: string; last_id: number | null; count: number; job_id: string };
+				job = c.job_id;
 				if (!c.count) break;
+				bytes += new TextEncoder().encode(c.csv).byteLength;
+				if (total + c.count > 50_000 || bytes > 30 * 1024 * 1024) throw new Error('limit');
 				parts.push(c.csv);
 				total += c.count;
 				progress = `${total.toLocaleString()}줄 받는 중…`;
@@ -45,10 +53,11 @@
 			a.remove();
 			setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 			progress = total ? `${total.toLocaleString()}줄 내려받음` : '그 기간에 남아 있는 대화가 없어요';
-		} catch {
-			progress = '받지 못했어요. 잠시 후 다시 해 주세요';
+		} catch (e) {
+			progress = download?.signal.aborted ? '내려받기를 취소했어요' : e instanceof Error && e.message === 'limit' ? '5만 줄 또는 30MB를 넘었어요. 기간을 줄여 주세요' : '받지 못했어요. 잠시 후 다시 해 주세요';
 		} finally {
 			busy = false;
+			download = null;
 		}
 	}
 </script>
@@ -63,15 +72,16 @@
 <section class="backup a-card">
 	<h2 class="a-h2">대화 백업 (CSV)</h2>
 	<p class="a-hint first">
-		서버의 대화는 방이 닫히고 24시간 뒤(매일 새벽 4시 17분) 지워집니다. 그 전에 파일로 받아 둘 수 있어요 — 하루에 한 번 받으면 빠짐없이 남습니다.
+		서버에서는 종료 24시간이 지난 대화를 매일 새벽 4시 17분에 정리합니다. 필요한 기간만 선택해 주세요. 추출은 최대 31일 · 5만 줄 · 30MB입니다.
 		파일에는 방 번호 · 방 안 익명 이름 · 시각 · 내용만 있고 계정 정보(이메일)는 없습니다. <b>내려받을 때마다 활동 기록에 남습니다.</b>
 		학생들에게는 "24시간 뒤 지워진다"고 안내하고 있으니, 백업을 한다면 개인정보 처리방침과 학교 승인이 필요합니다.
 	</p>
 	<div class="row">
-		<label>보낸 날짜 <input class="field" type="date" bind:value={from} max={to} /></label>
+		<label>보낸 날짜 <input class="field" type="date" disabled={busy} bind:value={from} max={to} /></label>
 		<span>~</span>
-		<label><input class="field" type="date" bind:value={to} min={from} /></label>
+		<label><input class="field" type="date" disabled={busy} bind:value={to} min={from} /></label>
 		<button class="btn" onclick={backup} disabled={busy || !from || !to}>{busy ? '받는 중…' : 'CSV 내려받기'}</button>
+		{#if busy}<button class="btn" onclick={() => download?.abort()}>취소</button>{/if}
 		{#if progress}<span class="muted" role="status">{progress}</span>{/if}
 	</div>
 </section>

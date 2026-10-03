@@ -11,6 +11,7 @@
 	import { confirmed } from '$lib/admin/confirm';
 	import FormMsg from '$lib/admin/FormMsg.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
+	import { focustrap } from '$lib/focustrap';
 
 	let { data, form } = $props();
 
@@ -18,6 +19,8 @@
 	const STATUS = { pending: '기다림', approved: '승인', rejected: '반려' } as const;
 	const clubs = $derived(data.badges.filter((b) => b.code.startsWith('club_')));
 	let big = $state<string | null>(null);
+	let photoErrors = $state<Record<string, boolean>>({});
+	let retryVersion = $state(0);
 
 	const askOk = confirmed((f) => {
 		const r = data.items.find((x) => x.id === Number(f.get('id')));
@@ -67,7 +70,11 @@
 					<div class="photos">
 						{#each r.photos as p, i (p)}
 							{#if data.urls[p]}
-								<button class="ph" onclick={() => (big = data.urls[p])} aria-label="사진 {i + 1} 크게"><img src={data.urls[p]} alt="제출 사진 {i + 1}" loading="lazy" /></button>
+								{#if photoErrors[p]}
+									<button class="ph" onclick={() => { photoErrors[p] = false; retryVersion++; }}>사진 다시 불러오기</button>
+								{:else}
+									<button class="ph" onclick={() => (big = data.urls[p] + '&retry=' + retryVersion)} aria-label="사진 {i + 1} 크게"><img src={data.urls[p] + '&retry=' + retryVersion} alt="제출 사진 {i + 1}" loading="lazy" onerror={() => (photoErrors[p] = true)} /></button>
+								{/if}
 							{:else}
 								<span class="ph none">사진을 못 불러옴</span>
 							{/if}
@@ -104,9 +111,9 @@
 {/if}
 
 {#if big}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<div class="viewer" role="presentation" onclick={() => (big = null)}>
-		<img src={big} alt="제출 사진 크게" />
+	<div class="viewer" role="dialog" aria-modal="true" aria-label="제출 사진 확대" tabindex="-1" use:focustrap>
+		<button class="btn" onclick={() => (big = null)}>사진 닫기</button>
+		<img src={big} alt="제출 사진 크게" onerror={() => (big = null)} />
 	</div>
 {/if}
 <svelte:window onkeydown={(e) => e.key === 'Escape' && (big = null)} />

@@ -62,6 +62,8 @@
 	let seq = 0;
 	/** 봇이 답한(또는 답하는 중인) 내 말 (id 까지) */
 	let answeredUpTo = 0;
+	let requestUpTo = -1;
+	let requestId = '';
 	let busy = false;
 	/** 자동 재시도는 한 번만 — 연결 실패 후에는 사용자가 다시 보내야 한다. */
 	let retryPaused = false;
@@ -176,11 +178,13 @@
 			await sleep(rand(400, 1200)); // 읽고 잠깐 생각
 			if (!alive || phase !== 'live') return;
 			const { batch, upTo, history } = snapshotTurn(lines, answeredUpTo);
+			if (requestUpTo !== upTo) { requestUpTo = upTo; requestId = crypto.randomUUID(); }
 			readUpTo = Math.max(readUpTo, upTo);
 			typing = true;
 			void scrollDown();
 			const t0 = Date.now();
 			const r = await requestTurn(api, chat.id, history, {
+				requestId,
 				isActive: () => alive && phase === 'live',
 				wait: () => sleep(3000),
 				onRetry: (waiting) => { typing = !waiting; }
@@ -214,6 +218,7 @@
 					break;
 				case 'ai_unavailable':
 				case 'network':
+				case 'pending':
 					typing = false;
 					if (r.status === 'ai_unavailable') end('대화 봇이 지금은 답할 수 없어요');
 					else {

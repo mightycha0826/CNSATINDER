@@ -7,6 +7,7 @@
  * 없어진 색(예전의 '베리' · '회색' · '보라')을 저장해 둔 기기는 기본 색으로 돌아간다.
  * 예전 이름이 "채팅 색상"이라 저장 키는 그대로 둔다 (이미 고른 색이 유지되게).
  */
+import { readableColor } from './contrast';
 type ThemeColor = {
 	id: string;
 	label: string;
@@ -47,10 +48,8 @@ export const THEME_COLOR = $state({ id: DEFAULT });
 // --accent-fill-deep(작은 흰 글씨가 올라가는 면 · 편지 쓰기 단추) · --glow(버튼 빛) · --ambient/--desk(빛 번짐)도 테마 색을 따른다 (Phase 35)
 const PROPS = [
 	'--g-orange', '--g-coral', '--g-pink', '--bubble-fill', '--bubble-a', '--bubble-b', '--bubble-c', '--accent-fill', '--accent',
-	'--accent-fill-deep', '--glow', '--ambient', '--desk'
+	'--accent-fill-deep', '--glow', '--ambient', '--desk', '--theme-accent-light', '--theme-accent-dark'
 ];
-/** 흰 글씨가 읽히게 조금 어둡게 */
-const deep = (c: string) => `color-mix(in srgb, ${c} 80%, #000)`;
 const tint = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
 
 function apply(id: string) {
@@ -62,20 +61,25 @@ function apply(id: string) {
 		return;
 	}
 	const [a, b, z] = c.stops;
+	const safe = (color: string) => readableColor(color, '#ffffff');
+	const [sa, sb, sz] = c.stops.map(safe);
 	root.setProperty('--g-orange', a);
 	root.setProperty('--g-coral', b);
 	root.setProperty('--g-pink', z);
 	// 말풍선에는 흰 글씨가 올라가므로 가장 밝은 끝(인스타의 노랑)은 뺀다 — 노랑은 색 동그라미에서만
-	root.setProperty('--bubble-fill', c.fill ? spread('200deg', c.fill.slice(1)) : fillOf(c));
-	root.setProperty('--bubble-a', a);
-	root.setProperty('--bubble-b', b);
-	root.setProperty('--bubble-c', z);
-	root.setProperty('--accent-fill', c.fill ? spread('60deg', c.fill.slice(1)) : `linear-gradient(110deg, ${a}, ${b} 55%, ${z})`);
-	root.setProperty('--accent-fill-deep', c.fill ? spread('60deg', c.fill.slice(1).map(deep)) : `linear-gradient(110deg, ${deep(a)}, ${deep(b)} 55%, ${deep(z)})`);
+	root.setProperty('--bubble-fill', c.fill ? spread('200deg', c.fill.slice(1).map(safe)) : `linear-gradient(180deg, ${sa}, ${sb} 55%, ${sz})`);
+	root.setProperty('--bubble-a', sa);
+	root.setProperty('--bubble-b', sb);
+	root.setProperty('--bubble-c', sz);
+	const fill = c.fill ? spread('60deg', c.fill.slice(1).map(safe)) : `linear-gradient(110deg, ${sa}, ${sb} 55%, ${sz})`;
+	root.setProperty('--accent-fill', fill);
+	root.setProperty('--accent-fill-deep', fill);
 	root.setProperty('--glow', `0 10px 28px -8px ${tint(b, 55)}`);
 	root.setProperty('--ambient', `radial-gradient(90% 38% at 0% 0%, ${tint(a, 16)}, transparent 70%), radial-gradient(80% 34% at 100% 6%, ${tint(z, 13)}, transparent 70%)`);
 	root.setProperty('--desk', `radial-gradient(120% 60% at 10% 0%, ${tint(a, 14)}, transparent 60%), radial-gradient(90% 50% at 100% 30%, ${tint(z, 12)}, transparent 60%)`);
-	if (c.accent) root.setProperty('--accent', c.accent);
+	root.removeProperty('--accent');
+	root.setProperty('--theme-accent-light', readableColor(c.accent ?? b, '#ffffff'));
+	root.setProperty('--theme-accent-dark', readableColor(c.accent ?? b, '#171416', true));
 }
 
 /** 앱을 켤 때 한 번 — 저장해 둔 색을 입힌다 */

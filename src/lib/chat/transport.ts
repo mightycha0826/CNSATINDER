@@ -43,6 +43,7 @@ export interface ChatTransport {
 	fetchAfter(roomId: string, afterId: number): Promise<MsgRow[]>;
 	/** 가장 최근 n 개 (커밋 순서 역전 보정용) */
 	fetchRecent(roomId: string, n: number): Promise<MsgRow[]>;
+	fetchBefore?(roomId: string, beforeId: number, n: number): Promise<MsgRow[]>;
 	snapshot(roomId: string): Promise<RoomSnap>;
 	/** 입장 확인 — 양쪽이 모두 부르면 pending → active, 10분 타이머 시작 */
 	ack(roomId: string): Promise<RoomSnap>;

@@ -12,7 +12,8 @@
 	import { Color, FontSize, TextStyle } from '@tiptap/extension-text-style';
 	import { TextAlign } from '@tiptap/extension-text-align';
 	import { Placeholder, UndoRedo } from '@tiptap/extensions';
-	import { COLOR, COLOR_LABEL, HIGHLIGHT, HIGHLIGHT_LABEL, SIZE, SIZE_LABEL, fromDoc, type LetterFmt } from './rich';
+	import { COLOR, COLOR_LABEL, HIGHLIGHT, HIGHLIGHT_LABEL, SIZE, SIZE_LABEL, fromDoc, toDoc, type LetterFmt } from './rich';
+	import { untrack } from 'svelte';
 	import '@fontsource/nanum-pen-script/index.css';
 
 	/**
@@ -39,6 +40,7 @@
 		if (!el) return;
 		const ed = new Editor({
 			element: el,
+			content: untrack(() => toDoc(body, fmt)),
 			extensions: [
 				Document,
 				Paragraph,
@@ -116,15 +118,22 @@
 
 	/** 툴바를 눌러도 편집 영역의 선택·키보드가 유지되게 */
 	const keep = (e: PointerEvent) => e.preventDefault();
+	function toolbarKey(e: KeyboardEvent & { currentTarget: EventTarget & HTMLDivElement }) {
+		if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+		const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+		const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+		const next = e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+		e.preventDefault(); buttons[next]?.focus();
+	}
 </script>
 
 <!-- 서식 단추는 편지지에 초점을 돌려주며 쓴다 — 키보드를 내리지 않는다 (lib/keyboard.svelte.ts) -->
 <div class="le" data-keep-kb>
-	<div class="bar" role="toolbar" aria-label="서식">
-		<button class="t" class:on={is('bold')} onpointerdown={keep} onclick={() => cmd().toggleBold().run()} aria-label="굵게" title="굵게"><b>B</b></button>
-		<button class="t" class:on={is('italic')} onpointerdown={keep} onclick={() => cmd().toggleItalic().run()} aria-label="기울임" title="기울임"><i>I</i></button>
-		<button class="t" class:on={is('underline')} onpointerdown={keep} onclick={() => cmd().toggleUnderline().run()} aria-label="밑줄" title="밑줄"><u>U</u></button>
-		<button class="t" class:on={is('strike')} onpointerdown={keep} onclick={() => cmd().toggleStrike().run()} aria-label="취소선" title="취소선"><s>S</s></button>
+	<div class="bar" role="toolbar" tabindex="-1" aria-label="서식" onkeydown={toolbarKey}>
+		<button class="t" class:on={is('bold')} aria-pressed={is('bold')} onpointerdown={keep} onclick={() => cmd().toggleBold().run()} aria-label="굵게" title="굵게"><b>B</b></button>
+		<button class="t" class:on={is('italic')} aria-pressed={is('italic')} onpointerdown={keep} onclick={() => cmd().toggleItalic().run()} aria-label="기울임" title="기울임"><i>I</i></button>
+		<button class="t" class:on={is('underline')} aria-pressed={is('underline')} onpointerdown={keep} onclick={() => cmd().toggleUnderline().run()} aria-label="밑줄" title="밑줄"><u>U</u></button>
+		<button class="t" class:on={is('strike')} aria-pressed={is('strike')} onpointerdown={keep} onclick={() => cmd().toggleStrike().run()} aria-label="취소선" title="취소선"><s>S</s></button>
 		<span class="sep"></span>
 		<button class="t" class:on={panel === 'hl'} onpointerdown={keep} onclick={() => toggle('hl')} aria-label="형광펜" title="형광펜" aria-expanded={panel === 'hl'}>
 			<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14.5 4.5l5 5L10 19H5v-5l9.5-9.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
@@ -144,6 +153,7 @@
 				class:on={al === 'left' ? !is({ textAlign: 'center' }) && !is({ textAlign: 'right' }) : is({ textAlign: al })}
 				onpointerdown={keep}
 				onclick={() => (al === 'left' ? cmd().unsetTextAlign().run() : cmd().setTextAlign(al).run())}
+				aria-pressed={al === 'left' ? !is({ textAlign: 'center' }) && !is({ textAlign: 'right' }) : is({ textAlign: al })}
 				aria-label={label}
 				title={label}
 			>
@@ -163,23 +173,23 @@
 		<div class="panel" role="group" aria-label={panel === 'hl' ? '형광펜 색' : panel === 'color' ? '글자색' : '글자 크기'}>
 			{#if panel === 'hl'}
 				{#each Object.entries(HIGHLIGHT) as [k, v] (k)}
-					<button class="chip" class:on={hlNow === k} onpointerdown={keep} onclick={() => cmd().setHighlight({ color: v }).run()} aria-label="형광펜 {HIGHLIGHT_LABEL[k as keyof typeof HIGHLIGHT]}">
+					<button class="chip" class:on={hlNow === k} aria-pressed={hlNow === k} onpointerdown={keep} onclick={() => cmd().setHighlight({ color: v }).run()} aria-label="형광펜 {HIGHLIGHT_LABEL[k as keyof typeof HIGHLIGHT]}">
 						<span class="dot" style:background={v}></span>{HIGHLIGHT_LABEL[k as keyof typeof HIGHLIGHT]}
 					</button>
 				{/each}
 				<button class="chip" onpointerdown={keep} onclick={() => cmd().unsetHighlight().run()}>지우기</button>
 			{:else if panel === 'color'}
 				{#each Object.entries(COLOR) as [k, v] (k)}
-					<button class="chip" class:on={colorNow === k} onpointerdown={keep} onclick={() => cmd().setColor(v).run()} aria-label="글자색 {COLOR_LABEL[k as keyof typeof COLOR]}">
+					<button class="chip" class:on={colorNow === k} aria-pressed={colorNow === k} onpointerdown={keep} onclick={() => cmd().setColor(v).run()} aria-label="글자색 {COLOR_LABEL[k as keyof typeof COLOR]}">
 						<span class="dot" style:background={v}></span>{COLOR_LABEL[k as keyof typeof COLOR]}
 					</button>
 				{/each}
-				<button class="chip" class:on={!colorNow} onpointerdown={keep} onclick={() => cmd().unsetColor().removeEmptyTextStyle().run()}>기본</button>
+				<button class="chip" class:on={!colorNow} aria-pressed={!colorNow} onpointerdown={keep} onclick={() => cmd().unsetColor().removeEmptyTextStyle().run()}>기본</button>
 			{:else}
 				{#each ['sm', 'md', 'lg', 'xl'] as const as k (k)}
 					<button
 						class="chip"
-						class:on={sizeNow === k}
+						class:on={sizeNow === k} aria-pressed={sizeNow === k}
 						onpointerdown={keep}
 						onclick={() => (k === 'md' ? cmd().unsetFontSize().removeEmptyTextStyle().run() : cmd().setFontSize(SIZE[k]).run())}
 						style:font-size={k === 'md' ? null : `calc(13px * ${parseFloat(SIZE[k])})`}

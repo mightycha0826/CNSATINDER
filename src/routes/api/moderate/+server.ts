@@ -3,6 +3,7 @@ import { AiUnavailable, runAi } from '$lib/server/ai';
 import { fakeVerdict, moderationPrompt, type ModItem } from '$lib/server/moderation';
 import { moderateBatch } from '$lib/server/moderationBatch';
 import { adminRpc, userFromBearer } from '$lib/server/supabaseAdmin';
+import { rateLimit } from '$lib/server/apiRate';
 
 /**
  * POST /api/moderate   Authorization: Bearer <access token>
@@ -15,6 +16,8 @@ import { adminRpc, userFromBearer } from '$lib/server/supabaseAdmin';
 export const POST: RequestHandler = async ({ request, platform }) => {
 	const uid = await userFromBearer(request).catch(() => null);
 	if (!uid) return json({ error: 'unauthorized' }, { status: 401 });
+	const limited = await rateLimit(uid, 'moderate');
+	if (limited) return limited;
 
 	// 가져가는 것까지는 기다린다 — 몇 개를 가져갔는지(0 = 쌓인 게 없거나 오늘 한도 끝)를 앱이 보고 부르는 간격을 늘린다
 	const items = await adminRpc<ModItem[]>('mod_claim', { p_n: 5 });
@@ -26,7 +29,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 				return await runAi(platform?.env?.AI, moderationPrompt(item), { maxTokens: 80, temperature: 0, fake: fakeVerdict });
 			} catch (e) {
 				if (!(e instanceof AiUnavailable)) throw e;
-				console.error('[moderate] Workers AI 실패:', e.message);
+				console.error('[moderate] Workers AI unavailable');
 				return null;
 			}
 		},
@@ -36,7 +39,7 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 	// Workers: 응답을 먼저 돌려주고 검토는 뒤에서 마저 한다
 	if (platform?.context?.waitUntil) {
-		platform.context.waitUntil(work.catch(() => {}));
+		platform.context.waitUntil(work.catch(() => { console.error('[moderate] batch failed'); }));
 		return json({ claimed: items.length });
 	}
 	return json({ claimed: items.length, ...(await work.catch(() => ({ checked: 0, flagged: 0 }))) });

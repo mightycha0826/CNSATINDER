@@ -59,6 +59,7 @@ await db.exec(`
 	create role service_role;
 
 	create schema auth;
+	create table auth.sessions(id uuid primary key, user_id uuid, not_after timestamptz);
 	create table auth.users (
 		id                 uuid primary key default gen_random_uuid(),
 		email              text unique,
@@ -155,6 +156,7 @@ const openLegacy = async () => {
 await db.exec(readFileSync(SCHEMA, 'utf8'));
 try {
   const uid = await signUp('security-audit1@cnsa.hs.kr', true);
+  await db.query("update public.profiles set gender='m',want='any',onboarded=true where id=$1",[uid]);
   await db.exec("update public.app_settings set ai_chat=true, ai_chat_per_user=5, ai_chat_daily_cap=100 where id");
   const chat = (await as(uid, () => one("select public.ai_chat_start() as r"))).r;
   await db.query("update public.profiles set status='banned' where id=$1", [uid]);
@@ -270,6 +272,7 @@ try {
   await db.query('update private.badge_photos set delete_after=null where path=$1',[keep]);
   await db.exec(migration);
   await db.exec(migration);
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261003063750_project_review_upgrade.sql',import.meta.url),'utf8'));
   assert.deepEqual((await functions()).rows,expectedFunctions);
   assert.ok((await one('select delete_after from private.badge_photos where path=$1',[legacy])).delete_after);
   assert.equal((await one('select delete_after from private.badge_photos where path=$1',[keep])).delete_after,null);

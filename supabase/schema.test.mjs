@@ -52,81 +52,7 @@ async function signUp(email, confirmed = false) {
 // ── Supabase 환경 스텁 ────────────────────────────────────────────────
 // 롤: 스키마의 grant/revoke 가 파싱되게 만든다.
 // auth 스키마: 실제 Supabase 의 auth.users / auth.uid() 를 흉내낸다.
-await db.exec(`
-	create role anon;
-	create role authenticated;
-	create role service_role;
-
-	create schema auth;
-	create table auth.users (
-		id                 uuid primary key default gen_random_uuid(),
-		email              text unique,
-		email_confirmed_at timestamptz,
-		encrypted_password text,
-		raw_user_meta_data jsonb not null default '{}'::jsonb,
-		created_at         timestamptz not null default now()
-	);
-	create or replace function auth.uid() returns uuid
-		language sql stable as $x$
-		select nullif(current_setting('test.uid', true), '')::uuid
-	$x$;
-	-- Supabase 기본 권한: 정책 식에서 auth.uid() 를 부를 수 있어야 한다
-	grant usage on schema auth to anon, authenticated;
-	grant execute on function auth.uid() to anon, authenticated;
-	grant usage on schema public to anon, authenticated, service_role;
-	-- Supabase 기본 권한 그대로: public 에 새로 만든 표 · 함수 · 시퀀스는 anon · authenticated 에게 전부 열린다
-	-- (schema.sql 이 필요한 만큼 직접 닫아야 한다 — 이걸 흉내 내지 않으면 권한 시험이 거짓으로 통과한다)
-	alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
-	alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
-	alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
-
-	-- Supabase Realtime 흉내 (Phase 55) — realtime.send 는 realtime.messages 에 한 줄 넣는다(실제도 그렇다).
-	-- 비공개 채널 권한은 Realtime 이 채널 이름을 realtime.topic 설정에 넣고 학생 권한으로 이 표를 읽고 · 써 보는 것으로 확인한다
-	create schema realtime;
-	create table realtime.messages (
-		id          bigint generated always as identity primary key,
-		topic       text not null,
-		extension   text not null default 'broadcast',
-		event       text,
-		payload     jsonb,
-		private     boolean default false,
-		inserted_at timestamptz not null default now()
-	);
-	alter table realtime.messages enable row level security;
-	create function realtime.topic() returns text language sql stable as $x$
-		select nullif(current_setting('realtime.topic', true), '')
-	$x$;
-	create function realtime.send(payload jsonb, event text, topic text, private boolean default true) returns void
-		language sql as $x$
-		insert into realtime.messages (topic, event, payload, private) values (topic, event, payload, private)
-	$x$;
-	grant usage on schema realtime to anon, authenticated;
-	grant select, insert on realtime.messages to anon, authenticated;
-	grant execute on function realtime.topic() to anon, authenticated;
-
-	-- Supabase Storage 흉내 (Phase 84 — 뱃지 사진 버킷 · 자기 폴더 권한)
-	create schema storage;
-	create table storage.buckets (
-		id                 text primary key,
-		name               text not null,
-		public             boolean not null default false,
-		file_size_limit    bigint,
-		allowed_mime_types text[]
-	);
-	create table storage.objects (
-		id        uuid primary key default gen_random_uuid(),
-		bucket_id text references storage.buckets(id),
-		name      text not null,
-		owner     uuid default auth.uid()
-	);
-	alter table storage.objects enable row level security;
-	create function storage.foldername(name text) returns text[] language sql immutable as $x$
-		select (string_to_array(name, '/'))[1:cardinality(string_to_array(name, '/')) - 1]
-	$x$;
-	grant usage on schema storage to anon, authenticated;
-	grant select, insert, delete on storage.objects to authenticated;
-	grant execute on function storage.foldername(text) to anon, authenticated;
-`);
+await db.exec(readFileSync(here + 'test-bootstrap.sql', 'utf8'));
 
 /** uid 사용자로 로그인한 것처럼 RLS 를 적용해 실행한다. */
 async function as(uid, fn) {
@@ -1361,7 +1287,7 @@ console.log('\n[44] ★ 푸시 발송 판단');
 	const mid3 = (await one('select max(id)::int m from public.messages where room_id = $1', [r])).m;
 	check('알림 본문은 120자로 자른다', (await svc('push_payload', mid3, s)).body.length === 120);
 
-	await db.query(`update public.messages set created_at = now() - interval '5 minutes' where id = $1`, [mid3]);
+	await db.query(`update public.messages set created_at = now() - interval '11 minutes' where id = $1`, [mid3]);
 	await db.query(`delete from private.push_log where message_id = $1`, [mid3]);
 	check('오래된 메시지로는 보내지 않는다', (await svc('push_payload', mid3, s)).skip === 'stale');
 
@@ -1708,7 +1634,7 @@ console.log('\n[63] ★ 공감 푸시 — 상대 메시지에, 한 번만, 앱�
 	const aliasB = (await rpcAs(A, 'room_snapshot', r)).partner_alias;
 	check('상대 메시지에 공감 → A 의 기기로 알림', p.subs?.length === 1 && p.subs[0].endpoint === 'https://push.example/a', JSON.stringify(p));
 	check('제목 = 공감한 사람의 방 안 이름, 본문 = 공감 + 메시지', p.title === aliasB && p.body === '❤️ 공감: 실리카겔 좋아하세요?' && p.room_id === r, JSON.stringify(p));
-	check('★ 알림에 uuid 없음', ![A, B].some((u) => JSON.stringify({ ...p, subs: [] }).includes(u)));
+	check('★ 알림에 uuid 없음', ![A, B].some((u) => JSON.stringify({ ...p, subs: [], job: undefined, lease: undefined }).includes(u)));
 	check('같은 공감을 또 요청해도 한 번만', (await pay(B, mA)).skip === 'already');
 	await rpcAs(B, 'react_message', mA, 'laugh');
 	check('★ 공감을 바꿔도 다시 울리지 않는다 (알림 폭탄 방지)', (await pay(B, mA)).skip === 'already');
@@ -1853,7 +1779,9 @@ console.log('\n[66] ★ AI 검토 대기열 — 켜져 있을 때만 쌓이고, 
 	// 놓아주기 · 위기 신호
 	await say(B, r, sB, '요즘 너무 힘들어서 사라지고 싶어');
 	const g3 = await svc('mod_claim', 5);
+	const approved = (await one('select coalesce(sum(tries),0)::int n from private.mod_queue where claimed_at >= private.ai_day_start()')).n;
 	await svc('mod_release', g3.map((x) => x.id));
+	check('AI 검토 실패 재시도는 승인한 일일 예산을 환불하지 않음', (await one('select coalesce(sum(tries),0)::int n from private.mod_queue where claimed_at >= private.ai_day_start()')).n === approved);
 	check('놓아주면 다시 가져갈 수 있다', (await svc('mod_claim', 5)).length === g3.length);
 	const g4 = (await db.query(`select id from private.mod_queue where status = 'working'`)).rows.map((x) => Number(x.id));
 	await svc('mod_verdict', g4[0], true, 'self_harm', '위기 신호');
@@ -3144,6 +3072,7 @@ console.log('\n[90] 점검 예약 (Phase 53)');
 
 console.log('\n[91] 실시간 전달 = DB 방송 · 비공개 채널 (Phase 55)');
 {
+	await db.query("update public.profiles set status='active',suspended_until=null,verified=true,onboarded=true where id=any($1)", [[A,B]]);
 	const r = await fresh();
 	const seatA = Number(await rpcAs(A, 'my_seat', r));
 	const seatB = Number(await rpcAs(B, 'my_seat', r));
@@ -3213,7 +3142,9 @@ console.log('\n[91] 실시간 전달 = DB 방송 · 비공개 채널 (Phase 55)'
 	const outsider = await person('m', 'f');
 	check('★ 방 사람은 DB 채널을 읽기만 한다 (서버 이벤트 위조 금지)', (await canRead(A, `room:${r}`)) && !(await canSend(B, `room:${r}`)));
 	for (const event of ['msg', 'room', 'vote', 'reaction']) check(`★ 학생은 서버 ${event} 방송을 위조할 수 없다`, !(await canSend(B, `room:${r}`, event)));
-	check('★ 입력 중 · 접속 표시는 분리한 peer 채널로만 보낸다', await canSend(B, `peer:${r}`));
+	check('★ 종료된 방의 peer 채널에는 신규 발송을 허용하지 않는다', !await canSend(B, `peer:${r}`));
+	const openRoom = await fresh();
+	check('★ 열린 방의 입력 중 · 접속 표시는 분리한 peer 채널로 보낸다', await canSend(B, `peer:${openRoom}`));
 	check('★ 다른 사람은 그 방 채널을 못 듣고 못 보낸다', !(await canRead(outsider, `room:${r}`)) && !(await canSend(outsider, `room:${r}`)));
 	check('★ 다른 사람은 peer 채널도 못 듣고 못 보낸다', !(await canRead(outsider, `peer:${r}`)) && !(await canSend(outsider, `peer:${r}`)));
 	check('★ 대화 목록 채널은 나만 (남의 것 못 들음)', (await canRead(A, `inbox:${A}`)) && !(await canRead(A, `inbox:${B}`)));
@@ -3667,6 +3598,81 @@ console.log('\n[98] 뱃지 코드 msmsp_gold → msmp_gold — 이미 설치된 
 	check('★ 대표 업적 · 랜덤채팅 숨김 설정도 새 코드로', p.featured_badges.join() === 'msmp_gold' && p.badge_chat['msmp_gold'] === true && !('msmsp_gold' in p.badge_chat), JSON.stringify(p));
 	check('옛 코드의 정의는 없어진다', (await cnt(`select count(*)::int n from private.achievement_defs where code = 'msmsp_gold'`)) === 0);
 	check('학생 화면에도 새 코드로 보인다', (await rpcAs(u, 'my_achievements')).items.some((a) => a.code === 'msmp_gold' && a.tier === 3));
+}
+
+
+
+console.log('\n[100] 마이그레이션과 스키마 snapshot 일치');
+{
+	const defs = async () => (await db.query("select n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' name, pg_get_functiondef(p.oid) body from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname in ('public','private') and p.prokind='f' order by 1")).rows;
+	const before = JSON.stringify(await defs());
+	await db.exec(readFileSync(here + 'migrations/20261003063750_project_review_upgrade.sql', 'utf8'));
+	check('업그레이드 마이그레이션의 함수가 snapshot과 같음', JSON.stringify(await defs()) === before);
+}
+
+console.log('\n[99] 프로젝트 검토 개선 회귀');
+{
+	const exhausted = (await one("insert into private.mod_queue(kind,ref_id,status,tries,claimed_at) values('message',999999992,'working',3,now()) returning id")).id;
+	await svc('mod_release',[exhausted]);
+	check('AI 검토는 승인 3회 뒤 오류로 보관', (await one('select status,tries from private.mod_queue where id=$1',[exhausted])).status === 'error');
+	const u = await person('m', 'f');
+	await db.exec("update public.app_settings set is_open=true,maintenance=false,maintenance_at=null,ai_chat=true,ai_chat_daily_cap=100000,ai_chat_per_user=50");
+	const c = await rpcAs(u, 'ai_chat_start'); const rid = crypto.randomUUID();
+	const first = await svc('ai_chat_claim', c.id, u, rid, '안녕');
+	check('AI 첫 요청은 한 턴만 승인', first.status === 'ok' && first.turns === 1 && !!first.lease);
+	check('같은 요청의 진행 중 재전송은 pending', (await svc('ai_chat_claim', c.id, u, rid, '안녕')).status === 'pending');
+	check('같은 ID에 다른 입력은 거부', (await svc('ai_chat_claim', c.id, u, rid, '다른말')).status === 'bad_text');
+	check('다른 lease가 AI 응답을 덮지 못함', !(await svc('ai_chat_finish', c.id, rid, crypto.randomUUID(), '위조')));
+	await svc('ai_chat_finish', c.id, rid, first.lease, '반가워');
+	const cached = await svc('ai_chat_claim', c.id, u, rid, '안녕');
+	check('성공 응답 재전송은 캐시·같은 턴 수', cached.cached && cached.reply === '반가워' && cached.turns === 1);
+	const retryId = crypto.randomUUID(), a = await svc('ai_chat_claim', c.id, u, retryId, '오늘 어때');
+	await svc('ai_chat_finish', c.id, retryId, a.lease, null);
+	const b = await svc('ai_chat_claim', c.id, u, retryId, '오늘 어때');
+	check('AI 실패 재시도는 턴을 추가 소비하지 않음', b.turns === a.turns && b.lease !== a.lease);
+	await svc('ai_chat_finish', c.id, retryId, b.lease, null);
+	check('같은 턴은 모델 파이프라인 두 번에서 멈춤', (await svc('ai_chat_claim', c.id, u, retryId, '오늘 어때')).status === 'ai_unavailable');
+	await db.query("update private.ai_requests set completed_at=now()-interval '16 minutes' where chat_id=$1", [c.id]);
+	await svc('review_cleanup');
+	check('응답 TTL이 지난 AI 본문은 정리됨', (await one('select count(*)::int n from private.ai_requests where chat_id=$1 and reply is not null',[c.id])).n === 0);
+	await db.query("update public.profiles set suspended_until=now()+interval '1 day' where id=$1",[u]);
+	check('제재 계정은 기존 AI 대화도 거부', (await svc('ai_chat_claim', c.id, u, crypto.randomUUID(), '안녕')).status === 'restricted');
+	await db.query('update public.profiles set suspended_until=null where id=$1',[u]);
+	for (let i=0;i<20;i++) check('AI 호출 제한 내 승인 '+i, (await svc('api_rate_take',u,'ai-chat')).allowed);
+	check('호출 제한 초과는 대기 시간을 반환', !(await svc('api_rate_take',u,'ai-chat')).allowed);
+	await expectError('학생은 호출 제한 승인 RPC를 직접 실행하지 못함', () => rpcAs(u,'api_rate_take',u,'ai-chat'), 'permission denied');
+	const staff = (await one("select user_id from private.staff where role='admin' limit 1")).user_id;
+	const authId = crypto.randomUUID();
+	await db.query('insert into auth.sessions(id,user_id) values($1,$2)',[authId,staff]);
+	const sid = await svc('admin_session_issue',staff,authId);
+	check('운영자 Auth 세션과 쿠키 세션을 연결', await svc('admin_session_valid',staff,sid));
+	await svc('admin_session_revoke',staff,sid);
+	check('운영자 로그아웃은 복사한 쿠키도 폐기', !(await svc('admin_session_valid',staff,sid)));
+	const sid2 = await svc('admin_session_issue',staff,authId);
+	await db.query("update auth.users set encrypted_password='new-hash' where id=$1",[staff]);
+	check('비밀번호 변경은 운영자 세션을 무효화', !(await svc('admin_session_valid',staff,sid2)));
+	const sid3 = await svc('admin_session_issue',staff,authId);
+	await db.query('delete from auth.sessions where id=$1',[authId]);
+	check('Auth 세션 폐기도 운영자 쿠키를 무효화', !(await svc('admin_session_valid',staff,sid3)));
+	const reserved = (await one("select private.push_reserve('notice',999999,null) p")).p;
+	await svc('push_complete',reserved.job,reserved.lease,0,1,false);
+	check('실패 푸시는 성공으로 기록되지 않음', (await one('select state from private.push_outbox where job_key=$1',[reserved.job])).state === 'failed');
+	await db.query("update private.push_outbox set next_attempt=now()-interval '1 second' where job_key=$1",[reserved.job]);
+	const retry = (await one("select private.push_reserve('notice',999999,null) p")).p;
+	check('재시도는 새 lease를 가지며 중복 예약 불가', retry.lease !== reserved.lease && !(await one("select private.push_reserve('notice',999999,null) p")).p);
+	await svc('push_complete',reserved.job,reserved.lease,1,0,false);
+	check('늦은 완료는 새 예약을 덮지 못함', (await one('select state from private.push_outbox where job_key=$1',[reserved.job])).state === 'pending');
+	await svc('push_complete',retry.job,retry.lease,1,0,false);
+	check('성공한 푸시는 다시 예약하지 않음', !(await one("select private.push_reserve('notice',999999,null) p")).p);
+	const job = await svc('admin_export_start',staff,new Date(Date.now()-3600_000).toISOString(),new Date(Date.now()+3600_000).toISOString());
+	check('CSV 추출 작업은 범위 상한을 고정', Number.isFinite(job.upper_id) && !!job.id);
+	await expectError('다른 운영자 ID는 작업을 이어받지 못함', () => svc('admin_export_chunk',u,job.id,0), 'not_staff');
+	await expectError('CSV 역순 날짜는 거부', () => svc('admin_export_start',staff,new Date().toISOString(),new Date(Date.now()-1).toISOString()), 'bad_range');
+	await expectError('학생은 signup_stats를 TRUNCATE하지 못함', () => as(u,()=>db.exec('truncate public.signup_stats')), 'permission denied');
+	await db.exec('delete from public.signup_stats');
+	check('통계 행이 없으면 편지는 잠김', (await one('select private.letters_locked() v')).v === true);
+	await db.query("update public.profiles set onboarded=onboarded where id=$1",[u]);
+	check('다음 프로필 갱신은 누락된 통계 행 복구', (await one('select count(*)::int n from public.signup_stats')).n === 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

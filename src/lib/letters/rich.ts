@@ -19,15 +19,10 @@ export const HIGHLIGHT = {
 	orange: 'rgba(255, 140, 0, 0.38)'
 } as const;
 
-/** 글자색 — 밝은/어두운 배경 모두에서 읽히는 중간 톤 */
-export const COLOR = {
-	red: '#e5484d',
-	orange: '#f76b15',
-	green: '#30a46c',
-	blue: '#0090ff',
-	purple: '#8e4ec6',
-	gray: '#8b8d98'
-} as const;
+/** 미색 종이와 어두운 종이에 맞춰 글자색을 따로 둔다. */
+export const COLOR_LIGHT = { red: '#ad2835', orange: '#a34408', green: '#15734a', blue: '#1767b5', purple: '#773aa8', gray: '#62636d' } as const;
+export const COLOR_DARK = { red: '#ff9a9f', orange: '#ffb47a', green: '#73daa6', blue: '#81c0ff', purple: '#d0a2fa', gray: '#c3c4cf' } as const;
+export const COLOR = { red: 'var(--letter-red)', orange: 'var(--letter-orange)', green: 'var(--letter-green)', blue: 'var(--letter-blue)', purple: 'var(--letter-purple)', gray: 'var(--letter-gray)' } as const;
 
 export const SIZE = { sm: '0.85em', lg: '1.25em', xl: '1.6em' } as const;
 
@@ -58,7 +53,7 @@ function markKeys(marks: Mark[] = []): string[] {
 			const n = nameOf(HIGHLIGHT, m.attrs?.color);
 			if (n) out.push(`h:${n}`);
 		} else if (m.type === 'textStyle') {
-			const c = nameOf(COLOR, m.attrs?.color);
+			const c = nameOf(COLOR, m.attrs?.color) ?? nameOf(COLOR_LIGHT, m.attrs?.color) ?? nameOf(COLOR_DARK, m.attrs?.color);
 			if (c) out.push(`c:${c}`);
 			const z = nameOf(SIZE, m.attrs?.fontSize);
 			if (z) out.push(`z:${z}`);
@@ -168,6 +163,26 @@ export function toLines(body: string, fmt: LetterFmt | null | undefined): Line[]
 		lines.at(-1)!.runs.push(styleOf(text, keys));
 	}
 	return lines;
+}
+
+/** HTML을 파싱하지 않고 허용된 텍스트/서식만으로 편집기 초기 문서를 만든다. */
+export function toDoc(body: string, fmt: LetterFmt | null | undefined): Node {
+	return { type: 'doc', content: toLines(body, fmt).map((line) => ({
+		type: 'paragraph', attrs: { textAlign: line.align },
+		content: line.runs.filter((run) => run.text).map((run) => {
+			const marks: Mark[] = [];
+			const style: Record<string, unknown> = {};
+			for (const key of run.keys) {
+				const type = ({ b: 'bold', i: 'italic', u: 'underline', s: 'strike' } as Record<string, string>)[key];
+				if (type) marks.push({ type });
+				else if (key.startsWith('h:')) marks.push({ type: 'highlight', attrs: { color: HIGHLIGHT[key.slice(2) as keyof typeof HIGHLIGHT] } });
+				else if (key.startsWith('c:')) style.color = COLOR[key.slice(2) as keyof typeof COLOR];
+				else if (key.startsWith('z:')) style.fontSize = SIZE[key.slice(2) as keyof typeof SIZE];
+			}
+			if (Object.keys(style).length) marks.push({ type: 'textStyle', attrs: style });
+			return { type: 'text', text: run.text, marks };
+		})
+	})) };
 }
 
 function styleOf(text: string, keys: string[]): Run {

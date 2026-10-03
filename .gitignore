@@ -25,3 +25,14 @@ roster-전학년.csv
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# 로컬 마케팅 생성물 — 문서/제작 스크립트만 Git에 보관
+/docs/marketing/**/*.pdf
+/docs/marketing/**/*.png
+/docs/marketing/**/*.jpg
+/docs/marketing/**/*.jpeg
+/docs/marketing/**/*.webp
+/docs/marketing/**/*.zip
+
+# Supabase CLI 로컬 캐시
+/supabase/.temp/

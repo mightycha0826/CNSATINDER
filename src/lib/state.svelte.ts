@@ -11,6 +11,7 @@ export { errMsg } from './errors';
 
 export const S = $state({
 	booted: false,
+	bootError: null as string | null,
 	session: null as Session | null,
 	accountVersion: 0,
 	profile: null as Profile | null,
@@ -59,10 +60,23 @@ export { toast, toasts } from './toast.svelte';
 
 // ── 부팅 ──────────────────────────────────────────────────────────────
 let ticker: ReturnType<typeof setInterval> | null = null;
+let initializing: Promise<void> | null = null;
+let listening = false;
+
+/** 개발 미리보기도 서버 로그인 없이 남은 시간을 표시한다. */
+export function startClock() {
+	if (!ticker) ticker = setInterval(() => (S.now = Date.now()), 1000);
+}
 
 export async function init() {
-	if (ticker) return; // 중복 init 가드
-	ticker = setInterval(() => (S.now = Date.now()), 1000);
+	if (initializing) return initializing;
+	if (S.booted && !S.bootError) return;
+	initializing = initialize().finally(() => { initializing = null; });
+	return initializing;
+}
+
+async function initialize() {
+	startClock();
 
 	detectStandalone();
 
@@ -71,14 +85,7 @@ export async function init() {
 		return;
 	}
 
-	const {
-		data: { session }
-	} = await supabase.auth.getSession();
-	selectSession(session);
-	if (session) await afterLogin(session.user.id);
-	S.booted = true;
-
-	supabase.auth.onAuthStateChange((event, sess) => {
+	if (!listening) supabase.auth.onAuthStateChange((event, sess) => {
 		selectSession(sess);
 		if (sess && event !== 'TOKEN_REFRESHED') {
 			// 등록하자마자 INITIAL_SESSION 이 오고, 탭으로 돌아올 때 SIGNED_IN 이 다시 오기도 한다 —
@@ -86,12 +93,25 @@ export async function init() {
 			void afterLogin(sess.user.id);
 		}
 	});
+	listening = true;
+	try {
+		const { data: { session }, error } = await supabase.auth.getSession();
+		if (error) throw error;
+		selectSession(session);
+		S.bootError = null;
+		if (session) await afterLogin(session.user.id);
+	} catch {
+		S.bootError = '로그인 정보를 불러오지 못했어요. 연결을 확인하고 다시 시도해 주세요.';
+	} finally {
+		S.booted = true;
+	}
 
 	startHeartbeat();
 }
 
 /** 부팅 요청을 이미 보낸 계정 — 같은 계정으로 또 오면 건너뛴다 */
 let loadedFor: string | null = null;
+let loading: { uid: string; token: number; work: Promise<void> } | null = null;
 
 /** 계정이 바뀌면 전역 캐시와 화면 수명을 함께 바꾼다. 토큰 갱신은 같은 계정이다. */
 function selectSession(session: Session | null) {
@@ -105,6 +125,7 @@ function selectSession(session: Session | null) {
 		S.maint = null;
 		S.maintAt = null;
 		S.profileLoading = false;
+		S.bootError = null;
 		loadedFor = null;
 		otpVerifiedAt = 0;
 		UI.busy = UI.celebrating = UI.seekOnHome = UI.achNew = false;
@@ -117,13 +138,27 @@ function selectSession(session: Session | null) {
 async function afterLogin(uid: string) {
 	if (loadedFor === uid) return;
 	const token = accountToken();
-	loadedFor = uid;
+	if (loading?.uid === uid && loading.token === token) return loading.work;
+	const work = loadAccountData(uid, token);
+	loading = { uid, token, work };
+	await work;
+	if (loading?.work === work) loading = null;
+}
+
+async function loadAccountData(uid: string, token: number) {
 	S.profileLoading = true;
+	S.bootError = null;
 	try {
 		// 트리거가 못 만든 경우를 대비한 폴백 (gyeol ensureProfile 패턴). 익명 이름도 여기서 보장된다.
-		await supabase.rpc('ensure_self');
+		const { error } = await supabase.rpc('ensure_self');
+		if (error) throw error;
 		if (!accountIsCurrent(token)) return;
-		await Promise.all([loadProfile(), loadSettings(), loadAccount()]);
+		const results = await Promise.allSettled([loadProfile(), loadSettings(), loadAccount()]);
+		if (results.some((r) => r.status === 'rejected')) throw new Error('account_load_failed');
+		if (accountIsCurrent(token)) loadedFor = uid;
+	} catch {
+		if (accountIsCurrent(token)) S.bootError = '계정 정보를 불러오지 못했어요. 연결을 확인하고 다시 시도해 주세요.';
+		return;
 	} finally {
 		if (accountIsCurrent(token)) S.profileLoading = false;
 	}
@@ -133,6 +168,14 @@ async function afterLogin(uid: string) {
 	void syncPush().catch(() => {});
 }
 
+export async function retryAccount() {
+	if (S.profileLoading) return;
+	if (S.session) {
+		loadedFor = null;
+		await afterLogin(S.session.user.id);
+	} else await init();
+}
+
 export async function loadProfile() {
 	const uid = S.session?.user.id;
 	if (!uid) return;
@@ -140,7 +183,9 @@ export async function loadProfile() {
 	// ★ select('*') 를 쓰지 않는다. 항상 명시 컬럼.
 	const cols = 'id, nickname, bio, interests, mbti, gender, want, status, suspended_until, verified, onboarded';
 	const read = (c: string) => supabase.from('profiles').select(c).eq('id', uid).maybeSingle();
-	const { data } = await read(`${cols}, allow_rematch, letters_open, manner_temp, letters_recommend, letter_badge_order`);
+	const { data, error } = await read(`${cols}, allow_rematch, letters_open, manner_temp, letters_recommend, letter_badge_order`);
+	if (error) throw error;
+	if (!data) throw new Error('profile_missing');
 	if (accountIsCurrent(token)) S.profile = (data as unknown as Profile) ?? null;
 }
 
@@ -167,7 +212,9 @@ async function loadSettings() {
 	const read = (cols: string) => supabase.from('app_settings').select(cols).maybeSingle();
 	const AI = 'ai_moderation, ai_chat, ai_chat_per_user';
 	const MAINT = 'maintenance, maintenance_msg, maintenance_until';
-	const { data } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}, maintenance_at, badge_instagram`);
+	const { data, error } = await read(`${SETTINGS_COLS}, ${AI}, letters_gate, letters_gate_min, ${MAINT}, maintenance_at, badge_instagram`);
+	if (error) throw error;
+	if (!data) throw new Error('settings_missing');
 	if (!accountIsCurrent(token)) return;
 	S.settings = (data as unknown as Settings) ?? null;
 	// 예약 시각이 지났으면 점검 중 (Phase 53 — DB 의 private.in_maintenance 와 같은 규칙)
@@ -185,7 +232,9 @@ function setMaint(m: { msg: string; until: string | null } | null) {
 export async function loadAccount() {
 	if (!S.session) return;
 	const token = accountToken();
-	const { data } = await supabase.rpc('my_account');
+	const { data, error } = await supabase.rpc('my_account');
+	if (error) throw error;
+	if (!data) throw new Error('account_missing');
 	if (!accountIsCurrent(token)) return;
 	const a = data as { has_password?: boolean; name?: string | null; grade?: number | null; name_source?: 'roster' | 'self' } | null;
 	S.hasPassword = a?.has_password ?? null;
@@ -360,9 +409,9 @@ export async function signInWithPassword(localPart: string, password: string) {
 }
 
 /** 로그인한 상태에서 비밀번호 설정·변경. 잊었으면 인증 코드로 들어와 다시 정하면 된다. */
-export async function setPassword(password: string) {
+export async function setPassword(password: string, currentPassword?: string) {
 	if (!PASSWORD_RULE.test(password)) throw new Error('weak_password');
-	const { error } = await supabase.auth.updateUser({ password });
+	const { error } = await supabase.auth.updateUser({ password, ...(currentPassword ? { current_password: currentPassword } : {}) });
 	if (error) throw error;
 	await loadAccount();
 }

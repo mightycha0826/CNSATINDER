@@ -11,11 +11,11 @@ type StartResult = BotStart | { status: 'off' | 'full' | 'restricted' } | { stat
 export type TurnResult =
 	| { status: 'ok'; reply: string; turns: number; max_turns: number }
 	| { status: 'blocked'; code: string }
-	| { status: 'expired' | 'turns' | 'off' | 'not_found' | 'bad_text' | 'ai_unavailable' | 'network' };
+	| { status: 'expired' | 'turns' | 'off' | 'not_found' | 'bad_text' | 'ai_unavailable' | 'network' | 'pending' | 'restricted' };
 
 export type BotApi = {
 	start(): Promise<StartResult>;
-	turn(chatId: string, lines: Line[]): Promise<TurnResult>;
+	turn(chatId: string, lines: Line[], requestId?: string): Promise<TurnResult>;
 };
 
 /** 서버에 보내는 기록 — 최근 20개 (서버도 같은 수로 다시 자른다, server/aiChat.ts) */
@@ -27,7 +27,7 @@ export const botApi: BotApi = {
 		if (error) return { status: 'off' };
 		return data as StartResult;
 	},
-	async turn(chatId, lines) {
+	async turn(chatId, lines, requestId = crypto.randomUUID()) {
 		try {
 			const { data } = await supabase.auth.getSession();
 			const token = data.session?.access_token;
@@ -35,7 +35,7 @@ export const botApi: BotApi = {
 			const res = await fetch('/api/ai-chat', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-				body: JSON.stringify({ chat_id: chatId, messages: lines.slice(-HISTORY) })
+				body: JSON.stringify({ chat_id: chatId, request_id: requestId, messages: lines.slice(-HISTORY) })
 			});
 			const body = (await res.json().catch(() => null)) as TurnResult | null;
 			// 요청 모양·인증 오류는 같은 기록을 다시 보내도 해결되지 않는다.

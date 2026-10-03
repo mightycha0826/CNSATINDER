@@ -39,7 +39,7 @@ export const SUBMIT_ERROR: Record<Exclude<SubmitStatus, 'ok'>, string> = {
 	restricted: '이용이 제한된 계정은 요청을 보낼 수 없어요'
 };
 
-/** 사진 줄이기 — 긴 변 1600 · JPEG. 못 읽는 형식이면 원본(사진 형식 · 5MB 아래일 때만) */
+/** 사진 줄이기 — 긴 변 1600 · JPEG. 디코딩 실패 시 메타데이터가 남은 원본은 보내지 않는다. */
 export async function shrink(file: File): Promise<Blob> {
 	try {
 		const bmp = await createImageBitmap(file);
@@ -56,7 +56,6 @@ export async function shrink(file: File): Promise<Blob> {
 	} catch {
 		/* 아래로 */
 	}
-	if (/^image\/(jpeg|png|webp)$/.test(file.type) && file.size <= 5 * 1024 * 1024) return file;
 	throw new Error('이 사진은 올릴 수 없어요 · 다른 사진을 골라 주세요');
 }
 

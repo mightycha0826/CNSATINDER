@@ -128,6 +128,7 @@
 <div class="page login">
 	<img class="appicon" src="/icon-192.png" alt="" width="56" height="56" />
 	<div class="mark wordmark">Landy</div>
+	<p class="muted policy-links"><a href="/legal/terms">이용약관</a><span aria-hidden="true">·</span><a href="/legal/privacy">개인정보 처리방침</a></p>
 
 	{#if mode === 'login'}
 		<section>
@@ -193,6 +194,8 @@
 </div>
 
 <style>
+	.policy-links { display: flex; align-items: center; justify-content: center; gap: 4px; flex-wrap: wrap; }
+	.policy-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 4px 6px; }
 	/* 첫 화면 — 위쪽에 브랜드색 빛 두 덩어리가 천천히 떠다닌다 */
 	.login {
 		position: relative;

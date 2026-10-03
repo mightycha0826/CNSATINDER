@@ -8,6 +8,7 @@ import { AI_INTEGER_FIELDS, INTEGER_FIELDS, maintenanceInput } from '../src/lib/
 import { moderateBatch } from '../src/lib/server/moderationBatch.ts';
 import { bearerToken, jsonObject, positiveId } from '../src/lib/server/request.ts';
 import { isStaffRole } from '../src/lib/adminRoles.ts';
+import { exportDay } from '../src/lib/server/adminExport.ts';
 
 let passed = 0;
 const test = async (name, fn) => {
@@ -79,6 +80,10 @@ await test('알려진 운영진 역할만 인정한다', () => {
 	for (const role of ['admin', 'moderator', 'developer', 'beta']) assert.equal(isStaffRole(role), true);
 	for (const role of ['owner', 'toString', null, 1, {}]) assert.equal(isStaffRole(role), false);
 });
+await test('Content-Length 없는 큰 스트림도 제한하고 긴 토큰·다른 출처를 거부한다', async () => {
+	await assert.rejects(jsonObject(jsonRequest(JSON.stringify({ text: '가'.repeat(30_000) }))), (e) => e.status === 413);
+	assert.equal(bearerToken(new Request('https://landy.test', { headers: { authorization: 'Bearer ' + 'x'.repeat(8193) } })), '');
+});
 
 const items = [1, 2, 3, 4].map((id) => ({ id, kind: 'message', text: '가짜 글', context: [] }));
 await test('검열은 순서대로 기록하고 알 수 없는 답만 재시도에 남긴다', async () => {
@@ -122,7 +127,7 @@ const context = { uid: 'fake-staff', rpc: async () => null, push: async () => ({
 globalThis.__serverRefactorTest = context;
 const modules = {
 	'\0test:rpc': 'export const adminRpc = (...args) => globalThis.__serverRefactorTest.rpc(...args); export const emailOf = (...args) => globalThis.__serverRefactorTest.email(...args); export const rosterNameOf = (...args) => globalThis.__serverRefactorTest.roster(...args);',
-	'\0test:session': 'export const readSession = async () => globalThis.__serverRefactorTest.uid;',
+	'\0test:session': 'export const readSessionDetails = async () => ({ userId: globalThis.__serverRefactorTest.uid, sessionId: "fake-session" }); export const clearSession = () => {};',
 	'\0test:private': 'export const env = { VAPID_PRIVATE_KEY: "fake-private" };',
 	'\0test:public': 'export const env = { PUBLIC_VAPID_KEY: "fake-public" };',
 	'\0test:app': 'export const dev = false;',
@@ -152,12 +157,26 @@ const vite = await createServer({
 });
 
 try {
+	const { GET: exportChunk } = await vite.ssrLoadModule('/src/routes/admin/rooms/export/+server.ts');
+	await test('CSV는 달력 날짜·최대 31일·첫 커서를 검사하고 작업 ID를 이어간다', async () => {
+		assert.equal(exportDay('2026-02-30'), null);
+		assert.equal(exportDay('2024-02-29').toISOString(), '2024-02-28T15:00:00.000Z');
+		const staff = { id: 'staff', role: 'admin', perms: ['identity'] };
+		for (const query of ['from=2026-02-30&to=2026-03-01', 'from=2026-01-01&to=2026-03-01', 'from=2026-01-01&to=2026-01-02&after=1']) {
+			await assert.rejects(exportChunk({ url: new URL('https://landy.test/admin/rooms/export?' + query), locals: { staff } }), (e) => e.status === 400);
+		}
+		const calls = []; const id = '00000000-0000-4000-8000-000000000001';
+		context.rpc = async (name, args) => { calls.push([name, args]); return name === 'admin_export_start' ? { id } : { job_id: id, count: 0 }; };
+		await exportChunk({ url: new URL('https://landy.test/admin/rooms/export?from=2026-10-01&to=2026-10-02'), locals: { staff } });
+		assert.equal(calls[0][0], 'admin_export_start');
+		assert.deepEqual(calls[1], ['admin_export_chunk', { p_staff: 'staff', p_job: id, p_after: 0 }]);
+	});
 	const { handle } = await vite.ssrLoadModule('/src/hooks.server.ts');
 	const event = (path, method = 'GET') => ({ request: new Request(`https://landy.test${path}`, { method }), url: new URL(`https://landy.test${path}`), locals: {}, cookies: {} });
 	const resolve = async () => new Response('ok');
 	await test('운영자 데이터 요청은 명단·권한을 재확인하고 한국 점검 상태를 넘긴다', async () => {
 		const calls = [];
-		context.rpc = async (...args) => { calls.push(args); return { role: 'developer', perms: ['settings'], team: [], maintenance: true, maintenance_at: '2026-10-02T01:00:00Z' }; };
+		context.rpc = async (...args) => { if (args[0] === 'admin_session_valid') return true; calls.push(args); return { role: 'developer', perms: ['settings'], team: [], maintenance: true, maintenance_at: '2026-10-02T01:00:00Z' }; };
 		const e = event('/admin/settings/__data.json');
 		const response = await handle({ event: e, resolve });
 		assert.deepEqual(calls, [['admin_staff_touch', { p_uid: 'fake-staff', p_path: '/admin/settings' }]]);
@@ -171,7 +190,7 @@ try {
 	await test('현황 폴링·CSV·POST는 마지막 활동 화면을 덮지 않는다', async () => {
 		for (const [path, method] of [['/admin/live/status', 'GET'], ['/admin/team', 'GET'], ['/admin/rooms/export', 'GET'], ['/admin/users', 'POST']]) {
 			const calls = [];
-			context.rpc = async (...args) => { calls.push(args); return { role: 'admin', team: [] }; };
+			context.rpc = async (...args) => { if (args[0] === 'admin_session_valid') return true; calls.push(args); return { role: 'admin', team: [] }; };
 			await handle({ event: event(path, method), resolve });
 			assert.equal(calls[0][1].p_path, null);
 		}
@@ -214,6 +233,18 @@ try {
 	});
 
 	const { notifyPersonalNotice } = await vite.ssrLoadModule('/src/lib/server/pushSend.ts');
+	const { deliver } = await vite.ssrLoadModule('/src/lib/server/pushSend.ts');
+	await test('푸시 전송 실패·성공을 기록하고 내부 작업 ID는 알림에 싣지 않는다', async () => {
+		const calls = []; context.sent = [];
+		context.rpc = async (...args) => { calls.push(args); return true; };
+		context.push = async () => { throw new Error('offline'); };
+		const note = { kind: 'notice', title: '공지', body: '내용', job: 'internal-job', lease: 'lease', subs: [{ endpoint: 'https://fcm.googleapis.com/fake' }] };
+		assert.deepEqual(await deliver(note), { sent: 0 });
+		assert.deepEqual(calls[0], ['push_complete', { p_job: 'internal-job', p_lease: 'lease', p_sent: 0, p_failed: 1, p_skip: false }]);
+		context.push = async () => ({ status: 201, gone: false });
+		assert.deepEqual(await deliver(note), { sent: 1 });
+		assert.ok(!context.sent[0][1].includes('internal-job'));
+	});
 	await test('개인 공지 푸시의 조회·발송 실패는 완료한 조치를 실패로 바꾸지 않는다', async () => {
 		context.rpc = async () => { throw new Error('fake payload failure'); };
 		await notifyPersonalNotice(10);

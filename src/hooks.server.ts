@@ -1,5 +1,5 @@
 import { redirect, type Handle, type HandleServerError, type RequestEvent } from '@sveltejs/kit';
-import { readSession } from '$lib/server/adminSession';
+import { readSessionDetails, clearSession } from '$lib/server/adminSession';
 import { adminRpc } from '$lib/server/supabaseAdmin';
 import { isStaffRole, type Perm, type TeamMember } from '$lib/adminRoles';
 
@@ -32,7 +32,10 @@ function activityPath(event: RequestEvent) {
 /** 쿠키는 신원만 증명한다. 매 요청마다 DB 명단과 현재 권한을 확인한다. */
 async function authenticateStaff(event: RequestEvent) {
 	try {
-		const uid = await readSession(event.cookies);
+		const session = await readSessionDetails(event.cookies);
+		const valid = session && await adminRpc<boolean>('admin_session_valid', { p_user: session.userId, p_session: session.sessionId });
+		if (session && !valid) clearSession(event.cookies);
+		const uid = valid ? session!.userId : null;
 		if (uid) {
 			// 역할·권한 + 마지막 화면 + 운영진 현황을 한 번의 요청으로 받는다.
 			const touch = await adminRpc<StaffTouch | null>('admin_staff_touch', { p_uid: uid, p_path: activityPath(event) });

@@ -55,10 +55,15 @@ function run(name) {
 		let log = '';
 		// 스위트도 자기 프로세스 그룹에서 — 끝나면 그룹째 정리해서, 스위트가 띄운 vite 가 남아 다음 스위트의 포트를 막지 않게
 		const p = spawn('node', [join(DIR, `${name}.mjs`)], { cwd: ROOT, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
-		p.stdout.on('data', (d) => (log += d));
+		const timeout = setTimeout(() => {
+			log += '\nFAIL 스위트가 실행 시간 제한 안에 끝나지 않았습니다';
+			stopProcess(p);
+		}, name === 'wrap' ? 720_000 : 300_000);
+		p.stdout.on('data', (d) => { log += d; if (process.env.E2E_TRACE === '1') process.stdout.write(d); });
 		p.stderr.on('data', (d) => (log += d));
-		p.on('error', (e) => resolve({ code: 1, log: `${log}\n${e.message}` }));
+		p.on('error', (e) => { clearTimeout(timeout); resolve({ code: 1, log: `${log}\n${e.message}` }); });
 		p.on('exit', (code) => {
+			clearTimeout(timeout);
 			stopProcess(p);
 			setTimeout(() => resolve({ code, log }), 300);
 		});
@@ -69,6 +74,7 @@ let server = null;
 const results = [];
 try {
 	for (const name of suites) {
+		console.log(`run   ${name}`);
 		if (NEEDS_SERVER.has(name) && !server) server = await devServer(5199);
 		const t0 = Date.now();
 		const { code, log } = await run(name);
@@ -78,6 +84,8 @@ try {
 		results.push({ name, ok });
 		console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name.padEnd(14)} ${pass} passed, ${fail} failed  (${((Date.now() - t0) / 1000).toFixed(0)}s)`);
 		if (!ok) console.log(log.replace(/^/gm, '      '));
+		// 다른 설정의 Vite가 같은 .svelte-kit 생성물을 갱신하지 않도록 서버를 겹쳐 두지 않는다.
+		if (NEEDS_SERVER.has(name)) { server?.stop(); server = null; }
 	}
 } finally {
 	server?.stop();

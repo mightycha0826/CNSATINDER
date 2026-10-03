@@ -175,25 +175,25 @@ try {
 	check('색 동그라미 아래 글자 없음 (이름은 화면 낭독기에만)', (await page.locator('.swatches').innerText()).trim() === '');
 	await swatch('파랑').click(); await page.waitForTimeout(200);
 	const blue = await fill();
-	check('★ 파랑을 고르면 말풍선 색이 바로 바뀐다', blue !== before && blue.includes('#3b8af6'), blue);
+	check('★ 파랑을 고르면 대비를 높인 말풍선 색이 바로 바뀐다', blue !== before && blue.includes('#3173cc'), blue);
 	const mine = await page.locator('.preview .mine .bubble').first().evaluate((e) => getComputedStyle(e).backgroundImage);
-	check('미리보기 말풍선에도 입혀진다', mine.includes('59, 138, 246'), mine);
+	check('미리보기 말풍선에도 입혀진다', mine.includes('49, 115, 204'), mine);
 	const tok = () => page.evaluate(() => { const cs = getComputedStyle(document.documentElement); return ['--accent-fill', '--accent', '--brand'].map((k) => cs.getPropertyValue(k).trim()); });
 	const [af, ac, br] = await tok();
-	check('★ 앱 전체 색이 바뀐다 — 채운 버튼 · 글자/아이콘 색 · 로고', af.includes('#3b8af6') && ac === '#3b8af6' && br.includes('#3b8af6'), JSON.stringify([af, ac, br]));
-	check('설정 안의 포인트(화면 모드 고른 칸)도 파랑', (await page.locator('[aria-labelledby="theme-h"] .seg-btn.on').evaluate((e) => getComputedStyle(e).backgroundImage)).includes('59, 138, 246'));
+	check('★ 앱 전체 색이 바뀐다 — 대비를 높인 버튼·글자와 원래 로고색', af.includes('#3173cc') && ac === '#3173cc' && br.includes('#3b8af6'), JSON.stringify([af, ac, br]));
+	check('설정 안의 포인트(화면 모드 고른 칸)도 파랑', (await page.locator('[aria-labelledby="theme-h"] .seg-btn.on').evaluate((e) => getComputedStyle(e).backgroundImage)).includes('49, 115, 204'));
 	check('이 기기에 저장', (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === 'ocean');
 	await page.screenshot({ path: `${SP}/settings-color.png` });
 	check('긴 설정 화면에서도 머리글 52px 그대로 (눌려 줄지 않음)', Math.round((await page.locator('.topbar').boundingBox()).height) === 52, String((await page.locator('.topbar').boundingBox()).height));
 	await page.reload(); await page.locator('.swatch.on').waitFor({ timeout: 8000 });
-	check('다시 열어도 그대로', (await fill()).includes('#3b8af6') && (await page.getByRole('radio', { name: '파랑' }).isChecked()));
+	check('다시 열어도 그대로', (await fill()).includes('#3173cc') && (await page.getByRole('radio', { name: '파랑' }).isChecked()));
 	await page.goto(`${BASE}/`); await page.locator('a.logo').waitFor(); await page.waitForTimeout(400);
 	await page.screenshot({ path: `${SP}/home-theme-blue.png` });
 	check('★ 홈 로고도 테마 색 (파랑)', (await page.locator('a.logo').evaluate((e) => { const cs = getComputedStyle(e); return cs.backgroundImage + cs.color; })).includes('59, 138, 246'));
 	await page.goto(`${BASE}/settings`); await page.locator('.swatch.on').waitFor({ timeout: 8000 });
 	await swatch('기본').click(); await page.waitForTimeout(200);
 	check('기본으로 되돌리면 저장값도 지운다', (await fill()) === before && (await page.evaluate(() => localStorage.getItem('chat-color-v1'))) === null);
-	check('기본으로 되돌리면 앱 색도 원래대로 (연보라 → 보라)', (await tok()).every((v) => !v.includes('#3b8af6')) && (await tok())[0].includes('#b56cf3'), JSON.stringify(await tok()));
+	check('기본으로 되돌리면 앱 색도 원래대로', (await tok()).every((v) => !v.includes('#3b8af6')) && (await tok())[0].includes('#843ed8'), JSON.stringify(await tok()));
 
 	console.log('[설정 · 글자 크기 · 이 기기 설정 (Phase 43)]');
 	const prefs = () => page.evaluate(() => localStorage.getItem('prefs-v1'));
@@ -221,10 +221,10 @@ try {
 	check('★ 약관 및 정책 = 이용약관 · 개인정보 처리방침 · 운영정책 (각각 한 줄 설명)', (await legal.count()) === 3
 		&& (await legal.locator('.legal-text > span').allInnerTexts()).join(',') === '이용약관,개인정보 처리방침,운영정책'
 		&& (await legal.locator('small').allInnerTexts()).every((t) => t.length > 0));
-	for (const [label, path, must] of [['이용약관', 'terms', '@cnsa.hs.kr'], ['개인정보 처리방침', 'privacy', '24시간 뒤'], ['운영정책', 'policy', '자동으로 차단']]) {
+	for (const [label, path, must] of [['이용약관', 'terms', '@cnsa.hs.kr'], ['개인정보 처리방침', 'privacy', '24시간이 지난 대화를 매일 새벽 정리'], ['운영정책', 'policy', '자동으로 차단']]) {
 		await page.locator('a.legal-row', { hasText: label }).click(); await page.waitForURL(`**/settings/${path}`); await page.locator('article h1').waitFor();
 		const txt = await page.locator('article').innerText();
-		check(`★ ${label} 페이지 (제목 · 시행일 · 내용)`, (await page.locator('article h1').innerText()) === label && txt.includes('시행일') && txt.includes(must) && (await page.locator('article section').count()) >= 3 && txt.length < 600, String(txt.length));
+		check(`★ ${label} 페이지 (제목 · 시행일 · 내용)`, (await page.locator('article h1').innerText()) === label && txt.includes('시행일') && txt.includes(must) && (await page.locator('article section').count()) >= 3 && (path === 'privacy' ? ['증빙 사진','초안','CSV','15분'].every(term => txt.includes(term)) : txt.length < 600), String(txt.length));
 		if (path === 'privacy') await page.screenshot({ path: `${SP}/legal-privacy.png` });
 		await page.locator('button.back').click(); await page.waitForURL(/\/settings$/); await page.locator('a.legal-row').first().waitFor();
 	}

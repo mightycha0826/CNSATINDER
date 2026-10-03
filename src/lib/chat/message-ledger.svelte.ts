@@ -18,8 +18,9 @@ export class MessageLedger {
 		return this.#byCid.get(clientMsgId);
 	}
 
-	upsert(row: MessageUpdate, state: MsgState) {
+	upsert(row: MessageUpdate, state: MsgState, sort = true) {
 		const prev = this.get(row.client_msg_id);
+		const oldId = prev?.id;
 		if (prev) {
 			// 확정된 id 와 삭제는 늦게 도착한 낙관적 행 · 옛 방송으로 되돌리지 않는다.
 			if (row.id != null) prev.id = row.id;
@@ -46,6 +47,13 @@ export class MessageLedger {
 		}
 		if (row.id != null) this.maxId = Math.max(this.maxId, row.id);
 		// 확정 id 순. 아직 id 가 없는 내 메시지는 항상 맨 아래.
+		if (sort && ((!prev && (this.rows.at(-2)?.id ?? Infinity) > (row.id ?? Infinity)) || (prev && oldId !== prev.id))) {
+			this.rows.sort((a, b) => (a.id ?? Infinity) - (b.id ?? Infinity));
+		}
+	}
+
+	merge(rows: MessageUpdate[], state: MsgState) {
+		for (const row of rows) this.upsert(row, state, false);
 		this.rows.sort((a, b) => (a.id ?? Infinity) - (b.id ?? Infinity));
 	}
 

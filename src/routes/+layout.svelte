@@ -7,7 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { hasSupabase } from '$lib/supabase';
-	import { S, UI, init, toasts } from '$lib/state.svelte';
+	import { S, UI, init, retryAccount, startClock, toasts } from '$lib/state.svelte';
 	import Maintenance from '$lib/ui/Maintenance.svelte';
 	import OfflineBar from '$lib/ui/OfflineBar.svelte';
 	import { loadThemeColor } from '$lib/themeColor.svelte';
@@ -25,6 +25,13 @@
 	import { dismissKeyboard, dismissOnTap, trackKeyboard } from '$lib/keyboard.svelte';
 
 	let { children } = $props();
+	let updateReady = $state(false);
+	let waitingWorker: ServiceWorker | null = null;
+	function updateApp() {
+		if (!waitingWorker) return;
+		navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
+		waitingWorker.postMessage({ type: 'activate-update' });
+	}
 
 	// 테마 색상 · 화면 모드 · 이 기기 설정(글자 크기 등, Phase 43) — 첫 화면을 그리기 전에 입힌다 (운영자 화면은 서버에서도 그려지므로 브라우저에서만)
 	if (browser) {
@@ -33,12 +40,15 @@
 		loadPrefs();
 	}
 
+	const isPublic = $derived(page.url.pathname.startsWith('/legal/'));
+	const isPreview = $derived(import.meta.env.DEV && page.url.pathname.startsWith('/dev/'));
 	const isAdmin = $derived(page.url.pathname === '/admin' || page.url.pathname.startsWith('/admin/'));
 
 	// 운영자 화면에서는 학생 앱을 부팅하지 않는다 — 접속 신호(heartbeat)·알림 구독이
 	// 이 브라우저의 학생 계정으로 나가면 실시간 현황에 운영진이 "접속 중"으로 잘못 뜬다
 	$effect(() => {
-		if (!isAdmin) void init();
+		if (isPreview) startClock();
+		if (!isAdmin && !isPublic && !isPreview) void init();
 	});
 
 	// 겹친 창(시트 등)이 열린 채 다른 화면으로 가면 — 사라지는 창이 history.back() 으로 그 이동을 취소하지 않게 (lib/overlay.svelte.ts)
@@ -76,7 +86,13 @@
 		window.addEventListener('beforeinstallprompt', onPrompt);
 
 		if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-			navigator.serviceWorker.register('/sw.js').catch(() => {});
+			navigator.serviceWorker.register('/sw.js').then((registration) => {
+				const check = () => { waitingWorker = registration.waiting; updateReady = !!waitingWorker; };
+				check();
+				registration.addEventListener('updatefound', () => {
+					registration.installing?.addEventListener('statechange', check);
+				});
+			}).catch(() => {});
 			// 설치한 앱(홈 화면 앱)으로 떠 있으면 서비스워커에 알린다 — 알림을 누르면 브라우저 탭 말고 이 앱으로 열게
 			if (window.matchMedia('(display-mode: standalone)').matches) {
 				navigator.serviceWorker.ready.then((r) => r.active?.postMessage({ type: 'standalone' })).catch(() => {});
@@ -98,30 +114,6 @@
 			},
 			open: (url) => void navigateFromOverlay(viaMailbox(url))
 		});
-	});
-
-	// ── 개발자 도구 열기 막기 (Phase 35) — F12 · Ctrl+Shift+I/J/C · Ctrl+U(소스 보기) · 오른쪽 클릭 메뉴.
-	//    학생 앱만(운영자 화면은 그대로). 보안 장치는 아니다 — 브라우저 메뉴로는 여전히 열 수 있고, 모든 보호는 서버(RLS)가 한다.
-	$effect(() => {
-		if (isAdmin || import.meta.env.DEV) return;
-		const key = (e: KeyboardEvent) => {
-			const k = e.key.toUpperCase();
-			const mod = e.ctrlKey || e.metaKey;
-			if (k === 'F12' || (mod && e.shiftKey && ['I', 'J', 'C'].includes(k)) || (mod && e.altKey && ['I', 'J', 'C'].includes(k)) || (mod && k === 'U')) {
-				e.preventDefault();
-				e.stopPropagation();
-			}
-		};
-		const menu = (e: MouseEvent) => {
-			const t = e.target as HTMLElement | null;
-			if (!t?.closest('input, textarea, [contenteditable="true"]')) e.preventDefault();
-		};
-		window.addEventListener('keydown', key, true);
-		window.addEventListener('contextmenu', menu);
-		return () => {
-			window.removeEventListener('keydown', key, true);
-			window.removeEventListener('contextmenu', menu);
-		};
 	});
 
 	// ── 화면 넘김 (Phase 35) — 새 화면이 뜰 때 이전 화면이 부드럽게 겹쳐 사라진다 (View Transitions, 지원 브라우저만).
@@ -153,6 +145,7 @@
 		if (!S.booted) return;
 
 		const path = page.url.pathname;
+		if (path.startsWith('/legal/')) return;
 		if (path.startsWith('/admin')) return; // 운영자 대시보드는 자체 가드를 쓴다
 		if (import.meta.env.DEV && path.startsWith('/dev')) return; // 개발용 미리보기는 로그인 불필요
 
@@ -177,6 +170,7 @@
 			return;
 		}
 		UI.afterLogin = null;
+		if (S.profileLoading || S.bootError) return;
 
 		// 3) 온보딩 (성별·선호를 정해야 매칭이 가능하다) · 이름 (명단에 없으면 적어야 편지를 쓸 수 있다, Phase 23)
 		const onOnboarding = path === '/onboarding';
@@ -188,7 +182,7 @@
 	});
 </script>
 
-{#if isAdmin}
+{#if isAdmin || isPublic || isPreview}
 	<!-- 운영자 화면: 서버에서 그려지고 자체 가드(hooks.server.ts)를 쓴다. 학생용 부팅·설치 게이트 없음. -->
 	{@render children()}
 {:else if !hasSupabase}
@@ -199,6 +193,12 @@
 			<code>PUBLIC_SUPABASE_URL</code> 과 <code>PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> 를 넣어 주세요.
 			<code>.env.example</code> 을 복사하면 됩니다.
 		</p>
+	</div>
+{:else if S.bootError && UI.standalone}
+	<div class="page setup" role="alert">
+		<h1 class="title">잠시 연결이 끊겼어요</h1>
+		<p>{S.bootError}</p>
+		<button class="btn" onclick={() => void retryAccount()} disabled={S.profileLoading}>다시 시도</button>
 	</div>
 {:else if S.maint && S.session}
 	<!-- 서버 점검 (Phase 52) — 앱 전체를 가린다. 끝나면 다음 박동(1분)이나 앱으로 돌아올 때 저절로 풀린다 -->
@@ -216,6 +216,7 @@
 {/if}
 
 {#if !isAdmin}
+	{#if updateReady}<div class="update-note" role="status">새 버전이 준비됐어요 <button onclick={updateApp}>업데이트</button></div>{/if}
 	<OfflineBar />
 	<InAppBanner />
 	<!-- 대화 상대 메달 자세히 (Phase 44) — 프로필 시트 위에도 뜨게 맨 위에 하나 -->
@@ -230,6 +231,8 @@
 </div>
 
 <style>
+	.update-note { position: fixed; top: var(--safe-top); inset-inline: 12px; z-index: 100; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+	.update-note button { margin-left: 12px; min-height: 44px; font-weight: 700; color: var(--accent); }
 	.setup {
 		justify-content: center;
 		gap: 12px;

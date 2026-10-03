@@ -19,6 +19,8 @@
 	} from '$lib/achievements';
 	import TopbarMe from '$lib/ui/TopbarMe.svelte';
 	import { S, errMsg, setProfileField, saveProfile, toast } from '$lib/state.svelte';
+	import { readDraft, writeDraft, clearDraft } from '$lib/drafts';
+	import { accountToken, accountIsCurrent } from '$lib/accountScope';
 
 	/**
 	 * 내 프로필 (하단 탭 오른쪽) — 상대에게 보이는 소개 · 관심사 · MBTI, 이야기하고 싶은 상대.
@@ -65,10 +67,11 @@
 
 	/** 배지를 다른 칸에 놓았다 — 바로 옮겨 보이고 서버에 저장, 안 되면 되돌린다 */
 	async function place(code: string, slot: number) {
-		if (!fame) return;
+		if (!fame || featBusy) return;
 		const codes = placedFeatured(fame, code, slot);
 		if (codes.join() === fame.featured.map((b) => b.code).join()) return;
 		const prev = fame;
+		featBusy = true;
 		fame = { ...fame, featured: featuredOf(fame.items, codes), chosen: codes };
 		try {
 			const r = await setFeaturedBadges(codes);
@@ -77,6 +80,8 @@
 		} catch (e) {
 			fame = prev;
 			toast(errMsg(e));
+		} finally {
+			featBusy = false;
 		}
 	}
 
@@ -85,13 +90,22 @@
 		'ISTJ', 'ISFJ', 'INFJ', 'INTJ', 'ISTP', 'ISFP', 'INFP', 'INTP',
 		'ESTP', 'ESFP', 'ENFP', 'ENTP', 'ESTJ', 'ESFJ', 'ENFJ', 'ENTJ'
 	];
-	let bio = $state(S.profile?.bio ?? '');
-	let interests = $state<string[]>([...(S.profile?.interests ?? [])]);
-	let mbti = $state<string | null>(S.profile?.mbti ?? null);
+	const draftToken = accountToken();
+	type ProfileDraft = { bio: string; interests: string[]; mbti: string | null };
+	const draft = readDraft('profile', (v: unknown): v is ProfileDraft => {
+		if (!v || typeof v !== 'object') return false;
+		const p = v as ProfileDraft;
+		return typeof p.bio === 'string' && p.bio.length <= 60 && Array.isArray(p.interests) &&
+			p.interests.length <= 5 && p.interests.every((s) => typeof s === 'string' && s.length <= 12) &&
+			(p.mbti === null || MBTIS.includes(p.mbti));
+	});
+	let bio = $state(draft?.bio ?? S.profile?.bio ?? '');
+	let interests = $state<string[]>([...(draft?.interests ?? S.profile?.interests ?? [])]);
+	let mbti = $state<string | null>(draft ? draft.mbti : S.profile?.mbti ?? null);
 	let tagDraft = $state('');
 
 	// 프로필이 늦게 불러와졌으면 한 번 채운다
-	let filled = !!S.profile;
+	let filled = !!S.profile || !!draft;
 	$effect(() => {
 		if (filled || !S.profile) return;
 		filled = true;
@@ -106,6 +120,15 @@
 				mbti !== S.profile.mbti ||
 				JSON.stringify(interests) !== JSON.stringify(S.profile.interests))
 	);
+
+	$effect(() => {
+		if (dirty) writeDraft('profile', { bio, interests, mbti }, draftToken);
+		else clearDraft('profile', draftToken);
+	});
+	function discardProfileDraft() {
+		clearDraft('profile', draftToken);
+		bio = S.profile?.bio ?? ''; interests = [...(S.profile?.interests ?? [])]; mbti = S.profile?.mbti ?? null;
+	}
 
 	function addTag() {
 		const t = tagDraft.trim().replace(/^#/, '');
@@ -127,6 +150,8 @@
 		busy = true;
 		try {
 			await saveProfile(bio, interests, mbti);
+			if (!accountIsCurrent(draftToken)) return;
+			clearDraft('profile', draftToken);
 			toast('저장 완료');
 		} catch (e) {
 			toast(errMsg(e));
@@ -248,6 +273,7 @@
 		{/each}
 	</div>
 
+	{#if dirty}<button class="btn ghost" onclick={discardProfileDraft} disabled={busy}>수정 내용 버리기</button>{/if}
 	<button aria-busy={busy} class="btn save" onclick={saveInfo} disabled={!dirty || busy}>
 		{busy ? '저장 중…' : dirty ? '저장' : '저장됨'}
 	</button>

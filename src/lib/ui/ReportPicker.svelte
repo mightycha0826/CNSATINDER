@@ -13,12 +13,12 @@
 <div class="report">
 	<h3>{title}</h3>
 	<p class="warn left">{intro}</p>
-	<div class="reasons">
+	<div class="reasons" role="group" aria-label="신고 사유">
 		{#each REPORT_REASONS as r (r.v)}
-			<button class="reason" class:on={reason === r.v} onclick={() => (reason = r.v)}>{r.label}</button>
+			<button class="reason" class:on={reason === r.v} aria-pressed={reason === r.v} onclick={() => (reason = r.v)}>{r.label}</button>
 		{/each}
 	</div>
-	<textarea class="note" bind:value={note} rows="2" maxlength="1000" placeholder="운영진에게 더 알려줄 내용 (선택)"></textarea>
+	<textarea class="note" bind:value={note} rows="2" maxlength="1000" aria-label="운영진에게 더 알려줄 내용 (선택)" placeholder="운영진에게 더 알려줄 내용 (선택)"></textarea>
 </div>
 
 <style>
@@ -37,7 +37,7 @@
 		margin-bottom: 10px;
 	}
 	.reason {
-		height: 34px;
+		min-height: 44px;
 		padding: 0 12px;
 		border: 1px solid var(--line);
 		border-radius: 999px;

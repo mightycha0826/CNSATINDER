@@ -48,32 +48,60 @@ await test('예약 작업은 기존 fetch를 유지하고 서버 키로 정리�
 	const calls=[];
 	globalThis.workerFixture={
 		fetch:()=>new Response('app'),
-		createClient:(url,key,options)=>{calls.push({url,key,options});return {};},
-		cleanup:async()=>{calls.push('cleanup');}
+		createClient:(url,key,options)=>{calls.push({url,key,options});return {rpc:async name=>{calls.push(name);return {data:[],error:null};}};},
+		cleanup:async()=>{calls.push('cleanup');},
+		claim:()=>{calls.push('moderation');}
 	};
 	try {
 		const appUrl=dataUrl('export default {fetch:(...args)=>globalThis.workerFixture.fetch(...args)};');
 		const clientUrl=dataUrl('export const createClient=(...args)=>globalThis.workerFixture.createClient(...args);');
 		const cleanupUrl=dataUrl('export const cleanupBadgePhotos=(...args)=>globalThis.workerFixture.cleanup(...args);');
+		const idleUrl=dataUrl('export const drainModeration=async()=>{globalThis.workerFixture.claim(); return {claimed:0};}; export const moderationPrompt=()=>[]; export const sendDelivery=async()=>{}; export const callModels=async()=>({ok:false});');
 		const source=readFileSync(new URL('./cloudflare-worker.mjs',import.meta.url),'utf8')
 			.replace("'../.svelte-kit/cloudflare-tmp/app-worker.js'",JSON.stringify(appUrl))
 			.replace("'@supabase/supabase-js'",JSON.stringify(clientUrl))
-			.replace("'../src/lib/server/badgePhotoCleanup.ts'",JSON.stringify(cleanupUrl));
+			.replace("'../src/lib/server/badgePhotoCleanup.ts'",JSON.stringify(cleanupUrl))
+			.replace(/'\.\.\/src\/lib\/server\/(moderationRunner|moderation|pushDelivery|aiFold)\.ts'/g, JSON.stringify(idleUrl));
 		const {default:worker}=await import(dataUrl(source));
 		assert.equal(await worker.fetch().text(),'app');
 		let pending;
 		const ctx={waitUntil:p=>{pending=p;}};
 		const env={SUPABASE_URL:'https://fake.supabase.co',PUBLIC_SUPABASE_URL:'https://fake.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'mock-key'};
-		worker.scheduled({},env,ctx);
+		worker.scheduled({scheduledTime:Date.UTC(2026,9,3,0,0)},env,ctx);
 		await pending;
 		assert.equal(calls[0].url,env.SUPABASE_URL);
 		assert.equal(calls[0].key,'mock-key');
 		assert.equal(calls[0].options.auth.persistSession,false);
-		assert.equal(calls[1],'cleanup');
+		assert.ok(calls.includes('review_cleanup') && calls.includes('cleanup'));
+		const before = calls.filter(c => c === 'cleanup').length;
+		worker.scheduled({scheduledTime:Date.UTC(2026,9,3,0,1)},env,ctx);
+		await pending;
+		assert.equal(calls.filter(c => c === 'cleanup').length, before);
+		assert.ok(!calls.includes('moderation'));
+		worker.scheduled({scheduledTime:Date.UTC(2026,9,3,0,2)},{...env,AI:{},PUBLIC_VAPID_KEY:'mock',VAPID_PRIVATE_KEY:'mock'},ctx);
+		await pending;
+		assert.equal(calls.filter(c => c === 'moderation').length,1);
+		assert.ok(calls.includes('push_retry_jobs'));
+		const count=calls.length;
 		worker.scheduled({},{},ctx);
 		await assert.rejects(pending,/설정 누락/);
 		worker.scheduled({},{...env,PUBLIC_SUPABASE_URL:'https://other.supabase.co'},ctx);
 		await assert.rejects(pending,/프로젝트 불일치/);
-		assert.equal(calls.length,2);
+		assert.equal(calls.length,count);
 	} finally { delete globalThis.workerFixture; }
+});
+
+await test('예약 검토 소비자는 학생 호출 없이 처리하고 AI 장애에서 미처리 작업만 반환한다', async () => {
+	const sourceOf = name => stripTypeScriptTypes(readFileSync(new URL(`../src/lib/server/${name}.ts`,import.meta.url),'utf8'));
+	const verdictUrl = dataUrl(sourceOf('moderation'));
+	const batchUrl = dataUrl(sourceOf('moderationBatch').replace("'./moderation.ts'",JSON.stringify(verdictUrl)));
+	const {drainModeration} = await import(dataUrl(sourceOf('moderationRunner').replace("'./moderationBatch.ts'",JSON.stringify(batchUrl))));
+	const items=[1,2,3].map(id=>({id,kind:'message',text:'test',context:[]}));
+	const calls=[];
+	const client={rpc:async(name,args)=>{calls.push([name,args]);return {data:name==='mod_claim'?items:true,error:null};}};
+	const result=await drainModeration(client,async item=>item.id===1?'{"flag":true,"category":"spam","reason":"test"}':null);
+	assert.deepEqual(result,{claimed:3,checked:1,flagged:1});
+	assert.deepEqual(calls.map(c=>c[0]),['mod_claim','mod_verdict','mod_release']);
+	assert.deepEqual(calls.at(-1)[1],{p_ids:[2,3]});
+	await assert.rejects(drainModeration({rpc:async()=>({data:null,error:{}})},async()=>null),/mod_claim_failed/);
 });

@@ -39,6 +39,8 @@ const calls = [];
 
 const user = (i, nick) => ({ id: i, nickname: nick, status: 'active', suspended_until: null, strikes: 0, verified: true, onboarded: true, created_at: t, online: false, last_seen: t, staff_role: null, reports_received: 1 });
 const RPC = {
+	admin_session_valid: () => true,
+	admin_session_issue: () => '00000000-0000-4000-8000-000000000009',
 	admin_staff_role: () => ROLE,
 	// Phase 49 — 역할 확인 + 운영진 현황
 	// Phase 50 — 최고 관리자 · 운영진 관리
@@ -126,13 +128,20 @@ const sb = http.createServer((req, res) => {
 		const u = new URL(req.url, SB);
 		if (u.pathname === '/auth/v1/token') {
 			const now = Math.floor(Date.now() / 1000);
-			return send(200, { access_token: 'staff-token', token_type: 'bearer', expires_in: 3600, expires_at: now + 3600, refresh_token: 'r', user: { id: STAFF, aud: 'authenticated', email: '29999@cnsa.hs.kr', app_metadata: {}, user_metadata: {}, created_at: t } });
+			const enc = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+			const payload = `${enc({ alg: 'HS256', typ: 'JWT' })}.${enc({ sub: STAFF, exp: now + 3600, session_id: '00000000-0000-4000-8000-000000000008' })}`;
+			const token = `${payload}.${createHmac('sha256', SECRET).update(payload).digest('base64url')}`;
+			return send(200, { access_token: token, token_type: 'bearer', expires_in: 3600, expires_at: now + 3600, refresh_token: 'r', user: { id: STAFF, aud: 'authenticated', email: '29999@cnsa.hs.kr', app_metadata: {}, user_metadata: {}, created_at: t } });
 		}
 		if (u.pathname === '/auth/v1/user') return send(200, { id: STAFF, aud: 'authenticated', email: '29999@cnsa.hs.kr', app_metadata: {}, user_metadata: {}, created_at: t });
 		const au = u.pathname.match(/^\/auth\/v1\/admin\/users\/(.+)$/);
 		if (au) return send(200, { id: au[1], email: au[1] === A ? '29999@cnsa.hs.kr' : '19998@cnsa.hs.kr', aud: 'authenticated', app_metadata: {}, user_metadata: {}, created_at: t });
 		if (u.pathname === '/rest/v1/signup_stats') return send(200, { students: 42 }); // Phase 44 — 가입한 학생 수
 		// Phase 84 — 뱃지 사진: 서명 주소 · 지우기
+		if (/^\/storage\/v1\/object\/(authenticated\/)?badge-proofs\//.test(u.pathname)) {
+			res.writeHead(200, { 'content-type': 'image/png', ...cors });
+			return res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZxkAAAAASUVORK5CYII=', 'base64'));
+		}
 		if (u.pathname === '/storage/v1/object/sign/badge-proofs') {
 			const { paths } = JSON.parse(body || '{}');
 			return send(200, (paths ?? []).map((p) => ({ path: p, signedURL: `/storage/v1/object/sign/badge-proofs/${p}?token=x`, error: null })));
@@ -148,7 +157,7 @@ const sb = http.createServer((req, res) => {
 		const fn = u.pathname.match(/^\/rest\/v1\/rpc\/([a-z_]+)/)?.[1];
 		if (!fn || !RPC[fn]) return send(404, { message: `no mock ${req.url}` });
 		const args = body ? JSON.parse(body) : {};
-		if (fn !== 'admin_staff_role' && fn !== 'admin_staff_touch') calls.push([fn, args]);
+		if (fn !== 'admin_staff_role' && fn !== 'admin_staff_touch' && fn !== 'admin_session_valid') calls.push([fn, args]);
 		try { send(200, RPC[fn](args)); } catch (e) { send(e.status ?? 500, e.body ?? { message: String(e) }); }
 	});
 }).listen(54398);
@@ -162,7 +171,7 @@ for (let i = 0; i < 60 && !out.includes('ready'); i++) await new Promise((r) => 
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
-const cookie = () => { const p = `${STAFF}.${Math.floor(Date.now() / 1000) + 3600}`; return `${p}.${createHmac('sha256', SECRET).update(p).digest('base64url')}`; };
+const cookie = () => { const p = `${STAFF}.00000000-0000-4000-8000-000000000009.${Math.floor(Date.now() / 1000) + 3600}`; return `${p}.${createHmac('sha256', SECRET).update(p).digest('base64url')}`; };
 const since = () => { const n = calls.length; return () => calls.slice(n).map((c) => c[0]); };
 const base = `http://localhost:${PORT}`;
 const browser = await chromium.launch({ executablePath: CHROME });
@@ -329,6 +338,7 @@ try {
 	await m.page.go(`/admin/reports/${REP}`);
 	await m.page.screenshot({ path: `${SP}/audit-mobile-report.png`, fullPage: true });
 	await m.ctx.close();
+	await page.context().close();
 
 	console.log('\n[11] 운영자 로그인이 학생 앱 로그인을 건드리지 않는다');
 	const lctx = await browser.newContext({ viewport: { width: 1200, height: 900 } });
@@ -357,6 +367,7 @@ try {
 	await md.page.go('/admin/settings');
 	check('운영진: 수치 입력칸 잠김', await md.page.locator('input[name=room_minutes]').isDisabled());
 	check('페이지 오류 없음', md.page.errs.length === 0, md.page.errs.join(' / '));
+	await md.ctx.close();
 
 	console.log('\n[13] 개발자(developer) · 운영진 현황 (Phase 49)');
 	ROLE = 'developer';
@@ -379,6 +390,7 @@ try {
 		&& tt.includes('채팅 신고 보는 중') && tt.includes('3시간 전 접속') && (await team.locator('li.off').count()) === 1, tt);
 	await dv.page.screenshot({ path: `${SP}/audit-team-panel.png` });
 	check('페이지 오류 없음 (개발자)', dv.page.errs.length === 0, dv.page.errs.join(' / '));
+	await dv.ctx.close();
 
 	console.log('\n[14] 최고 관리자 · 운영진 관리 (Phase 50)');
 	ROLE = 'admin';
@@ -388,6 +400,7 @@ try {
 	check('★ 그냥 관리자: "운영진 관리" 메뉴 없음', !(await na.page.locator('.side nav a').allInnerTexts()).some((x) => x.includes('운영진 관리')));
 	const s403 = await na.page.goto(`${base}/admin/staff`);
 	check('★ 그냥 관리자: /admin/staff → 403', s403.status() === 403, String(s403.status()));
+	await na.ctx.close();
 	OWNER = true;
 	const ow = await session(1440);
 	let okDialog = true;
@@ -442,6 +455,7 @@ try {
 		check(`★ 베타테스터: ${p} → 403`, r.status() === 403, String(r.status()));
 	}
 	check('사이드바에 "베타테스터"', (await bt.page.locator('.side .who').innerText()).includes('베타테스터'));
+	await bt.ctx.close();
 
 	console.log('\n[16] 서버 점검 (Phase 52)');
 	ROLE = 'admin';
@@ -479,6 +493,7 @@ try {
 	await ow.page.getByRole('button', { name: '예약 취소' }).click();
 	await ow.page.getByRole('button', { name: '점검 시작' }).waitFor({ timeout: 5000 }).catch(() => {});
 	check('★ 예약 취소 → 점검 · 예약 둘 다 지움', MAINT_AT === null && !MAINT_ON && (await ow.page.locator('.maint-bar').count()) === 0);
+	await ow.ctx.close();
 
 	console.log('\n[뱃지] 뱃지마다 여러 학생에게 한 번에 주고 거두기 (Phase 71)');
 	{
@@ -543,9 +558,20 @@ try {
 		check('/admin/badge-requests → 200 · 사이드바 "뱃지 요청"', r.status() === 200 && (await qp.locator('.side nav a[href="/admin/badge-requests"]').getAttribute('aria-current')) === 'page');
 		const first = qp.locator('li.req').first();
 		const t1 = (await first.innerText()).replace(/\s+/g, ' ');
-		check('★ 기다리는 요청 — 종류 · 뱃지 · 이름 · 학번 · 메모 · 사진(서명 주소)', t1.includes('내 뱃지 인증') && t1.includes('CNSA 뱃지') && t1.includes('홍길동') && t1.includes('학번 29999') && t1.includes('학생증이랑')
-			&& ((await first.locator('.photos img').first().getAttribute('src')) ?? '').includes('/storage/v1/object/sign/badge-proofs/'), t1);
+		check('★ 기다리는 요청 — 종류 · 뱃지 · 이름 · 학번 · 메모 · 사진(인증된 같은 출처)', t1.includes('내 뱃지 인증') && t1.includes('CNSA 뱃지') && t1.includes('홍길동') && t1.includes('학번 29999') && t1.includes('학생증이랑')
+			&& ((await first.locator('.photos img').first().getAttribute('src')) ?? '').includes('/admin/badge-requests/photo?id='), t1);
 		const t2 = (await qp.locator('li.req').nth(1).innerText()).replace(/\s+/g, ' ');
+		await qp.waitForFunction(() => document.querySelector('.photos img')?.naturalWidth > 0);
+		check('같은 출처 사진이 CSP를 통과해 실제로 표시됨', await first.locator('.photos img').first().evaluate(img => img.complete && img.naturalWidth > 0));
+		const photoButton = first.getByRole('button', {name:'사진 1 크게'});
+		await photoButton.click();
+		const viewer = qp.getByRole('dialog', {name:'제출 사진 확대'});
+		await viewer.waitFor();
+		await qp.waitForFunction(() => document.querySelector('.viewer img')?.naturalWidth > 0);
+		check('확대 사진과 포커스가 dialog 안에 표시됨', await viewer.evaluate(el => el.contains(document.activeElement)));
+		await qp.keyboard.press('Escape');
+		await viewer.waitFor({state:'detached'});
+		check('Escape로 닫고 사진 버튼에 포커스 복원', await photoButton.evaluate(el => document.activeElement === el));
 		check('★ 동아리 기장 제출 — 앱에 없는 동아리 · 부원 학번 · 줄 동아리 뱃지 고르기', t2.includes('로봇부') && t2.includes('앱에 없는 동아리') && t2.includes('부원 학번 2명') && t2.includes('20101, 20102')
 			&& (await qp.locator('li.req').nth(1).locator('select[name="code"] option').count()) === 2, t2);
 		await first.getByRole('button', { name: '승인' }).click();
@@ -577,6 +603,9 @@ try {
 		await mctx.close();
 		ROLE = 'admin';
 	}
+} catch (e) {
+	console.error(out);
+	throw e;
 } finally {
 	await browser.close();
 	stopProcess(vite);

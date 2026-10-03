@@ -189,8 +189,8 @@
 	const partnerGone = $derived(goneSince !== null && S.now - goneSince > 45_000 && !closed);
 
 	async function skip() {
-		await room?.leave(true);
-		backToSeek();
+		if (await room?.leave(true)) backToSeek();
+		else toast('대화를 끝내지 못했어요 · 연결을 확인하고 다시 시도해 주세요');
 	}
 
 	// ── 메뉴 · 신고 · 차단 ───────────────────────────────────────
@@ -202,8 +202,7 @@
 		if (s === 'profile') void loadProfile();
 	}
 	const roomActions: RoomActionFns = {
-		// 시트는 바로 닫는다 — 방이 "대화 종료"로 바뀌는 것이 곧 결과다
-		leave: () => void room?.leave(false),
+		leave: async () => !!room && (await room.leave(false)),
 		block: async () => !!room && (await room.block()),
 		report: async (reason, note) => !!room && (await room.report(reason, note))
 	};
@@ -502,7 +501,11 @@
 
 	/** 인용을 누르면 원래 메시지로 — 가운데로 스크롤하고 잠깐 반짝 */
 	let flashId = $state<number | null>(null);
-	function jumpTo(id: number) {
+	async function jumpTo(id: number) {
+		while (!byId.has(id) && room?.hasOlder && !room.loadingOlder) {
+			if (!await room.loadOlder()) break;
+			await tick();
+		}
 		const el = listEl?.querySelector<HTMLElement>(`[data-mid="${id}"]`);
 		if (!el) return toast('원래 메시지를 찾을 수 없어요');
 		el.scrollIntoView({ block: 'center', behavior: scrollBehavior() });
@@ -633,6 +636,13 @@
 			{#if room.snap}
 				<ChatIntro alias={room.snap.partner_alias} online={partnerOnline} {profile} onprofile={() => openSheet('profile')} />
 			{/if}
+			{#if room.hasOlder}<button class="btn-ghost" disabled={room.loadingOlder} onclick={async () => {
+				const before = listEl?.scrollHeight ?? 0;
+				atBottom = false;
+				if (!await room?.loadOlder()) toast('이전 대화를 불러오지 못했어요 · 다시 시도해 주세요');
+				await tick();
+				if (listEl) listEl.scrollTop += listEl.scrollHeight - before;
+			}}>이전 대화 {room.loadingOlder ? '불러오는 중…' : '더 보기'}</button>{/if}
 			{#each room.msgs as m, i (m.client_msg_id)}
 				{@const p = pos(room.msgs, i)}
 				{@const sep = timeSep(i)}

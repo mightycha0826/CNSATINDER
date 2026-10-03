@@ -58,6 +58,7 @@
 	<div class="page"><p class="muted center">답장할 수 없는 편지예요</p></div>
 {:else if letter}
 	<EnvelopeCompose
+		draftKey={`letter:reply:${letter.id}`}
 		to={fromLabel(letter)}
 		{from}
 		nickable={anonSide}

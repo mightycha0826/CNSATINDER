@@ -20,6 +20,7 @@ let identityDelay = 0;
 let identityRequests = 0;
 
 const RPC = {
+	admin_session_valid: () => true,
 	admin_staff_role: () => ROLE,
 	admin_staff_touch: () => ({ role: ROLE, perms: ({ moderator: ['live', 'moderate', 'service', 'inquiry', 'audit'], developer: ['live', 'settings', 'service', 'inquiry', 'audit'], beta: ['live'] })[ROLE] ?? [], team: [] }),
 	admin_student_labels: (a) => {
@@ -62,7 +63,7 @@ for (let i = 0; i < 60 && !viteOut.includes('ready'); i++) await new Promise((r)
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
 
-const payload = `${STAFF}.${Math.floor(Date.now() / 1000) + 3600}`;
+const payload = `${STAFF}.00000000-0000-4000-8000-000000000009.${Math.floor(Date.now() / 1000) + 3600}`;
 const cookie = `${payload}.${createHmac('sha256', SECRET).update(payload).digest('base64url')}`;
 const browser = await chromium.launch({ executablePath: CHROME });
 try {

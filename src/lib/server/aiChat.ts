@@ -25,7 +25,7 @@ type ChatTurn = { role: 'user' | 'assistant'; content: string };
 
 /** 클라가 보낸 기록을 믿지 않고 다시 자른다 — 최근 20개(봇은 말풍선을 나눠 보내서), 한 말에 500자, 마지막은 반드시 사용자 */
 export function cleanHistory(raw: unknown): ChatTurn[] | null {
-	if (!Array.isArray(raw)) return null;
+	if (!Array.isArray(raw) || raw.length > 20) return null;
 	const turns = raw
 		.filter((m): m is ChatTurn => !!m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
 		.map((m) => ({ role: m.role, content: m.content.trim().slice(0, 500) }))
@@ -40,17 +40,16 @@ export function cleanHistory(raw: unknown): ChatTurn[] | null {
  *  · 같은 쪽 말이 이어지면(봇의 말풍선 여러 개 · 사용자가 연달아 보낸 말) 한 말로 합친다
  */
 export function chatPrompt(turns: ChatTurn[]): AiMessage[] {
-	const lead: string[] = [];
 	let i = 0;
-	while (i < turns.length && turns[i].role === 'assistant') lead.push(turns[i++].content);
+	// 첫 assistant도 이용자가 지정한 기록이다. 시스템 지시문으로 올리지 않고 제외한다.
+	while (i < turns.length && turns[i].role === 'assistant') i++;
 	const merged: ChatTurn[] = [];
 	for (const t of turns.slice(i)) {
 		const last = merged.at(-1);
 		if (last && last.role === t.role) last.content += `\n${t.content}`;
 		else merged.push({ ...t });
 	}
-	const system = lead.length ? `${SYSTEM}\n\n(대화는 네가 먼저 이렇게 말하며 시작했다: "${lead.join(' ')}")` : SYSTEM;
-	return [{ role: 'system', content: system }, ...merged];
+	return [{ role: 'system', content: SYSTEM }, ...merged];
 }
 
 /**

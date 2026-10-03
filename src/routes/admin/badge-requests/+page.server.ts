@@ -9,7 +9,7 @@ import type { Actions, PageServerLoad } from './$types';
 /**
  * 뱃지 요청 (Phase 84) — 학생이 앱에서 보낸 CNSA 뱃지 사진(뱃지 + 학번 · 이름) · 동아리 기장 제출(부원 학번) · 새 뱃지 요청.
  * 학번 · 이름 · 사진이 보이므로 관리자(identity)만 — 목록을 열면 열람 기록에 남는다 (DB).
- * 사진은 비공개 버킷(badge-proofs)에서 10분짜리 서명 주소로만 보여 주고, 승인 · 반려하면 파일을 지운다.
+ * 사진은 비공개 버킷(badge-proofs)에서 같은 출처의 인증된 서버 응답으로 제공하고, 승인 · 반려하면 삭제를 예약한다.
  * 결과는 그 학생에게 개인 공지(하트 · 공지 · 푸시)로 간다.
  */
 const BUCKET = 'badge-proofs';
@@ -22,13 +22,11 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		adminRpc<BadgeRequestRow[]>('admin_badge_requests', { p_staff: staff, p_pending: !done }),
 		adminRpc<BadgeAdminRow[]>('admin_badges', { p_staff: staff })
 	]);
-	// 사진 — 서명 주소 (10분). 실패하면 사진 없이
-	const paths = items.flatMap((r) => r.photos);
+	// 같은 출처에서 매번 권한을 확인해 제공한다. 서명 URL 만료와 외부 img-src 허용이 필요 없다.
 	const urls: Record<string, string> = {};
-	if (paths.length) {
-		const { data } = await supabaseAdmin().storage.from(BUCKET).createSignedUrls(paths, 600);
-		for (const d of data ?? []) if (d.path && d.signedUrl) urls[d.path] = d.signedUrl;
-	}
+	for (const item of items) item.photos.forEach((path, index) => {
+		urls[path] = `/admin/badge-requests/photo?id=${item.id}&index=${index}`;
+	});
 	return { done, items, urls, badges: badges.filter((b) => b.category === 'cnsa') };
 };
 

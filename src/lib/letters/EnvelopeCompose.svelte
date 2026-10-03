@@ -12,6 +12,8 @@
 	 * 보내기가 실패하면 쓰던 편지지로 돌아온다. 동작 줄이기면 연출 없이 바로 쓰고, 보내면 바로 끝난다.
 	 */
 	import { onDestroy } from 'svelte';
+	import { readDraft, writeDraft, clearDraft } from '../drafts';
+	import { accountToken, accountIsCurrent } from '../accountScope';
 	import Envelope from './Envelope.svelte';
 	import LetterEditor from './LetterEditor.svelte';
 	import Postbox from './Postbox.svelte';
@@ -26,6 +28,7 @@
 
 	let {
 		to,
+		draftKey = '',
 		toSub = '',
 		from,
 		nickable = false,
@@ -35,6 +38,7 @@
 		ondone
 	}: {
 		to: string;
+		draftKey?: string;
 		toSub?: string;
 		/** 서명을 안 적었을 때(또는 적을 수 없을 때)의 From. */
 		from: string;
@@ -50,10 +54,30 @@
 	} = $props();
 
 	const MAX = 1000;
-	let body = $state('');
-	let fmt = $state<LetterFmt | null>(null);
+	const draftToken = accountToken();
+	type Draft = { body: string; fmt: LetterFmt | null; nick: string };
+	const validDraft = (v: unknown): v is Draft => !!v && typeof v === 'object' &&
+		typeof (v as Draft).body === 'string' && Array.from((v as Draft).body).length <= MAX &&
+		typeof (v as Draft).nick === 'string' && (v as Draft).nick.length <= NICK_MAX &&
+		(!(v as Draft).fmt || typeof (v as Draft).fmt === 'object');
 	// svelte-ignore state_referenced_locally
-	let nick = $state(nickInit);
+	const draft = draftKey ? readDraft(draftKey, validDraft) : null;
+	let body = $state(draft?.body ?? '');
+	let fmt = $state<LetterFmt | null>(draft?.fmt ?? null);
+	// svelte-ignore state_referenced_locally
+	let nick = $state(draft?.nick ?? nickInit);
+	let sent = false;
+	let editorVersion = $state(0);
+	function persistDraft() {
+		if (!draftKey || sent || !accountIsCurrent(draftToken)) return;
+		if (body || fmt || (nick !== nickInit && nick.trim())) writeDraft(draftKey, { body, fmt, nick }, draftToken);
+		else clearDraft(draftKey, draftToken);
+	}
+	$effect(persistDraft);
+	function discardDraft() {
+		clearDraft(draftKey, draftToken);
+		body = ''; fmt = null; nick = ''; editorVersion++;
+	}
 	const len = $derived(Array.from(body).length);
 	const signed = $derived(nickable && nick.trim() ? nick.trim().replace(/\s+/g, ' ') : from);
 
@@ -68,6 +92,7 @@
 		[1550, () => (phase = 'write')]
 	]);
 	onDestroy(() => {
+		persistDraft();
 		alive = false;
 		stop();
 	});
@@ -87,6 +112,8 @@
 			phase = 'write';
 			return;
 		}
+		sent = true;
+		if (draftKey) clearDraft(draftKey, draftToken);
 		stop = play([
 			[450, () => (phase = 'tuck')],
 			[1050, () => (phase = 'close')],
@@ -182,6 +209,7 @@
 	<div class="desk" aria-hidden="true"><i class="wall" bind:this={deskWallEl}></i><i class="wood"></i></div>
 
 	<div class="sheet-wrap" class:shown={writing || phase === 'fold'} aria-hidden={!writing} bind:this={sheetEl} style:--fx="{fold.x}px" style:--fy="{fold.y}px" style:--fs={fold.s}>
+		{#key editorVersion}
 		<LetterEditor bind:body bind:fmt {placeholder}>
 			{#snippet before()}
 				<div class="lp-head">
@@ -209,8 +237,10 @@
 				{/if}
 			{/snippet}
 		</LetterEditor>
+		{/key}
 		<!-- iOS 는 키보드가 올라와도 화면(레이아웃)이 줄지 않는다 — 키보드 높이(--kb, lib/keyboard.svelte.ts)만큼 보내기 줄을 올린다 -->
 		<div class="foot">
+			{#if draftKey}<button onclick={discardDraft} disabled={!writing || sending}>초안 버리기</button>{/if}
 			<span class="num" class:over={len > MAX}>{len > MAX ? `${len - MAX}자 넘음 · ` : ''}{len}/{MAX}</span>
 			<button class="btn send" onclick={send} disabled={!ready}>
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l16-8-6 16-3-7-7-1z" fill="currentColor" /></svg>

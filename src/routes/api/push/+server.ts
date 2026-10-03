@@ -2,6 +2,7 @@ import { json, type RequestHandler } from '@sveltejs/kit';
 import { adminRpc, userFromClaims } from '$lib/server/supabaseAdmin';
 import { deliver, vapidKeys, type PushPayload } from '$lib/server/pushSend';
 import { bearerToken, jsonObject, positiveId } from '$lib/server/request';
+import { rateLimit } from '$lib/server/apiRate';
 
 /**
  * POST /api/push   Authorization: Bearer <보낸 사람 access token>
@@ -34,6 +35,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 
 	const uid = await userFromClaims(token);
 	if (!uid) return json({ error: 'unauthorized' }, { status: 401 });
+	const limited = await rateLimit(uid, 'push');
+	if (limited) return limited;
 
 	// 누가 보냈는지는 클라가 아니라 토큰에서 — DB 함수가 "진짜 그 사람의 글·공감인지"를 다시 확인한다
 	const p = await adminRpc<PushPayload>(kind.rpc, { [kind.param]: body[kind.field], [kind.actor]: uid });

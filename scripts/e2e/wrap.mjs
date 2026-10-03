@@ -48,9 +48,10 @@ const notices = [{ id: 1, title: '11월 정기 점검 안내 — 토요일 새�
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
-const browser = ENGINE === 'webkit' ? await webkit.launch() : await chromium.launch({ executablePath: CHROME });
+const launchBrowser = () => ENGINE === 'webkit' ? webkit.launch() : chromium.launch({ executablePath: CHROME });
+let browser = await launchBrowser();
 
-async function context(width, { gate = false, maint = false } = {}) {
+async function context(width, { gate = false, maint = false, signed = false } = {}) {
 	const ctx = await browser.newContext({ viewport: { width, height: Math.round(width * 2.05) }, hasTouch: true, isMobile: ENGINE === 'chromium', deviceScaleFactor: 2 });
 	await ctx.route('https://fake-proj.supabase.co/**', async (route) => {
 		const req = route.request(); const p = new URL(req.url()).pathname;
@@ -79,7 +80,12 @@ async function context(width, { gate = false, maint = false } = {}) {
 		if (rpc) return json(null);
 		return json([]);
 	});
-	await ctx.addInitScript(() => { try { localStorage.setItem('push-asked-v1', '1'); } catch {} });
+	await ctx.addInitScript(({signed,session}) => {
+		try {
+			localStorage.setItem('push-asked-v1', '1');
+			if (signed) localStorage.setItem('sb-fake-proj-auth-token',JSON.stringify(session));
+		} catch {}
+	},{signed,session});
 	return ctx;
 }
 
@@ -205,7 +211,7 @@ const note = (screen, kind, msg, w) => {
 	(found[key] ??= []).push(w);
 };
 try {
-	for (const w of WIDTHS) {
+	const runWidth = async (w) => {
 		console.log(`[폭 ${w}]`);
 		// 로그인 전 화면
 		const pre = await context(w);
@@ -219,13 +225,10 @@ try {
 		}
 		await pre.close();
 
-		const ctx = await context(w);
+		const ctx = await context(w, {signed:true});
 		const page = await ctx.newPage();
 		const errs = []; page.on('pageerror', (e) => errs.push(String(e)));
-		await page.goto(`${BASE}/login`);
-		await page.getByPlaceholder('학교 이메일 앞부분').fill('29999');
-		await page.getByPlaceholder('비밀번호').fill('abcd1234');
-		await page.getByRole('button', { name: '로그인', exact: true }).click();
+		await page.goto(`${BASE}/`);
 		await page.locator('button.heart').waitFor({ timeout: 15000 });
 		for (const [name, path, prep] of SCREENS) {
 			await page.goto(`${BASE}${path}`);
@@ -240,12 +243,9 @@ try {
 		await ctx.close();
 
 		// 익명편지 잠금 화면
-		const gctx = await context(w, { gate: true });
+		const gctx = await context(w, { gate: true, signed:true });
 		const gp = await gctx.newPage();
-		await gp.goto(`${BASE}/login`);
-		await gp.getByPlaceholder('학교 이메일 앞부분').fill('29999');
-		await gp.getByPlaceholder('비밀번호').fill('abcd1234');
-		await gp.getByRole('button', { name: '로그인', exact: true }).click();
+		await gp.goto(`${BASE}/`);
 		await gp.locator('button.heart').waitFor({ timeout: 15000 });
 		await gp.goto(`${BASE}/letters`); await gp.waitForTimeout(1300);
 		if (process.env.SHOTS) await gp.screenshot({ path: `${OUT}/wrap-${ENGINE}-gate-${w}.png`, fullPage: true }).catch(() => {});
@@ -254,12 +254,9 @@ try {
 		await gctx.close();
 
 		// 서버 점검 화면 (Phase 52) — 로그인하면 앱 전체가 점검 화면
-		const mctx = await context(w, { maint: true });
+		const mctx = await context(w, { maint: true, signed:true });
 		const mp = await mctx.newPage();
-		await mp.goto(`${BASE}/login`);
-		await mp.getByPlaceholder('학교 이메일 앞부분').fill('29999');
-		await mp.getByPlaceholder('비밀번호').fill('abcd1234');
-		await mp.getByRole('button', { name: '로그인', exact: true }).click();
+		await mp.goto(`${BASE}/`);
 		const shown = await mp.locator('.maint').waitFor({ timeout: 15000 }).then(() => true, () => false);
 		if (w === WIDTHS[0]) {
 			const txt = shown ? (await mp.locator('.maint').innerText()).replace(/\s+/g, ' ') : '';
@@ -269,6 +266,12 @@ try {
 		const mr = await analyze(mp);
 		for (const [k, list] of Object.entries(mr)) for (const m of list) note('maint', k, m, w);
 		await mctx.close();
+	};
+	// 폭별 브라우저 저장소·RPC 가짜 응답은 독립적이다. 두 폭씩 검사하며 모든 기준을 유지한다.
+	for (let i = 0; i < WIDTHS.length; i += 2) {
+		await Promise.all(WIDTHS.slice(i, i + 2).map(runWidth));
+		// 많은 격리 컨텍스트의 폰트·네트워크 자원을 다음 폭 묶음에 남기지 않는다.
+		if (i + 2 < WIDTHS.length) { await browser.close(); browser = await launchBrowser(); }
 	}
 	console.log('[결과]');
 	const keys = Object.keys(found).sort();

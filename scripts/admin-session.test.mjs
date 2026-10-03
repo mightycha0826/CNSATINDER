@@ -56,7 +56,7 @@ try {
 	check('8시간 만료', opts.maxAge === 8 * 3600);
 
 	const raw = c.get(S.ADMIN_COOKIE);
-	const [, exp, sig] = raw.split('.');
+	const [, sid, exp, sig] = raw.split('.');
 
 	console.log('\n[2] ★ 위조 · 변조');
 	const forge = async (v) => {
@@ -65,18 +65,19 @@ try {
 		return S.readSession(j);
 	};
 	const other = '9f9f9f9f-2222-4333-8444-955566667777';
-	check('★ 사용자 id 만 바꿔치기 → 거부', (await forge(`${other}.${exp}.${sig}`)) === null);
-	check('★ 만료 시각을 늘리기 → 거부', (await forge(`${uid}.${Number(exp) + 999999}.${sig}`)) === null);
+	check('★ 세션 ID 변조 → 거부', (await forge(`${uid}.${other}.${exp}.${sig}`)) === null);
+	check('★ 사용자 id 만 바꿔치기 → 거부', (await forge(`${other}.${sid}.${exp}.${sig}`)) === null);
+	check('★ 만료 시각을 늘리기 → 거부', (await forge(`${uid}.${sid}.${Number(exp) + 999999}.${sig}`)) === null);
 	const flipped = sig.slice(0, -2) + (sig.at(-2) === 'A' ? 'B' : 'A') + sig.at(-1);
-	check('★ 서명 한 글자 변조 → 거부', (await forge(`${uid}.${exp}.${flipped}`)) === null);
-	check('서명 없음 → 거부', (await forge(`${uid}.${exp}`)) === null);
-	check('빈 서명 → 거부', (await forge(`${uid}.${exp}.`)) === null);
+	check('★ 서명 한 글자 변조 → 거부', (await forge(`${uid}.${sid}.${exp}.${flipped}`)) === null);
+	check('서명 없음 → 거부', (await forge(`${uid}.${sid}.${exp}`)) === null);
+	check('빈 서명 → 거부', (await forge(`${uid}.${sid}.${exp}.`)) === null);
 	check('쓰레기 값 → 거부', (await forge('hello')) === null);
 	check('uuid 형식이 아닌 id → 거부', (await forge(`admin.${exp}.${sig}`)) === null);
 
 	console.log('\n[3] 만료');
 	const past = Math.floor(Date.now() / 1000) - 10;
-	check('만료된 쿠키 → 거부 (서명이 맞아도)', (await forge(`${uid}.${past}.${sig}`)) === null);
+	check('만료된 쿠키 → 거부 (서명이 맞아도)', (await forge(`${uid}.${sid}.${past}.${sig}`)) === null);
 
 	// 비밀키마다 모듈을 새로 불러서 이전 서명키가 섞이지 않게 한다.
 	console.log('\n[4] ★ 비밀키');

@@ -27,6 +27,7 @@ export type InboxRoom = {
 
 const POLL_MS = 60_000;
 const DEBOUNCE_MS = 300;
+const MIN_REFRESH_MS = 3000;
 
 /**
  * 대화 목록 (인스타 DM 받은편지함).
@@ -51,11 +52,14 @@ class Inbox {
 	roomRevision = $state(0);
 	#signature = '';
 	#request = 0;
+	#flight: Promise<void> | null = null;
+	#lastLoad = 0;
 
 	#ch: RealtimeChannel | null = null;
 	#topic = '';
 	#stopPoll: (() => void) | null = null;
 	#debounce: ReturnType<typeof setTimeout> | null = null;
+	#dirty = false;
 	#stopped = false;
 	#running = 0;
 	/** 방마다 지난번 안 읽은 수 — 늘었으면 새 메시지 (처음 불러올 때는 알리지 않는다) */
@@ -69,6 +73,9 @@ class Inbox {
 
 	#reset() {
 		this.#request++;
+		this.#flight = null;
+		this.#dirty = false;
+		this.#lastLoad = 0;
 		this.rooms = [];
 		this.loaded = false;
 		this.skew = this.serverAt = 0;
@@ -91,15 +98,31 @@ class Inbox {
 		if (--this.#running > 0) return;
 		this.#running = 0;
 		this.#stopped = true;
+		this.#flight = null;
+		this.#dirty = false;
 		this.#request++;
 		this.#stopPoll?.();
 		this.#stopPoll = null;
 		if (this.#debounce) clearTimeout(this.#debounce);
+		this.#debounce = null;
 		this.#unsubscribe();
 	}
 
 	async load() {
+		if (this.#flight) return this.#flight;
+		const work = this.#read();
+		this.#flight = work;
+		try { await work; } finally {
+			if (this.#flight === work) {
+				this.#flight = null;
+				if (this.#dirty && !this.#stopped) { this.#dirty = false; this.#soon(); }
+			}
+		}
+	}
+
+	async #read() {
 		if (!currentAccountId()) return;
+		this.#lastLoad = Date.now();
 		const token = accountToken();
 		const request = ++this.#request;
 		const { data, error } = await supabase.rpc('my_rooms');
@@ -130,8 +153,12 @@ class Inbox {
 	}
 
 	#soon() {
-		if (this.#debounce) clearTimeout(this.#debounce);
-		this.#debounce = setTimeout(() => void this.load(), DEBOUNCE_MS);
+		if (this.#debounce) return;
+		this.#debounce = setTimeout(() => {
+			this.#debounce = null;
+			if (this.#flight) this.#dirty = true;
+			else void this.load();
+		}, Math.max(DEBOUNCE_MS, this.#lastLoad + MIN_REFRESH_MS - Date.now()));
 	}
 
 	/** 방이 늘고 줄어도 채널은 하나 그대로 — 예전처럼 방 목록이 바뀔 때마다 다시 붙이지 않는다 */

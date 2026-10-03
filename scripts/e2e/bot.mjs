@@ -14,10 +14,12 @@ const sb = http.createServer((req, res) => { let b = ''; req.on('data', (c) => (
 	const send = (s, o) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
 	if (req.url.startsWith('/auth/v1/user')) return req.headers.authorization === 'Bearer good-token' ? send(200, { id: USER, aud: 'authenticated', role: 'authenticated' }) : send(401, { msg: 'bad jwt' });
 	const fn = req.url.match(/rpc\/([a-z_]+)/)?.[1]; const a = JSON.parse(b || '{}'); rpcCalls.push([fn, a]);
-	if (fn === 'ai_chat_turn') {
+	if (fn === 'api_rate_take') return send(200, {allowed:true,retry_after:1});
+	if (fn === 'ai_chat_finish') return send(200, true);
+	if (fn === 'ai_chat_claim') {
 		if (a.p_chat !== CHAT || a.p_user !== USER) return send(200, { status: 'not_found' });
 		if (/010\d{8}/.test(a.p_text)) return send(200, { status: 'blocked', code: 'personal_info' });
-		return send(200, { status: 'ok', turns: 1, max_turns: 30 });
+		return send(200, { status: 'ok', lease: '00000000-0000-4000-8000-000000000001', turns: 1, max_turns: 30 });
 	}
 	if (fn === 'mod_claim') { const q = queue; queue = []; return send(200, q); }
 	if (fn === 'mod_verdict' || fn === 'mod_release') return send(200, { status: 'ok' });
@@ -45,6 +47,7 @@ try {
 	await page.locator('textarea').waitFor();
 	check('★ 봇이라는 표시 (이름 옆 "봇")', (await page.locator('.bot header .tag').innerText()).trim() === '봇');
 	check('★ 첫 안내 줄: 찾는 사람이 없어서 봇이 왔다 · 사람을 찾으면 연결', (await page.locator('.bot .sys').first().innerText()).includes('대화 봇이 먼저 왔어요'));
+	await page.locator('.bot header').getByText('사람 찾는 중', {exact:false}).waitFor({timeout:5000});
 	check('찾는 중 표시 (머리글)', (await page.locator('.bot header').innerText()).includes('사람 찾는 중'));
 	await page.locator('.bot .row:not(.mine) .bubble:not(.typing)').first().waitFor({ timeout: 3000 });
 	check('봇이 먼저 인사한다 (정해 둔 말 — AI 를 부르지 않는다)', (await botBubbles()).length >= 1 && !(await page.evaluate(() => window.__botSent)));
@@ -125,11 +128,11 @@ try {
 
 	console.log('[서버 — /api/ai-chat]');
 	const S2 = `http://localhost:${PORT - 1}`;
-	const post = (path, body, token = 'good-token') => fetch(`${S2}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, origin: S2 }, body: JSON.stringify(body) });
+	const post = (path, body, token = 'good-token') => fetch(`${S2}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, origin: S2 }, body: JSON.stringify({request_id:crypto.randomUUID(), ...body}) });
 	const ok = await post('/api/ai-chat', { chat_id: CHAT, messages: [{ role: 'assistant', content: '안녕하세요' }, { role: 'user', content: '뭐해?' }] });
 	const okj = await ok.json();
 	check('답을 받는다', ok.status === 200 && okj.status === 'ok' && okj.reply === '봇 답: 뭐해?', JSON.stringify(okj));
-	const turnCall = rpcCalls.find((c) => c[0] === 'ai_chat_turn');
+	const turnCall = rpcCalls.find((c) => c[0] === 'ai_chat_claim');
 	check('★ 사용자는 토큰에서 (클라 주장 아님) · 모델에 보내는 기록 전체 검사', turnCall?.[1].p_user === USER && turnCall[1].p_text === '안녕하세요\n뭐해?', JSON.stringify(turnCall));
 	check('잘못된 토큰 → 401', (await post('/api/ai-chat', { chat_id: CHAT, messages: [{ role: 'user', content: 'x' }] }, 'bad')).status === 401);
 	check('마지막이 사용자 말이 아니면 400', (await post('/api/ai-chat', { chat_id: CHAT, messages: [{ role: 'assistant', content: 'x' }] })).status === 400);

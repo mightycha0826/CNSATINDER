@@ -25,6 +25,7 @@ const oldRoom = { ...liveRoom, id: id('e'), status: 'closed', live: false, close
 const settings = () => ({ is_open: isOpen, notice: '', room_minutes: 10, extend_minutes: 5, vote_window_sec: 60, max_rounds: 0, rematch_cooldown_days: 7, auto_suspend_reports: 3, max_open_rooms: 3 });
 
 const RPC = {
+	admin_session_valid: () => true,
 	admin_staff_role: () => 'admin',
 	admin_staff_touch: () => ({ role: 'admin', team: [] }),
 	admin_stats: () => ({ open_reports: reports.filter((r) => r.status === 'open').length, reviewing: 0, open_letter_reports: 0, active_rooms: 1, seeking_now: 0, restricted_users: 0, rooms_24h: 2, letters_24h: 0, is_open: isOpen }),
@@ -58,7 +59,7 @@ for (let i = 0; i < 60 && !out.includes('ready'); i++) await new Promise((r) => 
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
-const payload = `${STAFF}.${Math.floor(Date.now() / 1000) + 3600}`;
+const payload = `${STAFF}.00000000-0000-4000-8000-000000000009.${Math.floor(Date.now() / 1000) + 3600}`;
 const cookie = `${payload}.${createHmac('sha256', SECRET).update(payload).digest('base64url')}`;
 const browser = await chromium.launch({ executablePath: CHROME });
 const U = (p) => `http://localhost:${PORT}${p}`;

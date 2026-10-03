@@ -35,6 +35,7 @@ globalThis.setInterval = () => 1;
 
 try {
 	build('src/lib/accountScope.ts', 'scope');
+	build('src/lib/drafts.ts', 'drafts', { './accountScope': 'scope' });
 	write('supabase', [
 		'export const pending = new Map();',
 		'const ask = (key, args) => new Promise(resolve => {',
@@ -81,7 +82,7 @@ try {
 
 	const A = await import(urls.get('scope'));
 	const {supabase, answer, pending} = await import(urls.get('supabase'));
-	const {S, UI, init, loadProfile, loadAccount, recheckMaint, setProfileField} = await import(urls.get('state'));
+	const {S, UI, init, retryAccount, loadProfile, loadAccount, recheckMaint, setProfileField} = await import(urls.get('state'));
 	const M = await import(urls.get('mailbox'));
 	const U = await import(urls.get('unread'));
 	const N = await import(urls.get('notices'));
@@ -164,6 +165,30 @@ try {
 	check('같은 ID로 재로그인해도 새 계정 수명', A.accountToken() > bToken && !A.accountIsCurrent(bToken));
 	await settleLogin('b');
 	I.dismissInApp();
+	const oneLoad = INBOX.load(), sharedLoad = INBOX.load();
+	check('inbox 중첩 요청은 하나의 RPC를 공유', pending.get('my_rooms').length === 1);
+	answer('my_rooms', inbox([])); await Promise.all([oneLoad, sharedLoad]);
+	supabase.auth.emit('SIGNED_OUT', null);
+	supabase.auth.emit('SIGNED_IN', session('c'));
+	await drain();
+	answer('profiles', null, { message: 'offline' }); answer('app_settings', { is_open: true }); answer('my_account', { name: 'c' });
+	await drain();
+	check('계정 조회 실패는 복구 가능한 오류 상태', !!S.bootError && !S.profileLoading);
+	const recovery = retryAccount(); await settleLogin('c'); await recovery;
+	check('같은 계정 재시도는 프로필을 다시 읽고 오류 해제', !S.bootError && S.profile.id === 'c');
+	const D = await import(urls.get('drafts'));
+	const stored = new Map();
+	globalThis.localStorage = { get length() { return stored.size; }, key: (i) => [...stored.keys()][i], getItem: (k) => stored.get(k) ?? null, setItem: (k, v) => stored.set(k, v), removeItem: (k) => stored.delete(k) };
+	const valid = (v) => !!v && typeof v.body === 'string';
+	D.writeDraft('letter:1', { body: '작성한 편지' });
+	check('초안 본문을 기기에서 복원', D.readDraft('letter:1', valid).body === '작성한 편지');
+	D.clearDraft('letter:1'); check('보내기·버리기는 초안을 제거', D.readDraft('letter:1', valid) === null);
+	D.writeDraft('profile', { body: '소개' }); const old = A.accountToken(); A.changeAccount('d');
+	check('계정 전환은 이전 계정 초안을 제거', stored.size === 0 && D.readDraft('profile', valid) === null);
+	D.writeDraft('profile', { body: '늦은 응답' }, old); check('늦은 계정의 초안 저장도 거부', stored.size === 0);
+	D.writeDraft('expired', { body: '지난 글' });
+	const originalNow = Date.now; Date.now = () => originalNow() + 25 * 3600_000;
+	check('24시간 지난 초안은 읽히지 않고 정리', D.readDraft('expired', valid) === null && stored.size === 0); Date.now = originalNow;
 } finally {
 	globalThis.setInterval = interval;
 	for (const path of files) rmSync(path, {force: true});

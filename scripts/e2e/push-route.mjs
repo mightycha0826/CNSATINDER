@@ -16,6 +16,7 @@ http.createServer((req, res) => { let b = ''; req.on('data', (c) => (b += c)); r
 	const send = (s, o) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
 	if (req.url.startsWith('/auth/v1/user')) return req.headers.authorization === `Bearer ${GOOD}` ? send(200, { id: USER, aud: 'authenticated', role: 'authenticated' }) : send(401, { msg: 'bad jwt' });
 	const fn = req.url.match(/rpc\/([a-z_]+)/)?.[1]; rpcCalls.push([fn, JSON.parse(b || '{}')]);
+	if (fn === 'api_rate_take') return send(200, {allowed:true,retry_after:1});
 	if (fn === 'reaction_push_payload') return send(200, { title: '새벽수달', body: '❤️ 공감: 실리카겔 좋아하세요?', room_id: 'room-1', subs: [sub] });
 	send(200, null);
 }); }).listen(54398);

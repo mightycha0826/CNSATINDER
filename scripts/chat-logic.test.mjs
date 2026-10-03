@@ -880,6 +880,24 @@ try {
 		r.dispose();
 	}
 
+	console.log('\n[28] 나가기 실패와 큰 고정 채팅의 조회 범위');
+	{
+		const t = fake(), r = await mk(t);
+		t.leave = async () => { throw new Error('offline'); };
+		check('나가기 실패는 화면과 방을 종료하지 않는다', !(await r.leave(false)) && !r.closed && !r.endedByMe);
+		r.dispose();
+	}
+	for (const size of [100, 1000, 10000]) {
+		const t = fake(); t.snap = snap({ pinned: true });
+		t.server = Array.from({ length: size }, (_, i) => row(1, '본문', 'message-' + i, i + 1));
+		t.fetchBefore = async (_r, before, n) => t.server.filter((m) => m.id < before).sort((a, b) => b.id - a.id).slice(0, n);
+		const r = await mk(t); await r.resync();
+		check(size + '개 고정 채팅도 초기 조회는 최대 200개', r.msgs.length === Math.min(size, 200) && t.calls.fetchAfter === 0);
+		if (size > 200) {
+			await r.loadOlder(); check('이전 대화는 중복 없이 200개씩 추가 (' + size + ')', r.msgs.length === 400 && r.msgs[0].id === size - 399);
+		} else check('짧은 대화는 더 보기 없음', !r.hasOlder);
+		r.dispose();
+	}
 	console.log('\n[27] 찾기 수명 — 취소한 요청이 새 찾기를 끝내지 않는다');
 	{
 		const { PollSeeker } = await import(modules.get('pollSeeker'));

@@ -102,7 +102,8 @@
 	});
 
 	async function logout() {
-		await fetch('/admin/session', { method: 'DELETE' });
+		const res = await fetch('/admin/session', { method: 'DELETE' });
+		if (!res.ok) { window.alert('로그아웃하지 못했어요. 다시 시도해 주세요'); return; }
 		void goto('/admin/login', { replaceState: true });
 	}
 </script>

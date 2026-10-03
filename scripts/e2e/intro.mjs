@@ -27,12 +27,25 @@ try {
 	await intro.getByRole('button', { name: '프로필 보기' }).click(); await page.waitForTimeout(300);
 	check('프로필 보기 → 프로필 시트', (await page.locator('.sheet .profile').count()) === 1 && (await page.locator('.sheet .profile .bio').innerText()).includes('밴드'));
 	await page.getByRole('button', { name: '닫기' }).click();
+	await page.locator('.sheet').waitFor({state:'detached'});
+	await page.waitForTimeout(250);
 
 	await page.goto(`http://localhost:${PORT}/dev/chat?s=pending`);
 	await page.locator('.intro').waitFor(); await page.waitForTimeout(600);
 	await page.screenshot({ path: `${SP}/intro-pending.png` });
 	check('입장 대기(메시지 없음)에도 카드', (await page.locator('.intro h2').innerText()).length > 0 && (await page.locator('.bubble').count()) === 0);
 	check('페이지 오류 없음', errs.length === 0, errs.join(' / '));
+	await page.context().close();
+	const publicContext = await browser.newContext({viewport:{width:390,height:800}});
+	const legalPage = await publicContext.newPage();
+	for (const doc of ['terms','privacy','policy']) {
+		await legalPage.goto(`http://localhost:${PORT}/legal/${doc}`);
+		await legalPage.locator('article h1').waitFor();
+		check(`설치·로그인 없이 ${doc} 문서 열림`, new URL(legalPage.url()).pathname === `/legal/${doc}` && await legalPage.locator('article h2').count() > 0);
+	}
+	const viewport = await legalPage.locator('meta[name=viewport]').getAttribute('content');
+	check('브라우저 확대 허용', !/user-scalable\s*=\s*no|maximum-scale\s*=\s*1\b/.test(viewport));
+	await publicContext.close();
 } finally { await browser.close(); stopProcess(vite);  }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

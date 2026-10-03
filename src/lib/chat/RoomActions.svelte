@@ -4,7 +4,7 @@
 	export type RoomStep = 'menu' | 'leave' | 'block' | 'report';
 	/**
 	 * 무엇을 할지는 부르는 쪽이 정한다 (대화 목록: RPC 를 바로 · 대화방: 방 상태(ChatRoom)를 거쳐).
-	 * false 를 돌려주면 연결 실패 — "연결을 확인해 주세요"로 알리고 닫는다. 오류를 던지면 그 이유를 알리고 시트는 그대로 둔다.
+	 * false 또는 오류를 돌려주면 이유를 표시하고 시트를 유지해 재시도할 수 있다.
 	 */
 	export type RoomActionFns = {
 		leave: () => unknown;
@@ -48,20 +48,21 @@
 	let reason = $state<ReportReason | null>(null);
 	let note = $state('');
 	let acting = $state(false);
+	let actionError = $state('');
 
 	async function act(fn: () => unknown, done: string | null) {
 		if (acting) return;
 		acting = true;
+		actionError = '';
 		try {
 			if ((await fn()) === false) {
-				toast('연결을 확인해 주세요');
-				onclose();
+				actionError = '완료하지 못했어요. 연결을 확인하고 다시 시도해 주세요.';
 				return;
 			}
 			if (done) toast(done);
 			ondone();
 		} catch (e) {
-			toast(errMsg(e));
+			actionError = errMsg(e);
 		} finally {
 			acting = false;
 		}
@@ -94,6 +95,8 @@
 	</button>
 	<button class="item" onclick={onclose}>취소</button>
 {/if}
+
+{#if actionError}<p class="warn" role="alert">{actionError}</p>{/if}
 
 <style>
 	.who {

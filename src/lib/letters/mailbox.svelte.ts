@@ -144,17 +144,20 @@ export const retryBox = (box: Box) => (failedMore[box] ? loadMore(box) : loadBox
 
 /** 버리기 · 차단 · 신고로 편지 줄기를 지웠을 때 — 목록에서 바로 빼고 새로 읽는다 */
 export function dropThread(threadId: number) {
+	const affected = (['received', 'sent'] as const).filter((box) => BOX[box].some((item) => item.thread_id === threadId));
 	BOX.received = BOX.received.filter((x) => x.thread_id !== threadId);
 	BOX.sent = BOX.sent.filter((x) => x.thread_id !== threadId);
-	refreshMailbox();
+	void Promise.all([...(affected.length ? affected : ['received', 'sent'] as const).map((box) => loadBox(box)), refreshUnread()]);
 }
 
 /** 폴더에 넣었다 · 폴더를 바꿨다 · 지웠다(Phase 69) — 목록에서 바로 빼고(폴더에 간 편지는 보관함 목록에 없다) 새로 읽어 폴더 수를 맞춘다 */
 export function filed(ids: number[]) {
 	const gone = new Set(ids);
+	const affected = (['received', 'sent'] as const).filter((box) => BOX[box].some((item) => gone.has(item.id)));
 	BOX.received = BOX.received.filter((x) => !gone.has(x.id));
 	BOX.sent = BOX.sent.filter((x) => !gone.has(x.id));
-	refreshMailbox();
+	// 폴더 카운트는 첫 페이지 응답에 함께 온다. 이미 열린 편지를 옮겨서 unread는 바뀌지 않는다.
+	void Promise.all((affected.length ? affected : ['received'] as const).map((box) => loadBox(box)));
 }
 
 /** 편지를 열었다 — 목록에서도 바로 "열어 봄"으로 (서버는 dm_open 이 이미 기록했다) */

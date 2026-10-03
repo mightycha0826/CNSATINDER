@@ -285,7 +285,16 @@ try {
 	check('★ 봉투에서 편지지가 나와 쓰는 칸이 된다 — To. 익명의 여학생 · From. 내 이름', (await page.locator('.letter-paper .lp-to').innerText()).startsWith('To. 익명의 여학생')
 		&& (await page.locator('.letter-paper .lp-from').innerText()) === 'From. 김보냄');
 	check('비어 있으면 못 보낸다', await page.getByRole('button', { name: '봉투에 넣어 보내기' }).isDisabled());
+	await page.getByRole('textbox', {name:'편지 내용'}).fill('버릴 초안');
+	await page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('landy-draft-v1:') && localStorage.getItem(key).includes('버릴 초안')));
+	await page.getByRole('button', {name:'초안 버리기'}).click();
+	await page.waitForFunction(() => !Object.keys(localStorage).some(key => key.startsWith('landy-draft-v1:')));
+	check('초안 버리기는 본문과 기기 저장 항목을 모두 제거', (await page.getByRole('textbox', {name:'편지 내용'}).textContent()) === '');
 	await page.getByRole('textbox', { name: '편지 내용' }).fill('고마워! 너도 잘 지내');
+	await page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith('landy-draft-v1:') && localStorage.getItem(key).includes('고마워! 너도 잘 지내')));
+	await page.reload();
+	await page.waitForFunction(() => document.querySelector('.compose')?.getAttribute('data-phase') === 'write');
+	check('답장 본문은 새로고침 뒤 기기 초안에서 복원', (await page.getByRole('textbox', {name:'편지 내용'}).innerText()) === '고마워! 너도 잘 지내');
 	await page.screenshot({ path: `${SP}/letters-4a-reply.png` });
 	await page.getByRole('button', { name: '봉투에 넣어 보내기' }).click();
 	await page.waitForTimeout(1500);
@@ -311,6 +320,7 @@ try {
 	const back = await page.evaluate(() => ({ plus: document.querySelector('.post .plus')?.getAnimations().length ?? 0, land: !!document.querySelector('.desk .top-env.land') }));
 	check('★ 보내고 돌아오면 우체통 위 "+✉" · 보낸 편지가 책상 더미에 내려앉는다 (Phase 72)', back.plus > 0 && back.land, JSON.stringify(back));
 	check('★ 답장 → dm_reply_to (받은 편지 한 통에 · 이름으로 받은 쪽은 서명 없음)', JSON.stringify(called(w, 'dm_reply_to').at(-1)?.[1]) === JSON.stringify({ p_msg: 70, p_body: '고마워! 너도 잘 지내', p_fmt: null, p_nick: null }));
+	check('보내기 성공 후 답장 초안 삭제', !(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('landy-draft-v1:') && localStorage.getItem(key).includes('고마워! 너도 잘 지내')))));
 	await page.locator('button.desk').click(); await page.waitForURL('**/letters/archive'); await page.locator('.archive .stack .item').first().waitFor(); await page.waitForTimeout(300);
 	check('★ 날아간 뒤 보관함은 보낸 편지 칸 — 맨 위에 방금 답장 (To. 익명의 여학생)', (await page.getByRole('tab', { name: '보낸 편지' }).getAttribute('aria-selected')) === 'true'
 		&& (await page.locator('.archive .stack .item').first().getAttribute('aria-label')) === '익명의 여학생에게 보낸 답장');

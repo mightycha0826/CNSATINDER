@@ -84,6 +84,7 @@
 
 {#if to}
 	<EnvelopeCompose
+		draftKey={`letter:new:${to.id}`}
 		to={to.name}
 		toSub={to.grade ? `${to.grade}학년` : ''}
 		from={anonName(S.profile?.gender)}

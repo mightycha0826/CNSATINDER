@@ -44,6 +44,10 @@ export class ChatRoom {
 	partnerTypingUntil = $state(0);
 	partnerHere = $state(false);
 	connected = $state(false);
+	hasOlder = $state(false);
+	loadingOlder = $state(false);
+	#historyStarted = false;
+	#historyFloor = Infinity;
 	/** serverNow - clientNow (ms). 모든 서버 응답의 server_now 로 갱신. */
 	skew = $state(0);
 	/** 메시지 id → 자리별 공감 { 1?: 'heart', 2?: 'laugh' } */
@@ -84,6 +88,20 @@ export class ChatRoom {
 
 	get seat() {
 		return this.snap?.my_seat ?? 1;
+	}
+
+	async loadOlder() {
+		if (!this.hasOlder || this.loadingOlder || !this.#t.fetchBefore || this.#disposed) return false;
+		this.loadingOlder = true;
+		try {
+			const rows = await this.#t.fetchBefore(this.roomId, this.#historyFloor, 200);
+			if (this.#disposed) return false;
+			this.#messages.merge(rows, 'sent');
+			for (const row of rows) this.#historyFloor = Math.min(this.#historyFloor, row.id);
+			this.hasOlder = rows.length === 200;
+			return true;
+		} catch { return false; }
+		finally { this.loadingOlder = false; }
 	}
 	get closed() {
 		return this.snap?.status === 'closed';
@@ -305,10 +323,14 @@ export class ChatRoom {
 		if (this.#fetching) return this.#fetching;
 		const after = this.#fetchedId;
 		const fetch = (async () => {
-			const rows = await this.#t.fetchAfter(this.roomId, after);
+			const initialWindow = !this.#historyStarted && !!this.snap?.pinned && !!this.#t.fetchBefore;
+			const rows = initialWindow ? await this.#t.fetchRecent(this.roomId, 200) : await this.#t.fetchAfter(this.roomId, after);
 			if (this.#disposed || this.closed) return;
+			this.#historyStarted = true;
+			if (initialWindow) this.hasOlder = rows.length === 200;
+			this.#messages.merge(rows, 'sent');
 			for (const r of rows) {
-				this.upsert(r, 'sent');
+				this.#historyFloor = Math.min(this.#historyFloor, r.id);
 				this.#fetchedId = Math.max(this.#fetchedId, r.id);
 			}
 		})();
@@ -430,20 +452,23 @@ export class ChatRoom {
 
 	async block(): Promise<boolean> {
 		try {
+			const snap = await this.#t.block(this.roomId);
 			this.endedByMe = true;
-			this.#absorb(await this.#t.block(this.roomId));
+			this.#absorb(snap);
 			return true;
 		} catch {
 			return false;
 		}
 	}
 
-	async leave(skip: boolean) {
-		this.endedByMe = true;
+	async leave(skip: boolean): Promise<boolean> {
 		try {
-			this.#absorb(await this.#t.leave(this.roomId, skip));
+			const snap = await this.#t.leave(this.roomId, skip);
+			this.endedByMe = true;
+			this.#absorb(snap);
+			return true;
 		} catch {
-			/* 이미 닫혔을 수 있다 */
+			return false;
 		}
 	}
 

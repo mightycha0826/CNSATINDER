@@ -21,8 +21,10 @@ let settings = { is_open: true, notice: '', room_minutes: 10, extend_minutes: 10
 	ai_moderation: false, ai_mod_daily_cap: 250, ai_chat: false, ai_chat_per_user: 3, ai_chat_daily_cap: 3, ai_chat_minutes: 10, ai_chat_max_turns: 30 };
 let terms = ['섹\\s*스', '니\\s*애\\s*미'];
 let dmStatus = 'closed';
+let exportRange = null;
 const row = (id, source, reporter) => ({ id, created_at: t, reason: source === 'auto' ? 'self_harm' : 'harassment', note: source === 'auto' ? '[자동 감지] "요즘 사라지고 싶어" — 위기 신호' : '욕했어요', status: 'open', reported_id: A, reporter_id: reporter, source, reported_30d: 1, evidence_count: 2, reported_status: 'active' });
 const RPC = {
+	admin_session_valid: () => true,
 	admin_staff_role: () => 'admin',
 	admin_staff_touch: () => ({ role: 'admin', team: [] }),
 	admin_stats: () => ({ open_reports: 2, reviewing: 0, open_letter_reports: 0, active_rooms: 1, seeking_now: 0, restricted_users: 0, rooms_24h: 1, letters_24h: 0, is_open: true }),
@@ -37,12 +39,14 @@ const RPC = {
 	admin_log_identity_view: (a) => { calls.push(['log', a]); return null; },
 	admin_roster_name: () => null,
 	admin_rooms: () => [],
-	admin_export_messages: (a) => {
+	admin_export_start: (a) => { exportRange = a; return { id: '00000000-0000-4000-8000-000000000001' }; },
+	admin_export_chunk: (a) => {
+		a = { ...a, ...exportRange };
 		calls.push(['export', a]);
 		// 5,000줄 조각 두 개 + 마지막 빈 조각을 흉내 — 첫 조각은 꽉 차 있고(다음이 있음), 두 번째는 덜 차 있다
-		if (a.p_after === 0) return { csv: Array.from({ length: 5000 }, (_, i) => `${i + 1},${ROOM},closed,1,"여우",2026-09-24 10:00:00,"안녕 ${i + 1}",`).join('\n'), last_id: 5000, count: 5000 };
-		if (a.p_after === 5000) return { csv: `5001,${ROOM},closed,2,"곰",2026-09-24 10:01:00,"'=1+1",5000`, last_id: 5001, count: 1 };
-		return { csv: '', last_id: null, count: 0 };
+		if (a.p_after === 0) return { job_id: '00000000-0000-4000-8000-000000000001', csv: Array.from({ length: 5000 }, (_, i) => `${i + 1},${ROOM},closed,1,"여우",2026-09-24 10:00:00,"안녕 ${i + 1}",`).join('\n'), last_id: 5000, count: 5000 };
+		if (a.p_after === 5000) return { job_id: '00000000-0000-4000-8000-000000000001', csv: `5001,${ROOM},closed,2,"곰",2026-09-24 10:01:00,"'=1+1",5000`, last_id: 5001, count: 1 };
+		return { job_id: '00000000-0000-4000-8000-000000000001', csv: '', last_id: null, count: 0 };
 	},
 	// 이름 편지 신고 (Phase 23) — letter_id = 편지 줄기 id
 	admin_letter_report: () => ({
@@ -84,7 +88,7 @@ for (let i = 0; i < 120 && !out.includes('ready'); i++) await new Promise((r) =>
 
 let pass = 0, fail = 0;
 const check = (n, ok, d = '') => { ok ? pass++ : fail++; console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${n}${ok ? '' : '  ' + d}`); };
-const payload = `${STAFF}.${Math.floor(Date.now() / 1000) + 3600}`;
+const payload = `${STAFF}.00000000-0000-4000-8000-000000000009.${Math.floor(Date.now() / 1000) + 3600}`;
 const cookie = `${payload}.${createHmac('sha256', SECRET).update(payload).digest('base64url')}`;
 const browser = await chromium.launch({ executablePath: CHROME });
 try {

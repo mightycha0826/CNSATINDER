@@ -3,6 +3,7 @@ import type { Adapter } from '@sveltejs/kit';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { buildVersion } from './scripts/build-version.mjs';
 
 function adapterWithPhotoCleanup(): Adapter {
 	const adapter = cloudflareAdapter({ platformProxy: { remoteBindings: process.env.CF_REMOTE === '1' } });
@@ -11,11 +12,14 @@ function adapterWithPhotoCleanup(): Adapter {
 		async adapt(builder) {
 			await adapter.adapt(builder);
 			const worker = `${builder.getBuildDirectory('cloudflare')}/_worker.js`;
+			const buildId = buildVersion(builder.getBuildDirectory('cloudflare'), readFileSync('scripts/cloudflare-worker.mjs'));
+			const sw = `${builder.getBuildDirectory('cloudflare')}/sw.js`;
+			writeFileSync(sw, readFileSync(sw, 'utf8').replace("const VERSION = 'landy-v12';", `const VERSION = 'landy-${buildId}';`));
 			// 같은 깊이의 빌드 폴더로 옮겨 생성된 상대 import를 유지한다. 정적 assets에는 넣지 않는다.
 			builder.copy(worker, `${builder.getBuildDirectory('cloudflare-tmp')}/app-worker.js`);
 			const wrapper = readFileSync('scripts/cloudflare-worker.mjs', 'utf8')
 				.replace("'../.svelte-kit/cloudflare-tmp/app-worker.js'", "'../cloudflare-tmp/app-worker.js'")
-				.replace("'../src/lib/server/badgePhotoCleanup.ts'", "'../../src/lib/server/badgePhotoCleanup.ts'");
+				.replaceAll("'../src/lib/server/", "'../../src/lib/server/");
 			writeFileSync(worker, wrapper);
 		}
 	};
@@ -24,8 +28,11 @@ function adapterWithPhotoCleanup(): Adapter {
 // adapter-cloudflare 고정 — 운영자 대시보드(/admin)가 서버 라우트를 쓰므로
 // adapter-static 분기를 두지 않는다. 학생 앱 화면은 루트 +layout.ts 에서 ssr=false.
 export default defineConfig(({ command }) => ({
+	// 격리된 CI/검증에서는 빈 디렉터리를 지정해 실제 .env 없이 빌드한다.
+	envDir: process.env.LANDY_ENV_DIR,
 	plugins: [
 		sveltekit({
+			env: { dir: process.env.LANDY_ENV_DIR ?? '.' },
 			compilerOptions: {
 				// 프로젝트 코드는 전부 runes 모드. 라이브러리(node_modules)는 예외.
 				runes: ({ filename }) => (filename.includes('node_modules') ? undefined : true)

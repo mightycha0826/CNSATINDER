@@ -132,7 +132,7 @@
 		if (!passwordOk || busy) return;
 		busy = true;
 		try {
-			await setPassword(password);
+			await setPassword(password, current || undefined);
 			toast('비밀번호 저장 완료');
 			pwStep = 'idle';
 			password = current = code = '';

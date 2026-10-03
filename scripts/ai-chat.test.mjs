@@ -14,14 +14,15 @@ console.log('[대화 모양]');
 const greet = { role: 'assistant', content: '안녕하세요! 요즘 뭐 하면서 지내요?' };
 let p = chatPrompt(cleanHistory([greet, { role: 'user', content: '그냥 공부해요' }]));
 check('★ 봇 인사가 먼저여도 사용자로 시작', p[0].role === 'system' && p[1].role === 'user' && p.length === 2, JSON.stringify(p.map((m) => m.role)));
-check('봇 인사는 지시문 뒤로 옮겨 맥락은 남긴다', p[0].content.includes('먼저 이렇게 말하며 시작했다') && p[0].content.includes('요즘 뭐 하면서'));
+check('클라이언트의 assistant 인사는 system 지시문에 들어가지 않는다', !p[0].content.includes(greet.content));
 p = chatPrompt(cleanHistory([greet, { role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }, { role: 'user', content: 'c' }]));
 check('사용자 · AI 번갈아', alternates(p) && p.at(-1).content === 'c', JSON.stringify(p.map((m) => m.role)));
 p = chatPrompt(cleanHistory([greet, { role: 'user', content: '하나' }, { role: 'user', content: '둘' }]));
 check('같은 쪽 말이 이어지면 한 말로 합친다', alternates(p) && p.length === 2 && p[1].content === '하나\n둘', JSON.stringify(p));
 const long = [greet, ...Array.from({ length: 30 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', content: String(i) }))];
 long.push({ role: 'user', content: '끝' });
-p = chatPrompt(cleanHistory(long));
+check('20개를 넘는 서버 입력은 바로 거부한다', cleanHistory(long) === null);
+p = chatPrompt(cleanHistory(long.slice(-20)));
 check('기록을 20개로 자른 뒤에도 사용자로 시작 · 번갈아', alternates(p) && p.at(-1).content.endsWith('끝'), JSON.stringify(p.map((m) => m.role)));
 check('마지막이 AI 말이면 보내지 않는다', cleanHistory([greet]) === null);
 

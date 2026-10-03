@@ -43,15 +43,15 @@
 	/* 로고·장식용 전체 그라디언트 — 아이콘과 같은 대각선 방향 */
 	--brand: linear-gradient(45deg, var(--g-orange), var(--g-coral) 50%, var(--g-pink));
 	/* 흰 글씨가 올라가는 면 — 가장 밝은 연보라는 빼고 한 단계 짙게 (글씨가 읽히게) */
-	--accent-fill: linear-gradient(110deg, #b56cf3, #a35bee 55%, #8c46e2);
+	--accent-fill: linear-gradient(110deg, #8f48e0, #843ed8 55%, #7634c6);
 	/* 글자·링크·아이콘용 단색 — 밝은 바탕 위 4.5:1 넘게 */
-	--accent: #8b3fd9;
+	--accent: var(--theme-accent-light, #8b3fd9);
 	/* 내 말풍선 — 화면 위(연보라)에서 아래(보라)로. 인스타 DM 처럼 말풍선 위치에 따라 색이 변한다 */
-	--bubble-fill: linear-gradient(180deg, #b56cf3, #a35bee 55%, #8c46e2);
+	--bubble-fill: linear-gradient(180deg, #8f48e0, #843ed8 55%, #7634c6);
 	/* 위 그라디언트의 세 점 — 대화 화면이 그라디언트 위아래를 끝 색으로 늘려 쓴다 (ChatView) */
-	--bubble-a: #b56cf3;
-	--bubble-b: #a35bee;
-	--bubble-c: #8c46e2;
+	--bubble-a: #8f48e0;
+	--bubble-b: #843ed8;
+	--bubble-c: #7634c6;
 	/* 작은 흰 글씨(배지 · 칩 · 스티커)가 올라가는 면 — 흰 글씨와 4.7:1 넘게 (큰 글씨 버튼은 --accent-fill 그대로) */
 	--accent-fill-deep: linear-gradient(110deg, #8f48e0, #843ed8 55%, #7634c6);
 	--on-accent: #ffffff;
@@ -63,6 +63,12 @@
 	--switch-off: #e8e3de;
 	/* 편지지 — 따뜻한 미색 종이 · 먹색 글씨 */
 	--paper: #fffaf0;
+	--letter-red: #ad2835;
+	--letter-orange: #a34408;
+	--letter-green: #15734a;
+	--letter-blue: #1767b5;
+	--letter-purple: #773aa8;
+	--letter-gray: #62636d;
 	--paper-ink: #2b2620;
 	--paper-edge: #efe4cf;
 	--paper-rule: rgb(90 70 50 / 0.13);
@@ -155,12 +161,18 @@
 		--line: #2c2629;
 		--text: #f6f1ef;
 		--text-2: #a39995;
-		--accent: #c79bff;
+		--accent: var(--theme-accent-dark, #c79bff);
 		--group-bg: #0c0a0b;
 		--cell: #19161a;
 		--cell-line: #2e282b;
 		--switch-off: #3a3336;
 		--paper: #1f1c17;
+	--letter-red: #ff9a9f;
+	--letter-orange: #ffb47a;
+	--letter-green: #73daa6;
+	--letter-blue: #81c0ff;
+	--letter-purple: #d0a2fa;
+	--letter-gray: #c3c4cf;
 		--paper-ink: #ece5d8;
 		--paper-edge: #34302a;
 		--paper-rule: rgb(236 229 216 / 0.1);
@@ -196,12 +208,18 @@
 	--line: #2c2629;
 	--text: #f6f1ef;
 	--text-2: #a39995;
-	--accent: #c79bff;
+	--accent: var(--theme-accent-dark, #c79bff);
 	--group-bg: #0c0a0b;
 	--cell: #19161a;
 	--cell-line: #2e282b;
 	--switch-off: #3a3336;
 	--paper: #1f1c17;
+	--letter-red: #ff9a9f;
+	--letter-orange: #ffb47a;
+	--letter-green: #73daa6;
+	--letter-blue: #81c0ff;
+	--letter-purple: #d0a2fa;
+	--letter-gray: #c3c4cf;
 	--paper-ink: #ece5d8;
 	--paper-edge: #34302a;
 	--paper-rule: rgb(236 229 216 / 0.1);

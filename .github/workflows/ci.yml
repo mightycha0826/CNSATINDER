@@ -16,6 +16,36 @@ permissions:
   contents: read
 
 jobs:
+  postgres:
+    name: 실제 PostgreSQL 동시성 · 마이그레이션
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test-only-password
+          POSTGRES_DB: landy_review_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: PostgreSQL 클라이언트 준비
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: 동시 폴더 생성 · 매칭 검증
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: test-only-password
+          PGDATABASE: landy_review_test
+        run: node scripts/review-postgres.test.mjs
   check:
     name: 타입 검사 · 단위 테스트 · DB 스키마 · 빌드
     runs-on: ubuntu-latest
