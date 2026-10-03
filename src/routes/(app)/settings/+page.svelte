@@ -32,19 +32,15 @@
 	import {
 		S,
 		errMsg,
-		recentlyVerified,
-		sendOtpToMe,
-		setPassword,
 		setProfileField,
 		signOut,
-		toast,
-		verifyCurrentPassword,
-		verifyOtpForMe
+		toast
 	} from '$lib/state.svelte';
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import Chevron from '$lib/ui/Chevron.svelte';
 	import { LEGAL, LEGAL_IDS } from '$lib/legal';
-	import PasswordFields from '$lib/ui/PasswordFields.svelte';
+	import PasswordSettings from '$lib/ui/PasswordSettings.svelte';
+	import ProfileSwitch from '$lib/ui/ProfileSwitch.svelte';
 	import { reloadApp } from '$lib/reload';
 	import Sheet from '$lib/ui/Sheet.svelte';
 	import BadgeChatToggles from '$lib/ui/BadgeChatToggles.svelte';
@@ -53,97 +49,7 @@
 
 	let reloading = $state(false);
 
-	let busy = $state(false);
-
-	// ── 비밀번호 ──
-	// 바꾸기: 기존 비밀번호 확인 → 새 비밀번호. 잊었으면 학교 메일 인증 코드로 확인 → 새 비밀번호.
-	// 처음 만들 때는 확인 없이 바로 (인증 코드로 가입한 직후이므로).
-	type PwStep = 'idle' | 'current' | 'code' | 'new';
-	let pwStep = $state<PwStep>('idle');
-	let current = $state('');
-	let code = $state('');
-	let codeSentTo = $state('');
-	let resendAt = $state(0);
-	let password = $state('');
-	let passwordOk = $state(false);
-
-	/** 비밀번호 줄 — 누르면 펼치고, 펼쳐져 있으면 접는다 */
-	function togglePw() {
-		if (pwStep === 'idle') startPw();
-		else pwStep = 'idle';
-	}
-
-	function startPw() {
-		current = code = password = '';
-		// 비밀번호가 아직 없거나, 방금 인증 코드로 들어왔으면 바로 새 비밀번호로
-		pwStep = !S.hasPassword || recentlyVerified() ? 'new' : 'current';
-	}
-	$effect(() => {
-		// 홈의 "비밀번호를 만들어 두세요" 에서 왔으면 펼쳐 둔다
-		if (location.hash === '#password') startPw();
-	});
-
-	async function checkCurrent() {
-		if (!current || busy) return;
-		busy = true;
-		try {
-			await verifyCurrentPassword(current);
-			pwStep = 'new';
-		} catch (e) {
-			const m = errMsg(e);
-			toast(m.includes('비밀번호가 맞지') ? '비밀번호가 맞지 않아요' : m);
-			current = '';
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function sendCode() {
-		if (busy) return;
-		busy = true;
-		try {
-			codeSentTo = await sendOtpToMe();
-			resendAt = Date.now() + 60_000;
-			code = '';
-			pwStep = 'code';
-			toast('인증 코드 발송');
-		} catch (e) {
-			toast(errMsg(e));
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function checkCode() {
-		if (!/^[0-9]{6,8}$/.test(code.trim()) || busy) return;
-		busy = true;
-		try {
-			await verifyOtpForMe(code);
-			pwStep = 'new';
-		} catch (e) {
-			toast(errMsg(e));
-			code = '';
-		} finally {
-			busy = false;
-		}
-	}
-
-	async function savePassword() {
-		if (!passwordOk || busy) return;
-		busy = true;
-		try {
-			await setPassword(password, current || undefined);
-			toast('비밀번호 저장 완료');
-			pwStep = 'idle';
-			password = current = code = '';
-		} catch (e) {
-			toast(errMsg(e));
-		} finally {
-			busy = false;
-		}
-	}
-
-	// ── 알림 ──
+	// 푸시 알림
 	let pushPerm = $state<PushState>(pushState());
 	let pushOn = $state<boolean | null>(null);
 	let pushBusy = $state(false);
@@ -206,59 +112,7 @@
 		toast('이 기기 설정을 처음으로 되돌렸어요');
 	}
 
-	// ── 매칭 ──
-	let rematchBusy = $state(false);
-	async function toggleRematch(e: Event) {
-		const box = e.currentTarget as HTMLInputElement;
-		const on = box.checked;
-		box.checked = !!S.profile?.allow_rematch; // 저장된 뒤에 바뀐다
-		if (rematchBusy) return;
-		rematchBusy = true;
-		try {
-			await setProfileField({ allow_rematch: on });
-			toast(on ? '만났던 사람도 다시 만날 수 있어요' : '최근에 만난 사람은 다시 만나지 않아요');
-		} catch (err) {
-			toast(errMsg(err));
-		} finally {
-			rematchBusy = false;
-		}
-	}
-
-	// ── 편지 받기 (Phase 23) ──
-	let lettersBusy = $state(false);
-	async function toggleLetters(e: Event) {
-		const box = e.currentTarget as HTMLInputElement;
-		const on = box.checked;
-		box.checked = S.profile?.letters_open !== false; // 저장된 뒤에 바뀐다
-		if (lettersBusy || !S.session) return;
-		lettersBusy = true;
-		try {
-			await setProfileField({ letters_open: on });
-			toast(on ? '이름으로 찾아서 편지를 보낼 수 있어요' : '이제 검색에 나오지 않고 새 편지를 받지 않아요');
-		} catch (err) {
-			toast(errMsg(err));
-		} finally {
-			lettersBusy = false;
-		}
-	}
-
-	// ── 편지 추천 · 뱃지 (Phase 84) ──
-	let recBusy = $state(false);
-	async function toggleRecommend(e: Event) {
-		const box = e.currentTarget as HTMLInputElement;
-		const on = box.checked;
-		box.checked = S.profile?.letters_recommend !== false; // 저장된 뒤에 바뀐다
-		if (recBusy) return;
-		recBusy = true;
-		try {
-			await setProfileField({ letters_recommend: on });
-			toast(on ? '편지 쓰기 추천에 나와요' : '이제 편지 쓰기 추천에 나오지 않아요 · 이름으로는 찾을 수 있어요');
-		} catch (err) {
-			toast(errMsg(err));
-		} finally {
-			recBusy = false;
-		}
-	}
+	// 편지 추천에 보이는 뱃지 순서
 	let orderBusy = $state(false);
 	async function setOrder(v: 'mine' | 'random') {
 		if (orderBusy || (S.profile?.letter_badge_order ?? 'mine') === v) return;
@@ -419,17 +273,7 @@
 
 	<h2 class="g-head">대화</h2>
 	<div class="g-card">
-		<label class="g-row">
-			<span>만났던 사람 다시 만나기</span>
-			<input
-				class="switch"
-				type="checkbox"
-				role="switch"
-				checked={!!S.profile?.allow_rematch}
-				disabled={rematchBusy || !S.profile}
-				onchange={toggleRematch}
-			/>
-		</label>
+		<ProfileSwitch field="allow_rematch" label="만났던 사람 다시 만나기" messages={['만났던 사람도 다시 만날 수 있어요', '최근에 만난 사람은 다시 만나지 않아요']} />
 		<label class="g-row">
 			<span>Enter 키로 보내기</span>
 			<input class="switch" type="checkbox" role="switch" checked={PREFS.enterSend} onchange={(e) => setPref('enterSend', e.currentTarget.checked)} />
@@ -438,29 +282,9 @@
 
 	<h2 class="g-head">편지</h2>
 	<div class="g-card">
-		<label class="g-row">
-			<span>편지 받기</span>
-			<input
-				class="switch"
-				type="checkbox"
-				role="switch"
-				checked={S.profile?.letters_open !== false}
-				disabled={lettersBusy || !S.profile || S.profile.letters_open === undefined}
-				onchange={toggleLetters}
-			/>
-		</label>
+		<ProfileSwitch field="letters_open" label="편지 받기" messages={['이름으로 찾아서 편지를 보낼 수 있어요', '이제 검색에 나오지 않고 새 편지를 받지 않아요']} />
 		<!-- 편지 쓰기 찾기 화면 아래 추천 5명에 나오기 (Phase 84 — 기본 켜짐). 끄면 이름으로 찾을 때만 나온다 -->
-		<label class="g-row">
-			<span>추천에 나오기</span>
-			<input
-				class="switch"
-				type="checkbox"
-				role="switch"
-				checked={S.profile?.letters_recommend !== false}
-				disabled={recBusy || !S.profile || S.profile.letters_recommend === undefined || S.profile.letters_open === false}
-				onchange={toggleRecommend}
-			/>
-		</label>
+		<ProfileSwitch field="letters_recommend" label="추천에 나오기" messages={['편지 쓰기 추천에 나와요', '이제 편지 쓰기 추천에 나오지 않아요 · 이름으로는 찾을 수 있어요']} disabled={S.profile?.letters_open === false} />
 		<!-- 편지지 글씨 (Phase 43) — 손글씨가 읽기 어려우면 반듯한 글씨로. 단추 글자가 그 글씨로 보인다 -->
 		<div class="g-row">
 			<span id="font-h">편지지 글씨</span>
@@ -528,64 +352,7 @@
 
 	<h2 class="g-head">계정</h2>
 	<div class="g-card" id="password">
-		<button class="g-row" onclick={togglePw} aria-expanded={pwStep !== 'idle'}>
-			<span>비밀번호</span>
-			<span class="g-val">{S.hasPassword ? '바꾸기' : '만들기'}</span>
-			<Chevron />
-		</button>
-		{#if pwStep !== 'idle'}
-			<div class="g-more">
-				{#if pwStep === 'current'}
-					<p class="step muted">먼저 지금 쓰는 비밀번호를 확인할게요.</p>
-					<input
-						class="field"
-						type="password"
-						autocomplete="current-password"
-						placeholder="지금 비밀번호"
-						bind:value={current}
-						onkeydown={(e) => e.key === 'Enter' && checkCurrent()}
-					/>
-					<button aria-busy={busy} class="btn" onclick={checkCurrent} disabled={!current || busy}>
-						{busy ? '확인 중…' : '확인'}
-					</button>
-					<div class="pwfoot">
-						<button class="btn-text" onclick={sendCode} disabled={busy}>
-							비밀번호를 잊었다면 · 인증 코드 받기
-						</button>
-						<button class="cancel u-tap" onclick={() => (pwStep = 'idle')}>취소</button>
-					</div>
-				{:else if pwStep === 'code'}
-					<p class="step muted"><strong>{codeSentTo}</strong> 으로 보낸 인증 코드를 입력해 주세요. 안 보이면 스팸함을 확인해 주세요.</p>
-					<input
-						class="field codein num"
-						type="text"
-						inputmode="numeric"
-						autocomplete="one-time-code"
-						maxlength="8"
-						placeholder="인증 코드"
-						bind:value={code}
-						onkeydown={(e) => e.key === 'Enter' && checkCode()}
-					/>
-					<button aria-busy={busy} class="btn" onclick={checkCode} disabled={!/^[0-9]{6,8}$/.test(code.trim()) || busy}>
-						{busy ? '확인 중…' : '확인'}
-					</button>
-					<div class="pwfoot">
-						<button class="btn-text" onclick={sendCode} disabled={busy || S.now < resendAt}>코드 다시 받기</button>
-						<button class="cancel u-tap" onclick={() => (pwStep = 'idle')}>취소</button>
-					</div>
-				{:else}
-					<p class="step muted">{S.hasPassword ? '새 비밀번호를 정해 주세요.' : '로그인에 쓸 비밀번호를 정해 주세요.'}</p>
-					<PasswordFields bind:value={password} bind:valid={passwordOk} placeholder="새 비밀번호" />
-					<button aria-busy={busy} class="btn" onclick={savePassword} disabled={!passwordOk || busy}>
-						{busy ? '저장 중…' : '저장'}
-					</button>
-					<div class="pwfoot">
-						<span></span>
-						<button class="cancel u-tap" onclick={() => (pwStep = 'idle')}>취소</button>
-					</div>
-				{/if}
-			</div>
-		{/if}
+		<PasswordSettings />
 		{#if S.me}
 			<div class="g-row">
 				<span>이름</span>
@@ -770,16 +537,6 @@
 		margin: 0;
 		font-size: 13px;
 		line-height: 1.6;
-	}
-	.step strong {
-		color: var(--text);
-		font-weight: 600;
-	}
-	.codein {
-		text-align: center;
-		font-size: 20px;
-		font-weight: 600;
-		letter-spacing: 0.25em;
 	}
 	.pwfoot {
 		display: flex;

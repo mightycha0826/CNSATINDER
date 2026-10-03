@@ -149,6 +149,42 @@ const phase = (page) => page.locator('[data-phase]').first().getAttribute('data-
 
 const browser = await chromium.launch({ executablePath: CHROME });
 try {
+	console.log('[편집기 지연 로딩]');
+	{
+		const lazy = await openApp(browser, world(), { reducedMotion: 'reduce' });
+		let requests = 0, release;
+		const gate = new Promise(resolve => { release = resolve; });
+		await lazy.page.route('**/src/lib/letters/EnvelopeCompose.svelte*', async route => {
+			requests++;
+			await gate;
+			await route.continue().catch(() => {});
+		});
+		await lazy.page.goto(`${BASE}/letters/new`);
+		await lazy.page.locator('.recs .person').first().waitFor();
+		check('받는 사람을 고르기 전에는 편집기 모듈을 요청하지 않음', requests === 0);
+		await lazy.page.locator('.recs .person').first().click();
+		await lazy.page.getByRole('status').filter({ hasText: '편지지를 준비' }).waitFor();
+		check('편집기 다운로드 중에는 준비 상태와 돌아가기 표시', requests === 1 && await lazy.page.getByRole('button', { name: '받는 사람 다시 고르기' }).isVisible());
+		await lazy.page.getByRole('button', { name: '받는 사람 다시 고르기' }).click();
+		const loaded = lazy.page.waitForResponse(response => response.url().includes('/src/lib/letters/EnvelopeCompose.svelte') && response.status() === 200);
+		release();
+		await loaded;
+		await lazy.page.locator('.recs .person').first().waitFor();
+		check('다운로드 중 돌아가면 늦은 응답이 편지 쓰기를 다시 열지 않음', await lazy.page.getByRole('searchbox').isVisible() && await lazy.page.locator('.compose').count() === 0);
+		await lazy.page.locator('.recs .person').first().click();
+		await lazy.page.getByRole('textbox', { name: '편지 내용' }).waitFor({ timeout: 10000 });
+		check('다시 고르면 지연 로딩한 편집기로 작성 가능', await lazy.page.getByRole('textbox', { name: '편지 내용' }).isVisible() && lazy.errors.length === 0);
+		await lazy.ctx.close();
+	}
+	{
+		const failed = await openApp(browser, world(), { reducedMotion: 'reduce' });
+		await failed.page.route('**/src/lib/letters/EnvelopeCompose.svelte*', route => route.abort());
+		await failed.page.goto(`${BASE}/letters/new`);
+		await failed.page.locator('.recs .person').first().click();
+		await failed.page.getByRole('alert').filter({ hasText: '편지지를 불러오지 못했어요' }).waitFor();
+		check('편집기 다운로드 실패는 빈 화면 대신 안내·재시도 표시', await failed.page.getByRole('button', { name: '다시 불러오기' }).isVisible() && await failed.page.locator('.compose').count() === 0);
+		await failed.ctx.close();
+	}
 	const w = world();
 	const { page, errors } = await openApp(browser, w);
 	await page.locator('a.logo').waitFor({ timeout: 8000 });
@@ -230,12 +266,21 @@ try {
 	await page.locator('button.back').click(); await page.waitForURL(/\/letters$/); await page.locator('.post .dot').waitFor(); await page.waitForTimeout(500);
 
 	console.log('[봉투 열기 — 우체통을 눌러 꺼낸다]');
+	let detailRequests = 0;
+	const detailModule = url => decodeURIComponent(url.pathname).endsWith('/letters/m/[id]/+page.svelte');
+	await page.route(detailModule, async route => {
+		detailRequests++;
+		await page.waitForTimeout(2600);
+		await route.continue();
+	});
 	const before = await page.locator('.wall button.post').boundingBox();
 	await page.locator('button.post').click(); await page.waitForURL('**/letters/m/70');
 	await page.locator('.stage').waitFor();
 	const after = await page.locator('.stage span.post').boundingBox();
 	const knocking = await page.locator('.stage .post .postbox').evaluate((e) => e.getAnimations().length);
 	check('★ 편지 화면이 같은 자리 · 같은 크기의 우체통으로 이어 받는다 (넘김 없이)', Math.abs(before.x - after.x) < 1.5 && Math.abs(before.y - after.y) < 1.5 && Math.abs(before.width - after.width) < 1.5 && !(await page.evaluate(() => document.documentElement.dataset.nav)), JSON.stringify({ before, after }));
+	check('화면 코드 다운로드가 2.6초 지연돼도 우체통 연결 유지', detailRequests >= 1, String(detailRequests));
+	await page.unroute(detailModule);
 	check('★ 누르면 우체통이 덜컹 덜컹 · 빨간 점은 그대로', knocking > 0 && (await page.locator('.stage .post .dot').count()) === 1, String(knocking));
 	await page.waitForTimeout(250);
 	const p0 = await phase(page), cap = await page.locator('.caption').innerText();

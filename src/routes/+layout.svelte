@@ -21,7 +21,7 @@
 	import { afterNavigate, beforeNavigate, onNavigate } from '$app/navigation';
 	import { markNavigating, navigateFromOverlay } from '$lib/overlay.svelte';
 	import { reducedMotion } from '$lib/motion';
-	import { knockFresh, viaMailbox } from '$lib/letters/mailbox.svelte';
+	import { holdKnock, knockFresh, viaMailbox } from '$lib/letters/mailbox.svelte';
 	import { dismissKeyboard, dismissOnTap, trackKeyboard } from '$lib/keyboard.svelte';
 
 	let { children } = $props();
@@ -53,6 +53,7 @@
 
 	// 겹친 창(시트 등)이 열린 채 다른 화면으로 가면 — 사라지는 창이 history.back() 으로 그 이동을 취소하지 않게 (lib/overlay.svelte.ts)
 	beforeNavigate((nav) => {
+		if (nav.from?.url.pathname === '/letters' && nav.to?.url.pathname.startsWith('/letters/m/') && knockFresh()) holdKnock(nav.complete);
 		if (nav.type !== 'popstate' && nav.type !== 'leave') markNavigating(true);
 		// 다른 화면으로 가면 입력은 끝 — 아이폰은 입력칸이 사라져도 키보드가 남는다 (lib/keyboard.svelte.ts)
 		if (nav.type !== 'leave') dismissKeyboard();

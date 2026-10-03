@@ -370,14 +370,7 @@
 	}
 
 	// 마지막으로 보낸 내 메시지 — 그 아래에만 "읽음" 표시
-	const lastMineId = $derived.by(() => {
-		if (!room) return null;
-		for (let i = room.msgs.length - 1; i >= 0; i--) {
-			const m = room.msgs[i];
-			if (m.sender_seat === room.seat) return m.id;
-		}
-		return null;
-	});
+	const lastMineId = $derived(room?.msgs.findLast((m) => m.sender_seat === room?.seat)?.id ?? null);
 	const seenMine = $derived(
 		!!room?.snap?.their_read_id && lastMineId != null && room.snap.their_read_id >= lastMineId
 	);
@@ -389,11 +382,7 @@
 	let announce = $state('');
 	$effect(() => {
 		if (!room?.snap || !room.msgs.length) return;
-		let last: Msg | undefined;
-		for (let i = room.msgs.length - 1; i >= 0 && !last; i--) {
-			const m = room.msgs[i];
-			if (m.id != null && m.sender_seat !== 0 && m.sender_seat !== room.seat) last = m;
-		}
+		const last = room.msgs.findLast((m) => m.id != null && m.sender_seat !== 0 && m.sender_seat !== room?.seat);
 		const id = last?.id ?? 0;
 		if (spoken != null && last && id > spoken) announce = `${room.snap.partner_alias}: ${last.body}`;
 		spoken = Math.max(spoken ?? 0, id);

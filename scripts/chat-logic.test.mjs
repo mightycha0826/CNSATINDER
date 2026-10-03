@@ -898,7 +898,27 @@ try {
 		} else check('짧은 대화는 더 보기 없음', !r.hasOlder);
 		r.dispose();
 	}
-	console.log('\n[27] 찾기 수명 — 취소한 요청이 새 찾기를 끝내지 않는다');
+	console.log('\n[27] 기록 병합 비용 — 순서가 바뀔 때만 정렬');
+	{
+		const { MessageLedger } = await import(modules.get('ledger'));
+		const ledger = new MessageLedger(ROOM, () => 1, Date.now);
+		const history = Array.from({ length: 10000 }, (_, i) => row(1, '본문', 'perf-' + i, i + 10));
+		ledger.merge(history, 'sent');
+		let sorts = 0;
+		const sort = Array.prototype.sort;
+		Array.prototype.sort = function (...args) { if (this === ledger.rows) sorts++; return sort.apply(this, args); };
+		try {
+			for (let i = 0; i < 100; i++) ledger.merge([], 'sent');
+			ledger.merge([history.at(-1), row(2, '새 말', 'perf-new', 10010)], 'sent');
+			check('10,000개 기록의 빈 동기화 100회·순차 추가는 전체 정렬 0회', sorts === 0 && ledger.rows.at(-1).id === 10010);
+			ledger.merge([row(2, '이전 말', 'perf-older', 2), row(2, '이전 말', 'perf-oldest', 1)], 'sent');
+			check('과거 메시지는 묶음 전체를 한 번 정렬', sorts === 1 && ledger.rows[0].id === 1 && ledger.rows[1].id === 2, JSON.stringify({sorts, ids: ledger.rows.slice(0, 3).map(m => m.id)}));
+			ledger.upsert({ client_msg_id: 'perf-pending', id: null }, 'sending');
+			ledger.merge([row(1, '확정', 'perf-pending', 7)], 'sent');
+			check('낙관적 메시지 확정도 실제 id 순서로 이동', sorts === 2 && ledger.get('perf-pending').state === 'sent' && ledger.rows.findIndex(m => m.client_msg_id === 'perf-pending') < ledger.rows.length - 1, JSON.stringify({sorts, state: ledger.get('perf-pending').state, index: ledger.rows.findIndex(m => m.client_msg_id === 'perf-pending')}));
+		} finally { Array.prototype.sort = sort; }
+	}
+	console.log('\n[28] 찾기 수명 — 취소한 요청이 새 찾기를 끝내지 않는다');
 	{
 		const { PollSeeker } = await import(modules.get('pollSeeker'));
 		class TestSeeker extends PollSeeker {

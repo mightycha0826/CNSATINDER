@@ -25,8 +25,10 @@ const marks = [];
 let GATE = false; // 익명편지 잠금 (Phase 44)
 let FRESH = false; // 새로 딴 업적이 있다 (Phase 89 — 저절로 뜨는 창의 순서)
 let freshCalls = 0;
-const prof = { id: uid, nickname: '푸른고래', bio: '', interests: [], mbti: null, gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true, allow_rematch: false };
+const prof = { id: uid, nickname: '푸른고래', bio: '', interests: [], mbti: null, gender: 'm', want: 'f', status: 'active', suspended_until: null, verified: true, onboarded: true, allow_rematch: false, letters_open: true, letters_recommend: true };
 const patches = [];
+let failPatch = false, tokenGate = null;
+const passwordUpdates = [];
 
 const browser = await chromium.launch({ executablePath: CHROME });
 try {
@@ -36,14 +38,18 @@ try {
 	await page.route('https://fake-proj.supabase.co/**', async (route) => {
 		const req = route.request(); const u = new URL(req.url());
 		const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
-		if (u.pathname === '/auth/v1/token') return json(session);
+		if (u.pathname === '/auth/v1/token') { if (tokenGate) await tokenGate; return json(session); }
+		if (u.pathname === '/auth/v1/user') { if (req.method() === 'PUT') passwordUpdates.push(req.postDataJSON()); return json(session.user); }
 		if (u.pathname.startsWith('/auth/v1/')) return json({});
 		if (u.pathname === '/rest/v1/rpc/my_account') return json({ has_password: true });
 		if (u.pathname === '/rest/v1/rpc/my_rooms') return json({ rooms: [], server_now: new Date().toISOString() });
 		if (u.pathname === '/rest/v1/rpc/my_notices') return json({ notices, last_seen: lastSeen });
 		if (u.pathname === '/rest/v1/rpc/mark_notices_seen') { const p = req.postDataJSON().p_id; marks.push(p); lastSeen = Math.max(lastSeen, p); return json(lastSeen); }
 		if (u.pathname === '/rest/v1/profiles') {
-			if (req.method() === 'PATCH') { Object.assign(prof, req.postDataJSON()); patches.push(req.postDataJSON()); return route.fulfill({ status: 204 }); }
+			if (req.method() === 'PATCH') {
+				if (failPatch) { failPatch = false; return json({ message: '설정 저장 실패' }, 400); }
+				Object.assign(prof, req.postDataJSON()); patches.push(req.postDataJSON()); return route.fulfill({ status: 204 });
+			}
 			return json(prof);
 		}
 		if (u.pathname === '/rest/v1/app_settings') return json({ is_open: true, notice: '', room_minutes: 10, extend_minutes: 10, vote_window_sec: 30, join_grace_sec: 30, max_rounds: 99, heartbeat_sec: 30, presence_ttl_sec: 70, msg_max_len: 500, max_open_rooms: 5, letter_max_len: 1000, comment_max_len: 300, letters_gate: GATE, letters_gate_min: 100 });
@@ -156,6 +162,17 @@ try {
 	check('★ 켜면 내 프로필에 저장 (allow_rematch = true) · 스위치 켜짐', JSON.stringify(patches.at(-1)) === '{"allow_rematch":true}' && (await rematch.isChecked()), JSON.stringify(patches));
 	await rematch.click(); await page.waitForTimeout(400);
 	check('다시 끄면 false 로 저장', JSON.stringify(patches.at(-1)) === '{"allow_rematch":false}' && !(await rematch.isChecked()));
+	failPatch = true;
+	await rematch.click(); await page.getByText('설정 저장 실패', { exact: true }).waitFor();
+	check('설정 저장 실패는 스위치를 원래 값에 유지하고 재시도 허용', !(await rematch.isChecked()) && await rematch.isEnabled());
+	const receiveLetters = page.getByRole('switch', { name: '편지 받기', exact: true });
+	const recommendLetters = page.getByRole('switch', { name: '추천에 나오기', exact: true });
+	await receiveLetters.click(); await page.waitForTimeout(400);
+	check('편지 받기를 끄면 같은 저장 경로로 처리하고 추천 스위치 비활성화', patches.at(-1).letters_open === false && !(await receiveLetters.isChecked()) && await recommendLetters.isDisabled());
+	await receiveLetters.click(); await page.waitForTimeout(400);
+	await recommendLetters.click(); await page.waitForTimeout(400);
+	check('추천 스위치는 별도 프로필 필드만 저장', JSON.stringify(patches.at(-1)) === '{"letters_recommend":false}' && !(await recommendLetters.isChecked()));
+	await recommendLetters.click(); await page.waitForTimeout(400);
 	check('색 후보 4개 — 파랑만 단색, 나머지는 그라데이션', await page.evaluate(() => {
 		const dots = [...document.querySelectorAll('.swatch')].map((l) => ({ n: l.querySelector('input').getAttribute('aria-label'), bg: getComputedStyle(l.querySelector('.dot')).backgroundImage }));
 		const cols = (bg) => new Set(bg.match(/rgb\([^)]*\)/g)).size;
@@ -166,6 +183,19 @@ try {
 	check('비밀번호 줄 → 카드 안에서 펼침 (›가 아래로)', (await pwRow.getAttribute('aria-expanded')) === 'true' && (await page.getByPlaceholder('지금 비밀번호').count()) === 1);
 	await pwRow.click(); await page.waitForTimeout(150);
 	check('다시 누르면 접힘', (await pwRow.getAttribute('aria-expanded')) === 'false' && (await page.getByPlaceholder('지금 비밀번호').count()) === 0);
+	await pwRow.click(); await page.getByPlaceholder('지금 비밀번호').fill('abcd1234');
+	let releaseVerification;
+	tokenGate = new Promise((resolve) => { releaseVerification = resolve; });
+	const verificationRequest = page.waitForRequest((request) => request.url().includes('/auth/v1/token'));
+	await page.getByRole('button', { name: '확인', exact: true }).click(); await verificationRequest;
+	await page.getByRole('button', { name: '취소', exact: true }).click();
+	const verificationResponse = page.waitForResponse((response) => response.url().includes('/auth/v1/token'));
+	releaseVerification(); tokenGate = null; await verificationResponse; await page.waitForTimeout(500);
+	check('비밀번호 확인 중 취소하면 늦은 성공이 입력 폼을 다시 열지 않음', await pwRow.getAttribute('aria-expanded') === 'false' && await page.getByPlaceholder('새 비밀번호').count() === 0);
+	await pwRow.click(); await page.getByPlaceholder('새 비밀번호').fill('changed1234'); await page.getByPlaceholder('한 번 더').fill('changed1234');
+	await page.locator('#password').getByRole('button', { name: '저장', exact: true }).click();
+	await page.getByText('비밀번호 저장 완료', { exact: true }).waitFor();
+	check('최근 재인증 후 새 비밀번호 저장은 확인 입력과 서버 저장을 거쳐 접힘', passwordUpdates.at(-1)?.password === 'changed1234' && await pwRow.getAttribute('aria-expanded') === 'false');
 	await page.screenshot({ path: `${SP}/settings.png`, fullPage: true });
 	await page.emulateMedia({ colorScheme: 'dark' }); await page.waitForTimeout(150);
 	await page.screenshot({ path: `${SP}/settings-dark.png`, fullPage: true });

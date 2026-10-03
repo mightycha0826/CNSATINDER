@@ -47,14 +47,17 @@ export class MessageLedger {
 		}
 		if (row.id != null) this.maxId = Math.max(this.maxId, row.id);
 		// 확정 id 순. 아직 id 가 없는 내 메시지는 항상 맨 아래.
-		if (sort && ((!prev && (this.rows.at(-2)?.id ?? Infinity) > (row.id ?? Infinity)) || (prev && oldId !== prev.id))) {
+		const reordered = (!prev && (this.rows.at(-2)?.id ?? Infinity) > (row.id ?? Infinity)) || (!!prev && oldId !== prev.id);
+		if (sort && reordered) {
 			this.rows.sort((a, b) => (a.id ?? Infinity) - (b.id ?? Infinity));
 		}
+		return reordered;
 	}
 
 	merge(rows: MessageUpdate[], state: MsgState) {
-		for (const row of rows) this.upsert(row, state, false);
-		this.rows.sort((a, b) => (a.id ?? Infinity) - (b.id ?? Infinity));
+		let reordered = false;
+		for (const row of rows) reordered = this.upsert(row, state, false) || reordered;
+		if (reordered) this.rows.sort((a, b) => (a.id ?? Infinity) - (b.id ?? Infinity));
 	}
 
 	/** 에코로 이미 확정된 메시지는 늦은 전송 실패가 와도 성공 상태를 지킨다. */

@@ -34,7 +34,6 @@ try {
 	build('src/lib/errors.ts', 'errors');
 	write('lifecycle', 'export const cleanups = []; export const onDestroy = (fn) => cleanups.push(fn);');
 	write('toast', 'export const toasts = []; export const toast = (message) => toasts.push(message);');
-	write('unread', 'export const refreshUnread = async () => {};');
 	write('overlay', [
 		'export const backs = [], settling = [];',
 		'export const backClose = (close, opts) => backs.push({close, ...opts});',
@@ -45,9 +44,11 @@ try {
 		'const ask = (kind, args) => new Promise((resolve, reject) => pending.push({kind, args, resolve, reject}));',
 		'export const fetchMailbox = (box, before) => ask("box", {box, before});',
 		'export const fetchFolder = (id, before) => ask("folder", {id, before});',
+		'export const fetchUnread = () => ask("unread", {});',
 		'export const deleteLetters = (ids) => ask("delete", {ids});',
 		'export const folderError = (result) => result.status === "ok" ? null : "다시 시도해 주세요";'
 	].join('\n'));
+	build('src/lib/letters/unread.svelte.ts', 'unread', { './api': 'api', '../accountScope': 'scope' });
 	build('src/lib/letters/mailbox.svelte.ts', 'mailbox', {
 		'./api': 'api', './unread.svelte': 'unread', '../accountScope': 'scope', '../errors': 'errors'
 	});
@@ -63,6 +64,7 @@ try {
 	const { toasts } = await import(urls.get('toast'));
 	const { backs, settling } = await import(urls.get('overlay'));
 	const mailbox = await import(urls.get('mailbox'));
+	const unread = await import(urls.get('unread'));
 	const { FolderMailbox } = await import(urls.get('folder'));
 	const { MailSelection } = await import(urls.get('selection'));
 	const take = (kind) => {
@@ -73,6 +75,53 @@ try {
 	const mail = (id, box = 'received', opened = true) => ({ id, box, opened, thread_id: id, created_at: '2026-10-01T00:00:00Z' });
 	const folderResult = (id, letters, counts = {}) => ({ letters, folder: { id, name: '폴더 ' + id, count: letters.length, ...counts } });
 	const page = Array.from({ length: mailbox.PAGE }, (_, i) => mail(100 - i));
+	scope.changeAccount('a');
+	let finishNavigation;
+	const navigation = new Promise(resolve => { finishNavigation = resolve; });
+	const hand = { w: 270, top: 30, wallH: 241, count: 2 };
+	mailbox.KNOCK.hand = hand;
+	mailbox.KNOCK.at = performance.now() - 3000;
+	check('시작하지 않은 오래된 우체통 정보는 만료', !mailbox.knockFresh());
+	mailbox.holdKnock(navigation);
+	check('진행 중 이동은 2초가 지나도 우체통 위치를 유지하고 한 번만 소비', mailbox.knockFresh() && mailbox.takeKnock() === hand && mailbox.takeKnock() === null);
+	finishNavigation();
+	await drain();
+	check('이동 완료 후 우체통 정보와 진행 중 이동 정리', mailbox.KNOCK.navigation === null && mailbox.KNOCK.hand === null);
+	const concurrent = Array.from({ length: 5 }, () => unread.refreshUnread());
+	check('안 읽은 수 동시 조회 다섯 번은 서버 요청 한 번', pending.length === 1);
+	take('unread').resolve(5);
+	await Promise.all(concurrent);
+	check('공유한 안 읽은 수 응답은 화면에 적용', unread.DM.loaded && unread.DM.unread === 5);
+	const oldRead = unread.refreshUnread();
+	const staleRead = take('unread');
+	const changed = [unread.refreshUnread(true), unread.refreshUnread(true)];
+	staleRead.resolve(10);
+	await oldRead;
+	await drain();
+	check('읽기·삭제 전 응답은 무시하고 변경 후 조회를 한 번 공유', unread.DM.unread === 5 && pending.length === 1);
+	take('unread').resolve(3);
+	await Promise.all(changed);
+	check('변경 후 조회 결과로 안 읽은 수 갱신', unread.DM.unread === 3);
+	const beforeSwitch = unread.refreshUnread();
+	const previousAccount = take('unread');
+	const previousChange = unread.refreshUnread(true);
+	scope.changeAccount('b');
+	const afterSwitch = unread.refreshUnread();
+	const nextAccount = take('unread');
+	previousAccount.resolve(99);
+	await Promise.all([beforeSwitch, previousChange]);
+	const sameAccount = unread.refreshUnread();
+	check('계정 전환은 이전 조회를 공유하지 않고 옛 응답도 무시', unread.DM.unread === 0 && !unread.DM.loaded && pending.length === 0);
+	nextAccount.resolve(2);
+	await Promise.all([afterSwitch, sameAccount]);
+	const failureRead = unread.refreshUnread();
+	take('unread').reject(new Error('offline'));
+	await failureRead;
+	const keptUnread = unread.DM.unread === 2;
+	const retryRead = unread.refreshUnread();
+	take('unread').resolve(1);
+	await retryRead;
+	check('안 읽은 수 조회 실패는 기존 값 보존 후 재시도 가능', keptUnread && unread.DM.loaded && unread.DM.unread === 1);
 	scope.changeAccount('a');
 
 	const first = mailbox.loadBox('received');

@@ -45,27 +45,7 @@ export class FolderMailbox {
 		this.busy = false;
 		this.error = null;
 		this.failedMore = false;
-		try {
-			const result = await fetchFolder(id);
-			if (!this.current(request)) return;
-			if (!result.folder) {
-				this.gone = true;
-				return;
-			}
-			this.name = result.folder.name;
-			this.items = result.letters;
-			this.more = result.letters.length === PAGE;
-			this.failedMore = false;
-			const count = (box: Box) => result.letters.filter((item) => item.box === box).length;
-			this.counts = {
-				received: result.folder.received ?? count('received'),
-				sent: result.folder.sent ?? count('sent')
-			};
-		} catch (error) {
-			if (this.current(request)) this.error = errMsg(error);
-		} finally {
-			if (this.current(request)) this.loaded = true;
-		}
+		return this.loadPage(id, request);
 	}
 
 	retry() {
@@ -74,26 +54,41 @@ export class FolderMailbox {
 	}
 
 	async loadMore() {
-		const last = this.items.at(-1);
-		const id = this.id;
-		const request = this.request;
-		if (!last || id === null || this.busy || !this.current(request)) return;
-		this.busy = true;
+		const before = this.items.at(-1)?.id;
+		if (before === undefined || this.id === null || this.busy || !this.current(this.request)) return;
+		return this.loadPage(this.id, this.request, before);
+	}
+
+	private async loadPage(id: number, request: number, before?: number) {
+		const append = before !== undefined;
+		this.busy = append;
 		this.error = null;
 		try {
-			const result = await fetchFolder(id, last.id);
+			const result = await fetchFolder(id, before);
 			if (!this.current(request)) return;
-			const existing = new Set(this.items.map((item) => item.id));
-			this.items = [...this.items, ...result.letters.filter((item) => !existing.has(item.id))];
+			if (!append) {
+				if (!result.folder) { this.gone = true; return; }
+				this.name = result.folder.name;
+				const count = (box: Box) => result.letters.filter((item) => item.box === box).length;
+				this.counts = {
+					received: result.folder.received ?? count('received'),
+					sent: result.folder.sent ?? count('sent')
+				};
+			}
+			const existing = new Set(append ? this.items.map((item) => item.id) : []);
+			this.items = append ? [...this.items, ...result.letters.filter((item) => !existing.has(item.id))] : result.letters;
 			this.more = result.letters.length === PAGE;
 			this.failedMore = false;
 		} catch (error) {
 			if (this.current(request)) {
 				this.error = errMsg(error);
-				this.failedMore = true;
+				this.failedMore = append;
 			}
 		} finally {
-			if (this.current(request)) this.busy = false;
+			if (this.current(request)) {
+				this.busy = false;
+				if (!append) this.loaded = true;
+			}
 		}
 	}
 

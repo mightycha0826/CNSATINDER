@@ -126,7 +126,7 @@ await test('예상하지 않은 AI·DB 실패는 가짜 성공으로 세지 않�
 const context = { uid: 'fake-staff', rpc: async () => null, push: async () => ({ status: 201, gone: false }), sent: [], email: async () => null, roster: async () => null };
 globalThis.__serverRefactorTest = context;
 const modules = {
-	'\0test:rpc': 'export const adminRpc = (...args) => globalThis.__serverRefactorTest.rpc(...args); export const emailOf = (...args) => globalThis.__serverRefactorTest.email(...args); export const rosterNameOf = (...args) => globalThis.__serverRefactorTest.roster(...args);',
+	'\0test:rpc': 'export const adminRpc = (...args) => globalThis.__serverRefactorTest.rpc(...args); export const userFromBearer = async () => globalThis.__serverRefactorTest.uid; export const emailOf = (...args) => globalThis.__serverRefactorTest.email(...args); export const rosterNameOf = (...args) => globalThis.__serverRefactorTest.roster(...args);',
 	'\0test:session': 'export const readSessionDetails = async () => ({ userId: globalThis.__serverRefactorTest.uid, sessionId: "fake-session" }); export const clearSession = () => {};',
 	'\0test:private': 'export const env = { VAPID_PRIVATE_KEY: "fake-private" };',
 	'\0test:public': 'export const env = { PUBLIC_VAPID_KEY: "fake-public" };',
@@ -157,6 +157,42 @@ const vite = await createServer({
 });
 
 try {
+	const { POST: aiTurn } = await vite.ssrLoadModule('/src/routes/api/ai-chat/+server.ts');
+	await test('AI는 승인·캐시·lease 만료·모델 실패에도 같은 요청과 lease로만 완료한다', async () => {
+		const chat = '00000000-0000-4000-8000-000000000001';
+		const requestId = '00000000-0000-4000-8000-000000000002';
+		for (const mode of ['success', 'cached', 'denied', 'lost_lease', 'unavailable', 'finish_error']) {
+			const calls = []; let modelCalls = 0;
+			context.rpc = async (name, args) => {
+				calls.push([name, args]);
+				if (name === 'api_rate_take') return { allowed: true };
+				if (name === 'ai_chat_claim') {
+					if (mode === 'cached') return { status: 'ok', cached: true, reply: '캐시 답' };
+					if (mode === 'denied') return { status: 'restricted' };
+					return { status: 'ok', lease: 'approved-lease', turns: 1, max_turns: 5 };
+				}
+				if (mode === 'finish_error' && args.p_reply !== null) throw new Error('fake finish failure');
+				return mode !== 'lost_lease';
+			};
+			const event = {
+				request: jsonRequest(JSON.stringify({ chat_id: chat, request_id: requestId, messages: [{ role: 'user', content: '안녕' }] })),
+				platform: { env: mode === 'unavailable' ? {} : { AI: { run: async () => { modelCalls++; return { response: '010-1234-5678 @test_id' }; } } } }
+			};
+			if (mode === 'finish_error') await assert.rejects(aiTurn(event), /fake finish failure/);
+			else {
+				const response = await aiTurn(event);
+				assert.equal(response.status, mode === 'lost_lease' ? 202 : mode === 'unavailable' ? 503 : 200);
+				const result = await response.json();
+				assert.equal(result.status, { lost_lease: 'pending', unavailable: 'ai_unavailable', denied: 'restricted' }[mode] ?? 'ok');
+				if (mode === 'success') assert.equal(result.reply, '(번호 가림) (아이디 가림)');
+			}
+			assert.equal(modelCalls, ['cached', 'denied', 'unavailable'].includes(mode) ? 0 : 1);
+			const completed = calls.filter(([name]) => name === 'ai_chat_finish').map(([, args]) => args);
+			assert.equal(completed.length, ['cached', 'denied'].includes(mode) ? 0 : mode === 'finish_error' ? 2 : 1);
+			for (const args of completed) assert.deepEqual({ ...args, p_reply: null }, { p_chat: chat, p_request: requestId, p_lease: 'approved-lease', p_reply: null });
+			if (mode === 'unavailable' || mode === 'finish_error') assert.equal(completed.at(-1).p_reply, null);
+		}
+	});
 	const { GET: exportChunk } = await vite.ssrLoadModule('/src/routes/admin/rooms/export/+server.ts');
 	await test('CSV는 달력 날짜·최대 31일·첫 커서를 검사하고 작업 ID를 이어간다', async () => {
 		assert.equal(exportDay('2026-02-30'), null);

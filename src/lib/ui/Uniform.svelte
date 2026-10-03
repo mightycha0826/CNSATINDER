@@ -31,7 +31,9 @@
 	 * 리본: 가운데 조인 띠 · 위 면은 빛 · 아래 면은 접혀 그늘인 두 날개(안쪽은 모아 잡은 주름) · 바깥으로 벌어지는 제비꼬리 두 개(끝이 조끼 목둘레 단 바로 위)
 	 * · 꼬리 사이로 셔츠 여밈 단추. 목 둘레 모양은 모두 목 가운데를 0 으로 둔 좌표 (translate(C 0)).
 	 * Phase 69 — 리본 꼬리를 굵게(폭 약 1.35배) · 길게 — 조끼보다 나중에 그려 조끼 목둘레 단을 넘어 조끼 위로 늘어진다 (조끼 밖).
-	 * Phase 83 — 넥타이 · 리본을 사진처럼 단순하게 다시: 넥타이는 짙은 남색 민무늬(가는 사선 결) · 작은 역사다리꼴 매듭 · 아래로 살짝 넓어지는 날,
+	 * 넥타이는 학교 사진에 맞춘 짙은 남색 · 은색 테의 하늘색 사선 · 작은 은청색 무늬. 매듭과 날의 줄 방향은 다르게,
+	 * 매듭 아래에는 얕은 보조개를 넣고 날은 아래로 살짝 넓어진다.
+	 * Phase 83 — 리본은 사진처럼 단순하게 다시:
 	 * 리본은 남색 + 하늘색 사선 줄 · 작은 무늬 — 넓게 펼친 두 날개 · 작은 가운데 매듭 · 바깥으로 벌어지며 내려오는 꼬리 두 개. 그늘은 한두 겹만.
 	 * Phase 70 — 움직이지 않는다 (숨 쉬기 · 넥타이 · 리본 흔들림을 뺐다). 배지를 그림 폭에 맞춰 크게(폰 폭에서 약 50).
 	 *   오른쪽 아래에 작은 "전체 업적 보기 ›" (allHref).
@@ -132,9 +134,9 @@
 	/** 카라 꺾임(접힌 선) — 잎이 목에서 앞으로 꺾여 내려오는 곳의 부드러운 능선 */
 	const leafFold = 'M13 3C33 9.5 58 6 92 -5';
 
-	// 넥타이 (Phase 83 — 사진처럼 단순하게) — 작은 역사다리꼴 매듭(윗변은 카라 밑) + 매듭 아래에서 나와 아래로 살짝 넓어지는 날(끝은 조끼 속)
-	const knot = 'M-14.5 -6H14.5C16 -6 16.6 -4.8 16.2 -3.4L10.6 23.8C10.3 25.2 9.4 26 8 26H-8C-9.4 26-10.3 25.2-10.6 23.8L-16.2 -3.4C-16.6 -4.8-16 -6-14.5 -6Z';
-	const blade = 'M-8.2 21H8.2L17.5 152H-17.5Z';
+	// 학교 넥타이 — 둥근 어깨의 매듭 + 보조개에서 아래로 넓어지는 날(끝은 조끼 속)
+	const knot = 'M-17.4 -6H17.4C20.4 -6 21.6 -3.4 20.4 -0.2L12.7 29.4C12.2 31.8 10.6 33 8.6 33H-8.6C-10.6 33-12.2 31.8-12.7 29.4L-20.4 -0.2C-21.6 -3.4-20.4 -6-17.4 -6Z';
+	const blade = 'M-10.4 29H10.4C11.7 57 18 107 24 152H-24C-18 107-11.7 57-10.4 29Z';
 
 	// 리본 (Phase 83 — 사진처럼) — 목 가운데(0, 20) 기준. 날개는 가운데에서 좁게 나와 바깥으로 넓어지고 위 끝이 살짝 들린다
 	const wing = 'M4 13.2L26 2.2C30.4 0.2 33.4 2.4 33.4 7V34C33.4 39.2 30.6 41.4 26.4 40L4 27.6Z';
@@ -175,11 +177,19 @@
 						<path d="M8.6 17.6c1-1.5 2.4-1.8 3.5-1-0.9 1.2-2.1 1.5-3.5 1Z" fill="#3f86c9" />
 					</pattern>
 				{/each}
-				<!-- 넥타이 (Phase 83, 사진) — 짙은 남색 민무늬 · 가는 사선 결. T = 날, K = 매듭(결 방향이 반대) -->
-				{#each [['T', -38], ['K', 38]] as [k, deg] (k)}
-					<pattern id="{uid}-tie-{k}" patternUnits="userSpaceOnUse" width="3" height="3" patternTransform="rotate({deg})">
-						<rect width="3" height="3" fill="#1d2546" />
-						<rect width="3" height="1" fill="#2a3360" opacity="0.7" />
+				<!-- 학교 넥타이 — 넓은 하늘색 사선 · 가는 은색 테 · 남색 사이의 작은 은청색 직조 무늬.
+				     T = 날, K = 감긴 매듭. 사진에서 흐린 작은 무늬는 단순한 직조 형태로만 표현한다. -->
+				{#each [['T', -52, 1], ['K', 58, 0.78]] as [k, deg, sc] (k)}
+					<pattern id="{uid}-tie-{k}" patternUnits="userSpaceOnUse" width="30" height="30" patternTransform="translate(0 8) rotate({deg}) scale({sc})">
+						<rect width="30" height="30" fill="#182841" />
+						<rect y="0.8" width="30" height="8.4" fill="#a1d1e4" />
+						<rect width="30" height="0.8" fill="#e0e9ee" />
+						<rect y="9.2" width="30" height="0.9" fill="#e0e9ee" />
+						<rect y="11.8" width="30" height="0.65" fill="#7396ae" opacity="0.65" />
+						<g fill="#bfd4df" opacity="0.85">
+							<path d="M9.8 18.2 11.2 16.4 12.6 18.2 11.2 20Z" />
+							<path d="M9.5 21.2Q11.2 20.2 12.9 21.2L12.2 23.3H10.2Z" />
+						</g>
 					</pattern>
 				{/each}
 				<!-- 천 결 (능직) -->
@@ -266,7 +276,7 @@
 					<stop offset="1" stop-color="#000" stop-opacity="0.36" />
 				</linearGradient>
 				<!-- 넥타이 머리 — 카라 밑이라 위쪽이 그늘, 앞판이 볼록하게 빛을 받는다 -->
-				<linearGradient id="{uid}-knotTop" gradientUnits="userSpaceOnUse" x1="0" y1="-4" x2="0" y2="22">
+				<linearGradient id="{uid}-knotTop" gradientUnits="userSpaceOnUse" x1="0" y1="-4" x2="0" y2="28">
 					<stop offset="0" stop-color="#02061a" stop-opacity="0.62" />
 					<stop offset="1" stop-color="#02061a" stop-opacity="0" />
 				</linearGradient>
@@ -348,16 +358,18 @@
 				<ellipse cx={C} cy="-4" rx="21" ry="12" fill="url(#{uid}-hole)" />
 
 				{#if neck === 'tie'}
-					<!-- 넥타이 (Phase 83) — 날(셔츠 위 그림자 · 둥근 그늘) → 매듭(카라 밑이라 위가 그늘). 카라 잎이 매듭 어깨를 덮는다 -->
+					<!-- 학교 넥타이 — 사선 날 → 매듭. 카라 잎이 매듭 어깨를 덮는다 -->
 					<g class="tie" transform="translate({C} 0)">
 						<path d={blade} fill="#0a1230" opacity="0.3" transform="translate(2.6 3)" filter="url(#{uid}-blur2)" />
 						<path class="blade" d={blade} fill="url(#{uid}-tie-T)" />
 						<path d={blade} fill="url(#{uid}-round)" />
+						<path d="M-2.2 33C-2.2 39-1 45 0 50C1.2 44 2.3 37 2 33Z" fill="#091729" opacity="0.38" />
 						<path d={blade} fill="none" stroke="#0b1229" stroke-opacity="0.6" stroke-width="0.9" />
 						<path d={knot} fill="#0a1230" opacity="0.4" transform="translate(1.6 3.4)" filter="url(#{uid}-blur2)" />
 						<path class="knot" d={knot} fill="url(#{uid}-tie-K)" />
+						<path d={knot} fill="url(#{uid}-round)" />
 						<path d={knot} fill="url(#{uid}-knotTop)" />
-						<path d="M-8.4 24.6C-3 26.2 3 26.2 8.4 24.6" fill="none" stroke="#fff" stroke-opacity="0.14" stroke-width="1" stroke-linecap="round" />
+						<path d="M-10.1 30.1C-3.6 32 3.6 32 10.1 30.1" fill="none" stroke="#fff" stroke-opacity="0.14" stroke-width="1" stroke-linecap="round" />
 						<path d={knot} fill="none" stroke="#0b1229" stroke-opacity="0.6" stroke-width="0.9" />
 					</g>
 				{/if}

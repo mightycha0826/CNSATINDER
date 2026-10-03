@@ -7,13 +7,29 @@ import { accountIsCurrent, accountToken, currentAccountId, onAccountChange } fro
  */
 /** loaded = 서버에서 한 번이라도 받았다 (처음 받은 수로 "새 편지" 알림을 띄우지 않게) */
 export const DM = $state({ unread: 0, loaded: false });
+let flight: Promise<void> | null = null;
+let revision = 0;
 
-export async function refreshUnread() {
+/** 같은 조회는 공유한다. 읽기·삭제 뒤에는 진행 중 응답을 버리고 새 상태를 한 번 더 읽는다. */
+export async function refreshUnread(afterChange = false) {
 	if (!currentAccountId()) return;
+	const token = accountToken();
+	if (afterChange) {
+		revision++;
+		if (flight) await flight;
+		if (!accountIsCurrent(token)) return;
+	}
+	if (flight) return flight;
+	const work = readUnread(revision);
+	flight = work;
+	try { await work; } finally { if (flight === work) flight = null; }
+}
+
+async function readUnread(request: number) {
 	const token = accountToken();
 	try {
 		const unread = await fetchUnread();
-		if (!accountIsCurrent(token)) return;
+		if (!accountIsCurrent(token) || request !== revision) return;
 		DM.unread = unread;
 		DM.loaded = true;
 	} catch {
@@ -28,6 +44,8 @@ export async function refreshUnread() {
 export const LIST = $state({ tab: 'received' as 'received' | 'sent' });
 
 onAccountChange(() => {
+	flight = null;
+	revision++;
 	DM.unread = 0;
 	DM.loaded = false;
 	LIST.tab = 'received';

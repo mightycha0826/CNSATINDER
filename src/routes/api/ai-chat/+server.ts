@@ -28,15 +28,17 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	const t = await adminRpc<Turn>('ai_chat_claim', { p_chat: body.chat_id, p_user: uid, p_request: body.request_id, p_text: conversationText(turns) });
 	if (t.status !== 'ok' || t.cached) return json(t);
 	if (!t.lease) return json({ status: 'ai_unavailable' }, { status: 503 });
+	const finish = (reply: string | null) => adminRpc<boolean>('ai_chat_finish', {
+		p_chat: body.chat_id, p_request: body.request_id, p_lease: t.lease, p_reply: reply
+	});
 
 	try {
 		const reply = await runAi(platform?.env?.AI, chatPrompt(turns), { maxTokens: 160, temperature: 0.8, fake: fakeReply });
 		const clean = tidyReply(reply);
-		const saved = await adminRpc<boolean>('ai_chat_finish', { p_chat: body.chat_id, p_request: body.request_id, p_lease: t.lease, p_reply: clean });
-		if (!saved) return json({ status: 'pending' }, { status: 202 });
+		if (!await finish(clean)) return json({ status: 'pending' }, { status: 202 });
 		return json({ status: 'ok', reply: clean, turns: t.turns, max_turns: t.max_turns });
 	} catch (e) {
-		await adminRpc('ai_chat_finish', { p_chat: body.chat_id, p_request: body.request_id, p_lease: t.lease, p_reply: null }).catch(() => {
+		await finish(null).catch(() => {
 			console.error('[ai-chat] turn completion failed');
 		});
 		if (e instanceof AiUnavailable) {

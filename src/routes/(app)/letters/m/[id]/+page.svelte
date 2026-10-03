@@ -79,7 +79,7 @@
 					DM.unread = Math.max(0, DM.unread - (first ? 1 : 0));
 					markOpened(r.id);
 					void clearNotifications(`dm-${r.id}`);
-					void refreshUnread();
+					void refreshUnread(true);
 				}
 				// 처음 여는 받은 편지만 봉투 연출
 				// 덜컹이 이미 시작됐으면(우체통을 눌러 왔다) 남은 만큼만 기다린다

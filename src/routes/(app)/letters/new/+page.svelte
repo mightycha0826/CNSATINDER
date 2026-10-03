@@ -9,7 +9,7 @@
 	import BackButton from '$lib/ui/BackButton.svelte';
 	import Avatar from '$lib/ui/Avatar.svelte';
 	import Badge from '$lib/ui/Badge.svelte';
-	import EnvelopeCompose from '$lib/letters/EnvelopeCompose.svelte';
+	import { reloadApp } from '$lib/reload';
 	import type { LetterFmt } from '$lib/letters/rich';
 	import { anonName, recommendPeople, searchPeople, sendLetter, type DmPerson } from '$lib/letters/api';
 	import { afterSent, deliver } from '$lib/letters/send';
@@ -83,16 +83,25 @@
 </div>
 
 {#if to}
-	<EnvelopeCompose
-		draftKey={`letter:new:${to.id}`}
-		to={to.name}
-		toSub={to.grade ? `${to.grade}학년` : ''}
-		from={anonName(S.profile?.gender)}
-		nickable
-		placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.`}
-		onsend={send}
-		ondone={() => { if (current()) afterSent('편지를 보냈어요'); }}
-	/>
+	{#await import('$lib/letters/EnvelopeCompose.svelte')}
+		<p class="page muted" role="status">편지지를 준비하고 있어요…</p>
+	{:then { default: EnvelopeCompose }}
+		<EnvelopeCompose
+			draftKey={`letter:new:${to.id}`}
+			to={to.name}
+			toSub={to.grade ? `${to.grade}학년` : ''}
+			from={anonName(S.profile?.gender)}
+			nickable
+			placeholder={`${to.name}님에게 하고 싶은 말을 적어 보세요.`}
+			onsend={send}
+			ondone={() => { if (current()) afterSent('편지를 보냈어요'); }}
+		/>
+	{:catch}
+		<div class="page" role="alert">
+			<p>편지지를 불러오지 못했어요. 연결을 확인하고 다시 불러와 주세요.</p>
+			<button class="btn" onclick={() => void reloadApp()}>다시 불러오기</button>
+		</div>
+	{/await}
 {:else}
 	<div class="page pick">
 		<label class="search">

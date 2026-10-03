@@ -14,6 +14,7 @@ const id = (c) => `${c.repeat(8)}-${c.repeat(4)}-4${c.repeat(3)}-8${c.repeat(3)}
 const [A, B, ROOM, REP, LREP, BOOM] = ['a', 'b', 'c', 'd', 'e', '9'].map(id);
 const t = new Date().toISOString();
 let ROLE = 'admin';
+let EMPTY_REPORTS = false;
 let SUSPENDED = false, BETA = false; // Phase 44 — 정지 풀기 · 특별 업적
 let OWNER = false; // Phase 50 — 최고 관리자
 let MAINT_ON = false; // Phase 52 — 서버 점검
@@ -60,13 +61,13 @@ const RPC = {
 		{ id: 'd1', name: '박개발', role: 'developer', last_seen: new Date(Date.now() - 3 * 3600_000).toISOString(), path: '/admin/settings', me: false }
 	] }),
 	admin_stats: () => ({ open_reports: 1, reviewing: 0, open_letter_reports: 1, active_rooms: 1, seeking_now: 0, restricted_users: 0, rooms_24h: 3, letters_24h: 2, is_open: true }),
-	admin_list_reports: () => [{ id: REP, created_at: t, reason: 'harassment', note: '욕했어요', status: 'open', reported_id: A, reporter_id: B, reported_30d: 1, evidence_count: 2, reported_status: 'active' }],
+	admin_list_reports: () => EMPTY_REPORTS ? [] : [{ id: REP, created_at: t, reason: 'harassment', note: '욕했어요', status: 'open', reported_id: A, reporter_id: B, reported_30d: 1, evidence_count: 2, reported_status: 'active' }],
 	admin_report: () => ({ report: { id: REP, created_at: t, reason: 'harassment', note: '욕했어요', status: 'open', reported_id: A, reporter_id: B, room_id: ROOM, handled_by: null, handled_at: null, action_note: null }, evidence: [{ ord: 1, sender: 2, body: '나쁜 말', sent_at: t }, { ord: 2, sender: 1, body: '그만해', sent_at: t }], reported: { status: 'active', strikes: 0, suspended_until: null, gender: 'm', created_at: t }, history: [], reporter_filed: 1, reporter_dismissed: 0 }),
 	admin_set_report: () => null,
 	admin_sanction: (a) => ({ status: 'active', strikes: 1, suspended_until: null }),
 	admin_log_identity_view: () => null,
 	admin_roster_name: (a) => (a.p_email?.startsWith('29999') ? '홍길동' : null),
-	admin_list_letter_reports: () => [{ id: LREP, created_at: t, target_type: 'dm', letter_id: 7, comment_id: null, reason: 'spam', note: '', status: 'open', reported_id: A, reporter_id: B, reported_30d: 1, preview: '광고', reported_status: 'active' }],
+	admin_list_letter_reports: () => EMPTY_REPORTS ? [] : [{ id: LREP, created_at: t, target_type: 'dm', letter_id: 7, comment_id: null, reason: 'spam', note: '', status: 'open', reported_id: A, reporter_id: B, reported_30d: 1, preview: '광고', reported_status: 'active' }],
 	admin_letter_report: () => ({ report: { id: LREP, created_at: t, target_type: 'dm', letter_id: 7, comment_id: null, reason: 'spam', note: '', status: 'open', reported_id: A, reporter_id: B, handled_by: null, handled_at: null, action_note: null }, evidence: [{ ord: 1, kind: 'dm_sender', alias: '맑은 하늘', body: '광고 편지', sent_at: t }], target: { thread_status: 'open' }, reported: { status: 'active', strikes: 0, suspended_until: null, created_at: t }, history: [], chat_reports: 0, reporter_filed: 1, reporter_dismissed: 0 }),
 	admin_remove_dm: () => null,
 	admin_set_letter_report: () => null,
@@ -203,6 +204,29 @@ try {
 		check(`${p} → 200`, r.status() === 200, String(r.status()));
 	}
 	check('페이지 오류 없음', page.errs.length === 0, page.errs.join(' / '));
+
+	console.log('\n[신고 목록] 종류별 열 · 상세 이동 · 모바일 · 필터와 빈 상태');
+	for (const list of [
+		{ path: '/admin', detail: `/admin/reports/${REP}`, text: '욕했어요', headers: ['접수', '사유', '신고 내용', '대화', '대상', '누적', '상태'], mobile: ['접수', '사유', '신고 내용', '대상', '상태'], empty: '처리할 신고가 없어요.' },
+		{ path: '/admin/letters', detail: `/admin/letters/${LREP}`, text: '광고', headers: ['접수', '대상', '사유', '신고한 글', '작성자', '누적', '상태'], mobile: ['접수', '대상', '사유', '신고한 글', '상태'], empty: '처리할 편지 신고가 없어요.' }
+	]) {
+		await page.go(list.path);
+		check(`${list.path} — 데스크톱 열 순서`, JSON.stringify(await page.locator('thead th:visible').allTextContents()) === JSON.stringify(list.headers));
+		await page.getByRole('link', { name: list.text, exact: true }).click();
+		await page.waitForURL(base + list.detail);
+		check(`${list.path} — 해당 종류의 신고 상세로 이동`, new URL(page.url()).pathname === list.detail);
+		await page.setViewportSize({ width: 390, height: 844 });
+		await page.go(list.path);
+		check(`${list.path} — 모바일 필수 열과 내용 유지`, JSON.stringify(await page.locator('thead th:visible').allTextContents()) === JSON.stringify(list.mobile) && await page.getByRole('link', { name: list.text, exact: true }).isVisible());
+		await page.setViewportSize({ width: 1200, height: 900 });
+		EMPTY_REPORTS = true;
+		await page.go(list.path);
+		check(`${list.path} — 미처리 빈 상태`, await page.getByText(list.empty, { exact: true }).isVisible());
+		await page.getByRole('navigation', { name: '신고 상태' }).getByRole('link', { name: '검토 중', exact: true }).click();
+		await page.waitForURL(base + list.path + '?status=reviewing');
+		check(`${list.path} — 필터 이동과 빈 상태`, await page.getByText('해당하는 신고가 없어요.', { exact: true }).isVisible() && await page.locator('.a-tabs a.on').innerText() === '검토 중');
+		EMPTY_REPORTS = false;
+	}
 
 	// 결과는 누른 버튼 자체(data-ack-msg) 또는 알림(.toast)에 (Phase 48)
 	const acked = (t) => page.locator(`[data-ack-msg*="${t}"], .toast:has-text("${t}")`).first();

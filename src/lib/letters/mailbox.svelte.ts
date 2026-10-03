@@ -34,11 +34,20 @@ export const POSTED = { pending: false };
 /**
  * 우체통을 눌러 편지를 꺼낸다 (Phase 79) — 편지함이 누른 순간의 우체통 자리 · 크기 · 안에 든 편지 수를 적어 두면
  * 편지 화면이 같은 자리에 같은 우체통을 그려 이어 받는다 (화면 넘김 없이 그대로 → 우체통이 두 번 덜컹 → 투입구에서 편지가 나온다).
- * 적은 지 2초가 지났거나 한 번 가져가면 끝 (화면을 그리는 데 쓰지 않아 반응형이 아니다)
+ * 이동을 시작하지 않은 채 2초가 지났거나 한 번 가져가면 끝 (화면을 그리는 데 쓰지 않아 반응형이 아니다)
  */
 type Knock = { w: number; top: number; wallH: number; count: number };
-export const KNOCK = { at: 0, hand: null as Knock | null };
-export const knockFresh = () => KNOCK.hand != null && performance.now() - KNOCK.at < 2000;
+export const KNOCK = { at: 0, hand: null as Knock | null, navigation: null as Promise<void> | null };
+export const knockFresh = () => KNOCK.hand != null && (KNOCK.navigation !== null || performance.now() - KNOCK.at < 2000);
+/** 현재 이동이 느려도 우체통 위치를 유지한다. 완료·실패한 이동의 정보는 남기지 않는다. */
+export function holdKnock(navigation: Promise<void>) {
+	KNOCK.navigation = navigation;
+	void navigation.catch(() => {}).finally(() => {
+		if (KNOCK.navigation !== navigation) return;
+		KNOCK.navigation = null;
+		KNOCK.hand = null;
+	});
+}
 /**
  * 알림에서 편지로 (Phase 80) — 편지 한 통(/letters/m/번호)을 가리키는 알림은 편지함으로 보내 우체통에서 꺼내게 한다
  * (편지함이 ?take=번호 를 보면 우체통을 보여 준 뒤 스스로 눌러 — 두 번 덜컹 → 투입구에서 편지). 서비스워커(static/sw.js)도 같은 규칙
@@ -72,34 +81,45 @@ onAccountChange(() => {
 	POSTED.pending = false;
 	KNOCK.at = 0;
 	KNOCK.hand = null;
+	KNOCK.navigation = null;
 });
 
-export async function loadBox(box: Box) {
-	if (!currentAccountId()) return;
+/** 첫 페이지와 더보기의 응답·실패·계정 경계를 한 곳에서 처리한다. */
+async function loadPage(box: Box, append: boolean) {
+	if (!currentAccountId() || (append && (BOX.busy[box] || BOX.loading[box]))) return;
+	const before = append ? BOX[box].at(-1)?.id : undefined;
+	if (append && before === undefined) return;
 	const token = accountToken();
-	const sequence = ++requests[box];
-	BOX.busy[box] = false;
-	BOX.loading[box] = true;
+	const sequence = append ? requests[box] : ++requests[box];
+	const current = () => accountIsCurrent(token) && sequence === requests[box];
+	BOX.busy[box] = append;
+	if (!append) BOX.loading[box] = true;
 	BOX.error[box] = null;
 	try {
-		const r = await fetchMailbox(box);
-		if (!accountIsCurrent(token) || sequence !== requests[box]) return;
-		BOX[box] = r.letters;
-		BOX.more[box] = r.letters.length === PAGE;
+		const { letters, folders } = await fetchMailbox(box, before);
+		if (!current()) return;
+		const existing = new Set(append ? BOX[box].map((item) => item.id) : []);
+		BOX[box] = append ? [...BOX[box], ...letters.filter((item) => !existing.has(item.id))] : letters;
+		BOX.more[box] = letters.length === PAGE;
 		failedMore[box] = false;
-		if (r.folders) BOX.folders = r.folders;
+		if (!append && folders) BOX.folders = folders;
 	} catch (error) {
-		if (accountIsCurrent(token) && sequence === requests[box]) {
+		if (current()) {
 			BOX.error[box] = errMsg(error);
-			failedMore[box] = false;
+			failedMore[box] = append;
 		}
 	} finally {
-		if (accountIsCurrent(token) && sequence === requests[box]) {
-			BOX.loaded[box] = true;
-			BOX.loading[box] = false;
+		if (current()) {
+			BOX.busy[box] = false;
+			if (!append) {
+				BOX.loaded[box] = true;
+				BOX.loading[box] = false;
+			}
 		}
 	}
 }
+
+export const loadBox = (box: Box) => loadPage(box, false);
 
 export function refreshMailbox() {
 	void reloadMailbox();
@@ -114,30 +134,7 @@ export function pollMailbox() {
 	void loadBox('received');
 }
 
-export async function loadMore(box: Box) {
-	if (!currentAccountId() || BOX.busy[box] || BOX.loading[box]) return;
-	const token = accountToken();
-	const sequence = requests[box];
-	const last = BOX[box].at(-1);
-	if (!last) return;
-	BOX.busy[box] = true;
-	BOX.error[box] = null;
-	try {
-		const { letters } = await fetchMailbox(box, last.id);
-		if (!accountIsCurrent(token) || sequence !== requests[box]) return;
-		const existing = new Set(BOX[box].map((item) => item.id));
-		BOX[box] = [...BOX[box], ...letters.filter((item) => !existing.has(item.id))];
-		BOX.more[box] = letters.length === PAGE;
-		failedMore[box] = false;
-	} catch (error) {
-		if (accountIsCurrent(token) && sequence === requests[box]) {
-			BOX.error[box] = errMsg(error);
-			failedMore[box] = true;
-		}
-	} finally {
-		if (accountIsCurrent(token) && sequence === requests[box]) BOX.busy[box] = false;
-	}
-}
+export const loadMore = (box: Box) => loadPage(box, true);
 
 /** 실패한 요청부터 다시 시도한다 — 더보기 실패는 이미 불러온 쪽을 유지한다. */
 export const retryBox = (box: Box) => (failedMore[box] ? loadMore(box) : loadBox(box));
@@ -147,7 +144,7 @@ export function dropThread(threadId: number) {
 	const affected = (['received', 'sent'] as const).filter((box) => BOX[box].some((item) => item.thread_id === threadId));
 	BOX.received = BOX.received.filter((x) => x.thread_id !== threadId);
 	BOX.sent = BOX.sent.filter((x) => x.thread_id !== threadId);
-	void Promise.all([...(affected.length ? affected : ['received', 'sent'] as const).map((box) => loadBox(box)), refreshUnread()]);
+	void Promise.all([...(affected.length ? affected : ['received', 'sent'] as const).map((box) => loadBox(box)), refreshUnread(true)]);
 }
 
 /** 폴더에 넣었다 · 폴더를 바꿨다 · 지웠다(Phase 69) — 목록에서 바로 빼고(폴더에 간 편지는 보관함 목록에 없다) 새로 읽어 폴더 수를 맞춘다 */
